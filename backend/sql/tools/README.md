@@ -14,6 +14,11 @@
 | `GenSeedSecrets.java` | 一次性工具：产出 BCrypt 密码哈希与 AES 身份证密文 | 控制台输出（粘贴进 `gen_seed.py`） |
 | `verify_data.sql` | 校验行数、中文编码、密码/密文、边界场景、枚举分布 | 查询结果 |
 | `explain_index.sql` | 7 条高频查询的 `EXPLAIN`，验证索引命中 | 查询结果 |
+| `e2e_auth.py` | **M2 端到端实测**：真实 HTTP 打 8080，40 项断言（错误码 / 越权 / 验证码防重放 / 登出黑名单 / 改密失效 / 锁定），自带测试数据清理 | 控制台 PASS/FAIL 汇总 |
+
+> `e2e_auth.py` 不属于数据库脚本范畴，放在这里是因为它同样需要
+> 「连着真实的 MySQL / Redis 才跑得起来」—— 与其它工具的前置条件一致。
+> 它读 Redis 只为拿验证码明文（图片识别不是测试该做的事），其余全部走正常接口。
 
 ## 为什么用脚本而不是手写 SQL
 
@@ -88,6 +93,19 @@ mysql --host=127.0.0.1 --port=3306 --user=root --password \
 java GenSeedSecrets.java
 ```
 
+### 6. M2 认证端到端实测
+
+```bash
+# 前提：后端已在 8080 启动（mvn spring-boot:run），MySQL 与 Redis 可用
+python e2e_auth.py
+```
+
+覆盖：验证码防重放、`1001~1007` 全部错误码、4 角色 × 3 类接口越权、
+老人只读拦截、登出黑名单即时生效、改密后旧令牌失效、连续失败锁定、
+密码 BCrypt 落库、登录日志不含密码串。共 40 项断言，跑完自动清理测试账号与 Redis 键。
+
+> ⚠️ 脚本会写 `sys_user` / `sys_login_log` 并读 Redis，**只在开发库跑**。
+
 ## 环境要求
 
 - Python 3.11+（脚本只用标准库，无第三方依赖）
@@ -104,6 +122,9 @@ java GenSeedSecrets.java
 | 5 | 担心 `tools/*.sql` 被 Flyway 当成迁移脚本 | 已实测：Maven `<includes>*.sql</includes>` **不递归子目录**，`tools/` 下的 SQL 不会被复制进 `db/migration` |
 | 6 | `Remove-Item` 抛 `SAFE_DELETE_BULK_CONFIRM_REQUIRED` 且后续命令不执行 | 单轮删除超过 50 个文件会触发确认并**中止整条链式命令**。批量清理放到命令最后，或分轮做 |
 | 7 | 改了 `V2` 之后应用启动报 Flyway checksum 错 | `validate-on-migrate: true` 会校验已执行脚本。**改了就要 `flyway repair`，不如直接新开 `V4`** |
+| 8 | `verify(sysUserMapper, never()).insert(any())` 编译报「对 insert 的引用不明确」 | MyBatis-Plus `BaseMapper` 同时有 `insert(T)` 与 `insert(Collection<T>)`，`any()` 无类型。写 `any(SysUser.class)` |
+| 9 | 软删账号用**用户名**仍能登录 | `.eq(A).or().eq(B)` 时 MP 把 `AND deleted = 0` 追加在末尾，被解析成 `A OR (B AND deleted=0)`。必须 `.and(w -> w.eq(A).or().eq(B))` 显式分组 |
+| 10 | PowerShell `*>` 重定向后中文乱码 | 编码在子进程与重定向之间不一致。要看中文就 `PYTHONIOENCODING=utf-8` 且别用 `*>`（直接输出即可），或只看 PASS/FAIL 与数值 |
 
 ## 生成物与手工物的边界
 

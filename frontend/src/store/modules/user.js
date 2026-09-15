@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { login as loginApi, getCurrentUser, logout as logoutApi } from '@/api/auth'
 import {
   getToken,
+  getRefreshToken,
   setToken,
   setRefreshToken,
   getUserInfo,
@@ -27,8 +28,8 @@ export const ROLE_LABELS = {
 /**
  * 登录态与权限。
  *
- * 骨架阶段：完整实现了 state / getters / 动作骨架，
- * 但由于 M2 尚未交付，login 会返回后端错误 —— 这是预期行为。
+ * M2 已交付：login 走真实 /api/auth/login，返回双令牌与用户信息；
+ * 刷新页面时若本地有 token 但没有 userInfo，路由守卫会调 fetchCurrentUser() 补一次。
  */
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -76,7 +77,9 @@ export const useUserStore = defineStore('user', {
     async logout() {
       try {
         if (this.token) {
-          await logoutApi()
+          // 带上 refreshToken，让服务端把它一并拉黑；
+          // 否则「登出」只是前端删了几个字符串，refreshToken 还能继续换令牌
+          await logoutApi(getRefreshToken())
         }
       } catch {
         // 登出接口失败也要清本地，避免卡死

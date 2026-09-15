@@ -6,10 +6,11 @@ import { useUserStore } from '@/store/modules/user'
 import { getCaptcha } from '@/api/auth'
 
 /**
- * 登录页（骨架版）。
+ * 登录页（M2 已对接真实接口）。
  *
- * ⚠️ 后端 M2 尚未交付，提交登录会收到「接口不存在 / 功能开发中」的错误提示 —— 这是预期行为。
- *    等 M2 完成后，本页面无需改动即可直接登录成功。
+ * ⚠️ 验证码是「一次性」的：服务端校验时就把 Redis 里的那一条删掉了（防重放），
+ *    所以**每次提交之后都必须换一张**，否则用户第二次点登录必然收到「验证码错误」，
+ *    而他会以为是自己的问题。这是登录页最容易踩的坑。
  *
  * 合规提示：登录失败提示统一为「账号或密码错误」，不区分账号是否存在，避免账号枚举。
  */
@@ -33,10 +34,26 @@ const rules = {
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 6, max: 32, message: '密码长度为 6-32 位', trigger: 'blur' }
-  ]
+  ],
+  captchaCode: [{ required: true, message: '请输入验证码', trigger: 'blur' }]
 }
 
 const redirect = computed(() => route.query.redirect || '/dashboard')
+
+/** 仅开发环境展示演示账号，避免生产包体里带默认口令 */
+const demoAccounts = import.meta.env.DEV
+  ? [
+      { role: '管理员', account: 'admin' },
+      { role: '家属', account: 'fam001' },
+      { role: '陪诊员', account: 'comp001' },
+      { role: '老年患者', account: 'elder001' }
+    ]
+  : []
+
+function fillDemo(account) {
+  form.username = account
+  form.password = 'Nl@123456'
+}
 
 async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
@@ -56,6 +73,9 @@ async function handleSubmit() {
     // 错误提示已在 axios 拦截器统一处理
   } finally {
     loading.value = false
+    form.captchaCode = ''
+    // 无论成功失败，验证码都已作废，必须换一张新的
+    await loadCaptcha()
   }
 }
 
@@ -66,6 +86,7 @@ async function loadCaptcha() {
     form.captchaKey = data?.captchaKey || ''
   } catch {
     captchaImage.value = ''
+    form.captchaKey = ''
   }
 }
 
@@ -82,13 +103,26 @@ loadCaptcha()
       </div>
 
       <el-alert
+        v-if="demoAccounts.length"
         class="login__alert"
         type="info"
         :closable="false"
         show-icon
-        title="当前为工程骨架阶段"
-        description="登录接口属于 M2 模块，尚未实现。本页面用于验证布局、表单与请求封装是否可用。"
-      />
+        title="演示账号（开发环境可见，初始密码 Nl@123456）"
+      >
+        <div class="login__demo">
+          <el-tag
+            v-for="item in demoAccounts"
+            :key="item.account"
+            class="login__demo-tag"
+            type="info"
+            effect="plain"
+            @click="fillDemo(item.account)"
+          >
+            {{ item.role }} {{ item.account }}
+          </el-tag>
+        </div>
+      </el-alert>
 
       <el-form
         ref="formRef"
@@ -112,10 +146,14 @@ loadCaptcha()
           />
         </el-form-item>
 
-        <el-form-item label="验证码">
+        <el-form-item label="验证码" prop="captchaCode">
           <div class="login__captcha">
-            <el-input v-model="form.captchaCode" placeholder="请输入验证码" />
-            <div class="login__captcha-img" @click="loadCaptcha">
+            <el-input
+              v-model="form.captchaCode"
+              placeholder="请输入验证码"
+              @keyup.enter="handleSubmit"
+            />
+            <div class="login__captcha-img" title="点击更换验证码" @click="loadCaptcha">
               <img v-if="captchaImage" :src="captchaImage" alt="验证码" />
               <span v-else class="login__captcha-empty">点击刷新</span>
             </div>
@@ -195,6 +233,17 @@ loadCaptcha()
 
   &__alert {
     margin-bottom: $space-base;
+  }
+
+  &__demo {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  &__demo-tag {
+    cursor: pointer;
   }
 
   &__captcha {

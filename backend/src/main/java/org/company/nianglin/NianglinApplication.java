@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration;
 import org.springframework.core.env.Environment;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -23,7 +24,10 @@ import java.net.UnknownHostException;
 @EnableAsync
 @EnableScheduling
 @MapperScan("org.company.nianglin.mapper")
-@SpringBootApplication
+// 排除 Spring Security 的默认内存用户自动配置：本项目账号全部来自 sys_user + JWT，
+// 不排除的话每次启动都会打印「Using generated security password: ...」并给出
+// 「生产环境必须更新安全配置」的警告，容易被误读为安全配置未完成。
+@SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
 public class NianglinApplication {
 
     public static void main(String[] args) {
