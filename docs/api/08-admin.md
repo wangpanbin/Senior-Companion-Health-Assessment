@@ -452,7 +452,7 @@
 | `operatorId` | Long | 否 | 按操作人筛选 |
 | `operType` | String | 否 | 按操作类型筛选 |
 | `targetType` / `targetId` | String / Long | 否 | 按目标对象筛选 |
-| `startTime` / `endTime` | String | 否 | 操作时间区间（精确到秒） |
+| `startTime` / `endTime` | String | 否 | 操作时间区间（精确到秒），格式 `yyyy-MM-dd HH:mm:ss`；两个边界**都含端点**。也兼容 `yyyy-MM-ddTHH:mm:ss`、`yyyy-MM-dd HH:mm` 与纯日期 `yyyy-MM-dd` |
 
 ### 响应
 
