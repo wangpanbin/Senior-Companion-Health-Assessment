@@ -72,6 +72,17 @@ public final class RoleConstants {
                     .orElse(null);
         }
 
+        /**
+         * 中文展示名；非法值原样返回。
+         *
+         * <p>与其他枚举（{@code OrderStatus} / {@code AuditStatus} 等）保持同一套
+         * {@code labelOf} 语义：展示层不该因为库里有一条脏角色值就整体 500。</p>
+         */
+        public static String labelOf(String code) {
+            Role role = of(code);
+            return role == null ? code : role.getLabel();
+        }
+
         /** Spring Security 权限名 */
         public String authority() {
             return ROLE_PREFIX + name();

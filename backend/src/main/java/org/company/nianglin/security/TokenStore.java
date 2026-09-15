@@ -89,6 +89,48 @@ public class TokenStore {
     }
 
     /* ------------------------------------------------------------------ */
+    /* 封禁标记（M9）                                                      */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * 标记用户已被封禁。
+     *
+     * <p><b>为什么不只改数据库状态</b>：改库只能拦住「下次登录」，
+     * 而封禁的验收要求是「任意接口请求<b>立即</b>返回 403」。
+     * 用户的访问令牌最长 120 分钟，等它自然过期意味着被封禁的人
+     * 还能继续下单、打卡、发消息 —— 这显然不是封禁的意思。</p>
+     *
+     * <p>不使用密码版本号来实现：版本号不匹配只会让请求「未认证」，
+     * 返回 401 且与「登录过期」无法区分，前端只能把用户踢回登录页；
+     * 而封禁要的是一个明确的 403 + 封禁原因。</p>
+     *
+     * <p>⚠️ 本标记与 {@code sys_user.status} 是<b>主从关系</b>：
+     * 数据库是权威，标记只是让判定不必每请求查一次库。
+     * Redis 被清空后标记会丢，此时靠数据库兜底（该用户重新登录会被拒），
+     * 但已签发的令牌在剩余有效期内会重新生效 —— 这是可接受的降级，
+     * 因为 Redis 清空本身已经是重大故障，恢复时会一并重启应用。</p>
+     */
+    public void markBanned(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        redisTemplate.opsForValue().set(RedisKeyConstants.userBanned(userId), "1");
+    }
+
+    /** 解除封禁标记 */
+    public void unmarkBanned(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        redisTemplate.delete(RedisKeyConstants.userBanned(userId));
+    }
+
+    /** 用户是否处于封禁状态 */
+    public boolean isBanned(Long userId) {
+        return userId != null && Boolean.TRUE.equals(redisTemplate.hasKey(RedisKeyConstants.userBanned(userId)));
+    }
+
+    /* ------------------------------------------------------------------ */
     /* 登录失败计数                                                        */
     /* ------------------------------------------------------------------ */
 

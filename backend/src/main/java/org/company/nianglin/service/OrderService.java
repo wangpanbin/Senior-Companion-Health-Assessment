@@ -1,6 +1,7 @@
 package org.company.nianglin.service;
 
 import org.company.nianglin.common.PageResult;
+import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.dto.OrderCancelDTO;
 import org.company.nianglin.dto.OrderCompleteDTO;
 import org.company.nianglin.dto.OrderCreateDTO;
@@ -8,6 +9,7 @@ import org.company.nianglin.dto.OrderHallQuery;
 import org.company.nianglin.dto.OrderQuery;
 import org.company.nianglin.dto.OrderRejectDTO;
 import org.company.nianglin.entity.CompanionOrder;
+import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
@@ -79,14 +81,64 @@ public interface OrderService {
     List<OrderTimelineVO> timeline(Long orderId);
 
     /**
+     * 把订单从 {@code COMPLETED} 推进到 {@code REVIEWED}（供 M7 评价成功后调用）。
+     *
+     * <p>状态机允许 {@code COMPLETED → REVIEWED} 这条正向流转，
+     * 但「评价」这件事本身不属于订单模块，所以由 M7 校验完「订单已完成、且没评过」
+     * 之后再来推进状态。<b>订单状态的写入权始终留在本模块</b>，
+     * 不允许 M7 直接 UPDATE {@code companion_order.status} ——
+     * 那样一来订单状态机就有两个写入口，日后加一条流转规则必然漏改一边。</p>
+     *
+     * <p>实现用「条件更新 + 状态日志」：条件更新保证并发下只有一个请求完成推进，
+     * 日志让订单时间线里能出现「已评价」这个节点（否则家属会看到
+     * 订单停在「已完成」而评价却已经提交了）。</p>
+     *
+     * <p>幂等：若订单已经是 {@code REVIEWED}，本方法直接返回，不抛异常，
+     * 也不重复写日志。</p>
+     *
+     * @param orderId 订单 ID
+     * @throws org.company.nianglin.exception.BusinessException 3001 订单不存在
+     */
+    void markReviewed(Long orderId);
+
+    /**
+     * 管理员强制把订单置为终态（供 M9 纠纷处理调用）。
+     *
+     * <p>这是状态机<b>唯一的越权入口</b>，也是它唯一被允许绕过正向流转的场景：
+     * 陪诊员迟到、家属拒付、双方各执一词时，平台必须有能力一次性结束争议，
+     * 而不是留下一个永远停在「服务中」的订单。</p>
+     *
+     * <p>三条约束缺一不可：</p>
+     * <ol>
+     *   <li>目标状态只能是 {@code COMPLETED} / {@code CANCELLED}
+     *       （{@code OrderStatus.isAdminForceable()}），不允许改回中间态；</li>
+     *   <li>已是终态的订单不再处理，返回 {@code 3002}；</li>
+     *   <li>必须写 {@code order_status_log} 并标注「管理员强制变更」——
+     *       否则订单时间线里会凭空出现一次状态跳变，事后谁也说不清是谁改的。</li>
+     * </ol>
+     *
+     * <p><b>写权留在订单模块</b>：M9 不直接 UPDATE {@code companion_order.status}，
+     * 与 {@link #markReviewed} 同一个理由 —— 状态机不允许有两个写入口。</p>
+     *
+     * @param orderId 订单 ID
+     * @param target  目标终态，只能是 {@code COMPLETED} 或 {@code CANCELLED}
+     * @param remark  处理结果说明，写入状态日志
+     * @return 变更后的订单实体（调用方不得直接返回给前端，必须转 VO）
+     * @throws org.company.nianglin.exception.BusinessException
+     *         3001 订单不存在 / 3002 已终态或并发冲突 / 400 目标状态不合法
+     */
+    CompanionOrder forceTerminal(Long orderId, OrderStatus target, String remark);
+
+    /**
      * 校验当前登录用户是否为该订单的相关方，是则返回订单实体。
      *
      * <p>这是跨模块复用的入口：{@code ADMIN} 直通；
      * {@code FAMILY} 须为下单人；{@code COMPANION} 须为接单人；
      * {@code ELDER} 须为就诊人本人；其余一律 {@code 3004}。</p>
      *
-     * <p>M5（打卡 / 轨迹 / 实时进度）、M7（评价）都要判断「这一单跟我有没有关系」，
-     * 一律复用本方法，不要各写一套 —— 三套归属判断里最松的那一套就是漏洞。</p>
+     * <p>M5（打卡 / 轨迹 / 实时进度）、M7（评价）、M8（站内信）都要判断
+     * 「这一单跟我有没有关系」，一律复用本方法，不要各写一套 ——
+     * 三套归属判断里最松的那一套就是漏洞。</p>
      *
      * <p>⚠️ 返回的是实体。调用方不得直接返回给前端，必须转 VO。</p>
      *
@@ -95,4 +147,23 @@ public interface OrderService {
      * @throws org.company.nianglin.exception.BusinessException 3001 不存在 / 3004 非相关方
      */
     CompanionOrder requireInvolved(Long orderId);
+
+    /**
+     * 同 {@link #requireInvolved(Long)}，但<b>身份由调用方显式给出</b>，不读
+     * {@code SecurityContext}。
+     *
+     * <p>存在的唯一理由是 WebSocket：握手是一次普通 HTTP 请求，
+     * 但会话建立后，帧处理跑在别的线程上，{@code SecurityContextHolder}
+     * 早已被清空，{@link org.company.nianglin.security.SecurityUtils#currentUser()}
+     * 在那里拿不到人。握手拦截器手上有解析好的令牌载荷，
+     * 于是用这个重载把身份直接传进来。</p>
+     *
+     * <p><b>不要</b>在 REST 接口里用它 —— 参数化的身份等于把归属判断交给调用方，
+     * 一旦有人传错，注解和过滤器的保护全部作废。</p>
+     *
+     * @param orderId   订单 ID
+     * @param loginUser 身份，不得为 {@code null}
+     * @return 订单实体（非 null）
+     */
+    CompanionOrder requireInvolved(Long orderId, LoginUser loginUser);
 }

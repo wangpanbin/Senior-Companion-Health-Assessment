@@ -30,6 +30,7 @@ import org.company.nianglin.mapper.OrderRejectLogMapper;
 import org.company.nianglin.mapper.OrderStatusLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
+import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.impl.OrderServiceImpl;
 import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.vo.OrderAcceptResultVO;
@@ -122,6 +123,9 @@ class OrderServiceTest {
     private ElderService elderService;
 
     @Mock
+    private MessageService messageService;
+
+    @Mock
     private StringRedisTemplate redisTemplate;
 
     @Mock
@@ -137,7 +141,7 @@ class OrderServiceTest {
 
         orderService = new OrderServiceImpl(orderMapper, statusLogMapper, rejectLogMapper,
                 elderProfileMapper, companionProfileMapper, sysUserMapper, orderReadMapper,
-                elderService, redisTemplate, new ObjectMapper());
+                elderService, messageService, redisTemplate, new ObjectMapper());
     }
 
     @AfterEach

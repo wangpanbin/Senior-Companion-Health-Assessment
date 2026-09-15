@@ -1,5 +1,6 @@
 package org.company.nianglin.config;
 
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.company.nianglin.security.JwtAuthenticationFilter;
 import org.company.nianglin.security.RestAccessDeniedHandler;
@@ -40,6 +41,24 @@ import java.util.List;
  * <p>最终防线是资源归属校验（订单属于哪个家属、档案属于哪个老人），
  * 那属于各业务模块（M3–M9）的职责，光靠角色挡住不了一个家属去读别人的订单。</p>
  *
+ * <h3>为什么必须放行 ASYNC / ERROR 分发</h3>
+ *
+ * <p>Spring Security 6 起 {@code AuthorizationFilter} 默认对<b>所有</b> {@code DispatcherType} 生效，
+ * 而 {@link JwtAuthenticationFilter} 继承 {@code OncePerRequestFilter} 且未覆写
+ * {@code shouldNotFilterErrorDispatch()}，因此<b>不会</b>在 ERROR 分发里重新解析令牌。</p>
+ *
+ * <p>两条规则一叠加，SSE 长连接的断开就变成一场假故障（实测于 {@code GET /sse/message}）：
+ * 客户端关页面 → 写通道失败 → 容器把这次请求以 ERROR 分发重跑一遍 →
+ * 这一轮没有 {@code SecurityContext}（认证过滤器被跳过）→
+ * {@code AuthorizationFilter} 抛 {@code AccessDeniedException} →
+ * 此时响应早已 committed，{@code ExceptionTranslationFilter} 连 403 都写不进去 →
+ * Tomcat 再记一条 ERROR。结果是「用户关了个浏览器」被记成两条服务端异常，
+ * 真正的故障淹在噪声里。</p>
+ *
+ * <p>放行这两类分发<b>不构成绕过</b>：{@code DispatcherType} 由容器设置、客户端无法伪造；
+ * 而且首次 REQUEST 分发仍照常鉴权 —— 能产生 ASYNC / ERROR 分发的前提，
+ * 是那个请求本身已经通过了 REQUEST 分发的检查。</p>
+ *
  * @author 银龄伴诊团队
  */
 @Configuration
@@ -55,6 +74,13 @@ public class SecurityConfig {
             "/api/auth/register",
             "/api/auth/login",
             "/api/auth/refresh",
+            // WebSocket 升级请求：令牌走 query 参数（浏览器 WebSocket 不允许自定义请求头），
+            // 由 websocket/JwtHandshakeInterceptor 在握手阶段校验 JWT 与订单归属。
+            // 放行到 Security 之外是必须的 —— 否则过滤器链会因为「没有 Authorization 头」
+            // 直接把升级请求判成未认证，握手永远到不了拦截器
+            "/ws/**",
+            // 上传文件的静态访问（打卡照片、投诉证据）
+            "/uploads/**",
             // 接口文档相关（dev 环境；prod 由 knife4j.enable=false 关闭）
             "/doc.html",
             "/webjars/**",
@@ -114,6 +140,9 @@ public class SecurityConfig {
                         .authenticationEntryPoint(restAuthenticationEntryPoint)
                         .accessDeniedHandler(restAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
+                        // ASYNC / ERROR 分发必须放行，否则 SSE 长连接的断开会在日志里刷 ERROR ——
+                        // 完整推理见下方 javadoc「为什么必须放行 ASYNC / ERROR 分发」。
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // 其余全部需要登录。角色细粒度控制在各接口的 @PreAuthorize 上，

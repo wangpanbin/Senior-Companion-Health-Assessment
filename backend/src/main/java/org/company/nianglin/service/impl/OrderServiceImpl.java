@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.AuditStatus;
+import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
 import org.company.nianglin.constant.RedisKeyConstants;
@@ -40,8 +41,10 @@ import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.ElderService;
+import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.util.ComplianceCheckUtil;
+import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
@@ -121,6 +124,7 @@ public class OrderServiceImpl implements OrderService {
     private final SysUserMapper sysUserMapper;
     private final OrderReadMapper orderReadMapper;
     private final ElderService elderService;
+    private final MessageService messageService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -148,6 +152,11 @@ public class OrderServiceImpl implements OrderService {
         order.setDepartment(dto.getDepartment().trim());
         order.setVisitTime(dto.getVisitTime());
         order.setAddress(dto.getAddress().trim());
+        // 坐标成对归一：只传一个视为没传（半对坐标无法参与距离计算，
+        // 留着只会让下游写「lat != null 但 lng == null」这种判断）
+        BigDecimal[] point = normalizePoint(dto.getLongitude(), dto.getLatitude());
+        order.setLongitude(point[0]);
+        order.setLatitude(point[1]);
         order.setRemark(clearable(dto.getRemark()));
         order.setStatus(OrderStatus.PENDING.name());
         order.setFee(resolveFee(dto.getFee(), dto.getVisitTime()));
@@ -159,6 +168,7 @@ public class OrderServiceImpl implements OrderService {
         orderMapper.insert(order);
 
         writeStatusLog(order.getId(), null, OrderStatus.PENDING, me, "下单成功");
+        notifyOrderCreated(order);
 
         log.info("陪诊订单已创建 | orderId={} | orderNo={} | familyId={} | elderId={}",
                 order.getId(), order.getOrderNo(), me.userId(), elder.getId());
@@ -306,6 +316,10 @@ public class OrderServiceImpl implements OrderService {
         }
 
         writeStatusLog(orderId, from, OrderStatus.CANCELLED, me, dto.getReason().trim());
+        // 这里刻意不发 ORDER_CANCELLED：能走到这一行说明订单还是 PENDING，
+        // 也就是还没有陪诊员，收件人为 null。给「还不存在的接单人」发取消通知
+        // 是纯粹的死代码。已接单后的取消只能走 M9 纠纷处理，
+        // 那条路径由 AdminServiceImpl 向家属与陪诊员双发。
         log.info("订单已取消 | orderId={} | familyId={}", orderId, me.userId());
     }
 
@@ -317,7 +331,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(rollbackFor = Exception.class)
     public OrderAcceptResultVO accept(Long orderId) {
         LoginUser me = SecurityUtils.currentUser();
-        requireApprovedCompanion(me.userId());
+        CompanionProfile profile = requireApprovedCompanion(me.userId());
 
         CompanionOrder order = orderMapper.selectById(orderId);
         if (order == null) {
@@ -345,6 +359,7 @@ public class OrderServiceImpl implements OrderService {
         }
 
         writeStatusLog(orderId, from, OrderStatus.ACCEPTED, me, "已接单");
+        notifyOrderAccepted(order, profile);
         log.info("接单成功 | orderId={} | companionId={} | version={}", orderId, me.userId(), order.getVersion());
         return OrderAcceptResultVO.of(order, now);
     }
@@ -487,6 +502,7 @@ public class OrderServiceImpl implements OrderService {
         }
 
         writeStatusLog(orderId, from, OrderStatus.COMPLETED, me, "服务已完成");
+        notifyOrderCompleted(order);
 
         // 结算状态读库里的真实值返回，不写死 UNPAID ——
         // 一期虽然恒为 UNPAID，但 M9 支持线下回填之后写死就是一句谎话
@@ -509,17 +525,110 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /* ================================================================== */
+    /* 11. 评价推进（供 M7 调用）                                           */
+    /* ================================================================== */
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void markReviewed(Long orderId) {
+        CompanionOrder order = orderMapper.selectById(orderId);
+        if (order == null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
+        }
+        if (OrderStatus.REVIEWED.name().equals(order.getStatus())) {
+            // 幂等：评价接口在并发重试下可能调用两次，第二次不该报错
+            return;
+        }
+        if (!OrderStatus.COMPLETED.name().equals(order.getStatus())) {
+            // 走到这里说明调用方漏了状态校验。抛 3002 而不是静默返回，
+            // 是为了让「评价接口传了未完成的订单」这类 bug 在第一次出现时就暴露
+            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
+        }
+
+        int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .eq(CompanionOrder::getId, orderId)
+                .eq(CompanionOrder::getStatus, OrderStatus.COMPLETED.name())
+                .set(CompanionOrder::getStatus, OrderStatus.REVIEWED.name()));
+        if (rows == 0) {
+            // 并发下另一个请求已经推进过了，日志也已由它写入，这里直接返回
+            log.info("订单状态已被其他请求推进到已评价，跳过 | orderId={}", orderId);
+            return;
+        }
+        writeStatusLog(orderId, OrderStatus.COMPLETED, OrderStatus.REVIEWED,
+                SecurityUtils.currentUser(), "家属提交评价");
+        log.info("订单状态已推进 | orderId={} | {} → {}", orderId,
+                OrderStatus.COMPLETED.name(), OrderStatus.REVIEWED.name());
+    }
+
+    /* ================================================================== */
+    /* 12. 管理员强制终态（供 M9 纠纷处理调用）                             */
+    /* ================================================================== */
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CompanionOrder forceTerminal(Long orderId, OrderStatus target, String remark) {
+        if (target == null || !target.isAdminForceable()) {
+            // 只允许 COMPLETED / CANCELLED。允许改成 IN_SERVICE 之类的话，
+            // 状态机会被拉回中间态，而双方对「谁该继续做」没有任何共识
+            throw new BusinessException(ResultCode.PARAM_ERROR, "只能强制进入「已完成」或「已取消」状态");
+        }
+
+        CompanionOrder order = orderMapper.selectById(orderId);
+        if (order == null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
+        }
+        OrderStatus current = OrderStatus.of(order.getStatus());
+        if (current == null) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
+        }
+        if (current.isTerminal()) {
+            // 已是终态（含已被强制处理过的）不再处理，避免同一笔纠纷被反复改结论
+            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL, "订单已处于终态，不可再处理");
+        }
+        if (current == target) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .eq(CompanionOrder::getId, orderId)
+                // 条件更新把「读到的状态」钉在 SQL 里：并发下另一个管理员已改过状态时，
+                // 这一次更新影响 0 行，而不是覆盖掉对方的结果
+                .eq(CompanionOrder::getStatus, order.getStatus())
+                .set(CompanionOrder::getStatus, target.name())
+                .set(target == OrderStatus.CANCELLED, CompanionOrder::getCancelTime, now)
+                .set(target == OrderStatus.CANCELLED, CompanionOrder::getCancelReason, remark)
+                .set(target == OrderStatus.COMPLETED, CompanionOrder::getFinishTime, now));
+        if (rows == 0) {
+            log.info("强制终态失败：订单状态已被其他请求改变 | orderId={} | expect={}", orderId, order.getStatus());
+            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
+        }
+
+        writeStatusLog(orderId, current, target, SecurityUtils.currentUser(), "管理员强制变更：" + remark);
+
+        log.info("管理员强制变更订单终态 | orderId={} | {} → {} | operator={}",
+                orderId, current.name(), target.name(), SecurityUtils.currentUser().userId());
+        return orderMapper.selectById(orderId);
+    }
+
+    /* ================================================================== */
     /* 归属校验（跨模块复用）                                               */
     /* ================================================================== */
 
     @Override
     public CompanionOrder requireInvolved(Long orderId) {
+        return requireInvolved(orderId, SecurityUtils.currentUser());
+    }
+
+    @Override
+    public CompanionOrder requireInvolved(Long orderId, LoginUser me) {
         CompanionOrder order = orderMapper.selectById(orderId);
         if (order == null) {
             throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
         }
-
-        LoginUser me = SecurityUtils.currentUser();
+        if (me == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
         if (me.isAdmin()) {
             return order;
         }
@@ -533,6 +642,83 @@ public class OrderServiceImpl implements OrderService {
             return order;
         }
         throw new BusinessException(ResultCode.ORDER_NO_PERMISSION);
+    }
+
+    /* ================================================================== */
+    /* 内部工具：订单事件站内信（M8）                                        */
+    /* ================================================================== */
+
+    /*
+     * 为什么订单模块要直接调 MessageService，而不是等 M8 来「订阅」：
+     * 订单状态机是唯一的真源，只有它知道「这一秒谁变成了接单人」。
+     * 把这件事推给一个旁路监听器，就得在库里比状态快照 —— 那是更贵也更不准的做法。
+     *
+     * 三条约定（与 M6 漏服提醒保持一致）：
+     *   1. 文案不自拼，全部交给 MessageTemplateUtil；
+     *   2. 姓名类占位符由调用方先脱敏，MessageService 不知道哪个字段是隐私；
+     *   3. 不 try/catch 吞异常 —— 这些方法本身处在 @Transactional 里，
+     *      吞掉一个来自「已加入当前事务」的异常会让外层提交时抛
+     *      UnexpectedRollbackException，比直接失败更难查。
+     *      推送环节自身的失败已经在 MessageServiceImpl.pushNewMessage 内部处理掉了。
+     */
+
+    /** 就诊时间在站内信里的展示格式：不带年份，通知里只看「几号几点」 */
+    private static final DateTimeFormatter NOTIFY_TIME_FORMAT = DateTimeFormatter.ofPattern("MM-dd HH:mm");
+
+    /**
+     * 下单成功 → 广播给「全部已审核陪诊员」。
+     *
+     * <p>大厅是「谁先看到谁抢」的模型，所以这条通知必须群发：
+     * 只发给某一个人等于把订单私下指派给他，大厅也就形同虚设了。</p>
+     */
+    private void notifyOrderCreated(CompanionOrder order) {
+        List<Long> receivers = approvedCompanionUserIds();
+        if (receivers.isEmpty()) {
+            // 一个已审核陪诊员都没有是正常的（新环境，或全被驳回），
+            // 但不能因此让家属下不了单 —— 订单照样进大厅，等有人过审后自然能看到
+            log.info("下单通知无接收人（当前没有已审核陪诊员） | orderId={}", order.getId());
+            return;
+        }
+        Map<String, Object> params = new HashMap<>(4);
+        params.put("orderNo", order.getOrderNo());
+        params.put("visitTime", order.getVisitTime() == null ? null
+                : order.getVisitTime().format(NOTIFY_TIME_FORMAT));
+        params.put("hospital", order.getHospital());
+        messageService.sendBatch(receivers, MessageType.ORDER_CREATED, order.getId(), params);
+    }
+
+    /** 接单成功 → 通知下单家属「谁来了」 */
+    private void notifyOrderAccepted(CompanionOrder order, CompanionProfile companion) {
+        Map<String, Object> params = new HashMap<>(2);
+        params.put("companionName", MaskUtil.name(companion == null ? null : companion.getRealName()));
+        params.put("orderNo", order.getOrderNo());
+        messageService.send(order.getFamilyId(), MessageType.ORDER_ACCEPTED, order.getId(), params);
+    }
+
+    /** 服务完成 → 通知下单家属去评价 */
+    private void notifyOrderCompleted(CompanionOrder order) {
+        Map<String, Object> params = new HashMap<>(2);
+        params.put("orderNo", order.getOrderNo());
+        messageService.send(order.getFamilyId(), MessageType.ORDER_COMPLETED, order.getId(), params);
+    }
+
+    /**
+     * 全部「已审核」陪诊员的用户 ID。
+     *
+     * <p>用 {@code userId} 而不是 {@code companion_profile.id}：前者是登录身份，
+     * 后者只是快照行号，两者在库里并不相等（M3 实测已确认）。
+     * 一人多行快照时 {@code distinct()} 保证只发一条。</p>
+     */
+    private List<Long> approvedCompanionUserIds() {
+        return companionProfileMapper.selectList(Wrappers.<CompanionProfile>lambdaQuery()
+                        .eq(CompanionProfile::getAuditStatus, AuditStatus.APPROVED.name())
+                        // 只取需要的一列，避免把整行（含证件号快照）读进内存
+                        .select(CompanionProfile::getUserId))
+                .stream()
+                .map(CompanionProfile::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
     }
 
     /* ================================================================== */
@@ -862,6 +1048,28 @@ public class OrderServiceImpl implements OrderService {
     /** 空串或纯空白视为「没填」，统一归一成 {@code null} */
     private static String clearable(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    /**
+     * 医院坐标归一。
+     *
+     * <p>规则：两个都传才生效；只传一个就当没传（返回两个 {@code null}）。
+     * 半对坐标在库里是一条「看起来有定位、其实算不出距离」的记录 ——
+     * M5 的距离校验会拿到 {@code null} 并且静默放行，比明确没有坐标更危险。</p>
+     *
+     * <p>顺带把精度归一到 6 位小数：库列是 {@code DECIMAL(10,6)}，
+     * 不归一的话写进去的值与调用方传的值不是同一个数，
+     * 事后复核打卡距离时会和接口返回的对不上。</p>
+     *
+     * @return 长度恒为 2 的数组：{@code [经度, 纬度]}，未提供时全为 {@code null}
+     */
+    private static BigDecimal[] normalizePoint(BigDecimal longitude, BigDecimal latitude) {
+        if (longitude == null || latitude == null) {
+            return new BigDecimal[]{null, null};
+        }
+        return new BigDecimal[]{
+                longitude.setScale(6, RoundingMode.HALF_UP),
+                latitude.setScale(6, RoundingMode.HALF_UP)};
     }
 
     /** 照片列表 → JSON 列；空列表按「没填」处理（存 {@code null} 而不是 {@code []}） */
