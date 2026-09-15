@@ -104,4 +104,15 @@ public enum OrderStatus {
         }
         return null;
     }
+
+    /**
+     * 中文展示名；入参为空或非法时原样返回。
+     *
+     * <p>VO 装配用，避免每个 VO 里重复写 {@code of(...) == null ? ... : ...}。
+     * 非法值原样返回而不是抛异常：展示层不该因为库里有一条脏状态就整个接口 500。</p>
+     */
+    public static String labelOf(String name) {
+        OrderStatus s = of(name);
+        return s == null ? name : s.getLabel();
+    }
 }

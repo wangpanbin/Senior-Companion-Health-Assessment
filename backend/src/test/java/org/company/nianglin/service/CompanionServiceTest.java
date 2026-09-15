@@ -16,6 +16,7 @@ import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
 import org.company.nianglin.service.impl.CompanionServiceImpl;
+import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.util.AesUtil;
 import org.company.nianglin.vo.CompanionApplicationVO;
 import org.company.nianglin.vo.CompanionApplyResultVO;
@@ -78,6 +79,11 @@ class CompanionServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 纯 Mockito 单测不起 Spring 容器，MyBatis-Plus 的 lambda 列名缓存是空的，
+        // LambdaUpdateWrapper.set(...) 会抛 "can not find lambda cache"。
+        // 详见 MybatisLambdaCache 的类注释。
+        MybatisLambdaCache.warmUp();
+
         SecurityProperties securityProperties = new SecurityProperties();
         securityProperties.setIdCardKey(AES_KEY);
         companionService = new CompanionServiceImpl(auditRecordMapper, companionProfileMapper,

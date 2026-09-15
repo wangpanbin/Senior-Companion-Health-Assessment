@@ -2,6 +2,7 @@ package org.company.nianglin.security;
 
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.RoleConstants;
+import org.company.nianglin.support.TestTokens;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -73,6 +74,10 @@ class ElderOwnershipMatrixTest {
 
     @Autowired
     private JwtTokenProvider tokenProvider;
+
+    /** 密码版本必须读实时值 —— 登出会 bump 版本，写死 0 会被 e2e 的历史遗留状态击穿 */
+    @Autowired
+    private TokenStore tokenStore;
 
     /* ================================================================== */
     /* 1 · 归属校验：同角色之间也要分「你的」和「我的」                        */
@@ -393,8 +398,8 @@ class ElderOwnershipMatrixTest {
     }
 
     @Test
-    @DisplayName("绑定 · 该老人已被其他家属绑定 → 2001（防手机号枚举统一错误码）")
-    void bindOccupiedElderShouldReturn2002() throws Exception {
+    @DisplayName("绑定 · 该老人已被其他家属绑定 → 2001（与「账号不存在」同码，防手机号枚举）")
+    void bindOccupiedElderShouldReturn2001() throws Exception {
         // 老人账号 202（手机号 13900100002）的档案 402 已绑给家属 102
         mockMvc.perform(post("/api/user/elder/bind")
                         .header(AUTH_HEADER, family(FAMILY_OWNER))
@@ -479,8 +484,8 @@ class ElderOwnershipMatrixTest {
         return token(userId, RoleConstants.COMPANION);
     }
 
-    /** 签一个真实可用的 accessToken（密码版本 0 与种子账号一致） */
+    /** 签一个真实可用的 accessToken（密码版本取实时值，见 {@link TestTokens} 类注释） */
     private String token(long userId, String role) {
-        return "Bearer " + tokenProvider.createAccessToken(userId, "m3-" + role + "-" + userId, role, 0);
+        return TestTokens.bearer(tokenProvider, tokenStore, userId, role, "m3");
     }
 }

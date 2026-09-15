@@ -413,7 +413,10 @@ def main():
     status, body = call("POST", "/user/elder/bind",
                         {"bindType": "PHONE", "bindValue": PHONE_NEW_ELDER, "relation": "SON"},
                         fam2_token)
-    check("J4 同一个老人被第二个家属绑定 → 2002", body.get("code") == 2002,
+    # 注意期望的是 2001 而不是 2002：「已被别人绑定」被有意统一成「未找到可绑定的老人账号」，
+    # 否则攻击者可以靠 2001 / 2002 的差异枚举出哪些手机号对应已注册的老人账号。
+    # 详见 docs/api/02-elder-family.md §11。
+    check("J4 同一个老人被第二个家属绑定 → 2001（防枚举，统一错误码）", body.get("code") == 2001,
           "code=%s message=%s" % (body.get("code"), body.get("message")))
 
     status, body = call("POST", "/user/elder/bind",

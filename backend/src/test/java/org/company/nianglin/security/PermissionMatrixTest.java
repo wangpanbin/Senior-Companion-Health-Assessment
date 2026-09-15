@@ -1,6 +1,7 @@
 package org.company.nianglin.security;
 
 import org.company.nianglin.constant.RoleConstants;
+import org.company.nianglin.support.TestTokens;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -52,6 +53,10 @@ class PermissionMatrixTest {
 
     @Autowired
     private JwtTokenProvider tokenProvider;
+
+    /** 密码版本必须读实时值 —— 登出会 bump 版本，写死 0 会被 e2e 的历史遗留状态击穿 */
+    @Autowired
+    private TokenStore tokenStore;
 
     /* ================================================================== */
     /* 第 1 类（4 条）：只读接口 —— 四个角色都应放行                          */
@@ -138,7 +143,7 @@ class PermissionMatrixTest {
     void forgedRoleClaimShouldBeRejected() throws Exception {
         // 攻击者把载荷里的 role 改成 ADMIN 再重新 base64url 编码，但签名是对原载荷算的，
         // 改一个字节就对不上 —— 这正是 JWT 不需要「加密」也安全的原因
-        String token = tokenProvider.createAccessToken(1L, "attacker", RoleConstants.FAMILY, 0);
+        String token = TestTokens.raw(tokenProvider, tokenStore, 1L, RoleConstants.FAMILY, "attacker");
         String[] parts = token.split("\\.");
         String decodedPayload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
         String forgedPayload = Base64.getUrlEncoder().withoutPadding().encodeToString(
@@ -152,6 +157,6 @@ class PermissionMatrixTest {
     /* ================================================================== */
 
     private String bearer(String role) {
-        return "Bearer " + tokenProvider.createAccessToken(1L, "probe-" + role, role, 0);
+        return TestTokens.bearer(tokenProvider, tokenStore, 1L, role, "probe");
     }
 }

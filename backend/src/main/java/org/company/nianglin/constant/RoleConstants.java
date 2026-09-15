@@ -29,6 +29,15 @@ public final class RoleConstants {
     /** 管理员：资质审核、用户封禁、订单纠纷、数据统计 */
     public static final String ADMIN = "ADMIN";
 
+    /**
+     * 系统自动流转（无操作人）。
+     *
+     * <p><b>不是登录角色</b>，因此不进 {@link #ALL} / {@link #WRITABLE} —— 它只作为
+     * {@code order_status_log.operator_role} 的取值，标记「这条状态变更不是某个人做的」，
+     * 例如定时任务自动取消超时未开始的订单。</p>
+     */
+    public static final String SYSTEM = "SYSTEM";
+
     /** Spring Security 权限前缀 */
     public static final String ROLE_PREFIX = "ROLE_";
 

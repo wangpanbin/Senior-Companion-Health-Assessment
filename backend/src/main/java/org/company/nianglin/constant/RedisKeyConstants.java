@@ -27,6 +27,9 @@ public final class RedisKeyConstants {
     /** 登录失败计数：{@code login:fail:{account}} → 次数，TTL = nianglin.security.login-lock-minutes */
     public static final String LOGIN_FAIL_PREFIX = "login:fail:";
 
+    /** 订单号当日序列：{@code order:seq:{yyyyMMdd}} → 递增整数，TTL 2 天 */
+    public static final String ORDER_SEQ_PREFIX = "order:seq:";
+
     public static String captcha(String captchaKey) {
         return CAPTCHA_PREFIX + captchaKey;
     }
@@ -41,5 +44,10 @@ public final class RedisKeyConstants {
 
     public static String loginFail(String account) {
         return LOGIN_FAIL_PREFIX + account;
+    }
+
+    /** 按日期分桶的订单号序列；每天从 1 重新开始，所以订单号里的日期与序号永远成对出现 */
+    public static String orderSeq(String yyyyMMdd) {
+        return ORDER_SEQ_PREFIX + yyyyMMdd;
     }
 }

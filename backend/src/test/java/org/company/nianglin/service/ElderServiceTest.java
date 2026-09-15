@@ -1,10 +1,7 @@
 package org.company.nianglin.service;
 
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.BindStatus;
@@ -25,6 +22,7 @@ import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
 import org.company.nianglin.service.impl.ElderServiceImpl;
+import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.util.AesUtil;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.vo.ElderVO;
@@ -94,25 +92,14 @@ class ElderServiceTest {
 
     @BeforeEach
     void setUp() {
-        // ⚠️ 必须手工初始化 TableInfo。LambdaUpdateWrapper 的 set(...) 会立刻把
-        // 方法引用翻译成列名，而翻译依赖 MyBatis-Plus 的 TableInfo 缓存；
-        // 纯 Mockito 单测不起 Spring 容器，缓存是空的，会抛
-        // “MybatisPlus can not find lambda cache for this entity”。
-        //
-        // 这个 bug 极其隐蔽：跑全量测试时，只要前面有 @SpringBootTest 类跑过，
-        // 缓存已经建好，本类就"通过"了 —— 一次完全依赖测试执行顺序的假绿。
-        // 把缓存准备好，本类才能单独运行。
-        initTableInfo(ElderProfile.class);
+        // 纯 Mockito 单测不起 Spring 容器，MyBatis-Plus 的 lambda 列名缓存是空的，
+        // wrapper.set(...) 会直接抛 "can not find lambda cache"。详见 MybatisLambdaCache。
+        MybatisLambdaCache.warmUp();
 
         SecurityProperties securityProperties = new SecurityProperties();
         securityProperties.setIdCardKey(AES_KEY);
         elderService = new ElderServiceImpl(elderProfileMapper, relationMapper, sysUserMapper,
                 companionOrderMapper, securityProperties);
-    }
-
-    /** 为指定实体建立 MyBatis-Plus 的 lambda 列名缓存（纯单测环境下的必要前置） */
-    private static void initTableInfo(Class<?> entityClass) {
-        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), entityClass);
     }
 
     @AfterEach
