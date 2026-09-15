@@ -28,9 +28,9 @@ export function refreshToken(data) {
   return request({ url: '/auth/refresh', method: 'post', data, skipAuth: true })
 }
 
-/** 登出（服务端把 token 拉黑） */
-export function logout() {
-  return request({ url: '/auth/logout', method: 'post' })
+/** 登出（服务端把 accessToken 与 refreshToken 一起拉黑） */
+export function logout(refreshToken) {
+  return request({ url: '/auth/logout', method: 'post', data: { refreshToken } })
 }
 
 /** 获取当前登录用户信息 → UserInfoVO */

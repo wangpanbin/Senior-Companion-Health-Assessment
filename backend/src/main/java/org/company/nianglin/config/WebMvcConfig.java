@@ -1,8 +1,11 @@
 package org.company.nianglin.config;
 
+import lombok.RequiredArgsConstructor;
+import org.company.nianglin.security.ElderReadOnlyInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
@@ -15,7 +18,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * @author 银龄伴诊团队
  */
 @Configuration
+@RequiredArgsConstructor
 public class WebMvcConfig implements WebMvcConfigurer {
+
+    /** 只对业务接口生效，接口文档与静态资源不受影响 */
+    private static final String API_PATH_PATTERN = "/api/**";
+
+    private final ElderReadOnlyInterceptor elderReadOnlyInterceptor;
 
     @Value("${nianglin.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}")
     private String[] allowedOrigins;
@@ -29,5 +38,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .exposedHeaders("Authorization")
                 .allowCredentials(true)
                 .maxAge(3600);
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        // 老人账号只读：默认拒绝所有写方法，仅放行显式标注 @AllowElderWrite 的接口
+        registry.addInterceptor(elderReadOnlyInterceptor).addPathPatterns(API_PATH_PATTERN);
     }
 }

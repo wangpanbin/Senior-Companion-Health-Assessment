@@ -5,11 +5,12 @@ import { useUserStore } from '@/store/modules/user'
 /**
  * 路由实例 + 全局守卫。
  *
- * ⚠️ 骨架阶段：AUTH_ENABLED = false
- *    因为 M2（登录 / JWT 鉴权）尚未交付，若开启守卫会导致所有页面被踢回登录页，
- *    无法验证布局与样式。M2 交付后把该开关改为 true 即可，守卫逻辑已写好。
+ * ✅ M2（认证与多角色鉴权）已交付，AUTH_ENABLED 置为 true：
+ *    未登录访问业务页面会被重定向到 /login?redirect=<原地址>，登录后自动回跳。
+ *    角色不足时（meta.roles 未包含当前角色）回首页，不做 403 页面
+ *    —— 老人的主界面只有三个入口，跳到一个错误页反而更让人困惑。
  */
-const AUTH_ENABLED = false
+const AUTH_ENABLED = true
 
 const router = createRouter({
   history: createWebHistory(),

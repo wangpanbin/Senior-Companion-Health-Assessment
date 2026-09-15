@@ -82,7 +82,12 @@
 - 服务端不使用 Session，`SessionCreationPolicy.STATELESS`。
 - **所有权限判断必须在服务端完成**。前端隐藏按钮只提升体验，不构成安全边界。
 - 涉及资源归属的接口（订单、老人档案、站内信），除角色校验外还必须校验**资源归属关系**。
-- 角色鉴权使用 `@PreAuthorize("hasRole('FAMILY')")`；注解 `@RequireRole` 为等价的自定义封装。
+- 角色鉴权统一使用 `@PreAuthorize("hasRole('FAMILY')")`（`hasRole` 会自动补 `ROLE_` 前缀）。
+  单个方法需要限定时在注解里列出多个角色，如 `@PreAuthorize("hasAnyRole('FAMILY','ADMIN')")`。
+- 「老人账号只读」**不靠 `@PreAuthorize` 表达**（它只能判断角色对不对，表达不了"这个角色只能读"）。
+  由 `ElderReadOnlyInterceptor` 统一拦截：所有非 GET 请求对 ELDER 一律 403，
+  仅显式标注 `@AllowElderWrite("原因")` 的接口放行（如登出、修改自己的密码）。
+  > 这样新增接口默认是安全的，不会因为漏写一行角色限制就把老人账号变成可写。
 
 ### 2.4 老人账号（ELDER）只读规则
 
@@ -122,6 +127,11 @@
 > **重要**：除「未登录（HTTP 401）」「无权限（HTTP 403）」「路由不存在（HTTP 404）」等由 Spring Security / 容器直接返回的场景外，
 > **业务错误一律返回 HTTP 200，通过 `code` 区分**。
 > 这样做的好处是前端拦截器只需处理一层判断，避免业务错误与网络错误混在一起。
+
+> ⚠️ 关于 401 / 403 的实现细节：这两个码是由服务端返回的**真实 HTTP 状态码**，且响应体仍是
+> 统一结构 `{ code: 401|403, message, data }`。前端拦截器靠 HTTP 状态码决定
+> 「去刷新令牌」还是「提示无权限」，靠 `message` 决定展示什么文案。
+> 若把它们也做成 HTTP 200，前端就只能猜，容易漏判。
 
 ### 3.3 分页响应
 
@@ -286,6 +296,17 @@
 ### 权限测试要求（M12）
 
 必须覆盖 **4 角色 × 3 类接口（只读 / 写 / 管理）= 12 条越权用例**，全部通过才算 M2 / M12 完成。
+
+M2 已交付该测试并全部通过：
+
+| 用例层 | 位置 | 覆盖 |
+|---|---|---|
+| 权限矩阵（12 条 + 4 条认证补充） | `backend/src/test/java/.../security/PermissionMatrixTest.java` | 用**真实签发的 JWT** 走完整过滤器链，而非 `@WithMockUser` |
+| 老人只读规则 | `.../security/ElderReadOnlyInterceptorTest.java` | GET 放行 / POST·PUT·DELETE 拦截 / `@AllowElderWrite` 放行 |
+| 端到端 | `backend/sql/tools/e2e_auth.py` | 真实 HTTP 打 8080，40 项断言 |
+
+> M2 阶段业务接口尚未落地，因此提供了一组**只有角色门槛、没有业务逻辑**的探针接口
+> `/api/common/perm-probe/**` 作为测试靶子；各业务模块完成后该控制器可整体删除。
 
 ---
 

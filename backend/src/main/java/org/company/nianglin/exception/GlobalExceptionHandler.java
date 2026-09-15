@@ -6,6 +6,8 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.common.ResultCode;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
@@ -39,9 +41,26 @@ public class GlobalExceptionHandler {
     /* ==================== 业务异常 ==================== */
 
     @ExceptionHandler(BusinessException.class)
-    public Result<Void> handleBusinessException(BusinessException e, HttpServletRequest request) {
+    public ResponseEntity<Result<Void>> handleBusinessException(BusinessException e, HttpServletRequest request) {
         log.warn("业务异常 | {} {} | code={} | message={}", request.getMethod(), request.getRequestURI(), e.getCode(), e.getMessage());
-        return Result.fail(e.getCode(), e.getMessage());
+        return ResponseEntity.status(httpStatusOf(e.getCode())).body(Result.fail(e.getCode(), e.getMessage()));
+    }
+
+    /**
+     * 业务码 → HTTP 状态码。
+     *
+     * <p>约定（{@code docs/api/README.md} §3.2）：业务错误一律 HTTP 200，由 {@code code} 区分。
+     * 但 **401 与 403 例外** —— 它们表达的是「HTTP 层就没通过」，前端拦截器要靠状态码
+     * 决定「去刷新令牌」还是「提示无权限」。若也返回 200，前端只能靠 body 猜，容易漏判。</p>
+     */
+    private static HttpStatus httpStatusOf(Integer code) {
+        if (ResultCode.UNAUTHORIZED.getCode().equals(code)) {
+            return HttpStatus.UNAUTHORIZED;
+        }
+        if (ResultCode.FORBIDDEN.getCode().equals(code)) {
+            return HttpStatus.FORBIDDEN;
+        }
+        return HttpStatus.OK;
     }
 
     /* ==================== 参数校验 ==================== */
@@ -97,15 +116,15 @@ public class GlobalExceptionHandler {
     /* ==================== 认证与鉴权 ==================== */
 
     @ExceptionHandler(AuthenticationException.class)
-    public Result<Void> handleAuthentication(AuthenticationException e, HttpServletRequest request) {
+    public ResponseEntity<Result<Void>> handleAuthentication(AuthenticationException e, HttpServletRequest request) {
         log.warn("认证失败 | {} {} | {}", request.getMethod(), request.getRequestURI(), e.getMessage());
-        return Result.fail(ResultCode.UNAUTHORIZED);
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Result.fail(ResultCode.UNAUTHORIZED));
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public Result<Void> handleAccessDenied(AccessDeniedException e, HttpServletRequest request) {
+    public ResponseEntity<Result<Void>> handleAccessDenied(AccessDeniedException e, HttpServletRequest request) {
         log.warn("越权访问被拦截 | {} {} | {}", request.getMethod(), request.getRequestURI(), e.getMessage());
-        return Result.fail(ResultCode.FORBIDDEN);
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Result.fail(ResultCode.FORBIDDEN));
     }
 
     /* ==================== 路由与请求 ==================== */

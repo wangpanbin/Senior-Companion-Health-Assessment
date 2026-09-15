@@ -27,7 +27,7 @@ Senior Companion Health Assessment/
 │       ├── mapper/             # 持久层
 │       ├── entity/             # 数据库实体
 │       ├── dto/ vo/            # 入参 / 出参对象
-│       ├── security/           # JWT、鉴权注解与拦截器（M2 实现）
+│       ├── security/           # JWT 签发解析、认证过滤器、鉴权注解与拦截器（M2 已交付）
 │       ├── task/               # 定时任务（M6）
 │       ├── websocket/          # 实时推送（M5 / M8）
 │       └── util/               # 工具类
@@ -37,7 +37,7 @@ Senior Companion Health Assessment/
     └── src/
         ├── main.js  App.vue
         ├── api/                # 按模块拆分的接口封装
-        ├── router/             # 路由 + 多角色守卫
+        ├── router/             # 路由 + 多角色守卫（AUTH_ENABLED 已置 true）
         ├── store/              # Pinia：用户登录态、适老化模式
         ├── utils/              # Axios 封装、token 工具
         ├── styles/             # 全局样式 + 适老化变量

@@ -21,8 +21,11 @@
 | `phone` | String | **脱敏**手机号，如 `138****8888` |
 | `avatar` | String | 头像 URL，可为空 |
 | `status` | String | 账号状态：`NORMAL` / `DISABLED` |
+| `createTime` | String | 注册时间，`yyyy-MM-dd HH:mm:ss` |
 
 > ⚠️ `UserInfoVO` 不包含密码、身份证号、完整手机号。
+> 由 `UserInfoVO.of(SysUser)` 工厂方法统一转换 —— 手机号脱敏焊死在里面，
+> 调用方不可能"忘记调 MaskUtil"。
 
 ---
 
@@ -229,9 +232,19 @@
 
 `POST /api/auth/logout`　权限：已登录
 
-### 请求体
+### 请求体（可选）
 
-无（从 `Authorization` 头取 token）。
+访问令牌通过 `Authorization` 请求头传递，**不放在 body 里**。body 只承载可选的 refreshToken：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `refreshToken` | String | — | 传入则该令牌一并作废；不传则只作废访问令牌 |
+
+```json
+{ "refreshToken": "eyJhbGciOiJIUzI1NiJ9..." }
+```
+
+> 该字段刻意**不做必填校验**：登出是用户的退路，不能因为少传一个附属令牌就让用户退不出去。
 
 ### 响应
 
@@ -241,8 +254,12 @@
 
 ### 实现要点
 
-- 当前 accessToken 加入 Redis 黑名单：`token:blacklist:{jti}` → `1`，TTL = 剩余有效期。
-- refreshToken 一并失效。
+- 当前 accessToken 加入 Redis 黑名单：`token:blacklist:{jti}` → `1`，TTL = 剩余有效期
+  （过期后 Redis 自动清理，黑名单不会无限增长）。
+- 请求体里带了 refreshToken 则一并拉黑；带了但已失效则忽略，**登出仍然成功**。
+- ⚠️ 老人账号（ELDER）调用本接口不被只读规则拦截
+  —— 该接口标注了 `@AllowElderWrite("登出必须由本人完成")`。
+  若不豁免，老人账号登录后将无法退出。
 - 前端清理 localStorage（token / refreshToken / userInfo）。
 
 ---
@@ -316,12 +333,26 @@
 
 ## 三、验收标准（M2）
 
-- [ ] 不带 token 访问受保护接口 → `401`
-- [ ] 带 FAMILY token 访问 ADMIN 接口 → `403`
-- [ ] 老人账号（ELDER）调用任意写接口 → `403`（服务端拦截，绕过前端也无效）
-- [ ] token 过期后前端自动刷新并重放原请求，页面不跳登录页
-- [ ] 数据库 `sys_user.password` 值以 `$2a$` 开头
-- [ ] 响应体手机号已脱敏；日志中 grep 不到完整身份证号
-- [ ] 权限测试覆盖 4 角色 × 3 类接口 = 12 条用例，全部通过
-- [ ] 同一验证码连续提交两次，第二次返回 `1003`
-- [ ] 密码连续输错 5 次后，第 6 次返回 `1004`
+- [x] 不带 token 访问受保护接口 → `401`
+- [x] 带 FAMILY token 访问 ADMIN 接口 → `403`
+- [x] 老人账号（ELDER）调用任意写接口 → `403`（服务端拦截，绕过前端也无效）
+- [x] token 过期后前端自动刷新并重放原请求，页面不跳登录页
+- [x] 数据库 `sys_user.password` 值以 `$2a$` 开头
+- [x] 响应体手机号已脱敏；日志中 grep 不到完整身份证号
+- [x] 权限测试覆盖 4 角色 × 3 类接口 = 12 条用例，全部通过
+- [x] 同一验证码连续提交两次，第二次返回 `1003`
+- [x] 密码连续输错 5 次后，第 6 次返回 `1004`
+
+### 实测记录（2026-09-15）
+
+| 层面 | 手段 | 结果 |
+|---|---|---|
+| 单元测试 | `AuthServiceTest`（Mockito，16 例） | 16/16 通过 |
+| 权限矩阵 | `PermissionMatrixTest`（SpringBootTest + 真实 JWT，16 例） | 16/16 通过 |
+| 老人只读 | `ElderReadOnlyInterceptorTest`（7 例） | 7/7 通过 |
+| 端到端 | `backend/sql/tools/e2e_auth.py` 真实 HTTP 打 8080，40 项断言 | 40/40 通过 |
+
+端到端脚本覆盖的错误码：`1001` / `1002` / `1003` / `1004` / `1005` / `1006` / `1007` / `400` / `401` / `403`，并校验了验证码防重放、登出黑名单即时生效、改密后旧令牌立即失效、登录日志不含密码串。
+
+> 📌 关于 HTTP 状态码：`401` / `403` 返回**真实 HTTP 状态码**（而非"业务错误一律 200"），
+> 因为前端拦截器要靠状态码决定「去刷新令牌」还是「提示无权限」。其余业务错误仍为 HTTP 200。
