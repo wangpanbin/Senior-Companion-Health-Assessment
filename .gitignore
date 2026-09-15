@@ -1,0 +1,55 @@
+# ============================ Java / Maven ============================
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+*.jar
+*.war
+*.ear
+*.log
+hs_err_pid*
+replay_pid*
+.mvn/timing.properties
+
+# 本地覆盖配置（含数据库密码等，禁止提交）
+**/application-local.yml
+**/application-local.yaml
+**/application-local.properties
+**/*.local.yml
+
+# ============================ Node / 前端 ============================
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+.eslintcache
+pnpm-lock.yaml.bak
+stats.html
+coverage/
+
+# ============================ IDE ============================
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# ============================ OS ============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================ 运行时数据 ============================
+*.rdb
+*.aof
+dump.rdb
+logs/
+uploads/
+temp/
+tmp/
+
+# ============================ 工具目录（不提交） ============================
+.workbuddy/

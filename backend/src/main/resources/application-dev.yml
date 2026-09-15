@@ -1,0 +1,77 @@
+# ==========================================================================
+# 开发环境配置
+# ==========================================================================
+spring:
+  # ------------------------------------------------------------------
+  # MySQL 8.0
+  #   ⚠️ 真实密码不要写在这里，也不要提交到 Git。
+  #      优先级：环境变量 MYSQL_PASSWORD > 本文件默认值
+  #      推荐做法：IDEA 运行配置里加 MYSQL_PASSWORD，或用 application-local.yml 覆盖
+  # ------------------------------------------------------------------
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/nianglin?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:CHANGE_ME}
+    hikari:
+      pool-name: NianglinHikariPool
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      # 1 = 数据库不可用时快速失败，避免应用「假启动」后接口全报错
+      initialization-fail-timeout: 1
+
+  # ------------------------------------------------------------------
+  # Redis（验证码 / 字典缓存 / 接口限流 / 分布式锁）
+  # ------------------------------------------------------------------
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 3000ms
+
+  # ------------------------------------------------------------------
+  # Flyway：脚本真源在 backend/sql/ 下，构建时由 pom.xml 复制到
+  #         classpath 的 db/migration/，所以这里仍然用默认的 classpath 位置。
+  # ------------------------------------------------------------------
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+    encoding: UTF-8
+    validate-on-migrate: true
+    # 迁移脚本里含中文注释与中文数据，必须显式声明编码
+    sql-migration-prefix: V
+    sql-migration-separator: __
+    sql-migration-suffixes: .sql
+
+# ------------------------------------------------------------------
+# SQL 日志（仅开发环境打开，排查方便）
+# ------------------------------------------------------------------
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# ------------------------------------------------------------------
+# 文档放开
+# ------------------------------------------------------------------
+knife4j:
+  enable: true
+  production: false
+
+logging:
+  level:
+    root: info
+    org.company.nianglin: debug
+    org.springframework.security: info

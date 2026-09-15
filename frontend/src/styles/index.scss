@@ -1,0 +1,123 @@
+@use './variables.scss' as *;
+
+// ==========================================================================
+// 全局样式入口
+// 1. CSS 自定义属性（运行期可切换 → 适老化主题靠切 <html> 上的 class 实现）
+// 2. 基础重置
+// 3. 通用工具类
+// ==========================================================================
+
+/* -------------------- 运行期令牌 -------------------- */
+:root {
+  --nl-color-primary: #{$color-primary};
+  --nl-color-primary-light: #{$color-primary-light};
+  --nl-color-primary-dark: #{$color-primary-dark};
+  --nl-color-accent: #{$color-accent};
+  --nl-color-warning: #{$color-warning};
+  --nl-color-danger: #{$color-danger};
+
+  --nl-text-primary: #{$text-primary};
+  --nl-text-regular: #{$text-regular};
+  --nl-text-secondary: #{$text-secondary};
+
+  --nl-bg-page: #{$bg-page};
+  --nl-bg-card: #{$bg-card};
+  --nl-border-color: #{$border-color};
+  --nl-radius: #{$radius-base};
+  --nl-space: #{$space-base};
+
+  /* 适老化开关：老人模式下这些值会被 elderly.scss 整体放大 */
+  --nl-font-base: #{$font-size-base};
+  --nl-touch-min: 36px;
+  --nl-border-width: 1px;
+
+  /* 与 Element Plus 主题打通 */
+  --el-color-primary: var(--nl-color-primary);
+  --el-color-danger: var(--nl-color-danger);
+  --el-color-warning: var(--nl-color-warning);
+  --el-font-size-base: var(--nl-font-base);
+  --el-border-radius-base: var(--nl-radius);
+}
+
+/* -------------------- 基础重置 -------------------- */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+  font-size: var(--nl-font-base);
+  line-height: 1.6;
+  color: var(--nl-text-primary);
+  background-color: var(--nl-bg-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--nl-color-primary);
+  text-decoration: none;
+}
+
+/* -------------------- 通用工具类 -------------------- */
+.nl-card {
+  padding: var(--nl-space);
+  background: var(--nl-bg-card);
+  border-radius: var(--nl-radius);
+  box-shadow: 0 1px 4px rgb(31 39 51 / 6%);
+}
+
+.nl-page {
+  padding: var(--nl-space);
+}
+
+.nl-page__title {
+  margin: 0 0 var(--nl-space) 0;
+  font-size: $font-size-xl;
+  font-weight: 600;
+  color: var(--nl-text-primary);
+}
+
+.nl-muted {
+  color: var(--nl-text-secondary);
+}
+
+/** 骨架阶段占位块：标明该页面属于哪个模块、由谁负责 */
+.nl-placeholder {
+  padding: $space-lg;
+  color: var(--nl-text-regular);
+  background: var(--nl-bg-card);
+  border: 1px dashed var(--nl-border-color);
+  border-radius: var(--nl-radius);
+
+  &__title {
+    margin-bottom: $space-sm;
+    font-size: $font-size-lg;
+    font-weight: 600;
+    color: var(--nl-text-primary);
+  }
+
+  &__desc {
+    margin-bottom: $space-sm;
+    font-size: $font-size-sm;
+    color: var(--nl-text-secondary);
+  }
+
+  &__list {
+    margin: 0;
+    padding-left: 1.4em;
+    font-size: $font-size-sm;
+    color: var(--nl-text-regular);
+
+    li {
+      margin-bottom: 4px;
+    }
+  }
+}

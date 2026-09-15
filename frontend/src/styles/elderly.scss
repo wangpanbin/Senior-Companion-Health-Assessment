@@ -1,0 +1,100 @@
+// ==========================================================================
+// 适老化主题（老人模式）
+//
+// 实现方式：在 <html> 上切换 class="elderly-mode"，
+// 通过覆盖 CSS 自定义属性让整个站点等比放大并提升对比度，无需刷新页面。
+//
+// 硬约束来自 plan.md · M11 验收标准：
+//   - 正文最小字号 >= 18px
+//   - 文字对比度 >= 4.5:1（WCAG AA）
+//   - 可点击元素最小高度 >= 44px（这里取 48px，更稳妥）
+//   - 核心流程点击次数 <= 3 次（体现在路由与页面精简，见 router/index.js）
+// ==========================================================================
+
+@use './variables.scss' as *;
+
+html.elderly-mode {
+  /* ---------------- 字号整体放大 ---------------- */
+  --nl-font-base: #{$elderly-font-min}; // 18px
+  --el-font-size-base: #{$elderly-font-min};
+  --el-font-size-small: 16px;
+  --el-font-size-large: 20px;
+
+  /* ---------------- 对比度增强 ---------------- */
+  --nl-text-primary: #12181f;
+  --nl-text-regular: #2b3542;
+  --nl-text-secondary: #46525f;
+  --nl-border-color: #9aa7b4;
+
+  /* ---------------- 触控区域加大 ---------------- */
+  --nl-touch-min: #{$elderly-touch-min};
+  --nl-space: 20px;
+  --nl-radius: #{$radius-lg};
+
+  /* ---------------- 表格 / 表单加粗视觉 ---------------- */
+  --nl-border-width: 2px;
+
+  body {
+    font-size: var(--nl-font-base);
+    line-height: 1.8;
+  }
+
+  /* Element Plus 组件适配 */
+  .el-button {
+    min-height: var(--nl-touch-min);
+    font-size: var(--nl-font-base);
+  }
+
+  .el-button--large {
+    min-height: 56px;
+    font-size: 20px;
+  }
+
+  .el-input__wrapper,
+  .el-textarea__inner,
+  .el-select__wrapper {
+    min-height: var(--nl-touch-min);
+  }
+
+  .el-input__inner,
+  .el-textarea__inner {
+    font-size: var(--nl-font-base);
+  }
+
+  .el-table {
+    font-size: var(--nl-font-base);
+
+    th,
+    td {
+      padding: 14px 0;
+    }
+  }
+
+  .el-menu-item {
+    height: 56px;
+    font-size: var(--nl-font-base);
+    line-height: 56px;
+  }
+
+  .el-form-item__label {
+    font-size: var(--nl-font-base);
+    font-weight: 600;
+  }
+
+  .el-tag {
+    height: 30px;
+    font-size: 15px;
+    line-height: 28px;
+  }
+
+  /* 老人端提示语：统一加大、加重，方便读清 */
+  .nl-elder-hint {
+    padding: $space-base;
+    font-size: var(--nl-font-base);
+    font-weight: 600;
+    color: var(--nl-text-primary);
+    background: #fff8e6;
+    border-left: 6px solid $color-warning;
+    border-radius: var(--nl-radius);
+  }
+}

@@ -1,0 +1,59 @@
+// ==========================================================================
+// 设计令牌（编译期 SCSS 变量）
+// 运行期可变的令牌见 index.scss 里的 :root CSS 自定义属性
+// ==========================================================================
+
+// -------------------- 品牌色 --------------------
+$color-primary: #1f7a63; // 主色：墨绿，健康、可信赖
+$color-primary-light: #2e9a7e;
+$color-primary-dark: #155c4a;
+
+$color-accent: #c94f4f; // 强调色：暖红，用于重要提示
+$color-warning: #d9901f;
+$color-danger: #c0392b;
+$color-success: #1f7a63;
+$color-info: #6b7a86;
+
+// -------------------- 文字 --------------------
+$text-primary: #1f2733;
+$text-regular: #48566b;
+$text-secondary: #7a8798;
+$text-placeholder: #a8b3c0;
+
+// -------------------- 背景与边框 --------------------
+$bg-page: #f4f6f8;
+$bg-card: #ffffff;
+$border-color: #dfe5ec;
+$border-color-light: #ebeef5;
+
+// -------------------- 字号（适老化：最小值不小于 14px） --------------------
+$font-size-xs: 13px;
+$font-size-sm: 14px;
+$font-size-base: 16px; // 老人端基线不低于 18px
+$font-size-lg: 18px;
+$font-size-xl: 22px;
+$font-size-title: 26px;
+
+// -------------------- 间距与圆角 --------------------
+$space-xs: 4px;
+$space-sm: 8px;
+$space-base: 16px;
+$space-lg: 24px;
+$space-xl: 32px;
+
+$radius-sm: 6px;
+$radius-base: 10px;
+$radius-lg: 16px;
+
+// -------------------- 适老化硬约束（plan.md · M11 验收标准） --------------------
+/// 可点击元素最小高度
+$elderly-touch-min: 48px;
+/// 老人模式正文最小字号
+$elderly-font-min: 18px;
+/// 老人模式文字对比度要求（WCAG AA）
+$elderly-contrast-ratio: 4.5;
+
+// -------------------- 布局尺寸 --------------------
+$sidebar-width: 220px;
+$sidebar-width-collapsed: 64px;
+$header-height: 60px;
