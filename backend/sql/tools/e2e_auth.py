@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 BASE = "http://127.0.0.1:8080/api"
@@ -49,10 +50,19 @@ def check(name, ok, detail=""):
     sys.stdout.flush()
 
 
+def url_of(path):
+    """URL 编码非 ASCII 字符。
+
+    urllib 会把请求行按 ASCII 编码，查询串里一旦出现中文就抛 UnicodeEncodeError，
+    所以拼 URL 前必须先转义（保留结构字符）。
+    """
+    return BASE + urllib.parse.quote(path, safe="/?&=:%+,[]@!$'()*;")
+
+
 def call(method, path, body=None, token=None):
     """返回 (http_status, json_body)"""
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(BASE + path, data=data, method=method)
+    req = urllib.request.Request(url_of(path), data=data, method=method)
     req.add_header("Content-Type", "application/json;charset=UTF-8")
     if token:
         req.add_header("Authorization", "Bearer " + token)

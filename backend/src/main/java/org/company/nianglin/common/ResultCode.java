@@ -54,6 +54,7 @@ public enum ResultCode {
     USER_DISABLED(2004, "用户已被封禁"),
     RELATION_NOT_FOUND(2005, "绑定关系不存在"),
     NO_PERMISSION_FOR_ELDER(2006, "无权操作该老人档案"),
+    COMPANION_NOT_FOUND(2007, "陪诊员不存在"),
 
     /* ==================== 3xxx 陪诊订单 ==================== */
     ORDER_NOT_FOUND(3001, "订单不存在"),
