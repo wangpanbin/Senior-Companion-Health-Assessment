@@ -2,7 +2,7 @@
 
 > 老年人就医陪诊与用药协同管理平台 —— 后端 REST API 设计说明
 >
-> 版本：v0.1.0（骨架阶段）　最后更新：2026-09-15
+> 版本：v0.2.0（M2 认证鉴权 + M3 用户与档案 已交付）　最后更新：2026-09-15
 >
 > 在线文档（后端启动后）：`http://localhost:8080/doc.html`
 
@@ -39,7 +39,7 @@
 | 请求编码 | UTF-8 |
 | 请求内容类型 | `application/json;charset=UTF-8`（文件上传用 `multipart/form-data`） |
 | 响应内容类型 | `application/json;charset=UTF-8`（文件下载用 `application/octet-stream`） |
-| 时间格式 | 字符串 `yyyy-MM-dd HH:mm:ss`；仅日期用 `yyyy-MM-dd` |
+| 时间格式 | 字符串 `yyyy-MM-dd HH:mm:ss`；仅日期用 `yyyy-MM-dd`（由 `config/JacksonConfig.java` 强制，`spring.jackson.date-format` 对 `LocalDateTime` **无效**） |
 | 时区 | `Asia/Shanghai`（GMT+8） |
 | 金额格式 | 字符串，两位小数，单位元，如 `"128.00"`（避免 JS 浮点误差） |
 | 主键类型 | `Long`，JSON 中为数字 |
@@ -215,6 +215,7 @@
 | 2004 | 用户已被封禁 |
 | 2005 | 绑定关系不存在 |
 | 2006 | 无权操作该老人档案 |
+| 2007 | 陪诊员不存在（含尚未通过审核） |
 
 ### 4.4 3xxx 陪诊订单（M4）
 
@@ -281,8 +282,9 @@
 | 接口分组 | ELDER | FAMILY | COMPANION | ADMIN |
 |---|:--:|:--:|:--:|:--:|
 | 认证 `/api/auth/**` | ○ | ○ | ○ | ○ |
-| 老人档案 `/api/user/elder/**` | 读 | 读写 | — | 读 |
-| 陪诊员资质 `/api/user/companion/**` | — | ○ | 读写 | 审核 |
+| 个人资料 `/api/user/profile` | 读 | 读写 | 读写 | 读写 |
+| 老人档案 `/api/user/elder/**` | 读（**仅自己档案的详情**，列表 403） | 读写（**仅绑定到自己名下的**） | — | 读（任意档案，**不可写**） |
+| 陪诊员资质 `/api/user/companion/**` | 读（查自己的申请） | 读写（申请 / 查状态） | 读写 | 审核（M9） |
 | 订单 `/api/order/**` | 读（自己） | 下单 / 取消 / 读 | 接单 / 流转 / 读 | 读 / 强制终态 |
 | 陪诊执行 `/api/execution/**` | 读 | 读 | 打卡 / 上传 | 读 |
 | 用药管理 `/api/medication/**` | 读 / 确认 | 读写 / 确认 | 确认 | 读 |
@@ -292,6 +294,11 @@
 | 数据统计 `/api/statistics/**` | — | — | — | 全部 |
 
 图例：○ = 全部权限；读 = 仅 GET；读写 = 全部；— = 无权限。
+
+> **本表只表达「角色」这一层。** 加粗的限定语（如「仅绑定到自己名下的」）
+> 是 `@PreAuthorize` **无法表达**的部分，由 Service 层的归属校验承担：
+> 家属 A 与家属 B 角色完全相同，靠注解分不开，必须查 `family_elder_relation`
+> 才知道档案归谁。详见 [02-elder-family.md §〇](./02-elder-family.md)。
 
 ### 权限测试要求（M12）
 
@@ -304,6 +311,17 @@ M2 已交付该测试并全部通过：
 | 权限矩阵（12 条 + 4 条认证补充） | `backend/src/test/java/.../security/PermissionMatrixTest.java` | 用**真实签发的 JWT** 走完整过滤器链，而非 `@WithMockUser` |
 | 老人只读规则 | `.../security/ElderReadOnlyInterceptorTest.java` | GET 放行 / POST·PUT·DELETE 拦截 / `@AllowElderWrite` 放行 |
 | 端到端 | `backend/sql/tools/e2e_auth.py` | 真实 HTTP 打 8080，40 项断言 |
+
+M3 补齐了**角色矩阵管不到的另一半** —— 同一角色内部的数据归属：
+
+| 用例层 | 位置 | 覆盖 |
+|---|---|---|
+| 归属校验矩阵 | `.../security/ElderOwnershipMatrixTest.java` | 38 条：越权 2006 / 角色 403 / 老人只读 403 / 订单闸门 409 / 脱敏出口 / 陪诊员 2007 / 绑定 2001·2002·501 |
+| 时间格式 | `.../config/JacksonDateTimeFormatTest.java` | 7 条：`LocalDateTime` 必须是 `yyyy-MM-dd HH:mm:ss` |
+| 端到端 | `backend/sql/tools/e2e_user_profile.py` | 真实 HTTP 打 8080，**86 项断言**，脚本自带数据清理 |
+
+> `mvn test` 当前 **144/144 全绿**。跑端到端前先按 `application-dev.yml` 起好
+> MySQL 3306 与 Redis 6379，再把后端起在 **8080**。
 
 > M2 阶段业务接口尚未落地，因此提供了一组**只有角色门槛、没有业务逻辑**的探针接口
 > `/api/common/perm-probe/**` 作为测试靶子；各业务模块完成后该控制器可整体删除。
@@ -431,3 +449,4 @@ M2 已交付该测试并全部通过：
 | 版本 | 日期 | 变更内容 | 变更人 |
 |---|---|---|---|
 | v0.1.0 | 2026-09-15 | 骨架阶段初版：全局约定、错误码、10 份模块文档 | — |
+| v0.2.0 | 2026-09-15 | M2（认证与多角色鉴权）、M3（用户与档案）落地：新增错误码 `2007`；权限矩阵补充「归属校验」层说明与实测结果；明确时间格式由 `JacksonConfig` 强制 | — |
