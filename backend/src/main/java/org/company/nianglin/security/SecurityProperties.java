@@ -1,6 +1,8 @@
 package org.company.nianglin.security;
 
+import jakarta.annotation.PostConstruct;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -16,10 +18,14 @@ import org.springframework.stereotype.Component;
  *
  * @author 银龄伴诊团队
  */
+@Slf4j
 @Data
 @Component
 @ConfigurationProperties(prefix = "nianglin.security")
 public class SecurityProperties {
+
+    /** AES 派生密钥至少应提供的随机度，避免被字典化枚举破解 */
+    private static final int MIN_ID_CARD_KEY_LENGTH = 16;
 
     /**
      * 登录失败几次后锁定，默认 5。
@@ -47,6 +53,29 @@ public class SecurityProperties {
     /** 锁定时长（秒） */
     public long loginLockSeconds() {
         return loginLockMinutes * 60L;
+    }
+
+    /**
+     * 启动期校验密钥：缺失或过短时直接抛异常，阻止应用以错误配置进入运行态。
+     *
+     * <p>对照 {@code JwtTokenProvider.init()} 的处理 —— 把「第一次写库才炸」
+     * 提前到「启动即失败」，运维与开发都能拿到明确的配置错误信号，
+     * 不会等到第一个老人建档才以 500 SYSTEM_ERROR 暴露。</p>
+     */
+    @PostConstruct
+    void validate() {
+        if (idCardKey == null || idCardKey.isBlank()) {
+            throw new IllegalStateException(
+                    "未配置 nianglin.security.id-card-key（环境变量 ID_CARD_AES_KEY），"
+                            + "无法加解密身份证号，请启动前注入至少 "
+                            + MIN_ID_CARD_KEY_LENGTH + " 个字符的随机密钥");
+        }
+        if (idCardKey.length() < MIN_ID_CARD_KEY_LENGTH) {
+            throw new IllegalStateException(
+                    "nianglin.security.id-card-key 长度不足 " + MIN_ID_CARD_KEY_LENGTH
+                            + " 字符（AES 派生密钥需要足够随机度），当前长度=" + idCardKey.length());
+        }
+        log.info("SecurityProperties 校验通过 | idCardKey 长度={}", idCardKey.length());
     }
 
     /**

@@ -3,6 +3,7 @@ package org.company.nianglin.service.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.AccountStatus;
 import org.company.nianglin.dto.ProfileUpdateDTO;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
@@ -28,15 +29,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserInfoVO getProfile() {
-        return UserInfoVO.of(requireCurrentUser());
+        return UserInfoVO.of(requireActiveCurrentUser());
     }
 
     @Override
     public void updateProfile(ProfileUpdateDTO dto) {
         Long userId = SecurityUtils.currentUserId();
-        // 先确认账号还在：updateById 作用在不存在的 ID 上会静默影响 0 行，
-        // 接口返回「保存成功」而实际什么都没改，这种假成功最难排查
-        requireCurrentUser();
+        // 必须校验「账号未封禁」：封禁后 JWT 仍可能有效（ver 不变），被禁用账号不应继续改资料
+        requireActiveCurrentUser();
 
         SysUser patch = new SysUser();
         patch.setId(userId);
@@ -65,15 +65,22 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 取当前登录用户实体。
+     * 取当前登录用户实体，并要求账号处于「正常」状态。
      *
      * <p>令牌有效但账号已被物理删除时返回 401 而不是 404 —— 前端拿到 401 会清空登录态
      * 跳登录页，这是正确的处置；拿到 404 只会弹个「资源不存在」然后卡在原地。</p>
+     *
+     * <p>封禁账号即使 JWT 仍有效（ver 未变），任何写操作都要拒绝 —— 与
+     * {@code AuthServiceImpl.currentUser} 的禁用拦截保持一致，避免出现
+     * 「改密后被封、但旧令牌还能改昵称」的越权裂缝。</p>
      */
-    private SysUser requireCurrentUser() {
+    private SysUser requireActiveCurrentUser() {
         SysUser user = sysUserMapper.selectById(SecurityUtils.currentUserId());
         if (user == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+        if (AccountStatus.DISABLED.equals(user.getStatus())) {
+            throw new BusinessException(ResultCode.ACCOUNT_DISABLED);
         }
         return user;
     }

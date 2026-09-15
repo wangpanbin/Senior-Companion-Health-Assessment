@@ -1,7 +1,10 @@
 package org.company.nianglin.service;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.BindStatus;
@@ -91,10 +94,25 @@ class ElderServiceTest {
 
     @BeforeEach
     void setUp() {
+        // ⚠️ 必须手工初始化 TableInfo。LambdaUpdateWrapper 的 set(...) 会立刻把
+        // 方法引用翻译成列名，而翻译依赖 MyBatis-Plus 的 TableInfo 缓存；
+        // 纯 Mockito 单测不起 Spring 容器，缓存是空的，会抛
+        // “MybatisPlus can not find lambda cache for this entity”。
+        //
+        // 这个 bug 极其隐蔽：跑全量测试时，只要前面有 @SpringBootTest 类跑过，
+        // 缓存已经建好，本类就"通过"了 —— 一次完全依赖测试执行顺序的假绿。
+        // 把缓存准备好，本类才能单独运行。
+        initTableInfo(ElderProfile.class);
+
         SecurityProperties securityProperties = new SecurityProperties();
         securityProperties.setIdCardKey(AES_KEY);
         elderService = new ElderServiceImpl(elderProfileMapper, relationMapper, sysUserMapper,
                 companionOrderMapper, securityProperties);
+    }
+
+    /** 为指定实体建立 MyBatis-Plus 的 lambda 列名缓存（纯单测环境下的必要前置） */
+    private static void initTableInfo(Class<?> entityClass) {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), entityClass);
     }
 
     @AfterEach
@@ -526,7 +544,7 @@ class ElderServiceTest {
     }
 
     @Test
-    @DisplayName("绑定：老人账号被封禁返回 2004")
+    @DisplayName("绑定：老人账号被封禁统一返回 2001（防手机号枚举）")
     void bindShouldRejectDisabledElderAccount() {
         loginAs(RoleConstants.FAMILY, FAMILY_ID);
         SysUser elderUser = new SysUser();
@@ -538,11 +556,13 @@ class ElderServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> elderService.bind(phoneBindDto()));
 
-        assertEquals(ResultCode.USER_DISABLED.getCode(), ex.getCode());
+        // 账号不存在 / 已封禁 / 已被他人绑定 / 未建档 对调用方统一为 2001，
+        // 避免攻击者通过差异枚举手机号背后的老人账号状态
+        assertEquals(ResultCode.ELDER_NOT_FOUND.getCode(), ex.getCode());
     }
 
     @Test
-    @DisplayName("绑定：该老人已被其他家属绑定返回 2002")
+    @DisplayName("绑定：该老人已被其他家属绑定统一返回 2001（防手机号枚举）")
     void bindShouldRejectWhenBoundByOtherFamily() {
         loginAs(RoleConstants.FAMILY, FAMILY_ID);
         given(sysUserMapper.selectOne(any())).willReturn(elderUser());
@@ -552,7 +572,7 @@ class ElderServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> elderService.bind(phoneBindDto()));
 
-        assertEquals(ResultCode.ELDER_ALREADY_BOUND.getCode(), ex.getCode());
+        assertEquals(ResultCode.ELDER_NOT_FOUND.getCode(), ex.getCode());
         verify(relationMapper, never()).insert(any(FamilyElderRelation.class));
     }
 

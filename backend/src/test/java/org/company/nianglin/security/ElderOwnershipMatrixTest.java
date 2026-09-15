@@ -393,7 +393,7 @@ class ElderOwnershipMatrixTest {
     }
 
     @Test
-    @DisplayName("绑定 · 该老人已被其他家属绑定 → 2002")
+    @DisplayName("绑定 · 该老人已被其他家属绑定 → 2001（防手机号枚举统一错误码）")
     void bindOccupiedElderShouldReturn2002() throws Exception {
         // 老人账号 202（手机号 13900100002）的档案 402 已绑给家属 102
         mockMvc.perform(post("/api/user/elder/bind")
@@ -401,7 +401,7 @@ class ElderOwnershipMatrixTest {
                         .contentType(JSON)
                         .content("{\"bindType\":\"PHONE\",\"bindValue\":\"13900100002\",\"relation\":\"SON\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(ResultCode.ELDER_ALREADY_BOUND.getCode()));
+                .andExpect(jsonPath("$.code").value(ResultCode.ELDER_NOT_FOUND.getCode()));
     }
 
     @Test

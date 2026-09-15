@@ -286,22 +286,24 @@ public class ElderServiceImpl implements ElderService {
         SysUser elderUser = sysUserMapper.selectOne(Wrappers.<SysUser>lambdaQuery()
                 .eq(SysUser::getPhone, phone)
                 .eq(SysUser::getRole, RoleConstants.ELDER));
-        if (elderUser == null) {
-            throw new BusinessException(ResultCode.ELDER_NOT_FOUND, "未找到该手机号对应的老人账号");
-        }
-        if (AccountStatus.DISABLED.equals(elderUser.getStatus())) {
-            throw new BusinessException(ResultCode.USER_DISABLED);
+        // 统一错误码：账号不存在 / 已封禁 / 未建档 / 已被他人绑定 等多种情况
+        // 对调用方只暴露「找不到可绑定的老人账号」一条信息，
+        // 否则攻击者可以借此枚举手机号对应的老人账号状态（防账号枚举定时侧信道同样思路）
+        if (elderUser == null
+                || AccountStatus.DISABLED.equals(elderUser.getStatus())) {
+            throw new BusinessException(ResultCode.ELDER_NOT_FOUND, "未找到可绑定的老人账号");
         }
 
         ElderProfile elder = findElderByUserId(elderUser.getId());
         if (elder == null) {
-            throw new BusinessException(ResultCode.ELDER_NOT_FOUND, "该老人账号尚未建立档案");
+            throw new BusinessException(ResultCode.ELDER_NOT_FOUND, "未找到可绑定的老人账号");
         }
 
         // 一个老人只允许被一位主要家属绑定（避免操作权纠纷）
         FamilyElderRelation occupied = findBoundRelationOfOther(elder.getId(), familyId);
         if (occupied != null) {
-            throw new BusinessException(ResultCode.ELDER_ALREADY_BOUND);
+            // 对外仍用「找不到可绑定的老人账号」屏蔽已被他人绑定这条分支
+            throw new BusinessException(ResultCode.ELDER_NOT_FOUND, "未找到可绑定的老人账号");
         }
 
         FamilyElderRelation mine = findRelation(familyId, elder.getId());
@@ -370,6 +372,15 @@ public class ElderServiceImpl implements ElderService {
         }
 
         LoginUser me = SecurityUtils.currentUser();
+
+        // 陪诊员读取老人档案：M3 暂未对陪诊员开放档案查看权限。
+        // 必须显式抛出而不是走到末尾的 NO_PERMISSION_FOR_ELDER，
+        // 否则未来给 controller 放开 COMPANION 白名单后，陪诊员拿到的是
+        // 「绑定关系问题」的错误提示，实际是产品规则不支持，会误导排障
+        if (RoleConstants.COMPANION.equals(me.role())) {
+            throw new BusinessException(ResultCode.NO_PERMISSION_FOR_ELDER,
+                    "陪诊员暂不可查看老人档案，请联系管理员申请权限");
+        }
 
         // 管理员读任何档案
         if (RoleConstants.ADMIN.equals(me.role())) {

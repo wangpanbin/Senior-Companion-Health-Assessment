@@ -68,6 +68,11 @@ public class CompanionServiceImpl implements CompanionService {
     public CompanionApplyResultVO apply(CompanionApplyDTO dto) {
         Long userId = SecurityUtils.currentUserId();
 
+        // 先对 companion_profile.user_id 加行锁/间隙锁：行存在时取记录锁，行不存在时
+        // 借助唯一索引的间隙锁阻塞同一 user_id 的并发 INSERT，杜绝「双击提交或两标签页
+        // 同时调用 apply 导致两条 PENDING 申请」的竞态
+        companionProfileMapper.selectForUpdateByUserId(userId);
+
         Long pendingCount = auditRecordMapper.selectCount(Wrappers.<CompanionAuditRecord>lambdaQuery()
                 .eq(CompanionAuditRecord::getApplicantUserId, userId)
                 .eq(CompanionAuditRecord::getAuditStatus, AuditStatus.PENDING.name()));

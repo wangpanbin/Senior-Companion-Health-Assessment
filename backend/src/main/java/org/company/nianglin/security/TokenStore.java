@@ -70,6 +70,18 @@ public class TokenStore {
         }
     }
 
+    /**
+     * 若密码版本键不存在则初始化为 {@code 0}。
+     *
+     * <p>首次登录时显式写入而非隐式回退，避免「Redis 被清空后所有旧 ver=0 令牌重新生效」
+     * 这条隐蔽路径：之前 {@link #currentPasswordVersion(Long)} 对缺失键返回 0，
+     * 而新签发的令牌也是 ver=0，两者刚好相等。</p>
+     */
+    public void ensurePasswordVersion(Long userId) {
+        redisTemplate.opsForValue()
+                .setIfAbsent(RedisKeyConstants.passwordVersion(userId), String.valueOf(DEFAULT_PASSWORD_VERSION));
+    }
+
     /** 密码版本 +1，所有已签发令牌立即失效 */
     public int bumpPasswordVersion(Long userId) {
         Long version = redisTemplate.opsForValue().increment(RedisKeyConstants.passwordVersion(userId));
