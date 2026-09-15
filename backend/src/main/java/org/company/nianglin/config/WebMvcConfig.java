@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
@@ -29,6 +30,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Value("${nianglin.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}")
     private String[] allowedOrigins;
 
+    @Value("${nianglin.file.upload-dir:./uploads}")
+    private String uploadDir;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
@@ -38,6 +42,29 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .exposedHeaders("Authorization")
                 .allowCredentials(true)
                 .maxAge(3600);
+    }
+
+    /**
+     * 上传文件的静态访问映射：{@code /uploads/**} → 磁盘上的 {@code nianglin.file.upload-dir}。
+     *
+     * <p>没有这条映射，上传接口会返回一个「看着像 URL、实际 404」的地址，
+     * 前端图片全裂，而错误信息是 404 —— 排查方向完全被带偏。
+     * {@code file:} 前缀表示「磁盘绝对/相对路径」，与 {@code classpath:} 区分开，
+     * 确保读取的是运行时写入目录而不是打包进 jar 的静态资源。</p>
+     */
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:" + normalizeDir(uploadDir));
+    }
+
+    /** 保证目录以 {@code /} 结尾，否则 Spring 会把最后一段当成文件名拼出错误路径 */
+    private static String normalizeDir(String dir) {
+        if (dir == null || dir.isBlank()) {
+            return "./uploads/";
+        }
+        String value = dir.trim().replace('\\', '/');
+        return value.endsWith("/") ? value : value + "/";
     }
 
     @Override

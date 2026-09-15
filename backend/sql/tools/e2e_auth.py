@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 BASE = "http://127.0.0.1:8080/api"
@@ -49,10 +50,19 @@ def check(name, ok, detail=""):
     sys.stdout.flush()
 
 
+def url_of(path):
+    """URL 编码非 ASCII 字符。
+
+    urllib 会把请求行按 ASCII 编码，查询串里一旦出现中文就抛 UnicodeEncodeError，
+    所以拼 URL 前必须先转义（保留结构字符）。
+    """
+    return BASE + urllib.parse.quote(path, safe="/?&=:%+,[]@!$'()*;")
+
+
 def call(method, path, body=None, token=None):
     """返回 (http_status, json_body)"""
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(BASE + path, data=data, method=method)
+    req = urllib.request.Request(url_of(path), data=data, method=method)
     req.add_header("Content-Type", "application/json;charset=UTF-8")
     if token:
         req.add_header("Authorization", "Bearer " + token)
@@ -300,8 +310,21 @@ def main():
     # ---------------- 清理测试产物 ----------------
     mysql_value("DELETE FROM `sys_user` WHERE `username` LIKE 'e2e%';")
     mysql_value("DELETE FROM `sys_login_log` WHERE `username` LIKE 'e2e%';")
-    redis_del("login:fail:" + ACC_LOCK, "pwd:version:" + str(new_user_id or 0))
-    print("\n[清理] 已删除测试账号 %s 与 e2e* 登录日志，并清理 Redis 锁计数 / 密码版本" % ACC_NEW)
+
+    # 关键：E1 用 elder001 调了 /auth/logout，而登出会 bumpPasswordVersion，
+    # 且 pwd:version:{userId} 这个键「没有 TTL」—— 不复位就会永久留在 Redis 里。
+    # 后果是任何「用固定 ver=0 签种子账号令牌」的测试都变成 401（验票失败），
+    # 且现象极具迷惑性（看起来像鉴权坏了）。所以这里把本脚本登录/登出过的
+    # 全部种子账号复位到「未设置」状态（读取时回落为默认 0，与种子库一致）。
+    seed_version_keys = []
+    for uname in (ACC_FAMILY, ACC_ELDER, ACC_COMPANION, ACC_ADMIN):
+        uid = mysql_value("SELECT `id` FROM `sys_user` WHERE `username`='%s' AND `deleted`=0;" % uname)
+        if uid.isdigit():
+            seed_version_keys.append("pwd:version:" + uid)
+
+    redis_del("login:fail:" + ACC_LOCK, "pwd:version:" + str(new_user_id or 0), *seed_version_keys)
+    print("\n[清理] 已删除测试账号 %s 与 e2e* 登录日志，并复位 Redis 锁计数 / 密码版本（含 %s）"
+          % (ACC_NEW, "、".join(seed_version_keys) or "无"))
 
     # ---------------- 汇总 ----------------
     total, passed = len(results), sum(1 for _, ok, _ in results if ok)

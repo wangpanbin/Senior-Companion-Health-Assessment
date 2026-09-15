@@ -58,6 +58,14 @@ public class AuthServiceImpl implements AuthService {
     /** {@code sys_login_log.username} 为 VARCHAR(50) */
     private static final int USERNAME_MAX_LENGTH = 50;
 
+    /**
+     * 假密码的 BCrypt 哈希：账号不存在时强制执行一次 BCrypt 校验，
+     * 抹平「账号不存在（~0ms）」与「账号存在但密码错（~80ms）」的响应时间差，
+     * 杜绝账号枚举定时侧信道攻击。
+     */
+    private static final String DUMMY_PASSWORD_HASH =
+            "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+
     private final SysUserMapper sysUserMapper;
     private final SysLoginLogMapper sysLoginLogMapper;
     private final PasswordEncoder passwordEncoder;
@@ -138,7 +146,15 @@ public class AuthServiceImpl implements AuthService {
 
         // ③ 账号密码：账号不存在与密码错误共用同一错误码与提示，防账号枚举
         SysUser user = findUserByAccount(account);
-        if (user == null || !passwordEncoder.matches(dto.getPassword(), user.getPassword())) {
+        // 恒定时间：无论账号是否存在，都执行一次 BCrypt，避免通过响应时间差判断账号是否存在
+        boolean passwordMatches;
+        if (user != null) {
+            passwordMatches = passwordEncoder.matches(dto.getPassword(), user.getPassword());
+        } else {
+            passwordEncoder.matches(dto.getPassword(), DUMMY_PASSWORD_HASH);
+            passwordMatches = false;
+        }
+        if (user == null || !passwordMatches) {
             long current = tokenStore.increaseLoginFail(account, securityProperties.loginLockSeconds());
             writeLoginLog(user == null ? null : user.getId(), account, AuthLogConstants.TYPE_LOGIN,
                     AuthLogConstants.RESULT_FAIL,
@@ -230,7 +246,11 @@ public class AuthServiceImpl implements AuthService {
     public void logout(String refreshToken) {
         LoginUser loginUser = SecurityUtils.currentUser();
 
-        // 只把令牌拉黑到「它本来就会过期的那一刻」为止，Redis 不会因为登出而无限膨胀
+        // bumpPasswordVersion 让该用户所有未过期的刷新令牌一并失效，覆盖客户端不传 refreshToken
+        // 时的盲区（refreshToken 7 天内仍可换发 accessToken，是 XSS/SDK 泄漏的真实攻击路径）
+        tokenStore.bumpPasswordVersion(loginUser.userId());
+
+        // 顺手把当前 accessToken 的 jti 拉黑，让它立刻不可用（不必等 JWT 自然过期）
         long remain = tokenProvider.remainingSeconds(loginUser.expiresAtMillis());
         tokenStore.blacklist(loginUser.jti(), remain);
 
@@ -306,6 +326,8 @@ public class AuthServiceImpl implements AuthService {
     /* ================================================================== */
 
     private LoginVO buildLoginVO(SysUser user) {
+        // 首次登录显式写入版本号，避免「Redis 缺失键 → 默认 0 → 与新签发 ver=0 重合」的隐藏路径
+        tokenStore.ensurePasswordVersion(user.getId());
         int passwordVersion = tokenStore.currentPasswordVersion(user.getId());
         String accessToken = tokenProvider.createAccessToken(
                 user.getId(), user.getUsername(), user.getRole(), passwordVersion);
@@ -319,16 +341,23 @@ public class AuthServiceImpl implements AuthService {
                 .setUserInfo(UserInfoVO.of(user));
     }
 
-    /** 用户名或手机号登录，两者都可作为账号 */
+    /**
+     * 用户名或手机号登录，两者都可作为账号。
+     *
+     * <p>必须分两次查询而非 {@code WHERE username = ? OR phone = ? LIMIT 1}：
+     * 后者在「用户 A 的 username 形如手机号、用户 B 的 phone 与之相同」时非确定地
+     * 选其一，会把 B 的失败登录写到 A 的 sys_login_log.userId 上，污染审计。
+     * 这里的优先级：先按手机号匹配（绝大多数登录入口走手机号），再按用户名匹配，
+     * 同一账号命中多条时结果唯一。</p>
+     */
     private SysUser findUserByAccount(String account) {
+        SysUser byPhone = sysUserMapper.selectOne(Wrappers.<SysUser>lambdaQuery()
+                .eq(SysUser::getPhone, account));
+        if (byPhone != null) {
+            return byPhone;
+        }
         return sysUserMapper.selectOne(Wrappers.<SysUser>lambdaQuery()
-                // 必须用 and(...) 把 OR 条件整体括起来：MyBatis-Plus 会把逻辑删除条件
-                // 以 "AND deleted = 0" 追加在末尾，若不分组就会变成
-                // "username = ? OR (phone = ? AND deleted = 0)" ——
-                // 结果是「已注销账号用用户名仍能登录」，这是个只在软删数据上暴露的隐蔽越权
-                .and(w -> w.eq(SysUser::getUsername, account).or().eq(SysUser::getPhone, account))
-                // 固定字面量，无注入风险；兜住「用户名与手机号恰好相等」的极端数据
-                .last("LIMIT 1"));
+                .eq(SysUser::getUsername, account));
     }
 
     private boolean existsByUsername(String username) {

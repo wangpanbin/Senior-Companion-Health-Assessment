@@ -113,13 +113,18 @@ public class JwtTokenProvider {
                     .parseSignedClaims(token)
                     .getPayload();
             Integer version = claims.get(CLAIM_PASSWORD_VERSION, Integer.class);
+            // 缺失 ver 字段必须拒绝：兜底默认 0 会与 TokenStore.currentPasswordVersion 的默认 0 重合，
+            // 一旦 Redis 被清空或首次登录用户，所有 ver=0 的旧令牌（含被改密作废的）会重新生效
+            if (version == null) {
+                throw new BusinessException(ResultCode.TOKEN_INVALID);
+            }
             return new TokenPayload(
                     Long.valueOf(claims.getSubject()),
                     claims.get(CLAIM_USERNAME, String.class),
                     claims.get(CLAIM_ROLE, String.class),
                     claims.get(CLAIM_TYPE, String.class),
                     claims.getId(),
-                    version == null ? 0 : version,
+                    version,
                     claims.getIssuedAt().getTime(),
                     claims.getExpiration().getTime());
         } catch (JwtException | IllegalArgumentException e) {

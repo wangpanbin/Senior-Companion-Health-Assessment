@@ -81,6 +81,21 @@ public class PageResult<T> implements Serializable {
         return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getPages(), list);
     }
 
+    /**
+     * 由 IPage 转换，记录已由调用方映射好。
+     *
+     * <p>供「映射过程需要额外查库」的场景使用：例如服药任务要批量补上确认人姓名，
+     * 这必须<b>整页一次性批量查</b>，逐条查会产生 N+1。
+     * 用 {@link #of(IPage, Function)} 做不到这件事，因为映射函数是按条调用的。</p>
+     *
+     * <p>分页元信息（total / page / size / pages）仍取自 {@code page}，
+     * 因此调用方必须保证 {@code records} 就是该页的记录，否则会出现
+     * 「总数说有 100 条、列表里只有 10 条」这种自相矛盾的响应。</p>
+     */
+    public static <T> PageResult<T> of(IPage<?> page, List<T> records) {
+        return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getPages(), records);
+    }
+
     /** 包装成统一响应 */
     public Result<PageResult<T>> toResult() {
         return Result.success(this);

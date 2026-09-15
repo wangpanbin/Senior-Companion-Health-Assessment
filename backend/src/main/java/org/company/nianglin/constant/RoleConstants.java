@@ -29,6 +29,15 @@ public final class RoleConstants {
     /** 管理员：资质审核、用户封禁、订单纠纷、数据统计 */
     public static final String ADMIN = "ADMIN";
 
+    /**
+     * 系统自动流转（无操作人）。
+     *
+     * <p><b>不是登录角色</b>，因此不进 {@link #ALL} / {@link #WRITABLE} —— 它只作为
+     * {@code order_status_log.operator_role} 的取值，标记「这条状态变更不是某个人做的」，
+     * 例如定时任务自动取消超时未开始的订单。</p>
+     */
+    public static final String SYSTEM = "SYSTEM";
+
     /** Spring Security 权限前缀 */
     public static final String ROLE_PREFIX = "ROLE_";
 
@@ -61,6 +70,17 @@ public final class RoleConstants {
                     .filter(r -> r.name().equalsIgnoreCase(code))
                     .findFirst()
                     .orElse(null);
+        }
+
+        /**
+         * 中文展示名；非法值原样返回。
+         *
+         * <p>与其他枚举（{@code OrderStatus} / {@code AuditStatus} 等）保持同一套
+         * {@code labelOf} 语义：展示层不该因为库里有一条脏角色值就整体 500。</p>
+         */
+        public static String labelOf(String code) {
+            Role role = of(code);
+            return role == null ? code : role.getLabel();
         }
 
         /** Spring Security 权限名 */

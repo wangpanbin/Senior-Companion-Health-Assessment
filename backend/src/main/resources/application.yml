@@ -21,8 +21,13 @@ spring:
   profiles:
     active: dev
   jackson:
+    # ⚠️ date-format 只作用于旧的 java.util.Date，对 LocalDateTime / LocalDate **无效**。
+    #    本项目实体统一用 LocalDateTime，其输出格式由 config/JacksonConfig.java 显式注册，
+    #    改了那边才是真正改口径（行为由 JacksonDateTimeFormatTest 锁定）。此行的作用是
+    #    万一将来引入了 java.util.Date 字段时保持一致，别删。
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8
+    # 值为 null 的字段整体不出现在响应里（前端按「字段不存在」判断，如 rejectReason）
     default-property-inclusion: non_null
     serialization:
       write-dates-as-timestamps: false
@@ -94,14 +99,29 @@ nianglin:
     auto-cancel-minutes: 60
     # 打卡坐标允许偏离订单地址的最大距离（米），用于防虚假打卡
     checkin-max-distance-meters: 2000
-  # 用药提醒
+  # 附件存储（打卡照片 / 投诉证据 / 资质证件 / 头像）
+  file:
+    # 落盘根目录；对外通过 /uploads/** 暴露，映射见 WebMvcConfig#addResourceHandlers
+    # ⚠️ 生产环境务必指到独立数据盘，不要放在应用部署目录里（重新部署会连文件一起清掉）
+    upload-dir: ${UPLOAD_DIR:./uploads}
+  # 用药管理（M6）
   medication:
-    # 每日生成服药任务的时刻（cron 由代码拼接）
+    # 定时任务总开关。关掉后两个 @Scheduled 方法都不会被注册，
+    # 便于压测 / 故障排查时不希望后台任务干扰业务
+    scheduler-enabled: true
+    # 每日生成服药任务的时刻（Spring 的 cron 支持 Quartz 风格的 ?）
     daily-generate-cron: "0 0 7 * * ?"
-    # 漏服扫描间隔（毫秒）
+    # 漏服扫描间隔（毫秒），默认 30 分钟
     missed-scan-interval-ms: 1800000
+    # 漏服扫描的首次延迟（毫秒）。给一个非 0 的初始延迟，
+    # 避免应用刚启动（还在跑 Flyway / 预热）时就立刻打一轮全表扫描
+    missed-scan-initial-delay-ms: 300000
     # 超过服药时间多少分钟后判定为漏服
     missed-threshold-minutes: 60
+    # 单轮漏服扫描最多处理多少条，防止积压时一次拉爆内存
+    miss-scan-batch: 200
+    # 服药日历允许查询的最大天数
+    max-calendar-days: 31
   # 安全策略
   security:
     # 登录失败几次后锁定（分钟）

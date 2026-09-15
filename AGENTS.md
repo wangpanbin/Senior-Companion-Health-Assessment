@@ -597,3 +597,19 @@ AI 在任何"新增 / 修改 / 删除接口"的场景下，必须：
 - AI 在生成代码时若发现本文件与现实代码冲突（如新模块已突破某条硬约束），**以现实代码为准并在回复中提示冲突**，但不要擅自"修复"现实代码。
 
 > 📌 **核心一句话**：本项目是给老年人用的合规产品，技术栈与目录结构已固定，AI 工具的角色是"严格按本规范补全模块、补全测试、补全文档"，不是"自由发挥"。
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five canonical roles: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
