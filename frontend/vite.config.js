@@ -31,6 +31,17 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: Number(env.VITE_PORT) || 5141,
       open: false,
+      // ⚠️ Windows 下必须忽略「原子写临时目录」。
+      //    编辑器 / 脚本 / 代码生成工具落盘时常走
+      //    `.<文件名>.<pid>.<uuid>.tmpdir/<文件名>.tmp` 再 rename 的路子（避免写一半被读到）。
+      //    chokidar 会去 watch 这个刚建又刚删的临时文件，在 Windows 上拿到 EBUSY
+      //    （文件已被 rename 掉 / 被杀软占着），而 Vite 的 FSWatcher 对这个错误
+      //    没有兜底 —— 以未捕获的 'error' 事件直接退出进程。
+      //    症状很误导：dev server 无任何日志地消失，浏览器只报 ERR_CONNECTION_REFUSED，
+      //    看起来像「端口被占」或「前端崩了」，实际只是保存了一次文件。
+      watch: {
+        ignored: ['**/*.tmpdir/**']
+      },
       proxy: {
         // 后端接口：统一以 /api 开头，直接透传
         '/api': {
