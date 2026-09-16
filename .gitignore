@@ -53,3 +53,11 @@ tmp/
 
 # ============================ 工具目录（不提交） ============================
 .workbuddy/
+
+# ============================ Benchmark 压测产物（不提交） ============================
+backend/sql/tools/bench_tokens.csv
+backend/sql/tools/bench_meta.json
+backend/sql/tools/jmeter_*.jtl
+backend/sql/tools/jmeter_*.csv
+backend/sql/tools/.e2e_*_state.json
+backend/sql/tools/.e2e_*.json
