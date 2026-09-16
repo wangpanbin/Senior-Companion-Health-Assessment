@@ -3,22 +3,31 @@ import routes from './routes'
 import { useUserStore } from '@/store/modules/user'
 
 /**
- * 路由实例 + 全局守卫。
+ * 路由实例 + 全局守卫
  *
- * ✅ M2（认证与多角色鉴权）已交付，AUTH_ENABLED 置为 true：
- *    未登录访问业务页面会被重定向到 /login?redirect=<原地址>，登录后自动回跳。
- *    角色不足时（meta.roles 未包含当前角色）回首页，不做 403 页面
- *    —— 老人的主界面只有三个入口，跳到一个错误页反而更让人困惑。
+ * 设计依据：AGENTS.md §3.9 / design.md §1.4
+ *
+ * - 公开页（meta.public）直接放行
+ * - 未登录访问业务页 → /login?redirect=<原地址>
+ * - 已登录访问 /login → 回角色主页
+ * - 角色不匹配 → 回该角色主页（移动端）或 /admin/dashboard（管理员）
  */
+
 const AUTH_ENABLED = true
+
+/** 4 角色主页 */
+const ROLE_HOME = {
+  ELDER: '/elder/home',
+  FAMILY: '/family/home',
+  COMPANION: '/companion/hall',
+  ADMIN: '/admin/dashboard'
+}
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
   scrollBehavior: () => ({ top: 0 })
 })
-
-/* ==================== 全局前置守卫 ==================== */
 
 router.beforeEach(async (to, from, next) => {
   const appTitle = import.meta.env.VITE_APP_TITLE || '银龄伴诊'
@@ -31,24 +40,33 @@ router.beforeEach(async (to, from, next) => {
 
   const userStore = useUserStore()
 
-  // 公开页面直接放行
+  // 已登录用户访问根路径 → 自动跳角色主页
+  if (to.path === '/' || to.path === '') {
+    if (userStore.isLogin) {
+      next({ path: ROLE_HOME[userStore.role] || '/login', replace: true })
+    } else {
+      next({ path: '/login', replace: true })
+    }
+    return
+  }
+
+  // 公开页面（登录/注册/找回/错误页）直接放行
   if (to.meta.public) {
-    // 已登录还去登录页 → 回首页
     if (userStore.isLogin && to.name === 'Login') {
-      next({ path: '/' })
+      next({ path: ROLE_HOME[userStore.role] || '/', replace: true })
       return
     }
     next()
     return
   }
 
-  // 未登录 → 去登录页，并记住来源
+  // 未登录 → 跳登录页，带原路径做回跳
   if (!userStore.isLogin) {
     next({ path: '/login', query: { redirect: to.fullPath } })
     return
   }
 
-  // 已登录但没有用户信息（刷新页面场景）→ 补拉一次
+  // 已登录但没有用户信息（刷新页面）→ 补拉一次
   if (!userStore.userInfo) {
     try {
       await userStore.fetchCurrentUser()
@@ -59,11 +77,11 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
-  // 角色校验：meta.roles 为空表示所有登录角色可访问
+  // 角色校验
   const allowRoles = to.meta.roles
   if (Array.isArray(allowRoles) && allowRoles.length > 0) {
     if (!allowRoles.includes(userStore.role)) {
-      next({ path: '/dashboard' })
+      next({ path: ROLE_HOME[userStore.role] || '/login', replace: true })
       return
     }
   }
