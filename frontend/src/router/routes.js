@@ -45,9 +45,13 @@ export const routes = [
 
   // ==================== 移动端（PhoneLayout / 4 角色共用） ====================
   {
+    // 刻意不写 redirect：根路径的归属要按登录态 + 角色决定，
+    // 统一交给 router/index.js 的 beforeEach（未登录 → /login，已登录 → 角色主页）。
+    // 若在这里写死 `redirect: '/login'`，路由重定向会先于守卫执行，
+    // 导致登录成功后 `router.push('/')` 解析成「当前就在 /login」被判为重复导航，
+    // 守卫里的 `to.path === '/'` 分支永远不会命中，用户会卡在登录页。
     path: '/',
     component: PhoneLayout,
-    redirect: '/login',
     children: [
       // ---------- 老人端 ELDER ----------
       {
