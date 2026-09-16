@@ -85,4 +85,7 @@ tools/e2e/
 # 临时调试 SQL / 根目录孤儿 package.json（前端真实 package.json 在 frontend/）
 /.tmp_q.sql
 /package.json
+# 本地联调测试脚本：_lib/config.ps1 里是本地 dev 凭据（MySQL root 口令、演示账号口令），
+# 与 reports/ 同级红线，不入版本库（该目录自己的注释也是这么写的）
+/tests/
 
