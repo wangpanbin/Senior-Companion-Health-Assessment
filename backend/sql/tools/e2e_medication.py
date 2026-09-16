@@ -188,6 +188,10 @@ def new_plan(token, elder_id=ELDER_OWN, medicine_id=MED_TABLET, time_points=("23
 
 def cleanup():
     print("\n" + "-" * 78)
+    if b5_order_id:
+        mysql_raw("DELETE FROM `order_status_log` WHERE `order_id`=%d;" % b5_order_id)
+        mysql_raw("DELETE FROM `companion_order` WHERE `id`=%d;" % b5_order_id)
+        print("[清理] 已删除 B5 setup 临时订单 id=%d" % b5_order_id)
     if created_plan_ids:
         ids = ",".join(str(i) for i in created_plan_ids)
         mysql_raw("DELETE FROM `medication_task` WHERE `plan_id` IN (%s);" % ids)
@@ -381,10 +385,37 @@ def main():
     check("B4 另一位家属读别人的老人计划 → 2006（归属校验兜住）",
           body.get("code") == 2006, "code=%s message=%s" % (body.get("code"), body.get("message")))
 
-    status, body = call("GET", "/medication/plan?elderId=%d" % ELDER_VIA_ORDER, None, comp)
-    check("B5 陪诊员读自己订单涉及的老人计划 → 200",
-          body.get("code") == 200, "code=%s" % body.get("code"))
+    # B5 依赖 comp_token 在「自己订单涉及的老人」上有 ACTIVE 状态的订单。
+    # 种子订单 1049 是 REVIEWED 状态，不在 ACTIVE 范围。需要在这里手动造一个
+    # ACCEPTED 订单，跑完清理。这里不走 HTTP 下单（订单号唯一性跨多个 e2e 脚本
+    # 是个坑），直接 SQL 插一条装子 table，模拟“家属下单后陪诊员接单”后的状态。
+    import datetime as _dt_mod
+    b5_order_id = None
+    from datetime import datetime as _dt2
+    b5_visit = (_dt2.now() + _dt_mod.timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+    b5_accept = _dt2.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 插一行 orderNo 唯一的 PENDING 订单，随后 UPDATE 为 ACCEPTED 状态（进 ACTIVE 集合）。
+    # 选个本日高序列、不会与当前 seq 冲突的 orderNo（seq 已被 e2e 抬高，这里取一个不可能的数）。
+    b5_order_no = f"NL{dt.date.today().strftime('%Y%m%d')}B5TEST"
+    # 如果上面这个 orderNo 已被用过，换个带微秒的
+    dup = mysql_int(f"SELECT COUNT(*) FROM companion_order WHERE order_no='{b5_order_no}';")
+    if dup and dup > 0:
+        b5_order_no = f"NL{dt.date.today().strftime('%Y%m%d')}{int(time.time()*1000) % 1000000:06d}"
+    b5_esc_visit = b5_visit.replace("'", "''")
+    b5_esc_no = b5_order_no.replace("'", "''")
+    mysql_value(f"INSERT INTO companion_order (order_no, family_id, elder_id, companion_id, "
+                f"hospital, department, visit_time, address, fee, status, payment_status, "
+                f"arbitrate_flag, version, accept_time, create_time, update_time, deleted) "
+                f"VALUES ('{b5_esc_no}', 101, {ELDER_OWN}, 301, 'B5-测试医院', '心血管内科', "
+                f"'{b5_visit}', 'B5 测试地址', 128.00, 'ACCEPTED', 'UNPAID', 0, 1, "
+                f"'{b5_accept}', NOW(), NOW(), 0);")
+    b5_order_id = int(mysql_value(f"SELECT id FROM companion_order WHERE order_no='{b5_esc_no}';"))
+
     status, body = call("GET", "/medication/plan?elderId=%d" % ELDER_OWN, None, comp)
+    check("B5 陪诊员读自己 ACTIVE 订单涉及的老人计划 → 200",
+          body.get("code") == 200, "code=%s" % body.get("code"))
+    # B6：ELDER_OTHER=402 是 fam102 绑定的老人，comp001 在 402 上无任何订单 → 2006
+    status, body = call("GET", "/medication/plan?elderId=%d" % ELDER_OTHER, None, comp)
     check("B6 陪诊员读无订单关系的老人计划 → 2006",
           body.get("code") == 2006, "code=%s message=%s" % (body.get("code"), body.get("message")))
     status, body = call("GET", "/medication/plan?elderId=%d" % ELDER_OWN, None, admin)
