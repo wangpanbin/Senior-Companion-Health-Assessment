@@ -28,6 +28,7 @@
         <easyexcel.version>3.3.4</easyexcel.version>
         <hutool.version>5.8.32</hutool.version>
         <springdoc.version>2.6.0</springdoc.version>
+        <jacoco.version>0.8.12</jacoco.version>
     </properties>
 
     <dependencies>
@@ -198,6 +199,64 @@
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
+            </plugin>
+
+            <!--
+                JaCoCo 覆盖率门禁（PLAN_BACKEND.md §4 横切测试 / §8 M12）。
+
+                · prepare-agent：给 surefire 注入 jacoco agent，产出 jacoco.exec
+                · report：测试结束后在 target/site/jacoco/index.html 生成 HTML 报告（mvn test 即可看到）
+                · check：在 verify 阶段硬卡覆盖率，不达标直接判构建失败
+
+                门禁范围只圈 service 包：entity / dto / vo / mapper 是生成或样板代码，
+                controller 是薄封装，把它们计入分母只会稀释信号、逼人写无意义的断言凑数。
+                任务书要求的是「Service 覆盖率 ≥ 60%」，这里就只卡 Service。
+
+                临时绕过门禁（如仅想跑一次全量测试）：mvn verify -Djacoco.skip=true
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <includes>
+                                <include>org/company/nianglin/service/**</include>
+                            </includes>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.60</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
