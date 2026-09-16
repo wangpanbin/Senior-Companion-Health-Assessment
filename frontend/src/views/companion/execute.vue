@@ -112,18 +112,6 @@ function simulateLocation() {
         节点顺序不可回退 · 同节点只可打卡一次 · 当前节点脉冲高亮
       </p>
       <NlTimeline :steps="steps">
-        <template #[steps[order.currentNode]?.key]>
-          <el-button
-            type="primary"
-            round
-            size="default"
-            :disabled="!isOnSite"
-            class="check-btn"
-            @click="checkin(steps[order.currentNode].key)"
-          >
-            打卡 · {{ steps[order.currentNode]?.label }}
-          </el-button>
-        </template>
         <template #current>
           <el-button
             v-if="steps[order.currentNode]"
