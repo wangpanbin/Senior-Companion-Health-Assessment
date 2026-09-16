@@ -25,7 +25,8 @@ import java.util.List;
  *   <tr><th>字段</th><th>{@link #ofList} 我的订单</th><th>{@link #ofHall} 大厅</th><th>{@link #ofDetail} 详情</th></tr>
  *   <tr><td>老人 / 陪诊员姓名</td><td>{@code 张*海}</td><td>{@code 张*海}</td><td>全名</td></tr>
  *   <tr><td>医院地址</td><td>不返回</td><td><b>返回</b></td><td>返回</td></tr>
- *   <tr><td>备注 / 结算状态</td><td>不返回</td><td>不返回</td><td>返回</td></tr>
+ *   <tr><td>结算状态</td><td>返回</td><td>不返回</td><td>返回</td></tr>
+ *   <tr><td>备注</td><td>不返回</td><td>不返回</td><td>返回</td></tr>
  *   <tr><td>服务小结 / 照片</td><td>不返回</td><td>不返回</td><td>返回</td></tr>
  * </table>
  *
@@ -152,7 +153,10 @@ public class OrderVO {
         return base(o)
                 .setElderName(MaskUtil.name(elderName))
                 .setElderAge(elderAge)
-                .setCompanionName(MaskUtil.name(companionName));
+                .setCompanionName(MaskUtil.name(companionName))
+                .setActualFee(o.getActualFee())
+                .setPaymentStatus(o.getPaymentStatus())
+                .setPaymentStatusLabel(PaymentStatus.labelOf(o.getPaymentStatus()));
     }
 
     /**

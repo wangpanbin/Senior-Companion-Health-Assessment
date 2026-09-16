@@ -17,6 +17,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -66,6 +67,19 @@ import java.util.List;
 @EnableMethodSecurity(prePostEnabled = true)
 @RequiredArgsConstructor
 public class SecurityConfig {
+
+    /**
+     * CORS 放行来源，与 {@code WebMvcConfig} 读的是<b>同一个属性</b>。
+     *
+     * <p>⚠️ 这里才是**真正生效**的那一份：{@code filterChain} 用
+     * {@code .cors(cors -> cors.configurationSource(corsConfigurationSource()))}
+     * 把 Security 自己的 {@link CorsConfigurationSource} 交给了 CORS 过滤器，
+     * 于是 {@code WebMvcConfig#addCorsMappings} 对经过安全链的请求<b>不起作用</b>。
+     * 以前这个值被硬编码在这里，改 {@code WebMvcConfig} 或改配置文件都看不出效果，
+     * 排查时极易被带偏（曾据此误判成「vite 代理没转发 WebSocket」）。</p>
+     */
+    @Value("${nianglin.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}")
+    private String[] allowedOrigins;
 
     /** 无需登录即可访问的白名单 */
     private static final String[] PUBLIC_ENDPOINTS = {
@@ -156,7 +170,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("http://localhost:5173", "http://127.0.0.1:5173"));
+        config.setAllowedOriginPatterns(Arrays.asList(allowedOrigins));
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setExposedHeaders(List.of("Authorization"));

@@ -25,6 +25,7 @@ import org.company.nianglin.security.TokenStore;
 import org.company.nianglin.security.TokenPayload;
 import org.company.nianglin.service.AuthService;
 import org.company.nianglin.service.CaptchaService;
+import org.company.nianglin.service.ElderService;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.vo.LoginVO;
 import org.company.nianglin.vo.TokenVO;
@@ -74,6 +75,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtProperties jwtProperties;
     private final TokenStore tokenStore;
     private final SecurityProperties securityProperties;
+    private final ElderService elderService;
 
     /* ================================================================== */
     /* 注册                                                                */
@@ -285,7 +287,7 @@ public class AuthServiceImpl implements AuthService {
         if (AccountStatus.DISABLED.equals(user.getStatus())) {
             throw new BusinessException(ResultCode.ACCOUNT_DISABLED);
         }
-        return UserInfoVO.of(user);
+        return UserInfoVO.of(user, elderService.elderIdOf(user));
     }
 
     @Override
@@ -338,7 +340,7 @@ public class AuthServiceImpl implements AuthService {
                 .setAccessToken(accessToken)
                 .setRefreshToken(refreshToken)
                 .setExpiresIn(jwtProperties.accessTtlSeconds())
-                .setUserInfo(UserInfoVO.of(user));
+                .setUserInfo(UserInfoVO.of(user, elderService.elderIdOf(user)));
     }
 
     /**

@@ -53,6 +53,9 @@ public class UserInfoVO {
     @Schema(description = "注册时间", example = "2026-09-01 10:20:30")
     private LocalDateTime createTime;
 
+    @Schema(description = "老人档案 ID；仅 ELDER 账号且已建立档案时返回，其他角色不返回")
+    private Long elderId;
+
     /**
      * 由实体转换而来。
      *
@@ -62,7 +65,31 @@ public class UserInfoVO {
      * @param user 用户实体，可为 {@code null}
      * @return VO，入参为 {@code null} 时返回 {@code null}
      */
+    /**
+     * 由实体转换而来（不携带档案 ID）。
+     *
+     * <p>保持原有行为不变，现有调用点无需改动。内部统一委托给 {@link #of(SysUser, Long)}，
+     * 仅 {@code elderId} 传 {@code null} —— 由 Jackson 的 {@code non_null} 策略从响应体移除。</p>
+     *
+     * @param user 用户实体，可为 {@code null}
+     * @return VO，入参为 {@code null} 时返回 {@code null}
+     */
     public static UserInfoVO of(SysUser user) {
+        return of(user, null);
+    }
+
+    /**
+     * 由实体转换而来，并附带「用户自己的档案 ID」。
+     *
+     * <p>{@code elderId} 只填 ELDER 账号且已建立档案时的档案 ID；其余情况
+     * （其他角色、老人未建档、入参为 {@code null}）一律为 {@code null}，
+     * 不泄露任何他人档案 ID。它描述的是「用户自己」，与订单归属无关。</p>
+     *
+     * @param user    用户实体，可为 {@code null}
+     * @param elderId 当前用户自己的老人档案 ID，可为 {@code null}
+     * @return VO，入参为 {@code null} 时返回 {@code null}
+     */
+    public static UserInfoVO of(SysUser user, Long elderId) {
         if (user == null) {
             return null;
         }
@@ -76,6 +103,7 @@ public class UserInfoVO {
                 .setPhone(MaskUtil.phone(user.getPhone()))
                 .setAvatar(user.getAvatar())
                 .setStatus(user.getStatus())
-                .setCreateTime(user.getCreateTime());
+                .setCreateTime(user.getCreateTime())
+                .setElderId(elderId);
     }
 }

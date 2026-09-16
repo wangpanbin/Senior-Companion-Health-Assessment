@@ -9,6 +9,7 @@ import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.SecurityUtils;
+import org.company.nianglin.service.ElderService;
 import org.company.nianglin.service.UserService;
 import org.company.nianglin.vo.UserInfoVO;
 import org.springframework.stereotype.Service;
@@ -26,10 +27,12 @@ import org.springframework.util.StringUtils;
 public class UserServiceImpl implements UserService {
 
     private final SysUserMapper sysUserMapper;
+    private final ElderService elderService;
 
     @Override
     public UserInfoVO getProfile() {
-        return UserInfoVO.of(requireActiveCurrentUser());
+        SysUser user = requireActiveCurrentUser();
+        return UserInfoVO.of(user, elderService.elderIdOf(user));
     }
 
     @Override

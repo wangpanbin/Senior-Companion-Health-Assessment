@@ -405,6 +405,24 @@ public class ElderServiceImpl implements ElderService {
         throw new BusinessException(ResultCode.NO_PERMISSION_FOR_ELDER);
     }
 
+    @Override
+    public Long elderIdOf(SysUser user) {
+        if (user == null) {
+            return null;
+        }
+        // 非老人账号根本不会有「自己的老人档案」，直接返回 null，省一次无意义的库查询
+        if (!RoleConstants.ELDER.equals(user.getRole())) {
+            return null;
+        }
+        // deleted 是逻辑删除列，MyBatis-Plus 的 selectList 会自动追加 deleted = 0，
+        // 已删档案不会被返回，无需手动过滤。按 id 升序取首条，
+        // 保证一人多档案时返回值确定（绝不随机）。
+        List<ElderProfile> list = elderProfileMapper.selectList(Wrappers.<ElderProfile>lambdaQuery()
+                .eq(ElderProfile::getUserId, user.getId())
+                .orderByAsc(ElderProfile::getId));
+        return list.isEmpty() ? null : list.get(0).getId();
+    }
+
     /**
      * 写操作的归属校验：必须是<b>当前绑定的那位家属</b>。
      *

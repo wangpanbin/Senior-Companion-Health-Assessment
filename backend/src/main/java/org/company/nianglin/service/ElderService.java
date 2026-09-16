@@ -6,6 +6,7 @@ import org.company.nianglin.dto.ElderCreateDTO;
 import org.company.nianglin.dto.ElderQuery;
 import org.company.nianglin.dto.ElderUpdateDTO;
 import org.company.nianglin.entity.ElderProfile;
+import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.vo.ElderVO;
 
 /**
@@ -65,4 +66,29 @@ public interface ElderService {
      * @throws org.company.nianglin.exception.BusinessException 2001 档案不存在 / 2006 无权访问
      */
     ElderProfile requireAccessible(Long elderId);
+
+    /**
+     * 取「当前用户自己的老人档案 ID」，供 {@code UserInfoVO} 下发前端。
+     *
+     * <p><b>语义</b>：</p>
+     * <ul>
+     *   <li>入参为 {@code null} → 返回 {@code null}；</li>
+     *   <li>角色不是 {@code ELDER} → <b>直接返回 {@code null}，不查库</b>
+     *       （省一次无意义的 I/O；其他角色根本不会有自己的老人档案）；</li>
+     *   <li>角色是 {@code ELDER} → 查 {@code elder_profile} 中 {@code user_id = user.getId()}
+     *       的记录，<b>按 {@code id} 升序取第一条</b>返回其 id；查不到返回 {@code null}。</li>
+     * </ul>
+     *
+     * <p><b>关于逻辑删除</b>：{@code deleted} 是逻辑删除列，MyBatis-Plus 在 {@code selectList}
+     * 时会自动追加 {@code deleted = 0}，因此已删除的档案不会被返回，
+     * 无需在此手动过滤。</p>
+     *
+     * <p>⚠️ 用 {@code selectList} + {@code findFirst}，<b>不要</b>用 {@code selectOne}：
+     * 一人多档案时 {@code selectOne} 遇到多行会抛 {@code TooManyResultsException}；
+     * 升序取首条保证返回值确定。</p>
+     *
+     * @param user 当前登录用户实体，可为 {@code null}
+     * @return 该用户自己的老人档案 ID；非老人账号 / 未建档 / 入参为空时返回 {@code null}
+     */
+    Long elderIdOf(SysUser user);
 }
