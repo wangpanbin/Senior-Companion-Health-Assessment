@@ -1,26 +1,44 @@
 <script setup>
 /**
  * W-08 操作日志（admin_oper_log 只读查询）
+ *
+ * 数据来自 listOperLogs（分页 page/size，响应 { total, page, size, pages, records }）。
+ * 操作类型中文名后端已通过 operTypeLabel 下发，直接用它，不再在前端维护 actionMap，
+ * 避免「代码里两套中文」对不上号。
  */
-import { ref } from 'vue'
-import { NlCard } from '@/components'
+import { ref, computed, onMounted } from 'vue'
+import { NlCard, NlSkeleton, NlEmpty } from '@/components'
+import { listOperLogs } from '@/api/admin'
+import { formatDateTime } from '@/utils/format'
 
-const list = ref([
-  { ts: '2026-09-16 14:32:11', operator: 'admin', action: 'AUDIT', target: '陪诊员 comp002', detail: '驳回资质，原因：健康证已过期' },
-  { ts: '2026-09-16 11:00:30', operator: 'admin', action: 'BAN',   target: '陪诊员 comp002', detail: '封禁账号，原因：连续被投诉 3 次' },
-  { ts: '2026-09-15 18:42:05', operator: 'admin', action: 'FORCE', target: '订单 OD20250911001', detail: '强制取消订单，已通知双方' },
-  { ts: '2026-09-15 09:30:00', operator: 'admin', action: 'PWD',   target: '家属 fam005', detail: '重置密码为默认密码' },
-  { ts: '2026-09-14 14:20:18', operator: 'admin', action: 'CLOSE', target: '投诉 CP20250905003', detail: '结案，处理完成' }
-])
+const list = ref([])
+const loading = ref(false)
+const total = ref(0)
+const page = ref(1)
+const size = ref(10)
 
-const actionMap = {
-  AUDIT: '资质审核',
-  BAN: '封禁',
-  FORCE: '强制改终态',
-  PWD: '重置密码',
-  UNBAN: '解封',
-  CLOSE: '投诉结案'
+async function loadList() {
+  loading.value = true
+  try {
+    const data = await listOperLogs({ page: page.value, size: size.value })
+    list.value = data?.records || []
+    total.value = data?.total || 0
+  } catch {
+    list.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
 }
+
+const isEmpty = computed(() => !loading.value && list.value.length === 0)
+
+function onPageChange(p) {
+  page.value = p
+  loadList()
+}
+
+onMounted(loadList)
 </script>
 
 <template>
@@ -29,16 +47,46 @@ const actionMap = {
       所有管理动作都会写入 admin_oper_log，本页面只读，用于审计与追溯。
     </p>
 
-    <el-table :data="list">
-      <el-table-column prop="ts" label="时间" width="170" />
-      <el-table-column prop="operator" label="操作人" width="100" />
-      <el-table-column label="动作" width="100">
-        <template #default="{ row }">
-          <el-tag size="small" type="info">{{ actionMap[row.action] || row.action }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="target" label="对象" width="180" />
-      <el-table-column prop="detail" label="详情" min-width="280" />
-    </el-table>
+    <NlSkeleton v-if="loading" :count="5" />
+
+    <NlEmpty
+      v-else-if="isEmpty"
+      type="empty"
+      title="暂无操作日志"
+      description="当前还没有任何管理操作记录"
+    />
+
+    <template v-else>
+      <el-table :data="list">
+        <el-table-column label="时间" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.operTime) }}</template>
+        </el-table-column>
+        <el-table-column prop="operatorName" label="操作人" width="100" />
+        <el-table-column label="动作" width="140">
+          <template #default="{ row }">
+            <el-tag size="small" type="info">{{ row.operTypeLabel || row.operType }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="targetDesc" label="对象" width="200" />
+        <el-table-column prop="remark" label="详情" min-width="280" show-overflow-tooltip />
+      </el-table>
+
+      <el-pagination
+        v-if="total > size"
+        class="oper-pager"
+        layout="prev, pager, next"
+        :total="total"
+        :page-size="size"
+        :current-page="page"
+        @current-change="onPageChange"
+      />
+    </template>
   </NlCard>
 </template>
+
+<style scoped lang="scss">
+.oper-pager {
+  margin-top: var(--nl-space-4);
+  justify-content: flex-end;
+}
+</style>

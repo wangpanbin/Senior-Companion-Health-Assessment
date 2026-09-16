@@ -39,7 +39,11 @@ const rules = {
   captchaCode: [{ required: true, message: '请输入验证码', trigger: 'blur' }]
 }
 
-/** 角色快速选择 —— 仅前端 demo，使用 dev mock，不连真实后端 */
+/**
+ * 角色快速选择 —— 仅用于本地演示：选中后把对应种子账号填进表单，
+ * 提交仍然走真实的 POST /api/auth/login（含图形验证码），不存在任何绕过登录的通道。
+ * 预填只在 DEV 生效，生产构建不会带上种子账号。
+ */
 const ROLE_CARDS = [
   { role: 'ELDER',     label: '老年患者', hint: '只读视图 · 字号最大', tone: 'success', account: 'elder001' },
   { role: 'FAMILY',    label: '家属',     hint: '下单 · 绑定老人 · 看进度', tone: 'primary', account: 'fam001' },

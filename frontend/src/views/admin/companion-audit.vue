@@ -2,88 +2,114 @@
 /**
  * 陪诊员资质审核（W-02 · design.md §4 / PRD §M9）
  *
- * - 顶部 Tab 切换：待审 / 通过 / 驳回（M9 管理员审核流程）
- * - 表格：账号 / 姓名 / 手机号(脱敏) / 身份证号(脱敏) / 提交时间 / 操作
- * - 证件预览对话框：身份证 + 健康证 + 其它资质
- * - 通过 / 驳回：
- *   - 通过：直接写库，Toast 成功
- *   - 驳回：弹对话框必填原因（M9 业务规则：驳回必须填原因）
- * - 复核按钮：已通过 / 已驳回可「撤销决定」（写 admin_oper_log）
+ * - 顶部 Tab 切换：待审 / 通过 / 驳回
+ * - 表格：编号 / 账号 / 姓名 / 手机号(脱敏) / 身份证号(脱敏) / 证件数 / 提交时间 / 状态 / 操作
+ * - 证件预览对话框：拉详情接口拿到完整证件与驳回原因（列表口径故意不下发这些字段）
+ * - 通过 / 驳回：驳回时 rejectReason 必填（后端 Service 校验，空了返回 8003）
+ *
+ * 注意：资质状态的 PENDING 是「待审核」，因此 NlStatusChip 必须传 scope="audit"，
+ * 否则会错误地显示成订单语义的「待接单」。
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlCard, NlStatusChip } from '@/components'
-
-/** mock 列表 */
-const list = ref([
-  { id: 'A001', account: 'comp001', name: '张三', phone: '138****1234', idCard: '110101********4567', certs: 3, submitAt: '2026-09-15 10:23', status: 'PENDING' },
-  { id: 'A002', account: 'comp002', name: '李四', phone: '138****5678', idCard: '310101********7890', certs: 2, submitAt: '2026-09-14 16:45', status: 'PENDING' },
-  { id: 'A003', account: 'comp003', name: '王五', phone: '139****9012', idCard: '440101********0123', certs: 3, submitAt: '2026-09-14 09:10', status: 'PENDING' },
-  { id: 'A004', account: 'comp010', name: '陈七', phone: '137****3456', idCard: '320101********2345', certs: 2, submitAt: '2026-09-13 18:30', status: 'APPROVED' },
-  { id: 'A005', account: 'comp011', name: '赵八', phone: '136****7890', idCard: '510101********6789', certs: 1, submitAt: '2026-09-12 14:00', status: 'REJECTED', reason: '健康证已过期' }
-])
+import { NlCard, NlStatusChip, NlSkeleton, NlEmpty } from '@/components'
+import { listAuditApplications, getAuditDetail, auditCompanion } from '@/api/admin'
+import { formatDateTime } from '@/utils/format'
 
 const tab = ref('PENDING')
+const list = ref([])
+const loading = ref(false)
+const total = ref(0)
+const page = ref(1)
+const size = ref(10)
 
-const filtered = computed(() => list.value.filter((x) => x.status === tab.value))
+/** 列表按 auditStatus 走后端分页查询，不在前端过滤（否则只能看到已加载的那一页） */
+async function loadList() {
+  loading.value = true
+  try {
+    const data = await listAuditApplications({
+      page: page.value,
+      size: size.value,
+      auditStatus: tab.value
+    })
+    list.value = data?.records || []
+    total.value = data?.total || 0
+  } catch {
+    // 拦截器已弹错误提示，这里只兜底清空，交给空态展示
+    list.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
+}
+
+const isEmpty = computed(() => !loading.value && list.value.length === 0)
+
+// 切 tab 回到第一页重新拉数，避免停留在上一页的页码上看到旧数据
+watch(tab, () => {
+  page.value = 1
+  loadList()
+})
+
+function onPageChange(p) {
+  page.value = p
+  loadList()
+}
 
 const reviewRef = ref(null)
 const reviewItem = ref(null)
 const reviewFiles = ref([])
 const rejectReason = ref('')
 
-function openReview(item) {
-  reviewItem.value = item
-  rejectReason.value = item.reason || ''
-  reviewFiles.value = [
-    { name: '身份证正面', url: '' },
-    { name: '身份证反面', url: '' },
-    { name: '健康证', url: '' }
-  ]
-  reviewRef.value.open()
+async function openReview(item) {
+  try {
+    // 列表接口不下发驳回原因 / 内部备注 / 证件材料（后端用 includeAuditNote 开关区分），
+    // 审核或查看详情必须再拉一次详情接口才能拿到全量信息
+    const detail = await getAuditDetail(item.id)
+    reviewItem.value = detail
+    rejectReason.value = detail?.rejectReason || ''
+    reviewFiles.value = (detail?.certificates || []).map((c) => ({ name: c.name, url: c.url }))
+    reviewRef.value.open()
+  } catch {
+    // 拦截器已提示，无需重复弹
+  }
 }
 
 async function approve() {
   await ElMessageBox.confirm(
-    `确认通过「${reviewItem.value.name}」的资质审核？通过后陪诊员可开始接单。`,
+    `确认通过「${reviewItem.value.realName}」的资质审核？通过后陪诊员可开始接单。`,
     '审核通过',
     { confirmButtonText: '通过审核' }
   )
-  const t = list.value.find((x) => x.id === reviewItem.value.id)
-  if (t) t.status = 'APPROVED'
+  // 通过时不传 rejectReason，避免后端日志里出现一条假原因
+  await auditCompanion(reviewItem.value.id, { approved: true })
   ElMessage.success('已通过审核')
   reviewRef.value.close()
+  loadList()
 }
 
 async function reject() {
-  if (!rejectReason.value.trim()) {
+  const reason = rejectReason.value.trim()
+  if (!reason) {
     ElMessage.warning('请填写驳回原因')
     return
   }
+  if (reason.length < 5) {
+    ElMessage.warning('驳回原因至少 5 个字')
+    return
+  }
   await ElMessageBox.confirm(
-    `确认驳回「${reviewItem.value.name}」的资质申请？驳回后将通知陪诊员。`,
+    `确认驳回「${reviewItem.value.realName}」的资质申请？驳回后将通知陪诊员。`,
     '审核驳回',
     { confirmButtonText: '确认驳回', type: 'warning' }
   )
-  const t = list.value.find((x) => x.id === reviewItem.value.id)
-  if (t) {
-    t.status = 'REJECTED'
-    t.reason = rejectReason.value
-  }
+  await auditCompanion(reviewItem.value.id, { approved: false, rejectReason: reason })
   ElMessage.success('已驳回')
   reviewRef.value.close()
+  loadList()
 }
 
-async function restore(item) {
-  await ElMessageBox.confirm(
-    `撤销「${item.name}」的 ${item.status === 'APPROVED' ? '通过' : '驳回'}决定？撤销后回到待审状态。`,
-    '撤销审核决定',
-    { type: 'warning' }
-  )
-  item.status = 'PENDING'
-  delete item.reason
-  ElMessage.success('已撤销')
-}
+onMounted(loadList)
 </script>
 
 <template>
@@ -94,49 +120,59 @@ async function restore(item) {
       <el-tab-pane label="已驳回" name="REJECTED" />
     </el-tabs>
 
-    <el-table :data="filtered" style="width: 100%" :empty-text="tab === 'PENDING' ? '暂无待审申请' : tab === 'APPROVED' ? '尚无通过记录' : '尚无驳回记录'">
-      <el-table-column prop="id" label="编号" width="100" />
-      <el-table-column prop="account" label="账号" width="110" />
-      <el-table-column prop="name" label="姓名" width="80" />
-      <el-table-column prop="phone" label="手机号" width="120" />
-      <el-table-column prop="idCard" label="身份证号" width="170" />
-      <el-table-column label="证件数" width="80">
-        <template #default="{ row }">
-          <el-tag size="small" type="info">{{ row.certs }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="submitAt" label="提交时间" width="160" />
-      <el-table-column label="状态" width="120">
-        <template #default="{ row }">
-          <NlStatusChip :status="row.status" />
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" min-width="200" fixed="right">
-        <template #default="{ row }">
-          <el-button type="primary" text size="small" @click="openReview(row)">
-            {{ row.status === 'PENDING' ? '审核' : '查看' }}
-          </el-button>
-          <el-button
-            v-if="row.status !== 'PENDING'"
-            type="warning"
-            text
-            size="small"
-            @click="restore(row)"
-          >
-            撤销决定
-          </el-button>
-          <span v-if="row.status === 'REJECTED' && row.reason" class="nl-caption nl-text-muted">
-            · {{ row.reason }}
-          </span>
-        </template>
-      </el-table-column>
-    </el-table>
+    <NlSkeleton v-if="loading" :count="5" />
+
+    <NlEmpty
+      v-else-if="isEmpty"
+      type="empty"
+      :title="tab === 'PENDING' ? '暂无待审申请' : tab === 'APPROVED' ? '尚无通过记录' : '尚无驳回记录'"
+    />
+
+    <template v-else>
+      <el-table :data="list" style="width: 100%" :empty-text="tab === 'PENDING' ? '暂无待审申请' : tab === 'APPROVED' ? '尚无通过记录' : '尚无驳回记录'">
+        <el-table-column prop="id" label="编号" width="100" />
+        <el-table-column prop="username" label="账号" width="110" />
+        <el-table-column prop="realName" label="姓名" width="80" />
+        <el-table-column prop="phone" label="手机号" width="120" />
+        <el-table-column prop="idCard" label="身份证号" width="170" />
+        <el-table-column label="证件数" width="80">
+          <template #default="{ row }">
+            <el-tag size="small" type="info">{{ (row.certificates || []).length }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="提交时间" width="160">
+          <template #default="{ row }">{{ formatDateTime(row.submitTime) }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">
+            <NlStatusChip :status="row.auditStatus" scope="audit" :text="row.auditStatusLabel" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" text size="small" @click="openReview(row)">
+              {{ row.auditStatus === 'PENDING' ? '审核' : '查看' }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-pagination
+        v-if="total > size"
+        class="audit-pager"
+        layout="prev, pager, next"
+        :total="total"
+        :page-size="size"
+        :current-page="page"
+        @current-change="onPageChange"
+      />
+    </template>
   </NlCard>
 
   <!-- 审核对话框 -->
   <el-dialog
     ref="reviewRef"
-    :title="`陪诊员资质审核 - ${reviewItem?.name || ''}`"
+    :title="`陪诊员资质审核 - ${reviewItem?.realName || ''}`"
     width="640px"
     align-center
   >
@@ -149,12 +185,21 @@ async function restore(item) {
         <span class="audit-dialog__label">身份证号</span>
         <span class="is-num">{{ reviewItem.idCard }}</span>
       </section>
+      <section class="audit-dialog__row" v-if="reviewItem.serviceArea">
+        <span class="audit-dialog__label">服务区域</span>
+        <span class="nl-body">{{ reviewItem.serviceArea }}</span>
+      </section>
+      <section class="audit-dialog__row" v-if="reviewItem.availableTime">
+        <span class="audit-dialog__label">可服务时段</span>
+        <span class="nl-body">{{ reviewItem.availableTime }}</span>
+      </section>
       <section class="audit-dialog__row">
         <span class="audit-dialog__label">证件资料</span>
         <ul class="certs">
           <li v-for="f in reviewFiles" :key="f.name">
             <div class="certs__thumb">
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <img v-if="f.url" :src="f.url" :alt="f.name" class="certs__img" />
+              <svg v-else viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <rect x="3" y="5" width="18" height="14" rx="2" />
                 <circle cx="9" cy="11" r="2" />
                 <path d="M21 17l-5-5-9 9" />
@@ -165,7 +210,13 @@ async function restore(item) {
         </ul>
       </section>
 
-      <section v-if="reviewItem.status === 'PENDING'" class="audit-dialog__row">
+      <!-- 申请补充说明：详情接口才下发，列表看不到 -->
+      <section v-if="reviewItem.applyRemark" class="audit-dialog__row">
+        <span class="audit-dialog__label">申请备注</span>
+        <span class="nl-body">{{ reviewItem.applyRemark }}</span>
+      </section>
+
+      <section v-if="reviewItem.auditStatus === 'PENDING'" class="audit-dialog__row">
         <span class="audit-dialog__label">驳回原因</span>
         <el-input
           v-model="rejectReason"
@@ -176,14 +227,19 @@ async function restore(item) {
           show-word-limit
         />
       </section>
-      <section v-else-if="reviewItem.reason" class="audit-dialog__row">
+      <!-- 已驳回：展示后端下发的驳回原因；已通过：展示内部备注（若有） -->
+      <section v-else-if="reviewItem.rejectReason" class="audit-dialog__row">
         <span class="audit-dialog__label">驳回原因</span>
-        <span class="nl-body">{{ reviewItem.reason }}</span>
+        <span class="nl-body">{{ reviewItem.rejectReason }}</span>
+      </section>
+      <section v-else-if="reviewItem.auditRemark" class="audit-dialog__row">
+        <span class="audit-dialog__label">审核备注</span>
+        <span class="nl-body">{{ reviewItem.auditRemark }}</span>
       </section>
     </div>
 
     <template #footer>
-      <span v-if="reviewItem?.status === 'PENDING'" class="audit-actions">
+      <span v-if="reviewItem?.auditStatus === 'PENDING'" class="audit-actions">
         <el-button @click="reviewRef.close()">取消</el-button>
         <el-button type="danger" @click="reject">驳 回</el-button>
         <el-button type="primary" @click="approve">通 过</el-button>
@@ -198,6 +254,11 @@ async function restore(item) {
 
 .audit-tabs {
   margin-bottom: var(--nl-space-4);
+}
+
+.audit-pager {
+  margin-top: var(--nl-space-4);
+  justify-content: flex-end;
 }
 
 .audit-dialog {
@@ -245,10 +306,17 @@ async function restore(item) {
     justify-content: center;
     width: 80px;
     height: 56px;
+    overflow: hidden;
     color: var(--nl-primary);
     background: var(--nl-primary-light);
     border-radius: 6px;
     border: 1px dashed var(--nl-primary);
+  }
+
+  &__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 }
 

@@ -2,77 +2,61 @@
 /**
  * 订单纠纷仲裁（W-03 · design.md §4 / PRD §M9）
  *
- * - 表格：订单号 / 投诉双方 / 投诉原因 / 处理状态 / 操作
- * - 详情对话框：
- *   - 订单完整时间线（状态流转）
- *   - 双方材料（家属投诉 + 陪诊员申诉）
- *   - 强制改终态：可以选 CANCELLED / COMPLETED / 其他
- *   - 双方通知：自动站内信（提交后批量发）
+ * 数据来源：纠纷列表直接复用 listAllOrders（与订单管理同源，便于管理员对任意订单强制改终态）。
+ * 仲裁动作走 arbitrateOrder，入参严格对齐后端 ArbitrateDTO：
+ *   - targetStatus 只能是 COMPLETED / CANCELLED（后端 isAdminForceable 兜死，传别的会被拒）
+ *   - result 是「处理结果说明」，必填且 10–500 字（和 mock 里「仅取消时填原因」不同，后端要求每次都填）
+ *   - refundToFamily / penaltyToCompanion 是可选的记账标记（不做在线退款）
+ *
+ * 注意：后端没有「订单时间线」接口，原模板里那根自定义 timeline 没有真实数据源，
+ * 这里用订单关键字段（医院/科室/就诊时间/费用/状态）替代展示。
  */
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlCard, NlStatusChip, NlTimeline } from '@/components'
+import { NlCard, NlStatusChip, NlSkeleton, NlEmpty } from '@/components'
+import { listAllOrders, arbitrateOrder } from '@/api/admin'
+import { formatDateTime, formatMoney } from '@/utils/format'
 
-const list = ref([
-  {
-    id: 'OD20250911001',
-    family: 'fam001 张丽',
-    companion: 'comp001 张三',
-    elder: '张大爷 · 72 岁',
-    reason: '家属要求退款',
-    description: '已支付 120 元，陪诊员接单后未能按时到达',
-    status: 'PENDING',
-    submitAt: '2026-09-12 09:30',
-    timeline: [
-      { key: 'PENDING', label: '待接单', status: 'done', time: '09-10 18:00' },
-      { key: 'ACCEPTED', label: '已接单', status: 'done', time: '09-10 18:35' },
-      { key: 'IN_SERVICE', label: '服务中', status: 'done', time: '09-11 09:05' },
-      { key: 'DISPUTE', label: '纠纷介入', status: 'current', time: '09-12 09:30' },
-      { key: 'COMPLETED', label: '已完成', status: 'todo' },
-      { key: 'REVIEWED', label: '已评价', status: 'todo' }
-    ]
-  },
-  {
-    id: 'OD20250905007',
-    family: 'fam005 孙七',
-    companion: 'comp020 周八',
-    elder: '李大爷 · 75 岁',
-    reason: '服务态度问题',
-    description: '陪诊员沟通不耐烦，希望平台介入',
-    status: 'PROCESSING',
-    submitAt: '2026-09-06 14:20',
-    timeline: [
-      { key: 'PENDING', label: '待接单', status: 'done', time: '09-04 09:00' },
-      { key: 'ACCEPTED', label: '已接单', status: 'done', time: '09-04 09:10' },
-      { key: 'IN_SERVICE', label: '服务中', status: 'done', time: '09-04 09:50' },
-      { key: 'DISPUTE', label: '纠纷介入', status: 'current', time: '09-06 14:20' },
-      { key: 'COMPLETED', label: '已完成', status: 'todo' }
-    ]
-  },
-  {
-    id: 'OD20250902003',
-    family: 'fam022 钱十一',
-    companion: 'comp011 王五',
-    elder: '王奶奶 · 68 岁',
-    reason: '老人走失',
-    description: '就诊途中老人走失，已找回',
-    status: 'CLOSED',
-    submitAt: '2026-09-03 11:00',
-    timeline: [
-      { key: 'CLOSED', label: '已结案', status: 'done', time: '09-04 16:00' }
-    ]
+const list = ref([])
+const loading = ref(false)
+const total = ref(0)
+const page = ref(1)
+const size = ref(10)
+
+async function loadList() {
+  loading.value = true
+  try {
+    const data = await listAllOrders({ page: page.value, size: size.value })
+    list.value = data?.records || []
+    total.value = data?.total || 0
+  } catch {
+    list.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
   }
-])
+}
+
+const isEmpty = computed(() => !loading.value && list.value.length === 0)
+
+function onPageChange(p) {
+  page.value = p
+  loadList()
+}
 
 const dialogRef = ref(null)
 const detail = ref(null)
 const decision = ref('COMPLETED')
-const decisionReason = ref('')
+const decisionNote = ref('')
+const refundToFamily = ref(false)
+const penaltyToCompanion = ref(false)
 
 function open(o) {
   detail.value = o
-  decisionReason.value = ''
   decision.value = 'COMPLETED'
+  decisionNote.value = ''
+  refundToFamily.value = false
+  penaltyToCompanion.value = false
   dialogRef.value.open()
 }
 
@@ -81,52 +65,83 @@ async function forceTerminate() {
     ElMessage.warning('请选择仲裁决定')
     return
   }
-  if (decision.value === 'CANCELLED' && !decisionReason.value.trim()) {
-    ElMessage.warning('强制取消订单时必须填写原因（将通知双方）')
+  const note = decisionNote.value.trim()
+  // 后端 result 要求 10–500 字，前端先拦一道，避免白跑一次请求才拿到校验错误
+  if (note.length < 10) {
+    ElMessage.warning('请填写处理结果说明（至少 10 字，将通知双方）')
     return
   }
-
   await ElMessageBox.confirm(
-    `执行「${decision.value === 'CANCELLED' ? '强制取消' : decision.value === 'COMPLETED' ? '强制完成' : '其他'}」仲裁决定？该操作将同时通知家属与陪诊员。`,
+    `执行「${decision.value === 'CANCELLED' ? '强制取消' : '强制完成'}」仲裁决定？该操作将同时通知家属与陪诊员。`,
     '确认仲裁',
     { confirmButtonText: '执行并通知双方', type: 'warning' }
   )
-
-  const t = list.value.find((x) => x.id === detail.value.id)
-  if (t) t.status = 'CLOSED'
+  await arbitrateOrder(detail.value.id, {
+    targetStatus: decision.value,
+    result: note,
+    refundToFamily: refundToFamily.value,
+    penaltyToCompanion: penaltyToCompanion.value
+  })
   ElMessage.success('已执行仲裁，将自动通知家属与陪诊员（站内信）')
   dialogRef.value.close()
+  loadList()
 }
+
+onMounted(loadList)
 </script>
 
 <template>
   <NlCard title="订单纠纷仲裁" plain>
-    <el-table :data="list" style="width: 100%">
-      <el-table-column prop="id" label="订单号" width="180" />
-      <el-table-column label="投诉方" width="140">
-        <template #default="{ row }">{{ row.family }}</template>
-      </el-table-column>
-      <el-table-column label="被投诉陪诊员" width="140">
-        <template #default="{ row }">{{ row.companion }}</template>
-      </el-table-column>
-      <el-table-column prop="reason" label="投诉原因" width="160" />
-      <el-table-column label="处理状态" width="120">
-        <template #default="{ row }">
-          <NlStatusChip :status="row.status" />
-        </template>
-      </el-table-column>
-      <el-table-column prop="submitAt" label="提交时间" width="180" />
-      <el-table-column label="操作" min-width="120" fixed="right">
-        <template #default="{ row }">
-          <el-button type="primary" text size="small" @click="open(row)">处理</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <NlSkeleton v-if="loading" :count="5" />
+
+    <NlEmpty
+      v-else-if="isEmpty"
+      type="empty"
+      title="暂无订单"
+      description="当前没有可仲裁的订单"
+    />
+
+    <template v-else>
+      <el-table :data="list" style="width: 100%">
+        <el-table-column prop="orderNo" label="订单号" width="180" />
+        <el-table-column prop="elderName" label="就诊人" width="100" />
+        <el-table-column prop="companionName" label="陪诊员" width="100" />
+        <el-table-column prop="hospital" label="医院" min-width="180" />
+        <el-table-column label="服务费" width="100">
+          <template #default="{ row }">
+            <span class="is-num">{{ formatMoney(row.fee) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">
+            <NlStatusChip :status="row.status" :text="row.statusLabel" />
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="160">
+          <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" text size="small" @click="open(row)">处理</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-pagination
+        v-if="total > size"
+        class="dispute-pager"
+        layout="prev, pager, next"
+        :total="total"
+        :page-size="size"
+        :current-page="page"
+        @current-change="onPageChange"
+      />
+    </template>
   </NlCard>
 
   <el-dialog
     ref="dialogRef"
-    :title="`订单纠纷 - ${detail?.id || ''}`"
+    :title="`订单纠纷 - ${detail?.orderNo || ''}`"
     width="720px"
     align-center
   >
@@ -134,22 +149,22 @@ async function forceTerminate() {
       <!-- 双方 -->
       <section class="dispute__parties">
         <div class="party-card party-card--family">
-          <span class="party-card__label">投诉方（家属）</span>
-          <span class="party-card__name">{{ detail.family }}</span>
+          <span class="party-card__label">就诊人（家属侧）</span>
+          <span class="party-card__name">{{ detail.elderName }}</span>
         </div>
         <div class="party-card party-card--companion">
-          <span class="party-card__label">被投诉（陪诊员）</span>
-          <span class="party-card__name">{{ detail.companion }}</span>
+          <span class="party-card__label">陪诊员（被处理侧）</span>
+          <span class="party-card__name">{{ detail.companionName || '未接单' }}</span>
         </div>
       </section>
 
-      <p class="nl-body dispute__desc">{{ detail.description }}</p>
-
-      <!-- 时间线 -->
-      <section>
-        <h4 class="nl-h3">订单时间线</h4>
-        <NlTimeline :steps="detail.timeline" />
-      </section>
+      <p class="nl-body dispute__desc">
+        医院：{{ detail.hospital }} · 科室：{{ detail.department || '—' }} · 就诊时间：{{ formatDateTime(detail.visitTime) }}
+      </p>
+      <p class="nl-body dispute__desc">
+        服务费：{{ formatMoney(detail.fee) }} · 当前状态：
+        <NlStatusChip :status="detail.status" :text="detail.statusLabel" />
+      </p>
 
       <!-- 仲裁决策 -->
       <section class="dispute__decision">
@@ -157,16 +172,17 @@ async function forceTerminate() {
         <el-radio-group v-model="decision" class="dispute__decision-radio">
           <el-radio-button label="COMPLETED">强制完成</el-radio-button>
           <el-radio-button label="CANCELLED">强制取消</el-radio-button>
-          <el-radio-button label="PARTIAL">部分退款</el-radio-button>
         </el-radio-group>
         <el-input
-          v-model="decisionReason"
+          v-model="decisionNote"
           type="textarea"
           :rows="3"
-          placeholder="仲裁说明（强制取消时必填，将通知双方）"
-          maxlength="200"
+          placeholder="处理结果说明（必填，10–500 字，将通知双方）"
+          maxlength="500"
           show-word-limit
         />
+        <el-checkbox v-model="refundToFamily">退还家属费用（记账标记，不做在线退款）</el-checkbox>
+        <el-checkbox v-model="penaltyToCompanion">对陪诊员计违规</el-checkbox>
         <p class="nl-caption nl-text-muted">
           执行后系统将自动给家属 + 陪诊员各发一条站内信，写明仲裁决定与依据。
         </p>
@@ -182,6 +198,11 @@ async function forceTerminate() {
 
 <style scoped lang="scss">
 @use '@/styles/variables.scss' as *;
+
+.dispute-pager {
+  margin-top: var(--nl-space-4);
+  justify-content: flex-end;
+}
 
 .dispute {
   display: flex;
@@ -228,7 +249,7 @@ async function forceTerminate() {
   &__name {
     font-size: 14px;
     font-weight: 600;
-    color: $nl-text-1;
+    color: var(--nl-text-1);
   }
 
   &--family {

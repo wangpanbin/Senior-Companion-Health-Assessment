@@ -1,25 +1,78 @@
 <script setup>
 /**
  * W-05 订单管理（管理员视角）
+ *
+ * 数据来自 listAllOrders（与导出接口同源，保证「页面看到的就是能导出的」）。
+ * 分页参数是 page / size，从 1 开始，size 上限 100，响应结构是 { total, page, size, pages, records }。
+ *
+ * 注意：订单状态 PENDING 在这里是「待接单」，NlStatusChip 用默认 scope（order）即可。
  */
-import { ref } from 'vue'
-import { NlCard, NlStatusChip } from '@/components'
+import { ref, computed, onMounted } from 'vue'
+import { NlCard, NlStatusChip, NlSkeleton, NlEmpty } from '@/components'
+import { listAllOrders } from '@/api/admin'
+import { formatDateTime, formatMoney } from '@/utils/format'
 
-const filter = ref({ status: '', date: '' })
+const filter = ref({ status: '', date: null, keyword: '' })
 
-const list = ref([
-  { id: 'OD20250916001', elder: '张大爷', hospital: '市第一人民医院', companion: '李师傅', fee: 120, status: 'IN_SERVICE', createdAt: '09-15 17:30' },
-  { id: 'OD20250916002', elder: '王奶奶', hospital: '市中医院',       companion: '张师傅', fee: 100, status: 'PENDING',    createdAt: '09-16 08:30' },
-  { id: 'OD20250915003', elder: '陈大爷', hospital: '市第一人民医院', companion: '王师傅', fee: 120, status: 'COMPLETED',  createdAt: '09-15 09:00' },
-  { id: 'OD20250914004', elder: '赵奶奶', hospital: '市妇幼保健院',   companion: '陈师傅', fee: 150, status: 'REVIEWED',   createdAt: '09-14 09:30' },
-  { id: 'OD20250913005', elder: '李大爷', hospital: '社区卫生服务中心', companion: '赵师傅', fee: 80, status: 'CANCELLED', createdAt: '09-13 14:00' }
-])
+const list = ref([])
+const loading = ref(false)
+const total = ref(0)
+const page = ref(1)
+const size = ref(10)
+
+/** 把筛选条件拍平成后端要的查询参数；空值不传，避免后端收到空字符串去精确匹配 */
+function buildParams() {
+  const p = { page: page.value, size: size.value }
+  if (filter.value.status) p.status = filter.value.status
+  if (filter.value.keyword && filter.value.keyword.trim()) p.keyword = filter.value.keyword.trim()
+  // 日期选择器用 value-format="YYYY-MM-DD"，这里直接是 ['2026-09-01','2026-09-30'] 形式
+  if (filter.value.date && filter.value.date.length === 2) {
+    p.startDate = filter.value.date[0]
+    p.endDate = filter.value.date[1]
+  }
+  return p
+}
+
+async function loadList() {
+  loading.value = true
+  try {
+    const data = await listAllOrders(buildParams())
+    list.value = data?.records || []
+    total.value = data?.total || 0
+  } catch {
+    list.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
+}
+
+const isEmpty = computed(() => !loading.value && list.value.length === 0)
+
+// 任意筛选条件变化都回到第一页重新查，避免停留在旧页码
+function onFilterChange() {
+  page.value = 1
+  loadList()
+}
+
+function onPageChange(p) {
+  page.value = p
+  loadList()
+}
+
+onMounted(loadList)
 </script>
 
 <template>
   <NlCard title="订单管理" plain>
     <section class="filters">
-      <el-select v-model="filter.status" placeholder="状态" clearable style="width: 140px">
+      <el-select
+        v-model="filter.status"
+        placeholder="状态"
+        clearable
+        style="width: 140px"
+        @change="onFilterChange"
+      >
         <el-option label="待接单" value="PENDING" />
         <el-option label="已接单" value="ACCEPTED" />
         <el-option label="服务中" value="IN_SERVICE" />
@@ -27,33 +80,71 @@ const list = ref([
         <el-option label="已评价" value="REVIEWED" />
         <el-option label="已取消" value="CANCELLED" />
       </el-select>
-      <el-date-picker v-model="filter.date" type="daterange" range-separator="-" start-placeholder="开始" end-placeholder="结束" />
-      <el-input placeholder="搜索订单号 / 就诊人" clearable style="width: 240px" />
-      <el-button type="primary" plain>查询</el-button>
+      <el-date-picker
+        v-model="filter.date"
+        type="daterange"
+        range-separator="-"
+        start-placeholder="开始"
+        end-placeholder="结束"
+        value-format="YYYY-MM-DD"
+        @change="onFilterChange"
+      />
+      <el-input
+        v-model="filter.keyword"
+        placeholder="搜索订单号 / 医院 / 姓名"
+        clearable
+        style="width: 240px"
+        @keyup.enter="onFilterChange"
+        @clear="onFilterChange"
+      />
+      <el-button type="primary" plain @click="onFilterChange">查询</el-button>
     </section>
 
-    <el-table :data="list">
-      <el-table-column prop="id" label="订单号" width="180" />
-      <el-table-column prop="elder" label="就诊人" width="100" />
-      <el-table-column prop="hospital" label="医院" min-width="180" />
-      <el-table-column prop="companion" label="陪诊员" width="100" />
-      <el-table-column label="服务费" width="100">
-        <template #default="{ row }">
-          <span class="is-num">¥{{ row.fee }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="100">
-        <template #default="{ row }">
-          <NlStatusChip :status="row.status" />
-        </template>
-      </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" width="160" />
-      <el-table-column label="操作" min-width="120" fixed="right">
-        <template #default>
-          <el-button text size="small" type="primary">查看</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <NlSkeleton v-if="loading" :count="5" />
+
+    <NlEmpty
+      v-else-if="isEmpty"
+      type="empty"
+      title="暂无订单"
+      description="当前筛选条件下没有订单"
+    />
+
+    <template v-else>
+      <el-table :data="list">
+        <el-table-column prop="orderNo" label="订单号" width="180" />
+        <el-table-column prop="elderName" label="就诊人" width="100" />
+        <el-table-column prop="hospital" label="医院" min-width="180" />
+        <el-table-column prop="companionName" label="陪诊员" width="100" />
+        <el-table-column label="服务费" width="100">
+          <template #default="{ row }">
+            <span class="is-num">{{ formatMoney(row.fee) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <NlStatusChip :status="row.status" :text="row.statusLabel" />
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="160">
+          <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="120" fixed="right">
+          <template #default>
+            <el-button text size="small" type="primary">查看</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-pagination
+        v-if="total > size"
+        class="order-pager"
+        layout="prev, pager, next"
+        :total="total"
+        :page-size="size"
+        :current-page="page"
+        @current-change="onPageChange"
+      />
+    </template>
   </NlCard>
 </template>
 
@@ -62,5 +153,11 @@ const list = ref([
   display: flex;
   gap: var(--nl-space-3);
   margin-bottom: var(--nl-space-4);
+  flex-wrap: wrap;
+}
+
+.order-pager {
+  margin-top: var(--nl-space-4);
+  justify-content: flex-end;
 }
 </style>

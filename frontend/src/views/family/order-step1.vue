@@ -5,36 +5,63 @@
  * - 顶部 NlStepHeader 1-2-3
  * - 选择就诊人卡：单选列表（已绑定的老人）
  * - 底部固定「下一步」主行动按钮（CTA）
+ *
+ * 数据来源：`GET /api/user/elder`（M3 已交付）。
+ * ⚠️ 该接口只有家属角色可用（`@PreAuthorize("hasRole('FAMILY')")`）。
+ * ⚠️ 列表口径下姓名与手机号是**脱敏**的（张*海 / 139****0001）—— 这是后端刻意的
+ *    隐私设计（列表一屏可能展示十几个老人，容易被旁人扫到），不是缺陷。
+ *    下单只需要 elderId，脱敏不影响功能。
  */
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { NlPhoneShell, NlStepHeader, NlAvatar } from '@/components'
+import { NlPhoneShell, NlStepHeader, NlAvatar, NlEmpty, NlSkeleton } from '@/components'
+import { listElder } from '@/api/user'
+import { useOrderDraftStore } from '@/store/modules/orderDraft'
 
 const router = useRouter()
+const draft = useOrderDraftStore()
 
-const elders = [
-  { id: 1, name: '张大爷', age: 72, tag: '健康', phone: '138****7777' },
-  { id: 2, name: '王奶奶', age: 68, tag: '糖尿病', phone: '138****6666' }
-]
+const elders = ref([])
+const loading = ref(false)
+const selectedId = ref(null)
 
-const selectedId = ref(1)
+async function loadElders() {
+  loading.value = true
+  try {
+    // size 上限 100（后端 PageQuery 的 @Max 约束），一次拉全，老人数量不会多到需要翻页
+    const data = await listElder({ page: 1, size: 100 })
+    elders.value = data?.records || []
+    // 默认选中第一位：家属进页面多半就是给常用老人下单，少点一次是一次
+    if (elders.value.length && !selectedId.value) {
+      selectedId.value = elders.value[0].id
+    }
+  } catch {
+    elders.value = []
+  } finally {
+    loading.value = false
+  }
+}
 
 function pick(id) {
   selectedId.value = id
 }
 
 function next() {
-  const elder = elders.find((e) => e.id === selectedId.value)
+  const elder = elders.value.find((e) => e.id === selectedId.value)
   if (!elder) {
     ElMessage.warning('请先选择就诊人')
     return
   }
+  // 写入下单草稿，后续 step2 / step3 从中读取，避免把一长串参数塞进 URL
+  draft.setElder(elder.id, elder.name)
   router.push({
     path: '/family/order/step2',
     query: { elderId: elder.id }
   })
 }
+
+onMounted(loadElders)
 </script>
 
 <template>
@@ -48,7 +75,18 @@ function next() {
       <h2 class="nl-h2 step__title">请选择本次陪诊的就诊人</h2>
       <p class="nl-caption nl-text-muted">系统会自动按就诊人匹配医院偏好与服务地址</p>
 
-      <ul class="elderpick">
+      <NlSkeleton v-if="loading" :count="3" />
+
+      <NlEmpty
+        v-else-if="!elders.length"
+        type="empty"
+        title="还没有绑定老人"
+        description="先绑定一位老人，才能为他预约陪诊"
+        action-text="去绑定"
+        @action="router.push('/family/elder/bind')"
+      />
+
+      <ul v-else class="elderpick">
         <li
           v-for="e in elders"
           :key="e.id"
@@ -62,7 +100,8 @@ function next() {
               <span class="elderpick__age">{{ e.age }} 岁</span>
             </div>
             <p class="nl-caption nl-text-muted">
-              {{ e.tag }} · {{ e.phone }}
+              {{ e.genderLabel }}<template v-if="e.phone"> · {{ e.phone }}</template>
+              <template v-if="e.favoriteHospital"> · {{ e.favoriteHospital }}</template>
             </p>
           </div>
           <span class="elderpick__radio" aria-hidden="true">
@@ -75,7 +114,14 @@ function next() {
     </section>
 
     <template #cta>
-      <el-button type="primary" size="large" round class="step__cta" @click="next">
+      <el-button
+        type="primary"
+        size="large"
+        round
+        class="step__cta"
+        :disabled="!elders.length"
+        @click="next"
+      >
         下一步
       </el-button>
     </template>

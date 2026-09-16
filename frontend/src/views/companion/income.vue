@@ -1,83 +1,142 @@
 <script setup>
 /**
- * 陪诊员·我的收入与排行（M-21 · design.md §1.2 P1）
+ * 陪诊员·我的收入（M-21 · design.md §1.2 P1）
  *
- * - 顶部 3 个 KPI：本周接单 / 平均评分 / 本周收入
- * - 排名卡：我排第 3 名（奖牌色）
- * - 收入明细列表
+ * 后端没有专门的「收入」接口，复用 listMyOrders 列表：
+ *   - 循环分页（size=100，按 pages 翻完）拉全量订单；
+ *   - 只统计 COMPLETED / REVIEWED（不含进行中状态）；
+ *   - 列表已直接返回 paymentStatus / paymentStatusLabel / actualFee，
+ *     结算状态与金额直接取列表字段，不再逐单 getOrder（去 N+1）；
+ *   - 合规红线：一期只有线上记账 + 线下结算，严禁「在线支付 / 提现 / 原路退回」字样。
  */
-import { ref } from 'vue'
-import { NlPhoneShell, NlCard } from '@/components'
+import { ref, computed, onMounted } from 'vue'
+import { NlPhoneShell, NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlNoticeBar } from '@/components'
+import { listMyOrders } from '@/api/order'
+import { formatMoney, formatDate } from '@/utils/format'
 
-const kpi = ref({
-  weekOrders: 12,
-  avgRating: 4.9,
-  weekIncome: 1480,
-  rank: 3
-})
+const loading = ref(true)
+const bills = ref([])
 
-const bills = ref([
-  { date: '09-16', hospital: '市第一人民医院', elder: '张大爷', fee: 120, status: '已结算' },
-  { date: '09-15', hospital: '市中医院',       elder: '王奶奶', fee: 150, status: '已结算' },
-  { date: '09-14', hospital: '社区卫生服务中心', elder: '李大爷', fee: 80,  status: '已结算' },
-  { date: '09-13', hospital: '市第一人民医院', elder: '陈大爷', fee: 120, status: '已结算' },
-  { date: '09-12', hospital: '市妇幼保健院',   elder: '赵奶奶', fee: 180, status: '已结算' }
-])
+/**
+ * 单笔有效金额：优先 actualFee（结算金额，NON_NULL 未结算时可能缺失），
+ * 缺失时回退到 always-present 的 fee（合同服务费），不凭空造数字。
+ */
+const effectiveAmount = (b) => {
+  const v = b.actualFee != null ? b.actualFee : b.fee
+  return Number(v) || 0
+}
+
+const totalIncome = computed(() =>
+  bills.value.reduce((sum, b) => sum + effectiveAmount(b), 0)
+)
+const settledIncome = computed(() =>
+  bills.value
+    .filter((b) => b.paymentStatus === 'SETTLED')
+    .reduce((sum, b) => sum + effectiveAmount(b), 0)
+)
+const unsettledIncome = computed(() => totalIncome.value - settledIncome.value)
+
+async function loadIncome() {
+  loading.value = true
+  try {
+    // 1) 循环分页拉全量（size ≤ 100；带终止保护，避免死循环）
+    const all = []
+    let page = 1
+    const size = 100
+    for (let guard = 0; guard < 1000; guard++) {
+      const data = await listMyOrders({ page, size })
+      const recs = data?.records || []
+      all.push(...recs)
+      const pages = data?.pages || 0
+      if (page >= pages || recs.length === 0) break
+      page += 1
+    }
+
+    // 2) 已完成 / 已评价 才计入收入（不含进行中状态）
+    const done = all.filter(
+      (o) => o.status === 'COMPLETED' || o.status === 'REVIEWED'
+    )
+    bills.value = done
+    // 结算状态 / 金额直接来自列表字段 paymentStatus / actualFee，无需再逐单 getOrder（去 N+1）
+  } catch {
+    bills.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadIncome)
 </script>
 
 <template>
   <NlPhoneShell :nav="{ title: '我的收入' }">
-    <!-- KPI -->
-    <section class="kpi">
-      <div class="kpi__card">
-        <div class="kpi__label">本周接单</div>
-        <div class="kpi__val is-num">{{ kpi.weekOrders }}</div>
-      </div>
-      <div class="kpi__card kpi__card--success">
-        <div class="kpi__label">平均评分</div>
-        <div class="kpi__val is-num">{{ kpi.avgRating }}</div>
-      </div>
-      <div class="kpi__card kpi__card--primary">
-        <div class="kpi__label">本周收入</div>
-        <div class="kpi__val is-num">¥{{ kpi.weekIncome }}</div>
-      </div>
-    </section>
+    <NlNoticeBar tone="primary">
+      一期为线上记账 + 线下结算，金额以管理员结算为准。
+    </NlNoticeBar>
 
-    <!-- 排名 -->
-    <NlCard class="rank-card" plain>
-      <div class="rank">
-        <span class="rank__medal rank__medal--bronze">{{ kpi.rank }}</span>
-        <div class="rank__body">
-          <div class="nl-h3 rank__title">本周陪诊员排行 No.{{ kpi.rank }}</div>
-          <p class="nl-caption nl-text-muted">距上一名还差 1 单，加油！</p>
+    <NlSkeleton v-if="loading" :count="3" class="pad" />
+
+    <NlEmpty
+      v-else-if="!bills.length"
+      type="empty"
+      title="暂无收入"
+      description="完成订单后，服务费将在这里结算展示"
+    />
+
+    <template v-else>
+      <!-- KPI -->
+      <section class="kpi">
+        <div class="kpi__card">
+          <div class="kpi__label">累计收入</div>
+          <div class="kpi__val is-num">{{ formatMoney(totalIncome.toFixed(2)) }}</div>
         </div>
-        <el-button type="primary" plain round size="small">查看完整排行</el-button>
-      </div>
-    </NlCard>
+        <div class="kpi__card kpi__card--success">
+          <div class="kpi__label">已结算</div>
+          <div class="kpi__val is-num">{{ formatMoney(settledIncome.toFixed(2)) }}</div>
+        </div>
+        <div class="kpi__card kpi__card--primary">
+          <div class="kpi__label">未结算</div>
+          <div class="kpi__val is-num">{{ formatMoney(unsettledIncome.toFixed(2)) }}</div>
+        </div>
+      </section>
 
-    <!-- 账单 -->
-    <NlCard title="本周账单" plain>
-      <ul class="bills">
-        <li v-for="b in bills" :key="b.date + b.elder" class="bill">
-          <div class="bill__date is-num">{{ b.date }}</div>
-          <div class="bill__body">
-            <div class="nl-h3 bill__hosp">{{ b.hospital }}</div>
-            <div class="nl-caption nl-text-muted">就诊人：{{ b.elder }} · {{ b.status }}</div>
-          </div>
-          <div class="bill__fee is-num">¥{{ b.fee }}</div>
-        </li>
-      </ul>
-    </NlCard>
+      <!-- 账单 -->
+      <NlCard title="收入明细" plain>
+        <ul class="bills">
+          <li v-for="b in bills" :key="b.id" class="bill">
+            <div class="bill__date is-num">{{ formatDate(b.createTime) }}</div>
+            <div class="bill__body">
+              <div class="nl-h3 bill__hosp">{{ b.hospital }}</div>
+              <div class="nl-caption nl-text-muted">
+                就诊人：{{ b.elderName || '—' }}
+                <NlStatusChip
+                  scope="payment"
+                  :status="b.paymentStatus"
+                  :text="b.paymentStatusLabel"
+                  class="bill__pay"
+                />
+              </div>
+            </div>
+            <div class="bill__fee is-num">{{ formatMoney(b.actualFee != null ? b.actualFee : b.fee) }}</div>
+          </li>
+        </ul>
+      </NlCard>
+    </template>
   </NlPhoneShell>
 </template>
 
 <style scoped lang="scss">
 @use '@/styles/variables.scss' as *;
 
+.pad {
+  padding: 0 var(--nl-gutter);
+}
+
 .kpi {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--nl-space-3);
+  padding: 0 var(--nl-gutter);
 
   &__card {
     padding: var(--nl-space-3);
@@ -103,44 +162,14 @@ const bills = ref([
 
   &__val {
     margin-top: 6px;
-    font-size: 24px;
+    font-size: 20px;
     font-weight: 700;
     color: var(--nl-text-1);
   }
 }
 
-.rank-card {
-  background: linear-gradient(135deg, var(--nl-warning-bg) 0%, var(--nl-bg-card) 70%);
-}
-
-.rank {
-  display: flex;
-  gap: var(--nl-space-3);
-  align-items: center;
-
-  &__medal {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    font-size: 18px;
-    font-weight: 700;
-    color: #fff;
-    border-radius: 50%;
-
-    &--gold { background: #F2A900; }
-    &--silver { background: #B1B5BB; }
-    &--bronze { background: #D78A4E; }
-  }
-
-  &__body {
-    flex: 1;
-  }
-}
-
 .bills {
-  padding: 0;
+  padding: 0 var(--nl-gutter);
   margin: 0;
   list-style: none;
 }
@@ -169,6 +198,10 @@ const bills = ref([
 
   &__hosp {
     font-size: 14px;
+  }
+
+  &__pay {
+    margin-left: 6px;
   }
 
   &__fee {

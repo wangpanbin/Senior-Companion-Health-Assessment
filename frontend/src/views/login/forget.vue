@@ -1,90 +1,68 @@
 <script setup>
 /**
  * 找回密码（M-03 · design.md §1.2 P2）
+ *
+ * ⚠️ 本页从「假表单」改为「引导页」，原因是后端**没有自助重置密码的能力**：
+ *
+ *   一期范围内不含短信服务商，而 `docs/api/01-auth-user.md` 只提供了两个改密入口：
+ *     · `PUT /api/auth/password`          —— 需**已登录** + 校验原密码
+ *     · `POST /api/admin/user/{id}/reset-password` —— 管理员重置
+ *   没有「凭手机号 + 验证码重置」这个接口。
+ *
+ *   原实现保留了一个手机号 + 短信验证码表单，点「重置密码」直接 `ElMessage.success`
+ *   就跳走了 —— 不调任何接口。这比没有这个页面更糟：用户会以为密码真的改了，
+ *   回到登录页用新密码登不进去，然后开始怀疑是自己记错了密码。
+ *
+ *   所以这里改成如实说明 + 给出真正能走通的路径，不保留任何「假成功」按钮。
  */
-import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { NlPhoneShell } from '@/components'
+import { NlPhoneShell, NlCard, NlNoticeBar } from '@/components'
 
 const router = useRouter()
-
-const form = ref({
-  phone: '',
-  smsCode: '',
-  password: '',
-  password2: ''
-})
-
-function submit() {
-  if (!/^1\d{10}$/.test(form.value.phone)) {
-    ElMessage.warning('请输入正确的手机号')
-    return
-  }
-  if (form.value.smsCode.length !== 4) {
-    ElMessage.warning('请输入 4 位短信验证码')
-    return
-  }
-  if (form.value.password.length < 6) {
-    ElMessage.warning('新密码至少 6 位')
-    return
-  }
-  if (form.value.password !== form.value.password2) {
-    ElMessage.warning('两次密码不一致')
-    return
-  }
-  ElMessage.success('密码已重置，请用新密码登录')
-  setTimeout(() => router.push('/login'), 800)
-}
 </script>
 
 <template>
   <NlPhoneShell :nav="{ title: '找回密码' }">
-    <p class="nl-caption nl-text-muted hint">
-      通过手机号验证后可重置密码，重置后会自动清除登录态。
-    </p>
+    <NlNoticeBar tone="warning">
+      本平台暂未开通自助重置密码，请按下方说明联系我们处理。
+    </NlNoticeBar>
 
-    <div class="form">
-      <div class="form__group">
-        <label class="nl-caption form__label">注册手机号</label>
-        <el-input v-model="form.phone" placeholder="11 位手机号" maxlength="11" size="large" />
-      </div>
-      <div class="form__group">
-        <label class="nl-caption form__label">短信验证码</label>
-        <div class="sms">
-          <el-input v-model="form.smsCode" placeholder="4 位数字" maxlength="4" size="large" />
-          <el-button size="large">获取验证码</el-button>
-        </div>
-      </div>
-      <div class="form__group">
-        <label class="nl-caption form__label">新密码</label>
-        <el-input
-          v-model="form.password"
-          type="password"
-          placeholder="6-32 位"
-          show-password
-          size="large"
-        />
-      </div>
-      <div class="form__group">
-        <label class="nl-caption form__label">确认密码</label>
-        <el-input
-          v-model="form.password2"
-          type="password"
-          placeholder="再次输入"
-          show-password
-          size="large"
-        />
-      </div>
-
-      <el-button type="primary" size="large" round class="form__submit" @click="submit">
-        重置密码
-      </el-button>
-
-      <p class="form__login">
-        想起来了？
-        <el-link type="primary" :underline="false" @click="router.push('/login')">返回登录</el-link>
+    <NlCard title="为什么不能自助重置">
+      <p class="nl-body para">
+        自助重置需要向注册手机号下发短信验证码来确认身份，而本系统一期范围内未接入短信服务。
+        为避免在缺少身份核验手段的情况下放开密码重置入口，该功能暂不提供。
       </p>
+    </NlCard>
+
+    <NlCard title="可以这样做">
+      <ol class="steps">
+        <li class="step">
+          <span class="step__no">1</span>
+          <div class="step__body">
+            <div class="nl-h3">还记得原密码</div>
+            <p class="nl-caption nl-text-muted">
+              直接登录后，在「我的 → 修改密码」里自行修改。为保障账号安全，
+              修改后所有已登录设备都会退出，需要用新密码重新登录。
+            </p>
+          </div>
+        </li>
+        <li class="step">
+          <span class="step__no">2</span>
+          <div class="step__body">
+            <div class="nl-h3">完全忘记密码</div>
+            <p class="nl-caption nl-text-muted">
+              请联系平台管理员，说明注册时使用的用户名或手机号，由管理员在管理后台
+              重置为新密码后告知您。管理员重置后同样需要重新登录。
+            </p>
+          </div>
+        </li>
+      </ol>
+    </NlCard>
+
+    <div class="actions">
+      <el-button type="primary" size="large" round class="actions__btn" @click="router.push('/login')">
+        返回登录
+      </el-button>
     </div>
   </NlPhoneShell>
 </template>
@@ -92,46 +70,56 @@ function submit() {
 <style scoped lang="scss">
 @use '@/styles/variables.scss' as *;
 
-.hint {
-  padding: 0 var(--nl-gutter);
-  margin: 0 0 var(--nl-space-3);
+.para {
+  margin: 0;
+  color: var(--nl-text-2);
 }
 
-.form {
-  padding: 0 var(--nl-gutter);
+.steps {
   display: flex;
   flex-direction: column;
   gap: var(--nl-space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
 
-  &__group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.step {
+  display: flex;
+  gap: var(--nl-space-3);
+  align-items: flex-start;
+
+  &__no {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--nl-primary);
+    background: var(--nl-primary-light);
+    border-radius: 50%;
   }
 
-  &__label {
-    color: var(--nl-text-3);
-  }
+  &__body {
+    flex: 1;
+    min-width: 0;
 
-  &__submit {
-    width: 100%;
-    margin-top: var(--nl-space-3);
-  }
-
-  &__login {
-    margin-top: var(--nl-space-3);
-    font-size: 13px;
-    color: var(--nl-text-2);
-    text-align: center;
+    .nl-caption {
+      margin: 4px 0 0;
+      line-height: 1.6;
+    }
   }
 }
 
-.sms {
-  display: flex;
-  gap: var(--nl-space-2);
+.actions {
+  padding: var(--nl-space-5) var(--nl-gutter);
 
-  :deep(.el-input) {
-    flex: 1;
+  &__btn {
+    width: 100%;
+    font-size: 16px;
   }
 }
 </style>

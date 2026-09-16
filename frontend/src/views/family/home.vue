@@ -2,14 +2,20 @@
 /**
  * 家属端首页（M-06 · design.md §4）
  *
- * - 顶部 NavBar + 通知 / 老人模式 / 头像区
- * - 多老人横滑卡（可点击切换「当前就诊人」上下文，默认第一个）
- * - 三宫格快捷入口：预约挂号 / 用药计划 / 进度查看（M4 / M6 / M5 / M16 入口）
- * - 进行中订单卡：医院 / 时间 / 状态 chip / 陪诊员 + 查看详情
- * - 关爱之家 banner
- * - 底部 TabBar：首页 / 订单 / 用药 / 消息 / 我的
+ * 聚合展示，全由真实接口驱动：
+ *   1. `listElder({ page:1, size:100 })`（`@/api/user`）→ 我绑定的老人，横滑卡可切换「当前就诊人」
+ *   2. `listMyOrders({ page:1, size:5 })`（`@/api/order`）→ 最近订单（状态 chip + 医院 + 科室 + 就诊时间 + 服务费）
+ *   3. `getUnreadCount()`（`@/api/message`）→ 未读消息红点（每 60s 轮询）
+ *   4. `getTodayTasks(elderId)`（`@/api/medication`）→ 当前老人的今日待服用药提醒
+ *
+ * 各区块独立加载 / 失败：一个接口挂了不整页白屏、也不整页报错。
+ *
+ * ⚠️ 未读数字段：后端 `/message/unread-count` 实际返回 `UnreadCountVO{ total, byType }`
+ *    （见 `vo/UnreadCountVO.java`），与契约文档里写的 `{ unreadCount }` 不一致；
+ *    这里按后端真值读取 `data.total` 自行轮询（`@/api/message` 的 `startUnreadPolling`
+ *    读的是 `unreadCount`，对接真实后端会恒为 0，故不依赖它）。组件卸载必须清掉定时器。
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -17,50 +23,100 @@ import {
   Calendar, FirstAidKit as Med, Clock, Plus
 } from '@element-plus/icons-vue'
 import {
-  NlPhoneShell, NlTabBar, NlCard, NlAvatar, NlStatusChip, NlIconBox
+  NlPhoneShell, NlTabBar, NlCard, NlAvatar, NlStatusChip, NlIconBox,
+  NlSkeleton, NlEmpty, NlNoticeBar
 } from '@/components'
 import { useAppStore } from '@/store/modules/app'
+import { listElder } from '@/api/user'
+import { listMyOrders } from '@/api/order'
+import { getUnreadCount } from '@/api/message'
+import { getTodayTasks } from '@/api/medication'
+import { formatVisitTime, formatMoney } from '@/utils/format'
 
 const router = useRouter()
 const appStore = useAppStore()
 
+/* ---------------- 老人（切换就诊人上下文） ---------------- */
+const elders = ref([])
+const eldersLoading = ref(false)
 const activeElder = ref(0)
+const currentElder = computed(() => elders.value[activeElder.value] || null)
 
-/** 多老人数据（前端 mock，等 M3 上线后由 /api/user/my-elders 提供） */
-const elders = [
-  { id: 1, name: '张大爷',  age: 72, avatar: '', tag: '健康', phone: '138****7777', address: '北京市朝阳区幸福路 123 号' },
-  { id: 2, name: '王奶奶',  age: 68, avatar: '', tag: '糖尿病', phone: '138****6666', address: '北京市海淀区中关村南大街 5 号' }
-]
+async function loadElders() {
+  eldersLoading.value = true
+  try {
+    const data = await listElder({ page: 1, size: 100 })
+    elders.value = data?.records || []
+    activeElder.value = 0
+    loadTodayTasks(currentElder.value?.id)
+  } catch {
+    elders.value = []
+    tasks.value = []
+  } finally {
+    eldersLoading.value = false
+  }
+}
 
+function pickElder(i) {
+  activeElder.value = i
+  loadTodayTasks(currentElder.value?.id)
+}
+
+/* ---------------- 最近订单 ---------------- */
+const orders = ref([])
+const ordersLoading = ref(false)
+
+async function loadOrders() {
+  ordersLoading.value = true
+  try {
+    const data = await listMyOrders({ page: 1, size: 5 })
+    orders.value = data?.records || []
+  } catch {
+    orders.value = []
+  } finally {
+    ordersLoading.value = false
+  }
+}
+
+/* ---------------- 今日用药提醒 ---------------- */
+const tasks = ref([])
+const tasksLoading = ref(false)
+
+async function loadTodayTasks(elderId) {
+  if (elderId == null) {
+    tasks.value = []
+    return
+  }
+  tasksLoading.value = true
+  try {
+    // 后端返回 List<MedicationTaskVO>（数组），拦截器直接给数组
+    const data = await getTodayTasks(elderId)
+    tasks.value = data || []
+  } catch {
+    tasks.value = []
+  } finally {
+    tasksLoading.value = false
+  }
+}
+
+/* ---------------- 未读消息红点（轮询） ---------------- */
+const unread = ref(0)
+let unreadTimer = null
+
+async function refreshUnread() {
+  try {
+    const data = await getUnreadCount()
+    unread.value = Number(data?.total ?? 0)
+  } catch {
+    // 轮询失败不弹提示，静默等下次
+  }
+}
+
+/* ---------------- 导航 ---------------- */
 const quickEntries = [
   { key: 'order',   icon: Calendar, label: '预约挂号', tone: 'primary', desc: '帮父母约医院陪诊',     path: '/family/order/step1' },
   { key: 'med',     icon: Med,      label: '用药计划', tone: 'success', desc: '管理药品 / 服药提醒', path: '/family/medication' },
   { key: 'track',   icon: Clock,    label: '进度查看', tone: 'warning', desc: '看正在进行的订单',     path: '/family/order' }
-]
-
-const orders = [
-  {
-    id: 'OD20250916001',
-    status: 'IN_SERVICE',
-    hospital: '市第一人民医院',
-    dept: '心血管内科',
-    time: '今天 09:00 - 11:00',
-    elder: '张大爷',
-    companion: { name: '李师傅', avatar: '' },
-    amount: '120',
-    distance: '1.2 km'
-  },
-  {
-    id: 'OD20250918002',
-    status: 'PENDING',
-    hospital: '市中医院',
-    dept: '中医骨伤科',
-    time: '明天 14:00 - 16:00',
-    elder: '张大爷',
-    companion: null,
-    amount: '100',
-    distance: '3.5 km'
-  }
 ]
 
 const tabs = [
@@ -70,10 +126,7 @@ const tabs = [
   { key: 'message',    label: '消息', icon: Bell },
   { key: 'profile',    label: '我的', icon: User }
 ]
-const activeTab = computed({
-  get: () => 'home',
-  set: () => {}
-})
+const activeTab = computed(() => 'home')
 function onTabChange(key) {
   if (key === 'home') return
   if (key === 'order') router.push('/family/order')
@@ -87,16 +140,12 @@ function toggleElderly() {
   ElMessage.success(appStore.elderlyMode ? '已切换至老人模式' : '已退出老人模式')
 }
 
-function pickElder(i) {
-  activeElder.value = i
+function addElder() {
+  router.push('/family/elder/bind')
 }
 
 function quickEnter(item) {
   router.push(item.path)
-}
-
-function addElder() {
-  router.push('/family/elder/bind')
 }
 
 function viewOrder(o) {
@@ -106,6 +155,16 @@ function viewOrder(o) {
 function createOrder() {
   router.push('/family/order/step1')
 }
+
+onMounted(() => {
+  loadElders()
+  loadOrders()
+  refreshUnread()
+  unreadTimer = setInterval(refreshUnread, 60000)
+})
+onBeforeUnmount(() => {
+  if (unreadTimer) clearInterval(unreadTimer)
+})
 </script>
 
 <template>
@@ -120,8 +179,8 @@ function createOrder() {
           <text x="12" y="16" text-anchor="middle" font-size="14" fill="currentColor" stroke="none" font-family="serif">大</text>
         </svg>
       </button>
-      <button class="fam-home__navbtn" title="消息">
-        <el-badge :value="5" :max="99">
+      <button class="fam-home__navbtn" title="消息" @click="router.push('/family/message')">
+        <el-badge :value="unread" :hidden="unread === 0" :max="99">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M6 8a6 6 0 1 1 12 0v4l2 3H4l2-3V8z" />
             <path d="M10 19a2 2 0 0 0 4 0" />
@@ -131,7 +190,19 @@ function createOrder() {
     </template>
 
     <!-- ==================== 老人横滑卡 ==================== -->
-    <section class="elder-track">
+    <NlSkeleton v-if="eldersLoading" :count="3" />
+
+    <div v-else-if="!elders.length" class="elder-track__guide">
+      <NlEmpty
+        type="empty"
+        title="还没有绑定老人"
+        description="绑定后可在首页一键切换就诊人，代其预约陪诊 / 管理用药"
+        action-text="去绑定"
+        @action="addElder"
+      />
+    </div>
+
+    <section v-else class="elder-track">
       <ul class="elder-track__list">
         <li
           v-for="(e, i) in elders"
@@ -139,9 +210,11 @@ function createOrder() {
           :class="['elder-track__item', { 'is-active': activeElder === i }]"
           @click="pickElder(i)"
         >
-          <NlAvatar :fallback="e.name.slice(0, 1)" :size="56" tone="primary" :badge="e.tag" />
+          <NlAvatar :fallback="e.name ? e.name.slice(0, 1) : '?'" :size="56" tone="primary" />
           <div class="elder-track__name">{{ e.name }}</div>
-          <div class="elder-track__age">{{ e.age }} 岁</div>
+          <div class="elder-track__age">
+            {{ e.genderLabel }}<template v-if="e.age != null"> · {{ e.age }} 岁</template>
+          </div>
         </li>
         <li class="elder-track__item elder-track__add" @click="addElder">
           <div class="elder-track__addbox">
@@ -165,27 +238,78 @@ function createOrder() {
       </ul>
     </NlCard>
 
-    <!-- ==================== 进行中订单 ==================== -->
+    <!-- ==================== 今日用药提醒 ==================== -->
     <NlCard>
       <template #title>
         <div class="block-head">
-          <span class="nl-h2">进行中订单</span>
+          <span class="nl-h2">今日用药提醒</span>
+          <el-link type="primary" :underline="false" @click="router.push('/family/medication')">管理</el-link>
+        </div>
+      </template>
+
+      <NlSkeleton v-if="eldersLoading" :count="2" />
+
+      <NlEmpty
+        v-else-if="!currentElder"
+        type="empty"
+        title="暂无就诊人"
+        description="添加并绑定老人后，可在这里查看其今日服药提醒"
+        action-text="去绑定"
+        @action="addElder"
+      />
+
+      <template v-else>
+        <NlNoticeBar tone="warning">
+          仅作用药提醒与记录，系统不提供诊断或用药建议。
+        </NlNoticeBar>
+
+        <NlSkeleton v-if="tasksLoading" :count="2" />
+
+        <ul v-else-if="tasks.length" class="task-list">
+          <li v-for="t in tasks" :key="t.id" class="task">
+            <div class="task__main">
+              <div class="task__name">
+                {{ t.medicineName }}
+                <span v-if="t.dosage" class="nl-caption nl-text-muted">{{ t.dosage }}</span>
+              </div>
+              <div class="nl-caption nl-text-muted is-num">
+                {{ formatVisitTime(t.planTime) }}<template v-if="t.mealRelationLabel"> · {{ t.mealRelationLabel }}</template>
+              </div>
+            </div>
+            <NlStatusChip scope="task" :status="t.status" :text="t.statusLabel" />
+          </li>
+        </ul>
+
+        <div v-else class="fam-home__empty">
+          <span class="nl-caption nl-text-muted">今日暂无服药提醒</span>
+        </div>
+      </template>
+    </NlCard>
+
+    <!-- ==================== 最近订单 ==================== -->
+    <NlCard>
+      <template #title>
+        <div class="block-head">
+          <span class="nl-h2">最近订单</span>
           <el-link type="primary" :underline="false" @click="router.push('/family/order')">查看全部</el-link>
         </div>
       </template>
-      <ul v-if="orders.length" class="order-list">
+
+      <NlSkeleton v-if="ordersLoading" :count="2" />
+
+      <ul v-else-if="orders.length" class="order-list">
         <li v-for="o in orders" :key="o.id" class="order-card" @click="viewOrder(o)">
           <div class="order-card__head">
-            <NlStatusChip :status="o.status" :dot="true" />
-            <span class="is-num order-card__amt">¥{{ o.amount }}</span>
+            <NlStatusChip :status="o.status" :text="o.statusLabel" :dot="o.status === 'PENDING' || o.status === 'IN_SERVICE'" />
+            <span class="is-num order-card__amt">{{ formatMoney(o.fee) }}</span>
           </div>
           <div class="order-card__body">
-            <div class="order-card__hospital">{{ o.hospital }} · {{ o.dept }}</div>
-            <div class="nl-caption nl-text-muted is-num">{{ o.time }}</div>
+            <div class="order-card__hospital">{{ o.hospital }} · {{ o.department }}</div>
+            <div class="nl-caption nl-text-muted is-num">{{ formatVisitTime(o.visitTime) }}</div>
             <div class="order-card__foot">
-              <div v-if="o.companion" class="order-card__comp">
-                <NlAvatar :fallback="o.companion.name.slice(0, 1)" :size="24" tone="warning" />
-                <span class="nl-caption">{{ o.companion.name }} · {{ o.distance }}</span>
+              <div v-if="o.companionName" class="order-card__comp">
+                <NlAvatar :fallback="o.companionName.slice(0, 1)" :size="24" tone="warning" />
+                <span class="nl-caption">{{ o.companionName }}</span>
               </div>
               <span v-else class="nl-caption nl-text-muted">尚无陪诊员接单</span>
               <span class="order-card__chev">›</span>
@@ -193,6 +317,7 @@ function createOrder() {
           </div>
         </li>
       </ul>
+
       <div v-else class="fam-home__empty">
         <NlStatusChip tone="neutral" text="暂无订单" />
         <el-button type="primary" round size="small" class="mt-3" @click="createOrder">去下单</el-button>
@@ -296,6 +421,10 @@ function createOrder() {
     color: var(--nl-text-3);
   }
 
+  &__guide {
+    padding: 0 var(--nl-gutter);
+  }
+
   &__add {
     background: var(--nl-bg-sunken);
     border-style: dashed;
@@ -358,6 +487,35 @@ function createOrder() {
   &__desc {
     font-size: 11px;
     color: var(--nl-text-3);
+  }
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nl-space-2);
+  padding: 0;
+  margin: var(--nl-space-2) 0 0;
+  list-style: none;
+}
+
+.task {
+  display: flex;
+  gap: var(--nl-space-2);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--nl-space-3);
+  background: var(--nl-bg-sunken);
+  border-radius: var(--nl-radius-card);
+
+  &__name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--nl-text-1);
+  }
+
+  &__main {
+    min-width: 0;
   }
 }
 
