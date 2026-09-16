@@ -521,9 +521,18 @@ def main():
     data = body.get("data") or {}
     check("L1 公开资料 id 取用户 ID（301，与订单表一致）",
           data.get("id") == 301, "id=%s" % data.get("id"))
-    check("L2 姓名脱敏为「李*军」，评分两位小数字符串 4.00",
-          data.get("realName") == "李*军" and data.get("score") == "4.00",
-          "realName=%s score=%s" % (data.get("realName"), data.get("score")))
+    # 评分不写死具体数值：任何一次真实评价（含手工在界面上提交的五星）
+    # 都会让 companion_profile.score 被重算，硬编码 4.00 会让脚本在
+    # 「功能完全正常」的情况下变红，最后被人当成噪声忽略掉。
+    # 这里断言两个真正稳定的性质：与库中快照一致 + 两位小数字符串。
+    db_score = mysql_value("SELECT `score` FROM `companion_profile` "
+                           "WHERE `user_id`=301 AND `deleted`=0;")
+    api_score = data.get("score")
+    check("L2 姓名脱敏为「李*军」，评分与库中快照一致且为两位小数字符串",
+          data.get("realName") == "李*军"
+          and api_score == ("%.2f" % float(db_score))
+          and re.fullmatch(r"\d+\.\d{2}", api_score or "") is not None,
+          "realName=%s score=%s db=%s" % (data.get("realName"), api_score, db_score))
     check("L3 资质状态中文「已通过」，接单状态中文「可接单」",
           data.get("auditStatusLabel") == "已通过" and data.get("workStatusLabel") == "可接单",
           "audit=%s work=%s" % (data.get("auditStatusLabel"), data.get("workStatusLabel")))
