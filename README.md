@@ -6,6 +6,26 @@
 
 ---
 
+## ⚠️ 当前阶段范围（2026-09-16 更新）
+
+**本阶段只做一件事：专注代码编写。** 详细范围调整见 [`plan.md §〇`](plan.md)、[`docs/agents/PLAN_BACKEND.md §0`](docs/agents/PLAN_BACKEND.md) 与 [`docs/adr/0004-m13-docker-fallback.md`](docs/adr/0004-m13-docker-fallback.md)。简要版如下：
+
+| 不做的项 | 兜底 |
+|---|---|
+| ~~项目部署上线~~（Docker / docker-compose / deploy.sh / Nginx 反代 / 云服务器 / 部署文档） | 本机 `mvn spring-boot:run` + Knife4j `/doc.html` |
+| ~~答辩 PPT~~（W17 的 3 份） | 等 W17 启动再做 |
+| ~~演示视频~~（每迭代一段，3 段） | 同上 |
+| ~~用户手册~~（4 角色 × 5 张截图） | 依赖前端界面，一期不推进 |
+
+**含义：
+
+- 本仓库**只产出代码 + 接口文档 + 数据库脚本 + 单测/e2e 脚本**。
+- 不写 Dockerfile / docker-compose / deploy.sh。
+- 不在 README 里介绍部署到云服务器、生产 Nginx 等流程。
+- 不写"前端生产构建 → Nginx 托管"这种生产链路（前端一期不推进）。
+
+---
+
 ## 目录结构
 
 ```
@@ -115,7 +135,7 @@ npm run format                    # Prettier 格式化
 | Redis | 6379 |
 | 后端 Spring Boot | 8080 |
 | 前端 Vite Dev | 5173 |
-| 前端生产（Nginx） | 80 |
+| ~~前端生产（Nginx）~~ | ~~80~~ — ⏸️ 现阶段不做部署上线（见顶部范围调整） |
 
 ---
 
@@ -146,7 +166,7 @@ npm run format                    # Prettier 格式化
 - **提交信息**：`feat|fix|docs|refactor|test|chore(模块): 描述`。
 - **代码规范**：前端 ESLint + Prettier；后端 Alibaba Java 规范插件，不通过不允许提交。
 - **接口先行**：后端先出接口文档与 Mock 数据，前端用 Mock 开发，不等后端写完。
-- **站会**：每晚 22:00 群内同步「今天做了什么 / 遇到什么问题 / 明天计划做什么」。
+- ~~**站会**：每晚 22:00 群内同步「今天做了什么 / 遇到什么问题 / 明天计划做什么」。~~ — ⏸️ 现阶段按个人节奏推进，不需要每日站会节奏。
 
 ---
 
@@ -154,6 +174,6 @@ npm run format                    # Prettier 格式化
 
 | 文档 | 说明 |
 |---|---|
-| [`plan.md`](plan.md) | 模块拆分、验收标准、环境与组件清单 |
+| [`plan.md`](plan.md) | 模块拆分、验收标准、范围调整（§〇） |
 | [`docs/api/README.md`](docs/api/README.md) | 接口全局约定与错误码 |
 | `docs/api/01` ~ `09` | 各业务模块接口明细 |
