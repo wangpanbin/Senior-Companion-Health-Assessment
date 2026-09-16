@@ -16,7 +16,9 @@ defineProps({
     required: true
   }
 })
-const emit = defineEmits(['click'])
+// 声明 click 事件作为组件 API 的一部分；当前两个调用方（陪诊执行 / 家属订单详情）
+// 都依赖各节点的具名插槽而非事件，故这里不接返回值，避免 no-unused-vars 告警。
+defineEmits(['click'])
 </script>
 
 <template>
@@ -41,7 +43,14 @@ const emit = defineEmits(['click'])
         </div>
         <p v-if="s.description" class="nl-caption nl-timeline__desc">{{ s.description }}</p>
         <div v-if="$slots[s.key] || (s.status === 'current' && $slots.current)" class="nl-timeline__action">
-          <slot :name="s.key" :step="s" />
+          <!--
+            优先渲染「按节点名」的插槽（<template #DEPART>），没有时回退到通用的
+            #current 插槽。这里必须显式判断再回退：只写 <slot :name="s.key" /> 的话，
+            调用方传了 #current（打卡按钮就是这么传的）会因为条件为真而进入这个 div，
+            但真正渲染的插槽名是节点名，取不到内容 —— 按钮永远不显示。
+          -->
+          <slot v-if="$slots[s.key]" :name="s.key" :step="s" />
+          <slot v-else name="current" :step="s" />
         </div>
       </div>
     </li>
