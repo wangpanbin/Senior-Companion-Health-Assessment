@@ -226,7 +226,7 @@
 |---|---|---|
 | `ORDER_CREATED` | 新陪诊订单 | 有一笔新订单 {orderNo}（{visitTime} {hospital}），请及时接单。 |
 | `ORDER_ACCEPTED` | 订单已接单 | 陪诊员 {companionName} 已接下订单 {orderNo}。 |
-| `ORDER_PROGRESS` | 陪诊进度更新 | {nodeLabel}：{remark}（订单 {orderNo}） |
+| `ORDER_PROGRESS` | 陪诊进度更新 | 备注为空：陪诊员已完成「{nodeLabel}」打卡（订单 {orderNo}）。<br>备注非空：陪诊员已完成「{nodeLabel}」打卡：{remark}（订单 {orderNo}）。 |
 | `ORDER_COMPLETED` | 服务已完成 | 订单 {orderNo} 已完成，感谢您的信任，欢迎评价。 |
 | `ORDER_CANCELLED` | 订单已取消 | 订单 {orderNo} 已取消，原因：{reason}。 |
 | `AUDIT_RESULT` | 资质审核结果 | 您的陪诊员资质申请{result}。{rejectReason} |
@@ -235,6 +235,11 @@
 | `SYSTEM_NOTICE` | 系统公告 | {content} |
 
 > 模板占位符由后端填充并脱敏，**前端只负责展示**。
+>
+> ⚠️ `ORDER_PROGRESS` 的 `{remark}` 是**可选**占位符：陪诊员打卡时大多不写备注
+> （6 个节点里通常只有一两个会填）。若按其他模板的规则把缺失值渲染成 `—`，
+> 家属收到的就是「出发：—（订单 NL2026…）」——一个破折号当正文。
+> 因此该类型单独判定：**备注为空时改用不带冒号的句式**，而不是套用缺省占位符。
 
 ---
 

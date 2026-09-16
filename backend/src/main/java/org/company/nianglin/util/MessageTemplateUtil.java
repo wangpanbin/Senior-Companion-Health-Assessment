@@ -68,8 +68,18 @@ public final class MessageTemplateUtil {
                     value(p, "orderNo"), value(p, "visitTime"), value(p, "hospital"));
             case ORDER_ACCEPTED -> "陪诊员 %s 已接下订单 %s。".formatted(
                     value(p, "companionName"), value(p, "orderNo"));
-            case ORDER_PROGRESS -> "%s：%s（订单 %s）".formatted(
-                    value(p, "nodeLabel"), value(p, "remark"), value(p, "orderNo"));
+            case ORDER_PROGRESS -> {
+                // remark 是可选占位符：打卡不写备注是常态（6 个节点里通常只有一两个会填），
+                // 若沿用其他模板的「缺失渲染成 —」规则，家属看到的会是
+                // 「出发：—（订单 NL2026…）」—— 一个破折号当正文。
+                // 因此这里改用带备注 / 不带备注两套句式，而不是套缺省占位符。
+                String nodeLabel = value(p, "nodeLabel");
+                String orderNo = value(p, "orderNo");
+                String remark = emptyIfMissing(p, "remark");
+                yield remark.isEmpty()
+                        ? "陪诊员已完成「%s」打卡（订单 %s）。".formatted(nodeLabel, orderNo)
+                        : "陪诊员已完成「%s」打卡：%s（订单 %s）。".formatted(nodeLabel, remark, orderNo);
+            }
             case ORDER_COMPLETED -> "订单 %s 已完成，感谢您的信任，欢迎评价。".formatted(value(p, "orderNo"));
             case ORDER_CANCELLED -> "订单 %s 已取消，原因：%s。".formatted(
                     value(p, "orderNo"), value(p, "reason"));
