@@ -72,3 +72,17 @@ backend/sql/tools/*_aggregate.csv
 # ③ 夹具产物：jmeter_token.txt 里是**真实签发的 JWT**，绝不能进版本库
 backend/sql/tools/jmeter_token.txt
 backend/sql/tools/jmeter_fixture_snapshot.json
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+
+# ============================ 本地工具 / 探测产物（不提交） ============================
+# Claude 本地 skills / 工作目录
+.claude/
+# E2E 探测产物（含真实 JWT —— 与 backend/sql/tools/jmeter_token.txt 同级红线）
+reports/
+# Python 探测脚本（harvest_tokens / probe_*）
+tools/e2e/
+# 临时调试 SQL / 根目录孤儿 package.json（前端真实 package.json 在 frontend/）
+/.tmp_q.sql
+/package.json
+
