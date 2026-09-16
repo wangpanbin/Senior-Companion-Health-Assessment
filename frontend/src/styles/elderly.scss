@@ -1,48 +1,64 @@
-// ==========================================================================
-// 适老化主题（老人模式）
-//
-// 实现方式：在 <html> 上切换 class="elderly-mode"，
-// 通过覆盖 CSS 自定义属性让整个站点等比放大并提升对比度，无需刷新页面。
-//
-// 硬约束来自 plan.md · M11 验收标准：
-//   - 正文最小字号 >= 18px
-//   - 文字对比度 >= 4.5:1（WCAG AA）
-//   - 可点击元素最小高度 >= 44px（这里取 48px，更稳妥）
-//   - 核心流程点击次数 <= 3 次（体现在路由与页面精简，见 router/index.js）
-// ==========================================================================
-
 @use './variables.scss' as *;
 
+/* ==========================================================================
+   适老化主题（老人模式 · design.md §5 · PRD §2.1）
+   --------------------------------------------------------------------------
+   触发: appStore.setElderlyMode(true) 给 <html> 加 class="elderly-mode"
+   落地: 仅覆盖 CSS 自定义属性，组件层零改动
+   硬约束:
+     - 正文字号 >= 18px
+     - 可点击元素高度 >= 48px（按钮 56px）
+     - 文字对比度 >= 4.5:1（WCAG AA）
+     - Tab Bar / 导航栏同步放大
+     - 主色切到 #1557C8 提升对比
+   ========================================================================== */
+
 html.elderly-mode {
-  /* ---------------- 字号整体放大 ---------------- */
-  --nl-font-base: #{$elderly-font-min}; // 18px
-  --el-font-size-base: #{$elderly-font-min};
-  --el-font-size-small: 16px;
-  --el-font-size-large: 20px;
+  /* 主色加深，提升对比度 */
+  --nl-primary: #{$nl-primary-dark};
+  --nl-text-link: #{$nl-primary-dark};
 
-  /* ---------------- 对比度增强 ---------------- */
-  --nl-text-primary: #12181f;
-  --nl-text-regular: #2b3542;
-  --nl-text-secondary: #46525f;
-  --nl-border-color: #9aa7b4;
+  /* 字阶整体 ×1.25（保留层级关系，最小 18px） */
+  --nl-font-display: #{($nl-font-display * 1.25) * 1px};
+  --nl-font-h1: #{($nl-font-h1 * 1.25) * 1px}; // 27.5
+  --nl-font-h2: #{($nl-font-h2 * 1.25) * 1px}; // 22.5
+  --nl-font-h3: #{($nl-font-h3 * 1.25) * 1px}; // 20
+  --nl-font-body: #{$elderly-font-min}; // 18px 基线
+  --nl-font-caption: #{($nl-font-caption * 1.25) * 1px}; // 15
+  --nl-font-micro: #{($nl-font-micro * 1.25) * 1px}; // 12.5
 
-  /* ---------------- 触控区域加大 ---------------- */
-  --nl-touch-min: #{$elderly-touch-min};
-  --nl-space: 20px;
-  --nl-radius: #{$radius-lg};
+  /* 行高同步 */
+  --nl-lh-h1: #{($nl-font-h1 * 1.25 * 1.4) * 1px};
+  --nl-lh-h2: #{($nl-font-h2 * 1.25 * 1.4) * 1px};
+  --nl-lh-body: 1.8em;
 
-  /* ---------------- 表格 / 表单加粗视觉 ---------------- */
+  /* 正文颜色加深（去灰对比） */
+  --nl-text-1: #111827;
+  --nl-text-2: #2b3542;
+  --nl-text-3: #46525f;
+
+  /* 间距加大，按钮 / 列表行变高 */
+  --nl-gutter: #{$nl-space-5};
+  --nl-gap-section: #{$nl-space-6};
+  --nl-gap-item: #{$nl-space-4};
+
+  --nl-btn-height: #{$nl-btn-height-elderly}; // 56
+  --nl-navbar-height: #{$nl-navbar-height-elderly}; // 64
+  --nl-listrow-min-height: #{$nl-listrow-min-height-elderly}; // 68
+  --nl-touch-min: #{$elderly-touch-min}; // 48
+
+  /* 边框加粗便于看清 */
   --nl-border-width: 2px;
 
   body {
-    font-size: var(--nl-font-base);
-    line-height: 1.8;
+    font-size: var(--nl-font-body);
+    line-height: var(--nl-lh-body);
   }
 
-  /* Element Plus 组件适配 */
+  /* Element Plus 适配（design.md §5 数值表） */
   .el-button {
     min-height: var(--nl-touch-min);
-    font-size: var(--nl-font-base);
+    font-size: var(--nl-font-body);
   }
 
   .el-button--large {
@@ -58,11 +74,11 @@ html.elderly-mode {
 
   .el-input__inner,
   .el-textarea__inner {
-    font-size: var(--nl-font-base);
+    font-size: var(--nl-font-body);
   }
 
   .el-table {
-    font-size: var(--nl-font-base);
+    font-size: var(--nl-font-body);
 
     th,
     td {
@@ -72,12 +88,12 @@ html.elderly-mode {
 
   .el-menu-item {
     height: 56px;
-    font-size: var(--nl-font-base);
+    font-size: var(--nl-font-body);
     line-height: 56px;
   }
 
   .el-form-item__label {
-    font-size: var(--nl-font-base);
+    font-size: var(--nl-font-body);
     font-weight: 600;
   }
 
@@ -87,14 +103,20 @@ html.elderly-mode {
     line-height: 28px;
   }
 
-  /* 老人端提示语：统一加大、加重，方便读清 */
+  /* 老人模式提示语：加大加重 */
   .nl-elder-hint {
-    padding: $space-base;
-    font-size: var(--nl-font-base);
+    padding: $nl-space-4;
+    font-size: var(--nl-font-body);
     font-weight: 600;
-    color: var(--nl-text-primary);
+    color: $nl-text-1;
     background: #fff8e6;
-    border-left: 6px solid $color-warning;
-    border-radius: var(--nl-radius);
+    border-left: 6px solid $nl-warning;
+    border-radius: var(--nl-radius-card);
+  }
+
+  /* 卡片标题允许换行 */
+  .nl-card .nl-h2,
+  .nl-card .nl-h3 {
+    line-height: 1.4;
   }
 }

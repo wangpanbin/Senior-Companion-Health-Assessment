@@ -83,9 +83,9 @@ defineProps({
   }
 
   &__name {
-    font-size: $font-size-lg;
+    font-size: $nl-font-h2;
     font-weight: 600;
-    color: var(--nl-text-primary);
+    color: var(--nl-text-1);
   }
 }
 

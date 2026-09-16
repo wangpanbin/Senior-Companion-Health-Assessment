@@ -1,59 +1,124 @@
 // ==========================================================================
 // 设计令牌（编译期 SCSS 变量）
+//
+// 上游依据：design.md §2 设计令牌
 // 运行期可变的令牌见 index.scss 里的 :root CSS 自定义属性
+//
+// 落地方式：每个 .vue / .scss 文件需要时显式：
+//   @use '@/styles/variables.scss' as *;
 // ==========================================================================
 
 // -------------------- 品牌色 --------------------
-$color-primary: #1f7a63; // 主色：墨绿，健康、可信赖
-$color-primary-light: #2e9a7e;
-$color-primary-dark: #155c4a;
+$nl-primary: #1d6ff2; // 主色：医疗蓝
+$nl-primary-dark: #1557c8; // 按压态 / 老人模式主色
+$nl-primary-light: #e8f1fe; // 浅蓝底
+$nl-primary-ghost: #f4f8ff; // 极浅蓝底
+$nl-primary-gradient: linear-gradient(135deg, #3d8bff 0%, #1d6ff2 100%);
 
-$color-accent: #c94f4f; // 强调色：暖红，用于重要提示
-$color-warning: #d9901f;
-$color-danger: #c0392b;
-$color-success: #1f7a63;
-$color-info: #6b7a86;
+$nl-accent: #c94f4f; // 强调色（保留，做大病历提示等极个别场景）
 
-// -------------------- 文字 --------------------
-$text-primary: #1f2733;
-$text-regular: #48566b;
-$text-secondary: #7a8798;
-$text-placeholder: #a8b3c0;
+// -------------------- 中性色 --------------------
+$nl-bg: #f4f7fb; // 页面底色
+$nl-bg-card: #ffffff; // 卡片
+$nl-bg-sunken: #f8fafd; // 输入框底
+$nl-bg-mask: rgba(17, 26, 41, 0.45); // 遮罩
 
-// -------------------- 背景与边框 --------------------
-$bg-page: #f4f6f8;
-$bg-card: #ffffff;
-$border-color: #dfe5ec;
-$border-color-light: #ebeef5;
+$nl-border: #e7edf5;
+$nl-border-strong: #d5dfe6;
+$nl-divider: #eff3f8;
 
-// -------------------- 字号（适老化：最小值不小于 14px） --------------------
-$font-size-xs: 13px;
-$font-size-sm: 14px;
-$font-size-base: 16px; // 老人端基线不低于 18px
-$font-size-lg: 18px;
-$font-size-xl: 22px;
-$font-size-title: 26px;
+$nl-text-1: #17202f; // 主文（对比度 14.8:1）
+$nl-text-2: #5b6b84; // 次要（对比度 5.6:1）
+$nl-text-3: #93a1b5; // 弱化 / 占位 / 禁用
+$nl-text-inverse: #ffffff;
+$nl-text-link: #1d6ff2;
 
-// -------------------- 间距与圆角 --------------------
-$space-xs: 4px;
-$space-sm: 8px;
-$space-base: 16px;
-$space-lg: 24px;
-$space-xl: 32px;
+// -------------------- 语义色 --------------------
+$nl-success: #17b26a;
+$nl-success-bg: #e7f8f0;
+$nl-warning: #f79009;
+$nl-warning-bg: #fef3e2;
+$nl-danger: #f04438;
+$nl-danger-bg: #feeceb;
+$nl-info: #1d6ff2;
+$nl-info-bg: #e8f1fe;
+$nl-purple: #7a5af8;
+$nl-purple-bg: #f0edfe;
+$nl-neutral-chip: #f1f4f9;
 
-$radius-sm: 6px;
-$radius-base: 10px;
-$radius-lg: 16px;
+// -------------------- 间距（4 的倍数） --------------------
+$nl-space-1: 4px;
+$nl-space-2: 8px;
+$nl-space-3: 12px;
+$nl-space-4: 16px;
+$nl-space-5: 20px;
+$nl-space-6: 24px;
+$nl-space-8: 32px;
 
-// -------------------- 适老化硬约束（plan.md · M11 验收标准） --------------------
-/// 可点击元素最小高度
-$elderly-touch-min: 48px;
-/// 老人模式正文最小字号
-$elderly-font-min: 18px;
-/// 老人模式文字对比度要求（WCAG AA）
-$elderly-contrast-ratio: 4.5;
+// -------------------- 圆角 --------------------
+$nl-radius-card: 14px;
+$nl-radius-btn: 12px;
+$nl-radius-chip: 6px;
+$nl-radius-input: 12px;
+$nl-radius-pill: 999px;
+
+// -------------------- 阴影（仅三档） --------------------
+$nl-shadow-card: 0 2px 8px rgba(23, 43, 77, 0.06);
+$nl-shadow-hover: 0 6px 16px rgba(23, 43, 77, 0.08);
+$nl-shadow-float: 0 8px 24px rgba(23, 43, 77, 0.12);
+
+// -------------------- 字号阶梯（设计令牌） --------------------
+$nl-font-cn: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+$nl-font-num: 'Inter', 'SF Pro', system-ui, sans-serif;
+
+// 7 级字阶
+$nl-font-display: 30px; // 收入 / 评分大数字
+$nl-font-h1: 22px; // 全站唯一页面标题
+$nl-font-h2: 18px; // 卡片标题
+$nl-font-h3: 16px; // 列表主文
+$nl-font-body: 14px; // 正文
+$nl-font-caption: 12px; // 辅助信息
+$nl-font-micro: 10px; // Tab Bar 标签
+
+// 行高
+$nl-lh-display: 38px;
+$nl-lh-h1: 30px;
+$nl-lh-h2: 26px;
+$nl-lh-h3: 24px;
+$nl-lh-body: 22px;
+$nl-lh-caption: 18px;
+$nl-lh-micro: 14px;
+
+// -------------------- 尺寸硬约束 --------------------
+$nl-statusbar-height: 62px; // 状态栏
+$nl-navbar-height: 56px; // 顶部导航栏
+$nl-navbar-height-elderly: 64px; // 老人模式顶栏
+$nl-tabbar-height: 62px; // 胶囊 Tab Bar 胶囊高
+$nl-tabbar-padding-v: 12px;
+$nl-tabbar-padding-h: 21px;
+$nl-tabbar-radius: 36px; // 胶囊圆角
+
+$nl-btn-height: 48px;
+$nl-btn-height-elderly: 56px;
+$nl-input-height: 48px;
+$nl-listrow-min-height: 56px;
+$nl-listrow-min-height-elderly: 68px;
+
+// -------------------- 移动端画布 --------------------
+$nl-phone-width: 390px;
+$nl-phone-height: 844px;
+
+// -------------------- 适老化硬约束（design.md §5 / PRD §2.1） --------------------
+$elderly-touch-min: 48px; // 可点击元素最小高度
+$elderly-font-min: 18px; // 老人模式正文最小字号
+$elderly-contrast-ratio: 4.5; // WCAG AA
 
 // -------------------- 布局尺寸 --------------------
 $sidebar-width: 220px;
 $sidebar-width-collapsed: 64px;
-$header-height: 60px;
+$header-height: 64px;
+$header-height-mobile: 56px;
+
+// -------------------- 断点 --------------------
+$bp-tablet: 768px;
+$bp-desktop: 1280px;

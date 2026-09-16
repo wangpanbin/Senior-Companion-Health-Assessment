@@ -1,0 +1,21 @@
+/**
+ * 组件库统一出口
+ * 与 design.md §3 / §7 命名约定一致：以 nl- 前缀
+ */
+export { default as NlCard } from './NlCard.vue'
+export { default as NlStatusChip } from './NlStatusChip.vue'
+export { default as NlListRow } from './NlListRow.vue'
+export { default as NlEmpty } from './NlEmpty.vue'
+export { default as NlSkeleton } from './NlSkeleton.vue'
+export { default as NlStatusBar } from './NlStatusBar.vue'
+export { default as NlNavBar } from './NlNavBar.vue'
+export { default as NlTabBar } from './NlTabBar.vue'
+export { default as NlStepHeader } from './NlStepHeader.vue'
+export { default as NlSection } from './NlSection.vue'
+export { default as NlComplianceBar } from './NlComplianceBar.vue'
+export { default as NlNoticeBar } from './NlNoticeBar.vue'
+export { default as NlAvatar } from './NlAvatar.vue'
+export { default as NlIconBox } from './NlIconBox.vue'
+export { default as NlTimeline } from './NlTimeline.vue'
+export { default as NlPhoneShell } from './NlPhoneShell.vue'
+export { default as ModulePlaceholder } from './ModulePlaceholder.vue'

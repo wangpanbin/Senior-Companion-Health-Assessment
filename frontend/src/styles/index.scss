@@ -1,45 +1,135 @@
 @use './variables.scss' as *;
 
-// ==========================================================================
-// 全局样式入口
-// 1. CSS 自定义属性（运行期可切换 → 适老化主题靠切 <html> 上的 class 实现）
-// 2. 基础重置
-// 3. 通用工具类
-// ==========================================================================
+/* ==========================================================================
+   全局样式入口
+   - 运行期 CSS 自定义属性（design.md §2）
+   - 基础重置
+   - 通用工具类
+   - Element Plus 主题打通
+   ========================================================================== */
 
-/* -------------------- 运行期令牌 -------------------- */
 :root {
-  --nl-color-primary: #{$color-primary};
-  --nl-color-primary-light: #{$color-primary-light};
-  --nl-color-primary-dark: #{$color-primary-dark};
-  --nl-color-accent: #{$color-accent};
-  --nl-color-warning: #{$color-warning};
-  --nl-color-danger: #{$color-danger};
+  /* ----------- 品牌色 ----------- */
+  --nl-primary: #{$nl-primary};
+  --nl-primary-dark: #{$nl-primary-dark};
+  --nl-primary-light: #{$nl-primary-light};
+  --nl-primary-ghost: #{$nl-primary-ghost};
+  --nl-primary-gradient: #{$nl-primary-gradient};
 
-  --nl-text-primary: #{$text-primary};
-  --nl-text-regular: #{$text-regular};
-  --nl-text-secondary: #{$text-secondary};
+  /* ----------- 中性色 ----------- */
+  --nl-bg: #{$nl-bg};
+  --nl-bg-card: #{$nl-bg-card};
+  --nl-bg-sunken: #{$nl-bg-sunken};
+  --nl-bg-mask: #{$nl-bg-mask};
 
-  --nl-bg-page: #{$bg-page};
-  --nl-bg-card: #{$bg-card};
-  --nl-border-color: #{$border-color};
-  --nl-radius: #{$radius-base};
-  --nl-space: #{$space-base};
+  --nl-border: #{$nl-border};
+  --nl-border-strong: #{$nl-border-strong};
+  --nl-divider: #{$nl-divider};
 
-  /* 适老化开关：老人模式下这些值会被 elderly.scss 整体放大 */
-  --nl-font-base: #{$font-size-base};
-  --nl-touch-min: 36px;
+  --nl-text-1: #{$nl-text-1};
+  --nl-text-2: #{$nl-text-2};
+  --nl-text-3: #{$nl-text-3};
+  --nl-text-inverse: #{$nl-text-inverse};
+  --nl-text-link: #{$nl-text-link};
+
+  /* ----------- 语义色 ----------- */
+  --nl-success: #{$nl-success};
+  --nl-success-bg: #{$nl-success-bg};
+  --nl-warning: #{$nl-warning};
+  --nl-warning-bg: #{$nl-warning-bg};
+  --nl-danger: #{$nl-danger};
+  --nl-danger-bg: #{$nl-danger-bg};
+  --nl-info: #{$nl-info};
+  --nl-info-bg: #{$nl-info-bg};
+  --nl-purple: #{$nl-purple};
+  --nl-purple-bg: #{$nl-purple-bg};
+  --nl-neutral-chip: #{$nl-neutral-chip};
+
+  /* ----------- 间距 ----------- */
+  --nl-space-1: #{$nl-space-1};
+  --nl-space-2: #{$nl-space-2};
+  --nl-space-3: #{$nl-space-3};
+  --nl-space-4: #{$nl-space-4};
+  --nl-space-5: #{$nl-space-5};
+  --nl-space-6: #{$nl-space-6};
+  --nl-space-8: #{$nl-space-8};
+
+  --nl-gutter: #{$nl-space-4}; // 移动端页面左右内边距
+  --nl-gap-section: #{$nl-space-5}; // 区块之间
+  --nl-gap-item: #{$nl-space-3}; // 区块内条目之间
+
+  /* ----------- 圆角 ----------- */
+  --nl-radius-card: #{$nl-radius-card};
+  --nl-radius-btn: #{$nl-radius-btn};
+  --nl-radius-chip: #{$nl-radius-chip};
+  --nl-radius-input: #{$nl-radius-input};
+  --nl-radius-pill: #{$nl-radius-pill};
+
+  /* ----------- 阴影 ----------- */
+  --nl-shadow-card: #{$nl-shadow-card};
+  --nl-shadow-hover: #{$nl-shadow-hover};
+  --nl-shadow-float: #{$nl-shadow-float};
+
+  /* ----------- 字号（七级） ----------- */
+  --nl-font-display: #{$nl-font-display};
+  --nl-font-h1: #{$nl-font-h1};
+  --nl-font-h2: #{$nl-font-h2};
+  --nl-font-h3: #{$nl-font-h3};
+  --nl-font-body: #{$nl-font-body};
+  --nl-font-caption: #{$nl-font-caption};
+  --nl-font-micro: #{$nl-font-micro};
+
+  --nl-lh-display: #{$nl-lh-display};
+  --nl-lh-h1: #{$nl-lh-h1};
+  --nl-lh-h2: #{$nl-lh-h2};
+  --nl-lh-h3: #{$nl-lh-h3};
+  --nl-lh-body: #{$nl-lh-body};
+  --nl-lh-caption: #{$nl-lh-caption};
+  --nl-lh-micro: #{$nl-lh-micro};
+
+  --nl-font-cn: #{$nl-font-cn};
+  --nl-font-num: #{$nl-font-num};
+
+  /* ----------- 尺寸 ----------- */
+  --nl-statusbar-height: #{$nl-statusbar-height};
+  --nl-navbar-height: #{$nl-navbar-height};
+  --nl-navbar-height-elderly: #{$nl-navbar-height-elderly};
+  --nl-tabbar-height: #{$nl-tabbar-height};
+  --nl-btn-height: #{$nl-btn-height};
+  --nl-btn-height-elderly: #{$nl-btn-height-elderly};
+  --nl-input-height: #{$nl-input-height};
+  --nl-listrow-min-height: #{$nl-listrow-min-height};
+  --nl-listrow-min-height-elderly: #{$nl-listrow-min-height-elderly};
+
+  /* ----------- 适老化指标（运行期可读，elderly.scss 覆盖） ----------- */
+  --nl-touch-min: 44px;
   --nl-border-width: 1px;
 
-  /* 与 Element Plus 主题打通 */
-  --el-color-primary: var(--nl-color-primary);
-  --el-color-danger: var(--nl-color-danger);
-  --el-color-warning: var(--nl-color-warning);
-  --el-font-size-base: var(--nl-font-base);
-  --el-border-radius-base: var(--nl-radius);
+  /* ----------- 与 Element Plus 主题打通 ----------- */
+  --el-color-primary: var(--nl-primary);
+  --el-color-primary-light-3: #{$nl-primary-light};
+  --el-color-primary-light-5: #{$nl-primary-ghost};
+  --el-color-primary-light-7: #{$nl-primary-light};
+  --el-color-primary-light-9: #{$nl-primary-ghost};
+  --el-color-primary-dark-2: #{$nl-primary-dark};
+  --el-color-danger: var(--nl-danger);
+  --el-color-danger-light-3: #{$nl-danger-bg};
+  --el-color-warning: var(--nl-warning);
+  --el-color-warning-light-3: #{$nl-warning-bg};
+  --el-color-success: var(--nl-success);
+  --el-color-success-light-3: #{$nl-success-bg};
+
+  --el-font-size-base: var(--nl-font-body);
+  --el-font-size-small: var(--nl-font-caption);
+  --el-font-size-large: var(--nl-font-h3);
+  --el-border-radius-base: var(--nl-radius-btn);
+  --el-border-radius-small: var(--nl-radius-chip);
+
+  /* 默认 Element Plus 全局尺寸（老人模式切到 large） */
+  --el-size-base: 48px;
 }
 
-/* -------------------- 基础重置 -------------------- */
+/* ===================== 基础重置 ===================== */
 * {
   box-sizing: border-box;
 }
@@ -53,71 +143,153 @@ body,
 }
 
 body {
-  font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
-  font-size: var(--nl-font-base);
-  line-height: 1.6;
-  color: var(--nl-text-primary);
-  background-color: var(--nl-bg-page);
+  font-family: var(--nl-font-cn);
+  font-size: var(--nl-font-body);
+  line-height: var(--nl-lh-body);
+  color: var(--nl-text-1);
+  background-color: var(--nl-bg);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 a {
-  color: var(--nl-color-primary);
+  color: var(--nl-text-link);
   text-decoration: none;
+  outline: none;
 }
 
-/* -------------------- 通用工具类 -------------------- */
+button {
+  font-family: inherit;
+}
+
+/* 数字等宽 */
+.is-num {
+  font-family: var(--nl-font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===================== 通用工具类（设计令牌实现） ===================== */
+
+/* 卡片 */
 .nl-card {
-  padding: var(--nl-space);
+  padding: var(--nl-space-4);
   background: var(--nl-bg-card);
-  border-radius: var(--nl-radius);
-  box-shadow: 0 1px 4px rgb(31 39 51 / 6%);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-card);
+  box-shadow: var(--nl-shadow-card);
 }
 
-.nl-page {
-  padding: var(--nl-space);
+.nl-card--plain {
+  box-shadow: none;
 }
 
-.nl-page__title {
-  margin: 0 0 var(--nl-space) 0;
-  font-size: $font-size-xl;
+.nl-card--hover {
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.2s;
+
+  &:hover {
+    box-shadow: var(--nl-shadow-hover);
+  }
+}
+
+/* 主标题 22/600（全站统一） */
+.nl-h1 {
+  margin: 0;
+  font-size: var(--nl-font-h1);
+  line-height: var(--nl-lh-h1);
   font-weight: 600;
-  color: var(--nl-text-primary);
+  color: var(--nl-text-1);
 }
 
-.nl-muted {
-  color: var(--nl-text-secondary);
+.nl-h2 {
+  margin: 0;
+  font-size: var(--nl-font-h2);
+  line-height: var(--nl-lh-h2);
+  font-weight: 600;
+  color: var(--nl-text-1);
 }
 
-/** 骨架阶段占位块：标明该页面属于哪个模块、由谁负责 */
-.nl-placeholder {
-  padding: $space-lg;
-  color: var(--nl-text-regular);
+.nl-h3 {
+  margin: 0;
+  font-size: var(--nl-font-h3);
+  line-height: var(--nl-lh-h3);
+  font-weight: 500;
+  color: var(--nl-text-1);
+}
+
+.nl-body {
+  margin: 0;
+  font-size: var(--nl-font-body);
+  line-height: var(--nl-lh-body);
+  color: var(--nl-text-1);
+}
+
+.nl-caption {
+  margin: 0;
+  font-size: var(--nl-font-caption);
+  line-height: var(--nl-lh-caption);
+  color: var(--nl-text-2);
+}
+
+.nl-text-muted {
+  color: var(--nl-text-2);
+}
+
+.nl-text-weak {
+  color: var(--nl-text-3);
+}
+
+/* 主行动按钮（页面底部 fill_container 安全区 16） */
+.nl-cta-bar {
+  padding: var(--nl-space-4);
+  padding-bottom: calc(var(--nl-space-4) + env(safe-area-inset-bottom, 0));
   background: var(--nl-bg-card);
-  border: 1px dashed var(--nl-border-color);
-  border-radius: var(--nl-radius);
+  border-top: 1px solid var(--nl-border);
+}
 
-  &__title {
-    margin-bottom: $space-sm;
-    font-size: $font-size-lg;
+/* 固定提示条 */
+.nl-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--nl-space-2);
+  padding: var(--nl-space-3) var(--nl-space-4);
+  font-size: var(--nl-font-caption);
+  color: var(--nl-text-2);
+  background: var(--nl-primary-ghost);
+  border-radius: var(--nl-radius-card);
+
+  &--warning {
+    color: var(--nl-warning);
+    background: var(--nl-warning-bg);
+  }
+
+  &--danger {
+    color: var(--nl-danger);
+    background: var(--nl-danger-bg);
+  }
+}
+
+/* 划掉价 / 装饰 */
+.nl-line-through {
+  text-decoration: line-through;
+  color: var(--nl-text-3);
+}
+
+/* 分页器 */
+.el-pagination {
+  --el-pagination-button-size: 32px;
+  justify-content: flex-end;
+  margin-top: var(--nl-space-4);
+}
+
+/* Element Plus 表格主题打通（管理后台） */
+.el-table {
+  --el-table-header-bg-color: var(--nl-bg-sunken);
+  --el-table-border-color: var(--nl-divider);
+  --el-table-row-hover-bg-color: var(--nl-primary-ghost);
+
+  th.el-table__cell {
     font-weight: 600;
-    color: var(--nl-text-primary);
-  }
-
-  &__desc {
-    margin-bottom: $space-sm;
-    font-size: $font-size-sm;
-    color: var(--nl-text-secondary);
-  }
-
-  &__list {
-    margin: 0;
-    padding-left: 1.4em;
-    font-size: $font-size-sm;
-    color: var(--nl-text-regular);
-
-    li {
-      margin-bottom: 4px;
-    }
+    color: var(--nl-text-1);
   }
 }
