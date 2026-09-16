@@ -8,6 +8,26 @@
 
 ---
 
+## 0 · ⚠️ 范围调整（2026-09-16 更新）
+
+**M13「部署与交付物」现阶段不纳入交付范围。** 这不是延期，是本阶段主动裁剪。
+
+| 项 | 结论 | 理由 |
+|---|---|---|
+| Dockerfile / docker-compose / deploy.sh | **不做** | 课程验收在本机演示，容器化不产生验收价值 |
+| 部署文档（环境要求 / 启动 / FAQ） | **不做** | 无部署动作，文档没有使用对象 |
+| 用户手册（4 角色 × 5 截图） | **不做** | 依赖前端界面，而一期不推进前端 |
+| 演示视频（3 段） | **不做** | 非本阶段目标 |
+| 答辩 PPT（3 份） | **不做** | 时间点未到（W17 才用），现在做会随代码变动反复返工 |
+
+**替代兜底**：答辩若要现场演示，用本机 `mvn spring-boot:run` + Knife4j 接口文档（`/doc.html`）
+直接展示全部 REST 端点与在线调试，不依赖容器与前端页面。ADR-0004 相应标记为 `DEFERRED`。
+
+**本阶段聚焦**：M0–M10 后端功能完整性 + M12 测试横切（JaCoCo 门禁 / Service 单测 / 越权矩阵）。
+下表 §7 排期与 §8 WBS 中 M13 相关条目**保持原样仅作历史记录**，不再作为交付承诺。
+
+---
+
 ## 1 · 计划基线
 
 | 项 | 内容 |
@@ -56,7 +76,13 @@ M8 → M6 → M10(预写骨架) → M13
 - **不混用**：M5 客户端连 `/ws/order-progress`，M8 客户端连 `/sse/message`
 - **鉴权差异**：M5 握手时复用 `JwtAuthenticationFilter` 模式（M5 鉴权方案见 `docs/adr/0001-m5-websocket-auth.md`）；M8 SSE 直接走 `Authorization: Bearer` header
 - **重连**：M5 由 STOMP 心跳 + 客户端自动重连；M8 由 EventSource 原生重连（浏览器内置）
-- **离线补齐**：M5 重连后客户端拉 `/api/execution/checkin-missed?since={lastEventId}`；M8 同样支持 `Last-Event-ID`
+- **离线补齐**：M8 走 `Last-Event-ID`；M5 **不另开端点** —— 客户端重连后拉
+  `GET /api/execution/{orderId}/progress` + `GET /api/execution/{orderId}/checkins` 重建时间线
+  （`docs/api/04-companion-execution.md` §6 明确把这条与「服务端缓存最近 N 条事件」列为并列方案）。
+  原计划里写的 `/api/execution/checkin-missed?since={lastEventId}` **已废弃**：
+  `since` 语义要求单调递增的事件 id 序列，而本项目的推送是「状态快照 + 事件类型」，
+  硬造 id 会让「补齐」与「快照」两套真相并存。重连风暴已按真实路径压测，
+  见 `docs/agents/reports/pressure-test-m5-m6.md`。
 
 ---
 
@@ -142,14 +168,16 @@ ADR 仅写"不可逆 + 跨模块 + 真实权衡"的决策，结构遵循 `mattpo
 
 ### M5 陪诊执行、打卡与实时进度（B 主路径）
 
-- [ ] **M5 设计评审**：接口表（checkin / track / timeline / WebSocket subscribe）/ 数据流（order_checkin + companion_track 双写）/ 状态机（6 个打卡节点不可回退）/ 验收清单 6 条
-- [ ] **M5 ADR-0001**：WebSocket 鉴权方案确定
-- [ ] Entity / Mapper 已有，复用 OrderCheckin / CompanionTrack
-- [ ] Controller: `ExecutionController`（`/api/execution/checkin`、`/api/execution/timeline/{orderId}`、`/api/execution/checkin-missed`）
-- [ ] WebSocket: `WebSocketConfig` + `OrderProgressHandler` + `JwtHandshakeInterceptor`（按 ADR-0001）
-- [ ] Service: `ExecutionService.checkin()` 含距离校验（`4001`）+ 节点去重（`4002`）+ 双写轨迹
-- [ ] 单测 + 越权 + e2e（含 30s 断网重连补齐）
-- [ ] 50 并发抢单压测 JMeter 脚本归档
+- [x] **M5 设计评审**：接口表（checkin / track / timeline / WebSocket subscribe）/ 数据流（order_checkin + companion_track 双写）/ 状态机（6 个打卡节点不可回退）/ 验收清单 6 条 → `docs/agents/designs/M5-execution.md`
+- [x] **M5 ADR-0001**：WebSocket 鉴权方案确定（ACCEPTED）
+- [x] Entity / Mapper 已有，复用 OrderCheckin / CompanionTrack
+- [x] Controller: `ExecutionController`（`/checkin`、`/checkins`、`/track`、`/progress`、`/photo`）
+      —— ⚠️ 路径与最初设想不同：用 `/{orderId}/checkins` 替代 `/timeline/{orderId}`（语义更直白），
+      `checkin-missed` 见 §3「离线补齐」的废弃说明
+- [x] WebSocket: `WebSocketConfig` + `OrderProgressHandler` + `JwtHandshakeInterceptor`（按 ADR-0001）
+- [x] Service: `ExecutionService.checkin()` 含距离校验（`4001`）+ 节点去重（`4002`）+ 双写轨迹
+- [x] 单测 + 越权 + e2e（含 30s 断网重连补齐）：`ExecutionServiceTest` 21 + `ExecutionAccessMatrixTest` 15 + `e2e_execution.py`
+- [x] 并发压测 JMeter 脚本归档：`jmeter_m4_accept.jmx`（抢单）+ `jmeter_m5_reconnect.jmx`（重连补齐，实测 300 样本 Err 0.00%）
 
 ### M6 用药管理与漏服提醒（D 旁路径）
 
@@ -208,17 +236,19 @@ ADR 仅写"不可逆 + 跨模块 + 真实权衡"的决策，结构遵循 `mattpo
 - [ ] 三个迭代测试报告归档（迭代二 / 三 / 五）
 - [ ] 遗留 Bug 清单 P0/P1 W16 前清零
 
-### M13 部署与交付物（D 主导 + C 配合）
+### M13 部署与交付物（D 主导 + C 配合）—— ⏸️ **现阶段排除，见 §0**
 
-- [ ] **M13 ADR-0004**：Docker 兜底策略确定
-- [ ] 优先尝试 Docker Desktop 安装（环境 P0 缺口）
-  - [ ] 若成功：编写 `Dockerfile` + `docker-compose.yml` + `deploy.sh`
-  - [ ] 若失败：保留文件照写 + 用本机 `java -jar` + Nginx 兜底
-- [ ] 部署文档：环境要求 / 启动步骤 / FAQ
-- [ ] 用户手册：4 角色 × 5 张截图
-- [ ] 演示视频：每迭代一段（3 段）
-- [ ] 答辩 PPT：每迭代一份（3 份）
-- [ ] W16 前 24 小时全链路演练
+> 以下条目不作为本阶段交付承诺，保留仅作历史记录。ADR-0004 标记为 `DEFERRED`。
+
+- [~] **M13 ADR-0004**：Docker 兜底策略确定（→ DEFERRED）
+- [~] 优先尝试 Docker Desktop 安装（环境 P0 缺口）
+  - [~] 若成功：编写 `Dockerfile` + `docker-compose.yml` + `deploy.sh`
+  - [~] 若失败：保留文件照写 + 用本机 `java -jar` + Nginx 兜底
+- [~] 部署文档：环境要求 / 启动步骤 / FAQ
+- [~] 用户手册：4 角色 × 5 张截图
+- [~] 演示视频：每迭代一段（3 段）
+- [~] 答辩 PPT：每迭代一份（3 份）
+- [~] W16 前 24 小时全链路演练
 
 ---
 
