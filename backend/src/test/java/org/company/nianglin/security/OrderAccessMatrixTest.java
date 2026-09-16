@@ -14,6 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -450,8 +451,8 @@ class OrderAccessMatrixTest {
     @Test
     @DisplayName("脱敏 · 我的订单列表姓名脱敏，且不返回地址、备注与内部 ID")
     void listShouldMaskNameAndHideAddress() throws Exception {
-        // 家属 101 的订单（1001 / 1031）就诊老人都是 401，因此首条姓名必然是脱敏的「张*海」
-        mockMvc.perform(get("/api/order").header(AUTH_HEADER, family(FAMILY_OWNER)))
+        // 家属 101 的订单就诊老人都是 401，因此首条姓名必然是脱敏的「张*海」
+        mockMvc.perform(get("/api/order?page=1&size=50").header(AUTH_HEADER, family(FAMILY_OWNER)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.records[0].elderName").value("张*海"))
                 // 列表页绝不返回地址与备注
@@ -463,11 +464,16 @@ class OrderAccessMatrixTest {
                 .andExpect(jsonPath("$.data.records[0].companionId").doesNotExist())
                 // version 是乐观锁内部字段，任何出口都不该暴露
                 .andExpect(jsonPath("$.data.records[0].version").doesNotExist())
-                // 补充字段：列表 VO 现在下发结算状态。默认排序为 createTime DESC，
-                // 家属 101 的两条订单里 1031（2026-08-20）排在 1001（2026-08-18）之前，
-                // 其 payment_status 为 SETTLED / 已结算（任务简报中「两者都是 UNPAID」与实际种子不符）。
-                .andExpect(jsonPath("$.data.records[0].paymentStatus").value("SETTLED"))
-                .andExpect(jsonPath("$.data.records[0].paymentStatusLabel").value("已结算"));
+                // 结算状态字段确实下发了。这里【刻意不】断言「首条就是种子里的 1031」：
+                // 默认排序是 createTime DESC，家属 101 只要新下一单（例如在界面上手工下单），
+                // 首条就会变成那笔 UNPAID 的新单 —— 断言随即变红，而它想验证的
+                // 「列表 VO 有没有下发 paymentStatus」跟「首条是哪一单」毫无关系。
+                // 改为按订单号定位种子中的已结算订单（1031 → NL20260820000031），
+                // 这样断言的是字段本身，而不是某一次运行时的数据快照。
+                .andExpect(jsonPath("$.data.records[?(@.orderNo == 'NL20260820000031')].paymentStatus")
+                        .value(hasItem("SETTLED")))
+                .andExpect(jsonPath("$.data.records[?(@.orderNo == 'NL20260820000031')].paymentStatusLabel")
+                        .value(hasItem("已结算")));
     }
 
     @Test
