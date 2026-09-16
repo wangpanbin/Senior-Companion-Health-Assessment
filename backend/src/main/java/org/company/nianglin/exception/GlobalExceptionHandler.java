@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -175,6 +176,25 @@ public class GlobalExceptionHandler {
     public Result<Void> handleMaxUploadSize(MaxUploadSizeExceededException e, HttpServletRequest request) {
         log.warn("上传文件超过限制 | {} {}", request.getMethod(), request.getRequestURI());
         return Result.fail(ResultCode.PARAM_ERROR, "文件超过 10 MB 上限，请压缩后重试");
+    }
+
+    /**
+     * 上传请求里根本没有对应的文件部分（{@code multipart/form-data} 缺 field）。
+     *
+     * <p>这是<b>纯客户端错误</b>：前端漏传、field 名写错、或直接发了个空表单。
+     * 不单独处理的话它会落进兜底分支，被记成 ERROR 级「系统异常」并返回 code 500 ——
+     * 日志上像是服务出了故障，实际是调用方拼错了参数。</p>
+     *
+     * <p>顺带一个更隐蔽的后果：本异常在「参数解析阶段」抛出，
+     * 也就是<b>早于方法上的 {@code @PreAuthorize}</b>。
+     * 缺文件时请求根本走不到鉴权代理，越权矩阵里若用「不带文件的上传请求」
+     * 去断言 403，会得到 200 而误判成「鉴权失效」。</p>
+     */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public Result<Void> handleMissingPart(MissingServletRequestPartException e, HttpServletRequest request) {
+        log.warn("缺少上传文件 | {} {} | part={}", request.getMethod(), request.getRequestURI(),
+                e.getRequestPartName());
+        return Result.fail(ResultCode.PARAM_ERROR, "缺少上传文件：" + e.getRequestPartName());
     }
 
     /* ==================== 数据完整性 ==================== */
