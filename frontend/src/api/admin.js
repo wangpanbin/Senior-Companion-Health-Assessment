@@ -14,6 +14,17 @@ export function listAuditApplications(params) {
   return request({ url: '/admin/companion/audit', method: 'get', params })
 }
 
+/**
+ * 资质申请详情。
+ *
+ * 比列表多返回 `rejectReason` / `auditRemark` / `applyRemark` ——
+ * 后端 `AuditApplicationVO.of(..., includeAuditNote)` 用这个开关区分两套口径：
+ * 列表不返回，避免一屏之内把驳回理由铺满；详情才给全。
+ */
+export function getAuditDetail(applicationId) {
+  return request({ url: `/admin/companion/audit/${applicationId}`, method: 'get' })
+}
+
 /** 审核：{ approved: true/false, reason } —— 驳回时 reason 必填 */
 export function auditCompanion(applicationId, data) {
   return request({ url: `/admin/companion/audit/${applicationId}`, method: 'post', data })

@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { createProgressSocket } from '@/utils/realtime'
 
 /**
  * 陪诊执行与打卡接口
@@ -41,9 +42,21 @@ export function uploadExecutionPhoto(orderId, formData) {
 /**
  * 建立实时进度推送连接（WebSocket）。
  *
- * TODO(M5)：后端 WebSocket 端点就绪后补充实现；当前返回 null 占位。
- * 约定：ws://localhost:8080/ws/progress?token=<accessToken>&orderId=<orderId>
+ * 端点：`/ws/progress?token=<accessToken>&orderId=<orderId>`（M5 已交付）。
+ * 令牌走 query 参数 —— 浏览器原生 WebSocket 不允许自定义请求头，
+ * 后端 `JwtHandshakeInterceptor` 因此在握手阶段从 query 取令牌并校验订单归属。
+ *
+ * ⚠️ 订阅前必须**先拉一次 `/progress` 快照铺底**，之后才靠推送增量更新。
+ *    只等推送的话，页面在连接建立前会一直空白；连接失败更是永远空白。
+ *    这是后端 `ProgressVO` 类注释里明确的约定。
+ *
+ * @param {number|string} orderId 订单 ID
+ * @param {object} [handlers] 见 `@/utils/realtime` 的 createProgressSocket
+ * @returns {{ close: () => void, isOpen: () => boolean }} 页面卸载时务必调用 close()
  */
-export function connectProgressSocket() {
-  return null
+export function connectProgressSocket(orderId, handlers) {
+  if (!orderId) {
+    throw new Error('connectProgressSocket 需要 orderId')
+  }
+  return createProgressSocket(orderId, handlers)
 }
