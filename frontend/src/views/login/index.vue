@@ -54,16 +54,26 @@ const ROLE_CARDS = [
 const activeRole = ref('FAMILY')
 const redirect = computed(() => route.query.redirect || '/')
 
-watch(activeRole, (r) => {
-  const card = ROLE_CARDS.find((c) => c.role === r)
+/**
+ * 把角色对应的演示账号填进表单（仅 DEV）。
+ *
+ * 注意：不能只依赖 watch(activeRole) —— 默认值就是 FAMILY，用户点击「家属」
+ * 卡片时 activeRole 没有发生变化，watch 不触发，表单保持空白，看起来像点了没反应。
+ * 因此 pickRole 里也要显式调用一次。
+ */
+function applyDemoAccount(role) {
+  const card = ROLE_CARDS.find((c) => c.role === role)
   if (import.meta.env.DEV && card) {
     form.username = card.account
     form.password = 'Nl@123456'
   }
-})
+}
+
+watch(activeRole, applyDemoAccount)
 
 function pickRole(card) {
   activeRole.value = card.role
+  applyDemoAccount(card.role)
   const label = ROLE_LABELS[card.role] || card.role
   ElMessage.info(`已切换到「${label}」演示账号，可在表单中直接登录`)
 }
