@@ -106,20 +106,4 @@ function pick(key) {
     letter-spacing: 0.5px;
   }
 }
-
-/* 老人模式放大 */
-:global(html.elderly-mode) .nl-tabbar {
-  &__item {
-    min-height: 56px;
-  }
-
-  &__icon :deep(svg) {
-    width: 22px;
-    height: 22px;
-  }
-
-  &__label {
-    font-size: 14px;
-  }
-}
 </style>

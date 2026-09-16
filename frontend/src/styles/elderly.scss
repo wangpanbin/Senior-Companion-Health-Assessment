@@ -44,6 +44,7 @@ html.elderly-mode {
 
   --nl-btn-height: #{$nl-btn-height-elderly}; // 56
   --nl-navbar-height: #{$nl-navbar-height-elderly}; // 64
+  --nl-tabbar-height: #{$nl-tabbar-height-elderly}; // 68
   --nl-listrow-min-height: #{$nl-listrow-min-height-elderly}; // 68
   --nl-touch-min: #{$elderly-touch-min}; // 48
 
@@ -112,6 +113,29 @@ html.elderly-mode {
     background: #fff8e6;
     border-left: 6px solid $nl-warning;
     border-radius: var(--nl-radius-card);
+  }
+
+  /* 底部胶囊 Tab Bar 放大。
+     注意：这三条以前写在 NlTabBar.vue 的 <style scoped> 里，用的是
+     `:global(html.elderly-mode) .nl-tabbar { &__icon ... }` —— Vue 的 scoped
+     编译器会把 :global() 之后的后代选择器整段丢掉，最终产出
+     `html.elderly-mode { width: 22px; height: 22px }`，把 <html> 本身压成
+     22px 宽，整站布局崩掉。老人模式的覆盖必须写在全局样式里。 */
+  .nl-tabbar__pill {
+    height: var(--nl-tabbar-height);
+  }
+
+  .nl-tabbar__item {
+    min-height: calc(var(--nl-tabbar-height) - 8px); // 胶囊内高：68 - 4*2
+  }
+
+  .nl-tabbar__icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .nl-tabbar__label {
+    font-size: 14px;
   }
 
   /* 卡片标题允许换行 */
