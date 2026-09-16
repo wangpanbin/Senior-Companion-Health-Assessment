@@ -471,6 +471,29 @@ class ElderOwnershipMatrixTest {
     }
 
     /* ================================================================== */
+    /* 9 · 当前用户档案 ID 下发（elderId 仅老人且已建档时下发）                    */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("档案 ID 下发 · 老人账号在 /api/auth/me 拿到自己的 elderId=401")
+    void elderShouldReceiveOwnElderIdOnMe() throws Exception {
+        // elder001 = user 201，对应档案 401（seed：elder_profile.id=401, user_id=201）
+        mockMvc.perform(get("/api/auth/me").header(AUTH_HEADER, elder(ELDER_OWNER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.elderId").value(401));
+    }
+
+    @Test
+    @DisplayName("档案 ID 下发 · 家属账号在 /api/auth/me 不应下发 elderId（字段消失）")
+    void familyShouldNotReceiveElderIdOnMe() throws Exception {
+        mockMvc.perform(get("/api/auth/me").header(AUTH_HEADER, family(FAMILY_OWNER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.elderId").doesNotExist());
+    }
+
+    /* ================================================================== */
 
     private String family(long userId) {
         return token(userId, RoleConstants.FAMILY);

@@ -81,12 +81,16 @@ class AuthServiceTest {
     @Mock
     private TokenStore tokenStore;
 
+    @Mock
+    private ElderService elderService;
+
     private AuthServiceImpl authService;
 
     @BeforeEach
     void setUp() {
         authService = new AuthServiceImpl(sysUserMapper, sysLoginLogMapper, passwordEncoder,
-                captchaService, tokenProvider, new JwtProperties(), tokenStore, new SecurityProperties());
+                captchaService, tokenProvider, new JwtProperties(), tokenStore, new SecurityProperties(),
+                elderService);
     }
 
     @AfterEach

@@ -462,7 +462,12 @@ class OrderAccessMatrixTest {
                 .andExpect(jsonPath("$.data.records[0].elderId").doesNotExist())
                 .andExpect(jsonPath("$.data.records[0].companionId").doesNotExist())
                 // version 是乐观锁内部字段，任何出口都不该暴露
-                .andExpect(jsonPath("$.data.records[0].version").doesNotExist());
+                .andExpect(jsonPath("$.data.records[0].version").doesNotExist())
+                // 补充字段：列表 VO 现在下发结算状态。默认排序为 createTime DESC，
+                // 家属 101 的两条订单里 1031（2026-08-20）排在 1001（2026-08-18）之前，
+                // 其 payment_status 为 SETTLED / 已结算（任务简报中「两者都是 UNPAID」与实际种子不符）。
+                .andExpect(jsonPath("$.data.records[0].paymentStatus").value("SETTLED"))
+                .andExpect(jsonPath("$.data.records[0].paymentStatusLabel").value("已结算"));
     }
 
     @Test
