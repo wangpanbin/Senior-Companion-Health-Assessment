@@ -116,7 +116,7 @@ def mysql_value(sql):
          "--password=" + os.environ.get("MYSQL_PASSWORD", ""),
          "--batch", "--skip-column-names", "--raw",
          "--default-character-set=utf8mb4", "--database=" + DB, "-e", sql],
-        capture_output=True, text=True)
+        capture_output=True, text=True, encoding="utf-8", errors="replace")
     return (out.stdout or "").strip()
 
 
