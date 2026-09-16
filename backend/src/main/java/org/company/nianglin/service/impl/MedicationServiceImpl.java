@@ -646,9 +646,16 @@ public class MedicationServiceImpl implements MedicationService {
         }
         LoginUser me = SecurityUtils.currentUser();
         if (RoleConstants.COMPANION.equals(me.role())) {
+            // 只看「陪诊过程中」的单子：PENDING / ACCEPTED / IN_SERVICE。
+            // 陪诊一旦 COMPLETED，账号与老人之间已经没有「陪诊关系」，
+            // 不应该还能查老人用药计划 —— 否则 e2e 那种「6 个月前的单」仍然能让前任陪诊员读隐私。
             long related = orderMapper.selectCount(Wrappers.<CompanionOrder>lambdaQuery()
                     .eq(CompanionOrder::getElderId, elderId)
-                    .eq(CompanionOrder::getCompanionId, me.userId()));
+                    .eq(CompanionOrder::getCompanionId, me.userId())
+                    .in(CompanionOrder::getStatus, List.of(
+                            org.company.nianglin.constant.OrderStatus.PENDING.name(),
+                            org.company.nianglin.constant.OrderStatus.ACCEPTED.name(),
+                            org.company.nianglin.constant.OrderStatus.IN_SERVICE.name())));
             if (related <= 0) {
                 throw new BusinessException(ResultCode.NO_PERMISSION_FOR_ELDER);
             }
