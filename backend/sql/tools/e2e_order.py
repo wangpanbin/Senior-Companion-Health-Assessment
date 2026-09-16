@@ -558,7 +558,12 @@ def main():
         mysql_value("DELETE FROM `order_status_log` WHERE `order_id` IN (%s);" % ids)
         mysql_value("DELETE FROM `order_reject_log` WHERE `order_id` IN (%s);" % ids)
         mysql_value("DELETE FROM `companion_order` WHERE `id` IN (%s);" % ids)
-    redis_del("order:seq:" + dt.date.today().strftime("%Y%m%d"))
+    # 刻意【不删】order:seq:{今天}。
+    # 订单号由「Redis 当日序列 INCR」发放，清掉计数器会让同一天的下一条订单
+    # 又从 0001 开始；只要当天还有任何本脚本没删掉的订单（界面上手工下的单、
+    # 另一个脚本造的单），就会撞 uk_order_no，下单接口返回 409「该记录已存在」。
+    # 后端 nextOrderNo() 现已补上「撞号就把计数器抬到库内当天最大值」的兜底，
+    # 但测试也不该主动制造这种冲突。
     if log_id_start:
         mysql_value("DELETE FROM `sys_login_log` WHERE `id` > %d;" % log_id_start)
 

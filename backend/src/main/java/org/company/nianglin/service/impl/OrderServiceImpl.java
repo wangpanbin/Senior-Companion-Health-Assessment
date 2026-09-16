@@ -1,6 +1,7 @@
 package org.company.nianglin.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
@@ -51,6 +52,7 @@ import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -103,8 +105,24 @@ public class OrderServiceImpl implements OrderService {
     private static final String ORDER_NO_PREFIX = "NL";
     private static final DateTimeFormatter ORDER_DAY_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final int ORDER_NO_SEQ_WIDTH = 6;
+    /** 序列段在订单号里的起始位置（1-based）：前缀 2 位 + 日期 8 位之后 */
+    private static final int ORDER_NO_SEQ_START = ORDER_NO_PREFIX.length() + 8 + 1;
     /** 序列 key 保留 2 天：跨零点后旧 key 自然过期，不必手动清理 */
     private static final Duration ORDER_SEQ_TTL = Duration.ofDays(2);
+    /** 发号的最大尝试次数：撞号只可能是计数器被重建，正常第二次必成 */
+    private static final int ORDER_NO_MAX_ATTEMPTS = 3;
+
+    /**
+     * 「抬升到至少 floor，再自增并返回新值」的原子脚本。
+     *
+     * <p>低于当前值时不回退 —— 序列计数器只能往前走，否则会把已发出的号重发一遍。</p>
+     */
+    private static final DefaultRedisScript<Long> RAISE_SEQ_SCRIPT = new DefaultRedisScript<>(
+            "local cur = tonumber(redis.call('GET', KEYS[1]) or '0') "
+                    + "local floor = tonumber(ARGV[1]) "
+                    + "if cur < floor then redis.call('SET', KEYS[1], floor) end "
+                    + "return redis.call('INCR', KEYS[1])",
+            Long.class);
 
     /** 基础服务费（工作日 08:00–18:00） */
     private static final BigDecimal BASE_FEE = new BigDecimal("128.00");
@@ -904,26 +922,98 @@ public class OrderServiceImpl implements OrderService {
     /**
      * 生成订单号 {@code NL + yyyyMMdd + 6 位当日序列}。
      *
-     * <p>用 Redis 的 {@code INCR} 而不是「查当天最大订单号 + 1」：后者在并发下
-     * 两个请求会读到同一个最大值，然后一起撞上 {@code uk_order_no} 唯一索引 ——
-     * 下单接口在高峰期随机失败，且失败原因对用户完全不可理解。
+     * <p><b>正常路径</b>：用 Redis 的 {@code INCR} 而不是「查当天最大订单号 + 1」——
+     * 后者在并发下两个请求会读到同一个最大值，然后一起撞上 {@code uk_order_no}
+     * 唯一索引，下单接口在高峰期随机失败，且失败原因对用户完全不可理解。
      * {@code INCR} 是单线程原子的，天然不重复。</p>
      *
      * <p>序列 key 按天分桶并设 2 天 TTL，因此跨零点自动从 1 重新开始，
      * 不需要清理任务。</p>
+     *
+     * <h3>为什么还要补一次唯一性兜底</h3>
+     *
+     * <p>{@code INCR} 的「不重复」有一个隐含前提：<b>计数器活得比当天已发出的订单号更久</b>。
+     * 这个前提是会被打破的 —— Redis 被清空、未开持久化重启、或 key 的 2 天 TTL 先到期，
+     * 而当天已发出的订单号还留在库里。此时计数器从 1 重新开始，直接撞上
+     * {@code uk_order_no}，用户看到的是下单接口报「该记录已存在」（409）：
+     * 既看不懂，也无法自救 —— 重试多少次都一样，直到计数器自己爬过冲突值。</p>
+     *
+     * <p>所以每次发号后补一次唯一性判断：命中已存在的号就说明计数器失效了，
+     * 把计数器<b>原子地</b>抬到「库里当天已用的最大序号」之后重新发号。
+     * 代价是每单多一次走唯一索引的等值查询 —— 换的是「Redis 数据丢了也不会让用户下不了单」，
+     * 在下单这种低频写路径上这个交换是划算的。</p>
      */
     private String nextOrderNo() {
         String day = LocalDate.now().format(ORDER_DAY_FORMAT);
         String key = RedisKeyConstants.orderSeq(day);
-        Long seq = redisTemplate.opsForValue().increment(key);
-        if (seq == null) {
-            log.error("订单号序列获取失败，Redis 未返回自增值 | key={}", key);
-            throw new BusinessException(ResultCode.SYSTEM_ERROR, "订单号生成失败，请稍后重试");
+
+        for (int attempt = 1; attempt <= ORDER_NO_MAX_ATTEMPTS; attempt++) {
+            Long seq;
+            if (attempt == 1) {
+                seq = redisTemplate.opsForValue().increment(key);
+                if (seq != null && seq == 1L) {
+                    redisTemplate.expire(key, ORDER_SEQ_TTL);
+                }
+            } else {
+                // 冲突后的重新发号：先抬到库内当天最大值再原子取号
+                seq = raiseSeqAbove(key, maxUsedSeq(day));
+            }
+
+            if (seq == null) {
+                log.error("订单号序列获取失败，Redis 未返回自增值 | key={}", key);
+                throw new BusinessException(ResultCode.SYSTEM_ERROR, "订单号生成失败，请稍后重试");
+            }
+
+            String orderNo = ORDER_NO_PREFIX + day
+                    + String.format("%0" + ORDER_NO_SEQ_WIDTH + "d", seq);
+            if (!orderNoExists(orderNo)) {
+                return orderNo;
+            }
+
+            log.warn("订单号已存在，判定为当日序列计数器失效，将抬升至库内最大序号后重发 | "
+                    + "conflict={} | dbMaxSeq={} | attempt={}", orderNo, maxUsedSeq(day), attempt);
         }
-        if (seq == 1L) {
-            redisTemplate.expire(key, ORDER_SEQ_TTL);
+
+        log.error("订单号连续 {} 次生成失败，当日序列异常 | day={}", ORDER_NO_MAX_ATTEMPTS, day);
+        throw new BusinessException(ResultCode.SYSTEM_ERROR, "订单号生成失败，请稍后重试");
+    }
+
+    /** 订单号是否已存在（走 {@code uk_order_no} 唯一索引的等值查询） */
+    private boolean orderNoExists(String orderNo) {
+        Long count = orderMapper.selectCount(new LambdaQueryWrapper<CompanionOrder>()
+                .eq(CompanionOrder::getOrderNo, orderNo));
+        return count != null && count > 0L;
+    }
+
+    /**
+     * 库里当天已发出的最大序号；当天没有订单时返回 0。
+     *
+     * <p>订单号长度固定（前缀 + 8 位日期 + 6 位序列），所以直接在 SQL 里
+     * 截取序列段取最大值，而不是把当天所有订单号拉回内存自己解析。</p>
+     */
+    private long maxUsedSeq(String day) {
+        QueryWrapper<CompanionOrder> wrapper = new QueryWrapper<>();
+        wrapper.select("IFNULL(MAX(CAST(SUBSTRING(`order_no`, " + ORDER_NO_SEQ_START
+                        + ") AS UNSIGNED)), 0)")
+                .likeRight("order_no", ORDER_NO_PREFIX + day);
+        List<Object> values = orderMapper.selectObjs(wrapper);
+        if (values == null || values.isEmpty() || values.get(0) == null) {
+            return 0L;
         }
-        return ORDER_NO_PREFIX + day + String.format("%0" + ORDER_NO_SEQ_WIDTH + "d", seq);
+        return Long.parseLong(String.valueOf(values.get(0)));
+    }
+
+    /**
+     * 把当日序列计数器抬到 {@code floor} 之上并原子取下一个号。
+     *
+     * <p>用 Lua 而不是「先 GET 再 SET」：并发下「自己读到 18、另一个线程已经涨到 25、
+     * 自己再写回 18」会把已经发出去的号又发一遍 —— 兜底逻辑自己制造重复。
+     * 判断与自增放进一次 Redis 调用才安全；计数器只增不减。</p>
+     *
+     * @param floor 已用掉的最大序号，返回值为 {@code max(当前值, floor) + 1}
+     */
+    private Long raiseSeqAbove(String key, long floor) {
+        return redisTemplate.execute(RAISE_SEQ_SCRIPT, List.of(key), String.valueOf(floor));
     }
 
     /**

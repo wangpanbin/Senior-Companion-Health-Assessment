@@ -626,9 +626,9 @@ def main():
             mysql_value("DELETE FROM `%s` WHERE `order_id` IN (%s);" % (table, ids))
         mysql_value("DELETE FROM `companion_order` WHERE `id` IN (%s);" % ids)
 
-    redis_del_keys = ["order:seq:" + dt.date.today().strftime("%Y%m%d")]
-    subprocess.run([REDIS_CLI, "DEL"] + redis_del_keys, capture_output=True, text=True)
-
+    # 刻意【不删】order:seq:{今天}：清了计数器，同一天的下一条订单会从 0001
+    # 重新发号，撞上当天仍在库里的其他订单号（详见 e2e_order.py 同位置注释）。
+    # 后端已补兜底，但测试不该主动制造冲突。
     if log_id_start:
         mysql_value("DELETE FROM `sys_login_log` WHERE `id` > %d;" % log_id_start)
     for uid, score in companion_score_before.items():
