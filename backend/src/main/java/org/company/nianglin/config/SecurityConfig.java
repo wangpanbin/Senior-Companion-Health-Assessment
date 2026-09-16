@@ -2,6 +2,7 @@ package org.company.nianglin.config;
 
 import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
+import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.security.JwtAuthenticationFilter;
 import org.company.nianglin.security.RestAccessDeniedHandler;
 import org.company.nianglin.security.RestAuthenticationEntryPoint;
@@ -159,6 +160,14 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // 管理后台整组仅 ADMIN。这条路径规则不是为了替代 AdminController 上的类级
+                        // @PreAuthorize，而是补它盖不住的一段：Spring MVC 先解析参数并执行 @Valid 校验，
+                        // 再调用方法，而 @PreAuthorize 的 AOP 拦截发生在「方法被调用时」——
+                        // 于是「非管理员 + 请求体不合法」会先抛参数校验异常，被全局异常处理转成
+                        // HTTP 200 + code=400，而不是 403（实测 /admin/user/{id}/disable 与
+                        // /reset-password；带合法请求体时才是 403）。越权者据此可从响应码区分
+                        // 「没权限」与「有权限但参数错」。放在过滤链上就与请求体是否合法无关。
+                        .requestMatchers("/api/admin/**").hasRole(RoleConstants.ADMIN)
                         // 其余全部需要登录。角色细粒度控制在各接口的 @PreAuthorize 上，
                         // 不在这里堆路径规则 —— 路径规则一多就必然有人漏配，而漏配的那条就是漏洞
                         .anyRequest().authenticated())
