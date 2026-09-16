@@ -61,3 +61,14 @@ backend/sql/tools/jmeter_*.jtl
 backend/sql/tools/jmeter_*.csv
 backend/sql/tools/.e2e_*_state.json
 backend/sql/tools/.e2e_*.json
+
+# M12 收尾：M5/M6 压测的脚本产物
+# ① -l 指定的输出（命名没带 jmeter_ 前缀，原有规则盖不住）
+backend/sql/tools/*.jtl
+backend/sql/tools/*_aggregate.csv
+# ② 计划内监听器的 filename 是相对 cwd 的，不加绝对路径就会落到仓库根目录
+/jmeter_*.jtl
+/jmeter_*_aggregate.csv
+# ③ 夹具产物：jmeter_token.txt 里是**真实签发的 JWT**，绝不能进版本库
+backend/sql/tools/jmeter_token.txt
+backend/sql/tools/jmeter_fixture_snapshot.json

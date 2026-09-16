@@ -172,8 +172,14 @@ npm run format                    # Prettier 格式化
 
 ## 文档索引
 
-| 文档 | 说明 |
-|---|---|
-| [`plan.md`](plan.md) | 模块拆分、验收标准、范围调整（§〇） |
-| [`docs/api/README.md`](docs/api/README.md) | 接口全局约定与错误码 |
-| `docs/api/01` ~ `09` | 各业务模块接口明细 |
+| 文档 | 视角 | 说明 |
+|---|---|---|
+| [`docs/prd/PRD.md`](docs/prd/PRD.md) | **产品视角（顶层）** | 愿景、用户画像、用户旅程、NFR、业务规则、成功度量、风险与依赖。版本锁对齐 W7/W12/W17 三个竞讲节点（详见 [ADR-0006](docs/adr/0006-prd-version-locking.md)） |
+| [`plan.md`](plan.md) | 工程视角 | 模块拆分、验收标准、范围调整（§〇） |
+| [`docs/api/README.md`](docs/api/README.md) | 接口契约 | 接口全局约定与错误码 |
+| `docs/api/01` ~ `09` | 接口契约 | 各业务模块接口明细 |
+| `docs/agents/designs/M4` ~ `M10` | 模块设计评审 | 7 个核心模块（M4 订单 / M5 执行 / M6 用药 / M7 评价 / M8 站内信 / M9 管理 / M10 统计） |
+| `docs/adr/0001` ~ `0006` | 架构决策记录 | 6 个 ADR（WebSocket 鉴权 / Redis 锁 / 统计缓存 / M13 兜底 / **PRD 与 plan.md 分层** / **PRD 版本锁**） |
+| `docs/db/` | 数据视角 | ER 图 / 数据字典 / EXPLAIN / 种子说明 |
+
+> PRD 与 plan.md 的分层关系：PRD 是产品视角的顶层入口，plan.md 是工程实施细节。两文档通过散跳链互引，详见 [ADR-0005](docs/adr/0005-prd-planmd-layers.md)。
