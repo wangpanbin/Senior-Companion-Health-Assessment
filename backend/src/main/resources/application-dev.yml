@@ -75,3 +75,21 @@ logging:
     root: info
     org.company.nianglin: debug
     org.springframework.security: info
+
+# ------------------------------------------------------------------
+# CORS（仅开发环境放宽）
+#
+# 为什么不能写死前端端口：`WebMvcConfig` 的默认白名单只有 5173，
+# 而开发机上 5173 可能因 Windows 保留端口段（Hyper-V/WSL）根本绑不上
+# （`netsh int ipv4 show excludedportrange protocol=tcp` 自查），
+# 一旦换端口，**只有 WebSocket 会 403**：浏览器对 ws:// 升级必带 Origin，
+# 跨源会被 CORS 拦掉（发生在鉴权拦截器之前，后端零日志）；
+# 而页面上的普通 XHR 走 vite 代理是同源、不带 Origin，于是 HTTP 全绿、WS 独红，
+# 极易被误判成「前端 WS 写错了」。
+#
+# 放行模式限定「本机 + 任意端口」，不涉及外网来源；
+# 生产 profile 不覆盖此项，仍走 `WebMvcConfig` 的严格默认值。
+# ------------------------------------------------------------------
+nianglin:
+  cors:
+    allowed-origins: http://localhost:[*],http://127.0.0.1:[*]
