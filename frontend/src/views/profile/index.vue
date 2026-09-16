@@ -1,76 +1,183 @@
 <script setup>
-import { useAppStore } from '@/store/modules/app'
-import { useUserStore } from '@/store/modules/user'
-
 /**
- * 个人中心（骨架版）。
+ * 我的（M-22 · design.md §1.2 P1 · 4 角色共用）
  *
- * 这里顺带把「适老化偏好」做成可视化开关，方便 M11 走查与答辩演示。
+ * - 顶部：头像 / 昵称 / 角色徽标
+ * - 老人模式开关（核心 M11）
+ * - 角色相关快捷入口
+ * - 设置（修改密码 / 退出登录）
  */
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  NlPhoneShell, NlCard, NlAvatar, NlListRow
+} from '@/components'
+import { useAppStore } from '@/store/modules/app'
+import { useUserStore, ROLE_LABELS, ROLES } from '@/store/modules/user'
+
+const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
+
+function toggleElderly() {
+  appStore.toggleElderlyMode()
+  ElMessage.success(appStore.elderlyMode ? '已开启老人模式' : '已退出老人模式')
+}
+
+async function logout() {
+  try {
+    await ElMessageBox.confirm('退出后将无法接收订单通知，是否继续？', '退出登录', {
+      confirmButtonText: '退出',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  await userStore.logout()
+  ElMessage.success('已退出登录')
+  router.push('/login')
+}
+
+function changePassword() {
+  ElMessage.info('M2 修改密码入口保留（M-22 P1 后续迭代）')
+}
 </script>
 
 <template>
-  <div class="nl-page">
-    <h2 class="nl-page__title">个人中心</h2>
+  <NlPhoneShell :nav="{ title: '我的', back: false }">
+    <!-- 用户卡片 -->
+    <NlCard>
+      <div class="me">
+        <NlAvatar :fallback="userStore.nickname?.slice(0, 1) || '我'" :size="64" tone="primary" />
+        <div class="me__body">
+          <div class="me__name">{{ userStore.nickname || '未登录' }}</div>
+          <div class="me__role">{{ userStore.roleLabel }}</div>
+        </div>
+      </div>
+    </NlCard>
 
-    <el-card shadow="never" class="mb-16">
-      <template #header>账号信息</template>
-      <el-descriptions :column="2" border>
-        <el-descriptions-item label="登录状态">
-          <el-tag :type="userStore.isLogin ? 'success' : 'info'">
-            {{ userStore.isLogin ? '已登录' : '未登录（M2 未交付）' }}
-          </el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="角色">{{ userStore.roleLabel }}</el-descriptions-item>
-        <el-descriptions-item label="昵称">{{ userStore.nickname }}</el-descriptions-item>
-        <el-descriptions-item label="用户 ID">{{ userStore.userInfo?.id || '-' }}</el-descriptions-item>
-      </el-descriptions>
-      <el-alert
-        class="mt-16"
-        type="info"
-        :closable="false"
-        show-icon
-        title="账号资料编辑属于 M3（用户与档案管理），待该模块交付后接入。"
-      />
-    </el-card>
+    <!-- 老人模式开关 -->
+    <NlCard plain>
+      <NlListRow :title="appStore.elderlyMode ? '已开启老人模式' : '老人模式'" subtitle="切换字号 / 简化菜单 / 提高对比度" :chevron="false">
+        <template #icon>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <text x="12" y="16" text-anchor="middle" font-size="14" fill="currentColor" stroke="none" font-family="serif">大</text>
+            <circle cx="12" cy="12" r="11" />
+          </svg>
+        </template>
+        <template #extra>
+          <el-switch :model-value="appStore.elderlyMode" @change="toggleElderly" />
+        </template>
+      </NlListRow>
+    </NlCard>
 
-    <el-card shadow="never">
-      <template #header>无障碍与适老化偏好（M11）</template>
-      <el-form label-width="140px">
-        <el-form-item label="老人模式">
-          <el-switch
-            :model-value="appStore.elderlyMode"
-            size="large"
-            active-text="大字模式"
-            inactive-text="常规模式"
-            @change="appStore.setElderlyMode($event)"
-          />
-          <div class="nl-muted mt-8">
-            开启后：全站字号放大到 18px 起、对比度增强、按钮最小高度 48px、菜单自动精简。
-            偏好会保存到本地，刷新页面依然生效。
-          </div>
-        </el-form-item>
-      </el-form>
-    </el-card>
-  </div>
+    <!-- 家属角色入口 -->
+    <NlCard v-if="userStore.isFamily" plain>
+      <NlListRow title="我的老人" subtitle="查看已绑定的老人，可继续新增" chevron @click="router.push('/family/elder')">
+        <template #icon>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="8" r="3.5" />
+            <path d="M3 20c0-3 3-5 6-5s6 2 6 5" />
+            <circle cx="17" cy="6" r="2.5" />
+            <path d="M15 14c2 0 6 1 6 4" />
+          </svg>
+        </template>
+      </NlListRow>
+      <NlListRow title="我的订单" subtitle="历史订单与进行中订单" chevron @click="router.push('/family/order')">
+        <template #icon>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+            <path d="M8 9h8M8 13h8M8 17h5" />
+          </svg>
+        </template>
+      </NlListRow>
+    </NlCard>
+
+    <!-- 陪诊员角色入口 -->
+    <NlCard v-if="userStore.isCompanion" plain>
+      <NlListRow v-if="userStore.role !== 'COMPANION' || true" title="我的接单" subtitle="查看已接订单 / 完成情况" chevron @click="router.push('/companion/order')">
+        <template #icon>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+            <path d="M8 9h8M8 13h8M8 17h5" />
+          </svg>
+        </template>
+      </NlListRow>
+      <NlListRow title="资质审核状态" subtitle="已通过 / 审核中 / 已驳回" chevron @click="router.push('/companion/entry')">
+        <template #icon>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M9 12l2 2 4-4" />
+          </svg>
+        </template>
+      </NlListRow>
+    </NlCard>
+
+    <!-- 通用设置 -->
+    <NlCard plain>
+      <NlListRow title="修改密码" chevron @click="changePassword">
+        <template #icon>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="11" width="14" height="10" rx="2" />
+            <path d="M8 11V7a4 4 0 1 1 8 0v4" />
+          </svg>
+        </template>
+      </NlListRow>
+      <NlListRow title="服务协议" subtitle="v2.0 已生效" chevron>
+        <template #icon>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 3h9l4 4v14H6z" />
+            <path d="M14 3v5h5" />
+          </svg>
+        </template>
+      </NlListRow>
+      <NlListRow title="隐私政策" chevron>
+        <template #icon>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3l8 4v5c0 5-3 9-8 10-5-1-8-5-8-10V7l8-4z" />
+          </svg>
+        </template>
+      </NlListRow>
+    </NlCard>
+
+    <div class="logout-bar">
+      <el-button type="danger" plain round size="large" class="logout-bar__btn" @click="logout">
+        退出登录
+      </el-button>
+    </div>
+  </NlPhoneShell>
 </template>
 
 <style scoped lang="scss">
 @use '@/styles/variables.scss' as *;
 
-.mb-16 {
-  margin-bottom: $space-base;
+.me {
+  display: flex;
+  gap: var(--nl-space-3);
+  align-items: center;
+
+  &__body {
+    flex: 1;
+  }
+
+  &__name {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--nl-text-1);
+  }
+
+  &__role {
+    margin-top: 4px;
+    font-size: var(--nl-font-caption);
+    color: var(--nl-primary);
+  }
 }
 
-.mt-16 {
-  margin-top: $space-base;
-}
+.logout-bar {
+  padding: var(--nl-space-5) var(--nl-gutter);
 
-.mt-8 {
-  margin-top: 8px;
-  font-size: 13px;
-  line-height: 1.7;
+  &__btn {
+    width: 100%;
+  }
 }
 </style>
