@@ -228,7 +228,7 @@ JWT accessToken 120 分钟 / refreshToken 7 天 + Redis 黑名单;BCrypt 密码;
 
 ### M4 陪诊订单 → `plan.md §M4` · `docs/api/03-order.md` · `docs/agents/designs/M4-order.md`
 
-订单状态机 **5 状态 + 1 终态**:`PENDING → ACCEPTED → IN_SERVICE → COMPLETED → REVIEWED`,取消路径 `PENDING/ACCEPTED → CANCELLED`。**禁止跳级、禁止回退**,仅 ADMIN 可强制改终态(走 M9 纠纷处理)。接单走 `@Version` 乐观锁,**JMeter 50 并发抢同一单 → 数据库只有 1 条成功接单记录**,`version` 仅 +1。每次状态变更写 `order_status_log` 时间线。完成时生成费用明细(代垫 / 服务费),**不做在线支付**。
+订单状态机 **5 状态 + 1 终态**:`PENDING → ACCEPTED → IN_SERVICE → COMPLETED → REVIEWED`;取消路径分两条——**家属**仅 `PENDING → CANCELLED`,**管理员强制** `PENDING/ACCEPTED/IN_SERVICE/COMPLETED → CANCELLED`(`REVIEWED` 为终态,无出边)。**禁止跳级、禁止回退**,仅 ADMIN 可强制改终态(走 M9 纠纷处理)。接单走 `@Version` 乐观锁,**JMeter 50 并发抢同一单 → 数据库只有 1 条成功接单记录**,`version` 仅 +1。每次状态变更写 `order_status_log` 时间线。完成时生成费用明细(代垫 / 服务费),**不做在线支付**。
 
 ### M5 陪诊执行 → `plan.md §M5` · `docs/api/04-companion-execution.md` · `docs/agents/designs/M5-execution.md`
 
@@ -314,7 +314,7 @@ JUnit5 + Mockito Service 单测覆盖率 ≥ 60%(JaCoCo 报告为证);**4 角色
 
 | 状态机 | 状态序列 | 关键约束 |
 |---|---|---|
-| 订单 | `PENDING → ACCEPTED → IN_SERVICE → COMPLETED → REVIEWED`;`PENDING/ACCEPTED → CANCELLED` | 禁止跳级、禁止回退;仅 ADMIN 可强制改终态(走 M9) |
+| 订单 | `PENDING → ACCEPTED → IN_SERVICE → COMPLETED → REVIEWED`；家属仅 `PENDING → CANCELLED`；管理员强制 `PENDING/ACCEPTED/IN_SERVICE/COMPLETED → CANCELLED`（`REVIEWED` 终态无出边） | 禁止跳级、禁止回退;仅 ADMIN 可强制改终态(走 M9) |
 | 用药任务 | `待服 → 已服 / 漏服` | 每 30 分钟扫描;超时未确认自动判定漏服 |
 | 陪诊员资质 | `待审 → 通过 / 驳回` | 驳回必须填原因;通过前不能接单 |
 | 投诉 | `待处理 → 处理中 → 已结案` | 每步记录操作人与时间 |

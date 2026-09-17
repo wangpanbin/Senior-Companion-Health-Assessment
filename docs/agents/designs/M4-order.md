@@ -64,17 +64,23 @@ POST /api/order/{id}/accept（接单）
 
 ```
 PENDING ──accept──→ ACCEPTED ──start──→ IN_SERVICE ──complete──→ COMPLETED ──review──→ REVIEWED
-   │                    │
-   └──cancel────────────┘
-                    （均落到 CANCELLED 终态）
+   │
+   └─(家属取消，仅此一条路径)─→ CANCELLED
 
-ADMIN 专属：forceTerminal（仅允许 COMPLETED / CANCELLED）—— 纠纷仲裁路径（M9）
+ADMIN 专属 forceTerminal（M9 纠纷仲裁，绕过正向流转规则）：
+  起点：PENDING / ACCEPTED / IN_SERVICE / COMPLETED
+  终点：COMPLETED / CANCELLED
+  REVIEWED / CANCELLED 为终态，不可被强制变更（isTerminal → 3002）
 ```
+
+> ⚠️ **家属取消只有 `PENDING → CANCELLED` 一条**。`ACCEPTED` 之后的取消一律走管理员强制路径，
+> 因为陪诊员可能已经在路上，家属单方面取消对双方都没有共识。
 
 | 非法转移 | 错误码 |
 |---|---|
 | 非 PENDING 接单 / 非 ACCEPTED 开始 / 非 IN_SERVICE 完成 | `3002 ORDER_STATUS_ILLEGAL` |
-| 已完成订单取消 | `3006 ORDER_CANNOT_CANCEL` |
+| 已完成订单**由家属**取消（`PUT /api/order/{id}/cancel`） | `3006 ORDER_CANNOT_CANCEL` |
+| 已是终态（`REVIEWED` / `CANCELLED`）的订单被强制仲裁 | `3002 ORDER_STATUS_ILLEGAL` |
 | 就诊时间早于当前 | `3005 ORDER_TIME_INVALID` |
 | 服务小结含诊断/处方/用药建议 | `3007 ORDER_SUMMARY_ILLEGAL` |
 | 并发抢单失败 | `3003 ORDER_ALREADY_TAKEN` |

@@ -22,6 +22,7 @@
 | [07-message.md](./07-message.md) | 站内信与通知 | M8 |
 | [08-admin.md](./08-admin.md) | 管理后台（审核 / 用户 / 订单 / 日志） | M9 |
 | [09-statistics-export.md](./09-statistics-export.md) | 数据统计、可视化、Excel 导出 | M10 |
+| [10-file-upload.md](./10-file-upload.md) | 通用文件上传（资质证件 / 投诉证据 / 头像） | M5 / M9 |
 
 > **接口先行约定**：后端先按本文档出接口与 Mock 数据，前端用 Mock 开发，不等后端写完。
 > 接口一旦变更，必须在群内提前通知前端，并同步更新本文档与 Knife4j 注解。
@@ -297,6 +298,7 @@
 | 用药管理 `/api/medication/**` | 读 / 确认 | 读写 / 确认 | 确认 | 读 |
 | 评价与投诉 `/api/review`、`/api/complaint` | 读 | 写 | 读 | 读 / 处理 |
 | 站内信 `/api/message/**` | ○ | ○ | ○ | ○ |
+| 通用文件上传 `/api/file/**` | **—（写接口，被只读拦截器拒）** | 上传 | 上传 | 上传 |
 | 管理后台 `/api/admin/**` | — | — | — | 全部 |
 | 数据统计 `/api/statistics/**` | — | — | — | 全部 |
 
@@ -363,8 +365,15 @@ M4 继续追加**订单状态机与相关方边界**：
 
 ```
 待接单 PENDING ──► 已接单 ACCEPTED ──► 服务中 IN_SERVICE ──► 已完成 COMPLETED ──► 已评价 REVIEWED
-     │                  │                   │
-     └──────────────────┴───────────────────┴──► 已取消 CANCELLED（仅管理员纠纷处理可进入）
+     │                  │                   │                    │
+     └──────────────────┴───────────────────┴────────────────────┘──► 已取消 CANCELLED
+                                                                      （仅管理员纠纷处理可进入）
+
+取消的两条路径（互不相同）：
+  家属取消：仅 PENDING → CANCELLED
+  管理员强制：PENDING / ACCEPTED / IN_SERVICE / COMPLETED → CANCELLED（M9 纠纷处理）
+              PENDING / ACCEPTED / IN_SERVICE → COMPLETED（M9 纠纷处理）
+  REVIEWED 为终态，无任何出边（管理员强制同样不可）。
 ```
 
 **铁律：**

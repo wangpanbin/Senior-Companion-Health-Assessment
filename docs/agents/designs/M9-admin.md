@@ -96,6 +96,9 @@ PENDING（待审）──decide──→ APPROVED（通过） / REJECTED（驳�
 
 ```
 任意非终态 ──arbitrate──→ COMPLETED / CANCELLED（仅此二者）
+
+「任意非终态」= PENDING / ACCEPTED / IN_SERVICE / COMPLETED
+  —— 不含 REVIEWED / CANCELLED：这两者为终态，调用即 3002（OrderStatus.isTerminal()）
 ```
 
 条件更新（`WHERE status = 期望值`）；`affectedRows=0` 抛 3002。这是**唯一**允许 ADMIN 改订单状态的入口（计划 R-M9）。

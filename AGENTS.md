@@ -367,19 +367,39 @@ public class OrderServiceImpl implements OrderService {
 
 ```
 PENDING ──► ACCEPTED ──► IN_SERVICE ──► COMPLETED ──► REVIEWED
-   │           │              │
-   └───────────┴──────────────┴──► CANCELLED（仅 ADMIN 纠纷处理可进入）
+   │           │              │             │
+   │           │              │             │
+   └───────────┴──────────────┴─────────────┴──► CANCELLED
 ```
+
+进入 `CANCELLED` 有**两条互不相同**的路径，不要混用：
+
+| 路径 | 允许的起点 | 入口 |
+|---|---|---|
+| **家属取消** | **仅** `PENDING` | `PUT /api/order/{id}/cancel`（须为本单下单人） |
+| **管理员强制** | `PENDING` / `ACCEPTED` / `IN_SERVICE` / `COMPLETED` | M9 纠纷处理 `arbitrate` |
+
+管理员强制还可把 `PENDING` / `ACCEPTED` / `IN_SERVICE` → `COMPLETED`。
+`REVIEWED` 是终态，**任何路径都不得再变更**（含管理员强制）。
 
 铁律（违反即返回 `3002` / `ORDER_STATUS_ILLEGAL`）：
 
 1. **禁止跳级**：待接单不能直接变已完成。
 2. **禁止回退**：已接单不能退回待接单。
-3. **终态不可再流转**：已评价 / 已取消之后无法变更（管理员强制终态除外）。
+3. **终态不可再流转**：已评价 / 已取消之后无法变更（`REVIEWED` / `CANCELLED` 对管理员强制同样关闭）。
 4. 仅 ADMIN 可强制改变终态，且必须写 `admin_oper_log` 并通知双方。
 5. 每次状态变更写入状态流转日志，异常时整体回滚。
 
-实现已就绪：`OrderStatus.canTransitTo(target)` 是唯一权威判断，所有状态流转代码**必须**通过它，**禁止**硬编码字符串。
+状态判断**必须**走 `OrderStatus` 枚举，**禁止**硬编码状态字符串：
+
+- **正向流转的唯一权威判断**是 `OrderStatus.canTransitTo(target)`（`TRANSITIONS` 只承载正向流转，不含 `→CANCELLED`）；
+- **管理员强制终态是明确豁免的独立路径**，由 `forceTerminal()` + `isAdminForceable()` + `isTerminal()` 承担，
+  并被 `docs/api/08-admin.md` 记为"绕过状态机的正向流转规则"；
+- 因此 `PENDING → CANCELLED`（家属取消）**必须**以 `canTransitTo` 表达，管理员强制边**不得**塞进 `TRANSITIONS`。
+
+> ⚠️ **现状（2026-09-17 复核）**：`canTransitTo` 在 `OrderServiceImpl` 中**尚未被调用**，
+> 6 处流转（`cancel` / `accept` / `reject` / `start` / `complete` / `markReviewed`）仍为硬编码等值判断。
+> 修复方案与影响面见 `docs/review/2026-09-17-m2-auth.md`「口径 A」。
 
 ### 4.2 打卡节点（M5）
 

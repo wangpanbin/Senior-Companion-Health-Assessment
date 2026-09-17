@@ -39,6 +39,7 @@
 | `ORDER_CANCELLED` | 订单已取消 | 取消 / 纠纷处理 | 双方 |
 | `AUDIT_RESULT` | 资质审核结果 | 管理员审核（M9） | 申请人 |
 | `MEDICATION_REMIND` | 用药提醒 | 漏服扫描（M6） | 下单家属 / 绑定家属 |
+| `COMPLAINT_SUBMITTED` | 新投诉待处理 | 家属提交投诉（M7） | **全部管理员** + 被投诉方 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 管理员处理（M9） | 投诉双方 |
 | `SYSTEM_NOTICE` | 系统公告 | 管理员手动发布 | 全部用户 |
 
@@ -53,7 +54,7 @@
 | 3 | PUT | `/api/message/{id}/read` | 已登录 | 标记单条已读 |
 | 4 | PUT | `/api/message/read-all` | 已登录 | 全部已读 |
 | 5 | DELETE | `/api/message/{id}` | 已登录 | 删除消息 |
-| 6 | WS | `/ws/message?token=` | 已登录 | 未读数实时推送 |
+| 6 | GET | `/sse/message` | 已登录 | 未读数实时推送（**SSE 长连接**，事件名 `NEW_MESSAGE`；**不带 `/api` 前缀**，鉴权走 `Authorization` 头） |
 
 ---
 
@@ -191,32 +192,39 @@
 
 ---
 
-## 6. 未读数实时推送（WebSocket）
+## 6. 未读数实时推送（SSE）
 
-`WS /ws/message?token=<accessToken>`　权限：已登录
+`GET /sse/message`　权限：已登录（鉴权走 **`Authorization: Bearer <accessToken>` 请求头**）
+
+> ⚠️ **本端点刻意不带 `/api` 前缀**：SSE 是长连接而非请求-响应接口，放在 `/api` 下会被前端统一
+> Axios 封装的默认 30 秒超时掐断（见 `MessageSseController` 类注释）。前端必须显式用 `EventSource` 接入。
+>
+> ⚠️ **一期前端实际走轮询**：原生 `EventSource` **无法自定义请求头**，因此当前无法从浏览器直接订阅本端点。
+> 前端 `startUnreadPolling` 每 60 秒调 `/api/message/unread-count` 兜底，功能完整。
+> 若要拿到「秒级红点」，需后端把令牌改为支持 **query 参数**（与 `/ws/progress` 同一套做法）。
 
 ### 推送消息格式
 
+事件名 `NEW_MESSAGE`（`MessageSseHub.EVENT_NEW_MESSAGE`），`data` 为 JSON 字符串：
+
 ```json
 {
-  "type": "NEW_MESSAGE",
-  "data": {
-    "messageId": 50002,
-    "messageType": "ORDER_PROGRESS",
-    "title": "陪诊进度更新",
-    "content": "陪诊员已到达医院",
-    "unreadCount": 8,
-    "pushTime": "2026-09-20 09:10:05"
-  }
+  "messageId": 50002,
+  "messageType": "ORDER_PROGRESS",
+  "title": "陪诊进度更新",
+  "content": "陪诊员已到达医院",
+  "unreadCount": 8,
+  "pushTime": "2026-09-20 09:10:05"
 }
 ```
 
 ### 实现要点
 
-- 服务端按 `userId` 维护会话（`Map<Long, Set<Session>>`）。
+- 服务端按 `userId` 维护 `Map<Long, Set<SseEmitter>>`，多端登录各自独立收推送。
+- 连接超时 **30 分钟**，由浏览器 `EventSource` 自动重连；重连后先调 `/api/message/unread-count` 对齐数字，避免漏更新。
 - 前端收到后：红点数字更新 + `ElNotification` 弹提示。
-- 断线重连后先调 `/unread-count` 对齐数字，避免漏更新。
-- **一期可用轮询兜底**：前端每 60 秒调一次 `/unread-count`，保证 WebSocket 未就绪时功能可用。
+- **双通道读同一份数据库状态**：SSE 负责「3 秒内看到红点变化」，60 秒轮询负责在 Nginx 未配
+  `proxy_buffering off`、企业代理掐长连接等环境下仍然可用。两条通道不会出现数字打架。
 
 ---
 
@@ -231,6 +239,7 @@
 | `ORDER_CANCELLED` | 订单已取消 | 订单 {orderNo} 已取消，原因：{reason}。 |
 | `AUDIT_RESULT` | 资质审核结果 | 您的陪诊员资质申请{result}。{rejectReason} |
 | `MEDICATION_REMIND` | 用药提醒 | {elderName} 的「{medicineName}」在 {planTime} 未确认服用，请及时关注。 |
+| `COMPLAINT_SUBMITTED` | 新投诉待处理 | {submitterName} 就订单 {orderNo} 提交了投诉（{typeLabel}），请及时处理。 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 您提交的投诉（{orderNo}）已处理完成：{handleResult} |
 | `SYSTEM_NOTICE` | 系统公告 | {content} |
 

@@ -377,17 +377,21 @@
 | code | 场景 |
 |---|---|
 | 3001 | 订单不存在 |
-| 3002 | 订单已是终态，不可再处理 |
+| 3002 | 订单**已是终态**（`REVIEWED` / `CANCELLED`），不可再处理 |
 | 400 | `targetStatus` 不是 `COMPLETED` / `CANCELLED` |
 
 ### 实现要点（M9 验收关键项）
 
 1. `targetStatus` 只允许 `COMPLETED` 或 `CANCELLED`（对应 `OrderStatus.isAdminForceable()`）。
-2. 强制终态**绕过状态机的正向流转规则**，但必须：
+2. **起点限「任意非终态」**：`PENDING` / `ACCEPTED` / `IN_SERVICE` / `COMPLETED` 四者。
+   `REVIEWED` / `CANCELLED` 是终态，调用返回 `3002`（`OrderStatus.isTerminal()`）。
+   其中 `COMPLETED → CANCELLED` 是**合法**的强制边（服务已完成但事后判定有责、需标记线下退费），
+   不要因为起点是"已完成"就误判为非法。
+3. 强制终态**绕过状态机的正向流转规则**，但必须：
    - 写入 `order_status_log`，`remark` 标注「管理员强制变更」；
    - **写入 `admin_oper_log`**，含 `beforeStatus` / `afterStatus`；
    - 向家属与陪诊员**各发一条站内信**（`ORDER_CANCELLED` / 结果通知）。
-3. 已被强制终态化的订单，后续不能再走正向流转。
+4. 已被强制终态化的订单，后续不能再走正向流转。
 
 ---
 
@@ -500,7 +504,8 @@
 - [ ] 封禁管理员返回 `8002`
 - [ ] 驳回未填原因返回 `8003`
 - [ ] 每次审核 / 封禁 / 纠纷处理，`admin_oper_log` 都新增一条记录（含操作人 ID、目标 ID、动作、时间）
-- [ ] 纠纷处理可把订单从 `IN_SERVICE` 强制置为 `COMPLETED` 或 `CANCELLED`，并给双方各发一条站内信
+- [ ] 纠纷处理可把订单从任意**非终态**（`PENDING` / `ACCEPTED` / `IN_SERVICE` / `COMPLETED`）强制置为 `COMPLETED` 或 `CANCELLED`，并给双方各发一条站内信
+- [ ] 对已是终态的订单（`REVIEWED` / `CANCELLED`）调用纠纷处理 → `3002`
 - [ ] 非 ADMIN 角色访问任意管理端接口 → `403`
 - [ ] 日志页支持按时间区间 + 操作类型筛选，结果正确
 - [ ] 用户列表手机号已脱敏
