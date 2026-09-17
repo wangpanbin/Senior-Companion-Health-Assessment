@@ -100,15 +100,14 @@ M4 和 M3 一样，权限不是一个注解就能说完的，而是**三段式**
 ## 二、状态机（本模块的核心）
 
 ```
-                    ┌─────────────────────────────────────────────┐
-                    │                                             │
    PENDING ──①──► ACCEPTED ──②──► IN_SERVICE ──③──► COMPLETED ──④──► REVIEWED
    待接单          已接单            服务中             已完成           已评价
-      │              │                 │                 │               │
-      └──────────────┴─────────────────┴─────────────────┘               │
-                              │（仅 ADMIN 纠纷处理，M9）                   │
-                              ▼                                          ▼
-                          CANCELLED ◄──────────────────────────────────────
+      │              │                 │                 │              │
+      │              │                 │                 │        （终态锁死）
+      └──────────────┴─────────────────┴─────────────────┘
+                              │ ⑤ 仅 ADMIN 纠纷处理（M9）
+                              ▼
+                          CANCELLED
                            已取消
 ```
 
@@ -118,17 +117,24 @@ M4 和 M3 一样，权限不是一个注解就能说完的，而是**三段式**
 | ② | 已接单 → 服务中 | `POST /api/order/{id}/start` | COMPANION（须为本单陪诊员） | ✅ 已实现 |
 | ③ | 服务中 → 已完成 | `POST /api/order/{id}/complete` | COMPANION（须为本单陪诊员） | ✅ 已实现 |
 | ④ | 已完成 → 已评价 | `POST /api/review` | FAMILY（须为本单下单人） | M7 |
-| ⑤ | 任意 → 已取消 | `POST /api/admin/order/{id}/arbitrate` | **仅 ADMIN** | M9 |
+| ⑤ | 待接单 / 已接单 / 服务中 / 已完成 → 已取消 **或** 已完成 | `POST /api/admin/order/{id}/arbitrate` | **仅 ADMIN** | M9 |
 | 取消 | 待接单 → 已取消 | `PUT /api/order/{id}/cancel` | FAMILY（须为本单下单人） | ✅ 已实现 |
+
+> ⑤ 的起点是 **`PENDING` / `ACCEPTED` / `IN_SERVICE` / `COMPLETED`**（即"任意非终态"），
+> **不含** `已评价` / `已取消`——这两者为终态，调用 `arbitrate` 返回 `3002`。
+> 终点可为 `CANCELLED` 或 `COMPLETED`（对应 `OrderStatus.isAdminForceable()`）。详见 `docs/api/08-admin.md` §9。
 
 ### 铁律（违反即返回 `3002`）
 
 1. **禁止跳级**：`待接单` 不能直接变 `已完成`。
 2. **禁止回退**：`已接单` 不能退回 `待接单`。
-3. **终态锁死**：`已评价` / `已取消` 之后不可再变更。
-4. 每次流转写入 `order_status_log`，异常时整体回滚（`@Transactional(rollbackFor = Exception.class)`）。
+3. **终态锁死**：`已评价` / `已取消` 之后不可再变更——该锁对**管理员强制路径同样生效**（`OrderStatus.isTerminal()` 直接拒绝）。
+4. **家属取消与管理员强制是两条不同路径**：家属只能取消 `待接单`；`已接单` 之后的取消只能由 ADMIN 走纠纷处理。
+5. 每次流转写入 `order_status_log`，异常时整体回滚（`@Transactional(rollbackFor = Exception.class)`）。
 
 > 状态判断**必须使用后端 `OrderStatus` 枚举**（`org.company.nianglin.constant`），禁止硬编码状态字符串。
+> 正向流转走 `canTransitTo(...)`；**管理员强制终态是明确豁免的独立路径**
+> （`forceTerminal()` + `isAdminForceable()` + `isTerminal()`），其边**不进入** `TRANSITIONS`。
 
 ### ⚠️ 判断顺序：先状态、后身份（改动前必读）
 
