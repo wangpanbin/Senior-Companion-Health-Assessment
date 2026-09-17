@@ -634,7 +634,8 @@ $sql = "SHOW COLUMNS FROM medication_task;"
   一批 TCP 端口（自查 `netsh int ipv4 show excludedportrange protocol=tcp`，本机曾把
   `5152–5251` 整段占掉），落在保留段里的端口绑定直接 `EACCES: permission denied`
   → vite 起不来 → 巡检报「浏览器 session 预热失败」，很容易被误判成前端改坏了。
-  **换端口即可**：`npm run dev -- --host 127.0.0.1 --port 5410`
+  **换端口即可**：`pnpm dev -- --host 127.0.0.1 --port 5410`
+  （如使用 npm：`npm run dev -- --host 127.0.0.1 --port 5410`）
   + `$env:NIANGLIN_APP="http://localhost:5410"`（`run_ui_sweep.py` 已支持该环境变量覆盖）。
 - ⚠️ **换前端端口后，如果只有 WebSocket 红、HTTP 接口全绿，先查 CORS 放行来源**：
   浏览器对 `ws://` 升级**必带 `Origin`**，跨源会被 CORS 拒掉（**403，且落在鉴权拦截器之前，

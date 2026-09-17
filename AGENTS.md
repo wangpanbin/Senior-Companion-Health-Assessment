@@ -17,6 +17,7 @@
 | 项目性质 | 软件工程课程设计 · 4 人团队 · 17 周 6 迭代 · 老年人就医陪诊与用药协同管理 |
 | 技术栈（不可改） | 前端 Vue 3.5 + Vite 6 + Element Plus 2.9 + Pinia + Vue Router 4 + Axios + Sass；后端 Spring Boot 3.3.5 + JDK 21 + MyBatis-Plus 3.5.7 + Spring Security + JJWT 0.12.6 + MySQL 8.0 + Redis + Flyway + Knife4j + EasyExcel + Hutool + Lombok |
 | 包名 / 命名空间 | 后端统一 `org.company.nianglin`；前端模块入口 `@/...`（Vite alias 指向 `frontend/src`） |
+| 前端包管理器 | **pnpm**（lockfile 为 `frontend/pnpm-lock.yaml`；禁止把 `package-lock.json` 重新引入仓库） |
 | 接口前缀 | 所有后端接口统一 `/api` 前缀 |
 
 ### 0.1 三条不可逾越的合规红线（每条都是 plan.md 计划书"合规与隐私说明"里的硬约束）
@@ -286,7 +287,7 @@ public class OrderServiceImpl implements OrderService {
 - `'vue/multi-word-component-names': 'off'`（允许 `Login.vue` / `Dashboard.vue`）。
 - `no-unused-vars` 允许 `_` 前缀的形参。
 - `no-console` 仅允许 `console.warn` / `console.error`。
-- 跑 `npm run lint`（已配 `--fix`）必须 0 警告；提交前先跑。
+- 跑 `pnpm lint`（已配 `--fix`）必须 0 警告；提交前先跑。
 
 ### 3.3 Vue 3 + Vite 项目约定
 
@@ -469,7 +470,7 @@ PENDING ──► ACCEPTED ──► IN_SERVICE ──► COMPLETED ──► RE
 
 ### 6.3 静态检查
 
-- 前端：`npm run lint`（ESLint + Prettier），0 警告；`npm run format` 批量格式化。
+- 前端：`pnpm lint`（ESLint + Prettier），0 警告；`pnpm format` 批量格式化。
 - 后端：Alibaba Java 规范插件在 `git commit` 前必须过（计划书要求），AI 输出 Java 时按以下硬要求自查：
   - 类、字段、方法注释齐全；
   - `static final` 常量命名 `UPPER_SNAKE_CASE`；
@@ -559,7 +560,7 @@ AI 在任何"新增 / 修改 / 删除接口"的场景下，必须：
 - 用 `BaseEntity` + `@TableLogic` + `@Version`（按需） + `OptimisticLockerInnerInterceptor`（已开启）。
 - 前端接口封装走 `@/api/<module>.js`，组件内只调函数，不写 `request(...)`。
 - 样式令牌用 `--nl-*` 与 `$variable`，不要硬编码颜色 / 字号。
-- 提交前跑 `npm run lint` / `npm run format` 与 `mvn -q clean package`（编译）。
+- 提交前跑 `pnpm lint` / `pnpm format` 与 `mvn -q clean package`（编译）。
 
 ### ❌ DON'T
 
@@ -587,7 +588,7 @@ AI 在任何"新增 / 修改 / 删除接口"的场景下，必须：
 - [ ] 脱敏字段都走 `MaskUtil`；日志不含身份证号 / 完整手机号 / 密码。
 - [ ] 前端 `request.js` 的拦截器行为没有被绕过；业务代码没有再写 `if (res.code !== 200)`。
 - [ ] 老人模式（`<html class="elderly-mode">`）下字号 / 触控区域 / 菜单隐藏行为符合预期。
-- [ ] 后端 `mvn -q -DskipTests compile` 通过；前端 `npm run lint` 0 警告。
+- [ ] 后端 `mvn -q -DskipTests compile` 通过；前端 `pnpm lint` 0 警告。
 - [ ] 没有把 `.env*` / `application-local.*` / 含真实密码的配置提交。
 - [ ] 没有改 `plan.md` / `README.md` / `.gitignore` / `pom.xml` / `package.json` / `.workbuddy/` 之外的非业务文件（除非用户明确要求）。
 - [ ] 没有出现"建议服用 / 推荐剂量 / 诊断为 / 可能是 XX 病"等违反合规的文案。
