@@ -4,6 +4,12 @@
   日志配置
   ⚠️ 合规红线：日志中禁止出现身份证号、密码、完整手机号等敏感信息。
      业务代码打日志前必须先用 MaskUtil 脱敏（见 org.company.nianglin.util.MaskUtil）。
+
+  分环境策略（AGENTS.md §2.9）：
+    - dev  profile：业务包 DEBUG / 框架 INFO / MyBatis-Plus INFO；本地看全量日志
+                    与 ERROR 日志，保留 30/60 天滚动。
+    - prod profile：所有 logger 与 root 一律 ERROR，磁盘只落 ERROR；
+                    排查时临时切回 INFO 但必须恢复，不要把放宽后的配置提交进库。
   ==========================================================================
 -->
 <configuration scan="true" scanPeriod="60 seconds">
@@ -53,14 +59,48 @@
         </encoder>
     </appender>
 
-    <logger name="org.company.nianglin" level="DEBUG"/>
-    <logger name="org.springframework.web" level="INFO"/>
-    <logger name="com.baomidou.mybatisplus" level="INFO"/>
+    <!-- ========== dev：本机开发，看全量日志 ========== -->
+    <springProfile name="dev">
+        <logger name="org.company.nianglin" level="DEBUG"/>
+        <logger name="org.springframework.web" level="INFO"/>
+        <logger name="com.baomidou.mybatisplus" level="INFO"/>
 
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="FILE"/>
-        <appender-ref ref="ERROR_FILE"/>
-    </root>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+            <appender-ref ref="ERROR_FILE"/>
+        </root>
+    </springProfile>
+
+    <!-- ========== prod：生产，只收 ERROR ========== -->
+    <springProfile name="prod">
+        <!-- FILE 收紧到 ERROR，避免 INFO/WARN 噪音落盘 -->
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_HOME}/${APP_NAME}.log</file>
+            <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                <level>ERROR</level>
+            </filter>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_HOME}/history/${APP_NAME}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <maxFileSize>50MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>2GB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+
+        <logger name="org.company.nianglin" level="ERROR"/>
+        <logger name="org.springframework.web" level="ERROR"/>
+        <logger name="com.baomidou.mybatisplus" level="ERROR"/>
+
+        <root level="ERROR">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+            <appender-ref ref="ERROR_FILE"/>
+        </root>
+    </springProfile>
 
 </configuration>

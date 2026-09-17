@@ -241,7 +241,10 @@ public class OrderServiceImpl implements OrderService {
 
 ### 2.9 日志与脱敏
 
-- 统一 `Logback`（`logback-spring.xml`），分级输出 `nianglin.log` / `nianglin-error.log`，保留 30–60 天。
+- 统一 `Logback`（`logback-spring.xml`），用 `<springProfile>` 分环境，**不要拆成两个 xml 文件**：
+  - `dev`（默认）：业务包 `DEBUG`、框架 `INFO`、MyBatis-Plus `INFO`，root `INFO`；两个 appender 都启用，保留 30 / 60 天滚动。
+  - `prod`：所有 logger 与 root 一律 `ERROR`；`nianglin.log` 的 `ThresholdFilter` 双保险收紧到 `ERROR`，避免 INFO/WARN 噪音污染磁盘。
+  - 临时排查时**临时**改 `prod` 分块切回 INFO，**排查完必须恢复 ERROR**，不要把放宽后的配置提交进库。
 - 业务代码打日志**先脱敏再拼接**，禁止先拼后脱敏（容易漏字段）。
 - 现有脱敏工具 `MaskUtil`（`org.company.nianglin.util.MaskUtil`）：
   - `MaskUtil.phone(String)` → `138****8888`
