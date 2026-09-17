@@ -116,12 +116,14 @@ mvn spring-boot:run               # 启动，默认 8080
 
 ```bash
 cd frontend
-npm install                       # registry 已指向 npmmirror；也可用 pnpm
-npm run dev                       # 启动，默认 5173，/api 自动代理到 8080
-npm run build                     # 生产构建，产物在 dist/
-npm run lint                      # ESLint 检查并自动修复
-npm run format                    # Prettier 格式化
+pnpm install                      # 包管理器：pnpm（lockfile 为 pnpm-lock.yaml）
+pnpm dev                          # 启动，默认 5173，/api 自动代理到 8080
+pnpm build                        # 生产构建，产物在 dist/
+pnpm lint                         # ESLint 检查并自动修复
+pnpm format                       # Prettier 格式化
 ```
+
+> 若环境只有 npm，可临时用 `npm install` / `npm run dev`，但 lockfile 以 `pnpm-lock.yaml` 为准。
 
 > 启动前端前请先启动后端，否则首页的「前后端链路连通性」会提示未连通（不影响页面浏览）。
 
