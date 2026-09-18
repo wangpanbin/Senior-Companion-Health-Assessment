@@ -485,12 +485,12 @@ PENDING ──► ACCEPTED ──► IN_SERVICE ──► COMPLETED ──► RE
 ### 7.1 分支模型
 
 ```
-main（受保护）← develop ← feature/<module>-<name>
+main← develop ← feature/<module>-<name>
                           bugfix/<module>-<name>
                           docs/<name>
 ```
 
-- **禁止**直接向 `main` / `develop` 推 push。
+- 可以直接向 `main` / `develop` 推 push,但是必须先review。
 - 每周五合并到 `develop`。
 - `main` 设为受保护分支，PR 必须有 Code Review。
 
