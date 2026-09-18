@@ -15,7 +15,7 @@
  *    其他角色 / 未建档的 ELDER 该字段不存在（NON_NULL）。为空时页面降级为入口引导空态。
  */
 import { ref, computed, onMounted, watch } from 'vue'
-import { NlPhoneShell, NlCard, NlStatusChip, NlNoticeBar, NlComplianceBar, NlSkeleton, NlEmpty } from '@/components'
+import { NlPageShell, NlCard, NlStatusChip, NlNoticeBar, NlComplianceBar, NlSkeleton, NlEmpty } from '@/components'
 import { getProfile } from '@/api/user'
 import { getTodayTasks, getMedicationCalendar, listMedicationPlans } from '@/api/medication'
 import { formatTime, today } from '@/utils/format'
@@ -159,7 +159,7 @@ const calSummary = computed(() => calData.value?.summary || null)
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: '用药管理' }">
+  <NlPageShell title="用药管理">
     <NlNoticeBar tone="warning">
       您正在使用「老人模式」只读视图，服药确认将由家属代为完成。
     </NlNoticeBar>
@@ -207,11 +207,11 @@ const calSummary = computed(() => calData.value?.summary || null)
       <!-- 月历 -->
       <NlCard v-else-if="tab === 'calendar'" class="calendar-card">
         <div class="cal-head">
-          <button class="cal-head__nav" @click="prev" aria-label="上个月">
+          <button class="cal-head__nav" aria-label="上个月" @click="prev">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4L6 8l4 4" /></svg>
           </button>
           <span class="nl-h2 is-num cal-head__title">{{ monthName }}</span>
-          <button class="cal-head__nav" @click="next" aria-label="下个月">
+          <button class="cal-head__nav" aria-label="下个月" @click="next">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4" /></svg>
           </button>
         </div>
@@ -258,7 +258,7 @@ const calSummary = computed(() => calData.value?.summary || null)
     </template>
 
     <NlComplianceBar text="本页仅提供药品通用信息，不构成任何用药建议，请遵医嘱。" />
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">
