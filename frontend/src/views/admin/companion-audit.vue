@@ -185,11 +185,11 @@ onMounted(loadList)
         <span class="audit-dialog__label">身份证号</span>
         <span class="is-num">{{ reviewItem.idCard }}</span>
       </section>
-      <section class="audit-dialog__row" v-if="reviewItem.serviceArea">
+      <section v-if="reviewItem.serviceArea" class="audit-dialog__row">
         <span class="audit-dialog__label">服务区域</span>
         <span class="nl-body">{{ reviewItem.serviceArea }}</span>
       </section>
-      <section class="audit-dialog__row" v-if="reviewItem.availableTime">
+      <section v-if="reviewItem.availableTime" class="audit-dialog__row">
         <span class="audit-dialog__label">可服务时段</span>
         <span class="nl-body">{{ reviewItem.availableTime }}</span>
       </section>

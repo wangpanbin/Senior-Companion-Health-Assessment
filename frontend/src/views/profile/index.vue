@@ -15,7 +15,7 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  NlPhoneShell, NlCard, NlAvatar, NlListRow
+  NlPhoneShell, NlMobileOnlyPage, NlCard, NlAvatar, NlListRow
 } from '@/components'
 import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
@@ -111,6 +111,9 @@ async function submitChangePwd() {
 </script>
 
 <template>
+  <!-- mobile-only 路由（ADR-0008）：宽屏下由 NlMobileOnlyPage 换成 NlMobileOnlyNotice。
+       刻意不重排内部缩进，保持与原文件的 diff 最小。 -->
+  <NlMobileOnlyPage>
   <NlPhoneShell :nav="{ title: '我的', back: false }">
     <!-- 用户卡片 -->
     <NlCard>
@@ -231,6 +234,7 @@ async function submitChangePwd() {
       </template>
     </el-dialog>
   </NlPhoneShell>
+  </NlMobileOnlyPage>
 </template>
 
 <style scoped lang="scss">

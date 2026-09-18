@@ -20,7 +20,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { NlPhoneShell } from '@/components'
+import { NlPageShell } from '@/components'
 import { getCaptcha, register } from '@/api/auth'
 
 const router = useRouter()
@@ -120,7 +120,7 @@ loadCaptcha()
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: '注册账号' }">
+  <NlPageShell title="注册账号">
     <!-- 角色选择 -->
     <section class="role-pick">
       <button
@@ -214,7 +214,7 @@ loadCaptcha()
         <el-link type="primary" :underline="false" @click="router.push('/login')">立即登录</el-link>
       </p>
     </div>
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">

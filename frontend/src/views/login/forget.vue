@@ -16,13 +16,13 @@
  *   所以这里改成如实说明 + 给出真正能走通的路径，不保留任何「假成功」按钮。
  */
 import { useRouter } from 'vue-router'
-import { NlPhoneShell, NlCard, NlNoticeBar } from '@/components'
+import { NlPageShell, NlCard, NlNoticeBar } from '@/components'
 
 const router = useRouter()
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: '找回密码' }">
+  <NlPageShell title="找回密码">
     <NlNoticeBar tone="warning">
       本平台暂未开通自助重置密码，请按下方说明联系我们处理。
     </NlNoticeBar>
@@ -64,7 +64,7 @@ const router = useRouter()
         返回登录
       </el-button>
     </div>
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">
