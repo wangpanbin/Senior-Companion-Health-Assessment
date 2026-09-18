@@ -109,6 +109,11 @@ $nl-listrow-min-height-elderly: 68px;
 $nl-phone-width: 390px;
 $nl-phone-height: 844px;
 
+// -------------------- 桌面端画布（ADR-0007 / Q5 = β 单档 720） --------------------
+// ⚠️ 桌面形态内容区的宽度唯一真源是 NlDesktopShell 的 __content 容器；
+//    view 内部不要再写 max-width / width（Q11），改档位只需动这一个变量。
+$nl-desktop-content-width: 720px;
+
 // -------------------- 适老化硬约束（design.md §5 / PRD §2.1） --------------------
 $elderly-touch-min: 48px; // 可点击元素最小高度
 $elderly-font-min: 18px; // 老人模式正文最小字号

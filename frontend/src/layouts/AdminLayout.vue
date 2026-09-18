@@ -93,17 +93,22 @@ function handleCommand(cmd) {
         </div>
 
         <div class="admin__header-right">
-          <!-- 适老化总开关 -->
+          <!-- 适老化总开关：桌面后台恒为宽屏，老人模式按 ADR-0007 Q4 = II 禁用 -->
           <div class="admin__elder-switch">
             <span class="admin__elder-label">老人模式</span>
-            <el-switch
-              :model-value="appStore.elderlyMode"
-              size="large"
-              inline-prompt
-              active-text="大字"
-              inactive-text="常规"
-              @change="appStore.setElderlyMode($event)"
-            />
+            <el-tooltip
+              content="桌面端已按设计禁用老人模式（仅手机形态生效）"
+              placement="bottom"
+            >
+              <el-switch
+                :model-value="appStore.elderlyMode"
+                size="large"
+                disabled
+                inline-prompt
+                active-text="大字"
+                inactive-text="常规"
+              />
+            </el-tooltip>
           </div>
 
           <el-dropdown @command="handleCommand">
@@ -125,7 +130,19 @@ function handleCommand(cmd) {
       <el-main class="admin__main">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" />
+            <!--
+              ⚠️ 这层带 key 的 div 与 MobileLayout 里的同款，是必需的不是装饰：
+              Transition 只能作用于单根子节点，一旦某个 admin view 的根节点写成
+              v-if / v-else 双分支（Fragment），mode="out-in" 会等不到离场完成，
+              新页面**永远不渲染**（URL 变了但整页空白，且没有任何报错）。
+              详见 MobileLayout.vue 里的同类注释与实测记录。
+
+              这里刻意直接复用 <script setup> 里的 route（不再从 slot 解构同名变量，
+              否则会触发 vue/no-template-shadow）。
+            -->
+            <div :key="route.path" class="admin__page">
+              <component :is="Component" />
+            </div>
           </transition>
         </router-view>
       </el-main>
@@ -239,6 +256,11 @@ function handleCommand(cmd) {
     padding: $nl-space-6;
     overflow-y: auto;
     background: var(--nl-bg);
+  }
+
+  /* 透明包装层：不引入盒模型副作用，只为了让 Transition 拿到单根节点 */
+  &__page {
+    min-height: 100%;
   }
 }
 

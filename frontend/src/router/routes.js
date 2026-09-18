@@ -9,17 +9,21 @@
  *   - meta.elderlyHidden  老人模式下从菜单中隐藏（菜单精简，M11）
  *   - meta.module         该页面归属的模块编号
  *   - meta.code           页面编号，如 M-04（与 design.md §1.2/1.3 对齐）
+ *   - meta.mobileOnly     true 表示仅适配手机形态；桌面形态下由 NlDesktopShell
+ *                         整体替换为 NlMobileOnlyNotice（ADR-0008）
  *
  * 路由结构：
  *   /login /register /forget                    公开（M2）
- *   /                                          PhoneLayout（移动端 4 角色）
+ *   /                                          MobileLayout（4 角色共用；宽屏由
+ *                                              view 内 isMobile 分支切到 NlDesktopShell，
+ *                                              见 ADR-0007 的"形态与角色正交"）
  *     /elder /family /companion                各自的 Home + 业务页
  *   /admin                                     AdminLayout（桌面端）
  *     /dashboard /companion-audit ...          后台管理
  *   /error/403 /error/404                      错误页
  */
 
-const PhoneLayout = () => import('@/layouts/PhoneLayout.vue')
+const MobileLayout = () => import('@/layouts/MobileLayout.vue')
 const AdminLayout = () => import('@/layouts/AdminLayout.vue')
 
 export const routes = [
@@ -43,7 +47,7 @@ export const routes = [
     meta: { title: '找回密码', public: true, elderlyHidden: true, code: 'M-03' }
   },
 
-  // ==================== 移动端（PhoneLayout / 4 角色共用） ====================
+  // ==================== 移动端（MobileLayout / 4 角色共用） ====================
   {
     // 刻意不写 redirect：根路径的归属要按登录态 + 角色决定，
     // 统一交给 router/index.js 的 beforeEach（未登录 → /login，已登录 → 角色主页）。
@@ -51,7 +55,7 @@ export const routes = [
     // 导致登录成功后 `router.push('/')` 解析成「当前就在 /login」被判为重复导航，
     // 守卫里的 `to.path === '/'` 分支永远不会命中，用户会卡在登录页。
     path: '/',
-    component: PhoneLayout,
+    component: MobileLayout,
     children: [
       // ---------- 老人端 ELDER ----------
       {
@@ -76,7 +80,14 @@ export const routes = [
         path: 'elder/message',
         name: 'ElderMessage',
         component: () => import('@/views/companion/message.vue'),
-        meta: { title: '消息', icon: 'Bell', roles: ['ELDER'], module: 'M8', code: 'M-14' }
+        meta: {
+          title: '消息',
+          icon: 'Bell',
+          roles: ['ELDER'],
+          module: 'M8',
+          mobileOnly: true,
+          code: 'M-14'
+        }
       },
 
       // ---------- 家属端 FAMILY ----------
@@ -178,13 +189,28 @@ export const routes = [
         path: 'companion/entry',
         name: 'CompanionEntry',
         component: () => import('@/views/companion/entry.vue'),
-        meta: { title: '资质入驻', icon: 'EditPen', roles: ['COMPANION'], module: 'M3', elderlyHidden: true, code: 'M-20' }
+        meta: {
+          title: '资质入驻',
+          icon: 'EditPen',
+          roles: ['COMPANION'],
+          module: 'M3',
+          elderlyHidden: true,
+          mobileOnly: true,
+          code: 'M-20'
+        }
       },
       {
         path: 'companion/execute/:id',
         name: 'CompanionExecute',
         component: () => import('@/views/companion/execute.vue'),
-        meta: { title: '订单执行', roles: ['COMPANION'], module: 'M5', elderlyHidden: true, code: 'M-11' }
+        meta: {
+          title: '订单执行',
+          roles: ['COMPANION'],
+          module: 'M5',
+          elderlyHidden: true,
+          mobileOnly: true,
+          code: 'M-11'
+        }
       },
       {
         path: 'companion/order',
@@ -210,7 +236,12 @@ export const routes = [
         path: 'profile',
         name: 'Profile',
         component: () => import('@/views/profile/index.vue'),
-        meta: { title: '我的', icon: 'User', module: 'M2', code: 'M-22' }
+        // mobileOnly：资料页是纯手机形态（手机号 / 退出登录 / 关于），
+        // 桌面形态下由 NlDesktopShell 渲染 NlMobileOnlyNotice（ADR-0008）。
+        // ⚠️ 该路由 roles 为空 = 所有已登录角色可访问，含 ADMIN ——
+        //    桌面后台里若点到 /profile 会落到"请用手机"提示页，这是 ADR-0008 的既定取舍，
+        //    但 ADMIN 的入口是 AdminLayout 顶栏下拉，正常路径不会到 /profile。
+        meta: { title: '我的', icon: 'User', module: 'M2', mobileOnly: true, code: 'M-22' }
       }
     ]
   },

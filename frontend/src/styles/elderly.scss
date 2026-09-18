@@ -144,3 +144,32 @@ html.elderly-mode {
     line-height: 1.4;
   }
 }
+
+/* ==========================================================================
+   桌面形态兜底（ADR-0007 Q4 = II · 计划 Stage 3 任务 1）
+   --------------------------------------------------------------------------
+   行为防御已在 appStore.applyElderlyClass() 里做过（>= 768 不挂 class）。
+   这里是**第二道防线**：万一 class 因为时序 / 手工改 DOM / 未来重构被挂上，
+   也不能让 18px 基线撑爆 720px 居中列。故用 !important 强行拉回桌面档位。
+   ========================================================================== */
+@media (min-width: 768px) {
+  html.elderly-mode {
+    --nl-font-body: 14px !important;
+    --nl-font-h1: 22px !important;
+    --nl-font-h2: 18px !important;
+    --nl-font-h3: 16px !important;
+    --nl-font-caption: 12px !important;
+    --nl-touch-min: 44px !important;
+    --nl-btn-height: 48px !important;
+    --nl-navbar-height: 56px !important;
+    --nl-tabbar-height: 62px !important;
+    --nl-lh-body: 22px !important;
+    --nl-gutter: 16px !important;
+    --nl-gap-section: 24px !important;
+    --nl-border-width: 1px !important;
+
+    body {
+      font-size: 14px;
+    }
+  }
+}
