@@ -2,6 +2,8 @@
 /**
  * 我要投诉（M-18 · design.md §4 / PRD §M7）
  *
+ * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
+ *
  * 数据来源（全部在 @/api/order + @/api/review，已核对后端 DTO/VO）：
  *   - getOrder(orderId)              → 被投诉订单摘要（只读）
  *   - createComplaint(data)          → 提交投诉
@@ -17,7 +19,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { NlPhoneShell, NlCard, NlStatusChip, NlNoticeBar, NlEmpty, NlSkeleton } from '@/components'
+import { NlPageShell, NlCard, NlStatusChip, NlNoticeBar, NlEmpty, NlSkeleton } from '@/components'
 import { getOrder } from '@/api/order'
 import { createComplaint, listMyComplaints } from '@/api/review'
 import { uploadFile } from '@/api/file'
@@ -160,7 +162,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: '我要投诉' }">
+  <NlPageShell title="我要投诉">
     <NlSkeleton v-if="orderLoading" :count="2" />
 
     <template v-else-if="order">
@@ -268,7 +270,7 @@ onMounted(() => {
       title="订单不存在"
       description="无法加载该订单，请返回订单列表重试"
     />
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">

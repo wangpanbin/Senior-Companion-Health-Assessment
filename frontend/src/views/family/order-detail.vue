@@ -25,11 +25,13 @@
  * ⚠️ 隐私口径：详情接口返回的是**全名**（`OrderVO.ofDetail`），
  *    因为访问者已通过 `OrderService#requireInvolved` 判定为该订单相关方。
  *    这不是泄露 —— 相关方本来就该看到完整信息。
+ *
+ * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlPhoneShell, NlCard, NlStatusChip, NlTimeline, NlAvatar, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
+import { NlPageShell, NlCard, NlStatusChip, NlTimeline, NlAvatar, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
 import { getOrder, getOrderTimeline, cancelOrder } from '@/api/order'
 import { listCheckins, connectProgressSocket } from '@/api/execution'
 import { formatDateTime, CHECKIN_NODE_ORDER } from '@/utils/format'
@@ -249,7 +251,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: '订单详情' }">
+  <NlPageShell title="订单详情">
     <NlSkeleton v-if="loading" :count="3" class="pad" />
 
     <NlEmpty
@@ -352,7 +354,7 @@ onBeforeUnmount(() => {
         <el-button v-if="canReview" type="primary" round @click="goReview">去评价</el-button>
       </section>
     </template>
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">

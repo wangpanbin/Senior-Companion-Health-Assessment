@@ -8,6 +8,7 @@
  * - 日期横向滚动：今天 + 6 天
  * - 时段网格
  * - 底部固定「下一步」
+ * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
  *
  * 数据来源：`@/constants/hospitals`（真源是数据库 `sys_dict`，一期无字典接口）。
  * 每个医院都带经纬度 —— 下单时必须一并提交，否则订单坐标为 NULL，
@@ -16,7 +17,7 @@
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { NlPhoneShell, NlStepHeader } from '@/components'
+import { NlPageShell, NlStepHeader } from '@/components'
 import { HOSPITALS, DEPARTMENTS, estimateFee } from '@/constants/hospitals'
 import { useOrderDraftStore } from '@/store/modules/orderDraft'
 
@@ -162,10 +163,7 @@ function next() {
 </script>
 
 <template>
-  <NlPhoneShell
-    :nav="{ title: '选择医院与时间' }"
-    :has-cta="true"
-  >
+  <NlPageShell title="选择医院与时间" has-cta>
     <NlStepHeader :model-value="2" />
 
     <!-- 医院列表 -->
@@ -261,7 +259,7 @@ function next() {
         </el-button>
       </div>
     </template>
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">

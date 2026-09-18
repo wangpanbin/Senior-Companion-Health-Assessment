@@ -22,11 +22,13 @@
  *
  * 前端校验只是体验，真正的边界在后端：提交后若后端返回业务错误，拦截器已弹提示，
  * `catch` 里不再重复弹。
+ *
+ * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
  */
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { NlPhoneShell, NlCard, NlNoticeBar } from '@/components'
+import { NlPageShell, NlCard, NlNoticeBar } from '@/components'
 import { bindElder, createElder } from '@/api/user'
 import { today } from '@/utils/format'
 
@@ -167,7 +169,7 @@ function submit() {
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: '绑定老人' }">
+  <NlPageShell title="绑定老人">
     <NlNoticeBar>
       绑定后您可代老人预约陪诊 / 管理用药 / 查看就医记录，老人本人无需操作。
     </NlNoticeBar>
@@ -257,7 +259,7 @@ function submit() {
         {{ tab === 'bind' ? '绑定' : '创建档案' }}
       </el-button>
     </div>
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">

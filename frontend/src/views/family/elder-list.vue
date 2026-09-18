@@ -14,12 +14,14 @@
  *
  * 删除 / 解绑是破坏性操作，必须二次确认；后端返回的业务错误（如存在进行中订单返回 409）
  * 由拦截器弹出，这里不再重复弹。
+ *
+ * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  NlPhoneShell, NlAvatar, NlEmpty, NlSkeleton, NlStatusChip
+  NlPageShell, NlAvatar, NlEmpty, NlSkeleton, NlStatusChip
 } from '@/components'
 import { listElder, getElder, removeElder, unbindElder } from '@/api/user'
 import { formatDate } from '@/utils/format'
@@ -112,7 +114,7 @@ onMounted(loadElders)
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: '我的老人' }">
+  <NlPageShell title="我的老人">
     <NlSkeleton v-if="loading" :count="3" class="list-pad" />
 
     <NlEmpty
@@ -196,7 +198,7 @@ onMounted(loadElders)
       </template>
       <NlEmpty v-else type="empty" title="档案加载失败" description="请关闭后重试" />
     </el-dialog>
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">

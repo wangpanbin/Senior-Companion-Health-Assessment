@@ -6,6 +6,7 @@
  * - 「本服务为线下结算」顶部提示条（合规）
  * - 信息确认：就诊人 / 医院 + 科室 / 就诊时间 / 医院地址（文字，无地图）/ 服务费
  * - 底部 Primary「提交订单」 + Ghost「返回修改」
+ * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
  *
  * ⚠️ 与骨架版的差异（联调时暴露的两处真实问题）：
  *
@@ -22,7 +23,7 @@
 import { computed, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlPhoneShell, NlStepHeader, NlCard } from '@/components'
+import { NlPageShell, NlStepHeader, NlCard } from '@/components'
 import { estimateFee } from '@/constants/hospitals'
 import { useOrderDraftStore } from '@/store/modules/orderDraft'
 import { createOrder } from '@/api/order'
@@ -108,10 +109,7 @@ function back() {
 </script>
 
 <template>
-  <NlPhoneShell
-    :nav="{ title: '确认订单' }"
-    :has-cta="true"
-  >
+  <NlPageShell title="确认订单" has-cta>
     <NlStepHeader :model-value="3" />
 
     <section class="block">
@@ -201,7 +199,7 @@ function back() {
         </el-button>
       </div>
     </template>
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">

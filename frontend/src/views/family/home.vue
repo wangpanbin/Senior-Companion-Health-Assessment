@@ -23,10 +23,11 @@ import {
   Calendar, FirstAidKit as Med, Clock, Plus
 } from '@element-plus/icons-vue'
 import {
-  NlPhoneShell, NlTabBar, NlCard, NlAvatar, NlStatusChip, NlIconBox,
-  NlSkeleton, NlEmpty, NlNoticeBar
+  NlPhoneShell, NlDesktopShell, NlTabBar, NlCard, NlAvatar, NlStatusChip,
+  NlIconBox, NlSkeleton, NlEmpty, NlNoticeBar, NlUserMenu
 } from '@/components'
 import { useAppStore } from '@/store/modules/app'
+import { useDevice } from '@/composables/useDevice'
 import { listElder } from '@/api/user'
 import { listMyOrders } from '@/api/order'
 import { getUnreadCount } from '@/api/message'
@@ -35,6 +36,13 @@ import { formatVisitTime, formatMoney } from '@/utils/format'
 
 const router = useRouter()
 const appStore = useAppStore()
+
+/**
+ * 形态判定（ADR-0007 / 计划 Stage 1）
+ * - 窄屏（<= 767px）→ NlPhoneShell，模板与改造前**完全一致**
+ * - 宽屏（>= 768px）→ NlDesktopShell，内容居中限宽 720（宽度由壳控制，此处不写死）
+ */
+const { isMobile } = useDevice()
 
 /* ---------------- 老人（切换就诊人上下文） ---------------- */
 const elders = ref([])
@@ -156,6 +164,11 @@ function createOrder() {
   router.push('/family/order/step1')
 }
 
+/** 桌面形态的顶栏操作区（老人模式开关在桌面端按 Q6 隐藏，故只剩消息入口） */
+function goMessage() {
+  router.push('/family/message')
+}
+
 onMounted(() => {
   loadElders()
   loadOrders()
@@ -168,18 +181,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- ==================== Mobile 形态：原手机版模板，未做任何视觉改动 ==================== -->
   <NlPhoneShell
+    v-if="isMobile"
     :nav="{ title: '家属工作台', back: false }"
     :has-tabs="true"
   >
     <template #nav-right>
+      <!-- 老人模式开关：Q6 = a+d，桌面形态下隐藏（桌面端禁用老人模式） -->
       <button class="fam-home__navbtn" title="切换老人模式" @click="toggleElderly">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="11" />
           <text x="12" y="16" text-anchor="middle" font-size="14" fill="currentColor" stroke="none" font-family="serif">大</text>
         </svg>
       </button>
-      <button class="fam-home__navbtn" title="消息" @click="router.push('/family/message')">
+      <button class="fam-home__navbtn" title="消息" @click="goMessage">
         <el-badge :value="unread" :hidden="unread === 0" :max="99">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M6 8a6 6 0 1 1 12 0v4l2 3H4l2-3V8z" />
@@ -187,6 +203,9 @@ onBeforeUnmount(() => {
           </svg>
         </el-badge>
       </button>
+      <!-- 用户菜单（移动 NavBar 右侧）：头像 + 退出登录下拉。
+           桌面形态下由 NlDesktopShell 统一提供，这里只补移动形态。 -->
+      <NlUserMenu size="sm" :show-name="false" />
     </template>
 
     <!-- ==================== 老人横滑卡 ==================== -->
@@ -339,6 +358,171 @@ onBeforeUnmount(() => {
       <NlTabBar v-model="activeTab" :tabs="tabs" @change="onTabChange" />
     </template>
   </NlPhoneShell>
+
+  <!-- ==================== Desktop 形态（ADR-0007 / 计划 Stage 1） ====================
+       内容宽度由 NlDesktopShell 统一限制为 720px 居中（Q11），此处不写 width。
+       loading / empty / error 仍由本 view 自管（Q10 = ③）。
+  ============================================================================== -->
+  <NlDesktopShell v-else>
+    <template #actions>
+      <el-button text @click="goMessage">
+        <el-badge :value="unread" :hidden="unread === 0" :max="99">
+          <el-icon size="20"><Bell /></el-icon>
+        </el-badge>
+        <span class="desktop-actions__label">消息</span>
+      </el-button>
+      <el-button type="primary" round :icon="Plus" @click="createOrder">新增订单</el-button>
+      <!-- 用户菜单（桌面顶栏最右侧）由 NlDesktopShell 自动注入，无需在此声明。 -->
+    </template>
+
+    <!-- 就诊人切换 -->
+    <NlCard>
+      <template #title>
+        <div class="block-head">
+          <span class="nl-h2">当前就诊人</span>
+          <el-link type="primary" :underline="false" @click="router.push('/family/elder')">
+            管理老人
+          </el-link>
+        </div>
+      </template>
+
+      <NlSkeleton v-if="eldersLoading" :count="2" />
+
+      <NlEmpty
+        v-else-if="!elders.length"
+        type="empty"
+        title="还没有绑定老人"
+        description="绑定后可按老人维度预约陪诊、管理用药"
+        action-text="去绑定"
+        @action="addElder"
+      />
+
+      <ul v-else class="desktop-elders">
+        <li
+          v-for="(e, i) in elders"
+          :key="e.id"
+          :class="['desktop-elders__item', { 'is-active': activeElder === i }]"
+          @click="pickElder(i)"
+        >
+          <NlAvatar :fallback="e.name ? e.name.slice(0, 1) : '?'" :size="40" tone="primary" />
+          <div class="desktop-elders__meta">
+            <div class="desktop-elders__name">{{ e.name }}</div>
+            <div class="nl-caption nl-text-muted">
+              {{ e.genderLabel }}<template v-if="e.age != null"> · {{ e.age }} 岁</template>
+            </div>
+          </div>
+        </li>
+        <li class="desktop-elders__item desktop-elders__add" @click="addElder">
+          <el-icon size="18"><Plus /></el-icon>
+          <span class="nl-caption">添加老人</span>
+        </li>
+      </ul>
+    </NlCard>
+
+    <!-- 快捷入口 -->
+    <NlCard>
+      <template #title><span class="nl-h2">快捷入口</span></template>
+      <ul class="desktop-quick">
+        <li v-for="q in quickEntries" :key="q.key" class="desktop-quick__item" @click="quickEnter(q)">
+          <NlIconBox :tone="q.tone" :size="40">
+            <component :is="q.icon" />
+          </NlIconBox>
+          <div class="desktop-quick__text">
+            <div class="desktop-quick__label">{{ q.label }}</div>
+            <div class="nl-caption nl-text-muted">{{ q.desc }}</div>
+          </div>
+        </li>
+      </ul>
+    </NlCard>
+
+    <!-- 今日用药提醒 -->
+    <NlCard>
+      <template #title>
+        <div class="block-head">
+          <span class="nl-h2">今日用药提醒</span>
+          <el-link type="primary" :underline="false" @click="router.push('/family/medication')">管理</el-link>
+        </div>
+      </template>
+
+      <NlNoticeBar tone="warning">
+        仅作用药提醒与记录，系统不提供诊断或用药建议。
+      </NlNoticeBar>
+
+      <NlSkeleton v-if="eldersLoading || tasksLoading" :count="2" />
+
+      <NlEmpty
+        v-else-if="!currentElder"
+        type="empty"
+        title="暂无就诊人"
+        description="添加并绑定老人后，可在这里查看其今日服药提醒"
+        action-text="去绑定"
+        @action="addElder"
+      />
+
+      <ul v-else-if="tasks.length" class="task-list">
+        <li v-for="t in tasks" :key="t.id" class="task">
+          <div class="task__main">
+            <div class="task__name">
+              {{ t.medicineName }}
+              <span v-if="t.dosage" class="nl-caption nl-text-muted">{{ t.dosage }}</span>
+            </div>
+            <div class="nl-caption nl-text-muted is-num">
+              {{ formatVisitTime(t.planTime) }}<template v-if="t.mealRelationLabel"> · {{ t.mealRelationLabel }}</template>
+            </div>
+          </div>
+          <NlStatusChip scope="task" :status="t.status" :text="t.statusLabel" />
+        </li>
+      </ul>
+
+      <div v-else class="fam-home__empty">
+        <span class="nl-caption nl-text-muted">今日暂无服药提醒</span>
+      </div>
+    </NlCard>
+
+    <!-- 最近订单：桌面用横向信息行，不是手机卡片的等比放大 -->
+    <NlCard>
+      <template #title>
+        <div class="block-head">
+          <span class="nl-h2">最近订单</span>
+          <el-link type="primary" :underline="false" @click="router.push('/family/order')">查看全部</el-link>
+        </div>
+      </template>
+
+      <NlSkeleton v-if="ordersLoading" :count="2" />
+
+      <ul v-else-if="orders.length" class="desktop-orders">
+        <li v-for="o in orders" :key="o.id" class="desktop-orders__row" @click="viewOrder(o)">
+          <NlStatusChip
+            :status="o.status"
+            :text="o.statusLabel"
+            :dot="o.status === 'PENDING' || o.status === 'IN_SERVICE'"
+          />
+          <div class="desktop-orders__main">
+            <div class="desktop-orders__hospital">{{ o.hospital }} · {{ o.department }}</div>
+            <div class="nl-caption nl-text-muted is-num">{{ formatVisitTime(o.visitTime) }}</div>
+          </div>
+          <div class="desktop-orders__comp">
+            <template v-if="o.companionName">
+              <NlAvatar :fallback="o.companionName.slice(0, 1)" :size="24" tone="warning" />
+              <span class="nl-caption">{{ o.companionName }}</span>
+            </template>
+            <span v-else class="nl-caption nl-text-muted">待接单</span>
+          </div>
+          <span class="is-num desktop-orders__amt">{{ formatMoney(o.fee) }}</span>
+        </li>
+      </ul>
+
+      <div v-else class="fam-home__empty">
+        <NlStatusChip tone="neutral" text="暂无订单" />
+        <el-button type="primary" round size="small" class="mt-3" @click="createOrder">去下单</el-button>
+      </div>
+    </NlCard>
+
+    <!-- 合规与说明 -->
+    <NlNoticeBar tone="info">
+      银龄伴诊提供陪诊与用药协同管理，不做诊断、不开药方；一期支持线上记账、线下结算。
+    </NlNoticeBar>
+  </NlDesktopShell>
 </template>
 
 <style scoped lang="scss">
@@ -373,12 +557,20 @@ onBeforeUnmount(() => {
 }
 
 .elder-track {
-  margin: 0 calc(var(--nl-space-2) - var(--nl-gutter)) var(--nl-gap-section);
+  margin: 0 0 var(--nl-gap-section);
+  /* ⚠️ 修复既有缺陷：原写法 `margin: 0 calc(var(--nl-space-2) - var(--nl-gutter))`
+     等于左右各 -8px 出血，在 390 宽屏上把 document.scrollWidth 撑到 398，
+     产生 8px 横向滚动（已用 git stash 回改动前复测确认是本轮之前就有的问题）。
+     改为「分区只负责装订线，滚动仍由 __list 承担」：宽度不再超出屏幕，
+     且首项左边缘正好落在装订线（--nl-gutter = 16px）上。
+     注意别把 overflow-x 挪到本分区 —— 那样 __list 就不再是滚动容器，
+     横滑会失效（实测过）。 */
+  padding: 0 var(--nl-gutter);
 
   &__list {
     display: flex;
     gap: var(--nl-space-3);
-    padding: 0 var(--nl-gutter);
+    padding: 0;
     margin: 0;
     overflow-x: auto;
     list-style: none;
@@ -422,7 +614,8 @@ onBeforeUnmount(() => {
   }
 
   &__guide {
-    padding: 0 var(--nl-gutter);
+    /* 装订线内边距已上移到 .elder-track，此处不再重复加，否则会变双倍缩进 */
+    padding: 0;
   }
 
   &__add {
@@ -622,5 +815,149 @@ onBeforeUnmount(() => {
 
 .mt-3 {
   margin-top: 12px;
+}
+
+/* ==========================================================================
+   Desktop 形态专用样式（>= 768px 才渲染，故不做媒体查询）
+   宽度一律交给 NlDesktopShell 的 720px 容器，这里只排版。
+   ========================================================================== */
+.desktop-actions {
+  &__label {
+    margin-left: 4px;
+  }
+}
+
+.desktop-elders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nl-space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+
+  &__item {
+    display: flex;
+    gap: var(--nl-space-2);
+    align-items: center;
+    padding: var(--nl-space-2) var(--nl-space-3);
+    cursor: pointer;
+    background: var(--nl-bg-sunken);
+    border: 1.5px solid transparent;
+    border-radius: var(--nl-radius-card);
+    transition: border-color 0.18s;
+
+    &.is-active {
+      background: var(--nl-primary-ghost);
+      border-color: var(--nl-primary);
+    }
+  }
+
+  &__meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--nl-text-1);
+  }
+
+  &__add {
+    color: var(--nl-primary);
+    border-style: dashed;
+    border-color: var(--nl-border-strong);
+  }
+}
+
+.desktop-quick {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--nl-space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+
+  &__item {
+    display: flex;
+    gap: var(--nl-space-3);
+    align-items: center;
+    padding: var(--nl-space-3);
+    cursor: pointer;
+    border: 1px solid var(--nl-border);
+    border-radius: var(--nl-radius-card);
+    transition: box-shadow 0.18s;
+
+    &:hover {
+      box-shadow: var(--nl-shadow-hover);
+    }
+  }
+
+  &__text {
+    min-width: 0;
+  }
+
+  &__label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--nl-text-1);
+  }
+}
+
+.desktop-orders {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+
+  &__row {
+    display: flex;
+    gap: var(--nl-space-3);
+    align-items: center;
+    padding: var(--nl-space-3) 0;
+    cursor: pointer;
+    border-bottom: 1px solid var(--nl-divider);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:hover {
+      background: var(--nl-primary-ghost);
+    }
+  }
+
+  &__main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__hospital {
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--nl-text-1);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__comp {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
+    align-items: center;
+    color: var(--nl-text-2);
+  }
+
+  &__amt {
+    flex-shrink: 0;
+    min-width: 72px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--nl-primary);
+    text-align: right;
+  }
 }
 </style>

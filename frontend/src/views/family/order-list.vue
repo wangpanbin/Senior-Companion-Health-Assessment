@@ -16,10 +16,12 @@
  *      （`OrderServiceImpl#parseStatuses`）—— 所以 tab 的 key 必须是真实枚举名。
  *   3. 列表口径（`OrderVO.ofList`）**不返回地址与备注**，姓名与陪诊员名已脱敏。
  *      这是后端刻意的隐私设计，不是接口缺字段。
+ *
+ * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { NlPhoneShell, NlStatusChip, NlEmpty, NlSkeleton } from '@/components'
+import { NlPageShell, NlStatusChip, NlEmpty, NlSkeleton } from '@/components'
 import { listMyOrders } from '@/api/order'
 import { formatVisitTime, formatMoney } from '@/utils/format'
 
@@ -72,7 +74,7 @@ onMounted(loadOrders)
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: '我的订单' }">
+  <NlPageShell title="我的订单">
     <section class="filter-bar">
       <button
         v-for="t in tabs"
@@ -118,7 +120,7 @@ onMounted(loadOrders)
     <p v-if="!loading && orders.length" class="nl-caption nl-text-weak list-foot">
       共 {{ total }} 单
     </p>
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">

@@ -4,18 +4,19 @@
  *
  * - 顶部 NlStepHeader 1-2-3
  * - 选择就诊人卡：单选列表（已绑定的老人）
- * - 底部固定「下一步」主行动按钮（CTA）
+ * - 底部固定「下一步」主行动按钮（CTA；桌面端改为正文内联，见 NlPageShell）
+ * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
  *
  * 数据来源：`GET /api/user/elder`（M3 已交付）。
  * ⚠️ 该接口只有家属角色可用（`@PreAuthorize("hasRole('FAMILY')")`）。
  * ⚠️ 列表口径下姓名与手机号是**脱敏**的（张*海 / 139****0001）—— 这是后端刻意的
- *    隐私设计（列表一屏可能展示十几个老人，容易被旁人扫到），不是缺陷。
+ *    隐私设计（一屏可能展示十几个老人，容易被旁人扫到），不是缺陷。
  *    下单只需要 elderId，脱敏不影响功能。
  */
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { NlPhoneShell, NlStepHeader, NlAvatar, NlEmpty, NlSkeleton } from '@/components'
+import { NlPageShell, NlStepHeader, NlAvatar, NlEmpty, NlSkeleton } from '@/components'
 import { listElder } from '@/api/user'
 import { useOrderDraftStore } from '@/store/modules/orderDraft'
 
@@ -65,10 +66,7 @@ onMounted(loadElders)
 </script>
 
 <template>
-  <NlPhoneShell
-    :nav="{ title: '预约陪诊' }"
-    :has-cta="true"
-  >
+  <NlPageShell title="预约陪诊" has-cta>
     <NlStepHeader :model-value="1" />
 
     <section class="step">
@@ -125,7 +123,7 @@ onMounted(loadElders)
         下一步
       </el-button>
     </template>
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">

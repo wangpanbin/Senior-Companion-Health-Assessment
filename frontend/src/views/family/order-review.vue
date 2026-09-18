@@ -2,6 +2,8 @@
 /**
  * 评价订单（M-17 · design.md §4 / PRD §M7）
  *
+ * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
+ *
  * 数据来源（全部在 @/api/order + @/api/review，已核对后端 DTO/VO）：
  *   - getOrder(orderId)              → 被评价订单摘要（只读）
  *   - getReviewByOrder(orderId)      → 查该订单是否已被评价（data 为 null 表示尚未评价）
@@ -16,7 +18,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { NlPhoneShell, NlCard, NlStatusChip, NlNoticeBar, NlEmpty, NlSkeleton } from '@/components'
+import { NlPageShell, NlCard, NlStatusChip, NlNoticeBar, NlEmpty, NlSkeleton } from '@/components'
 import { getOrder } from '@/api/order'
 import { getReviewByOrder, createReview } from '@/api/review'
 import { formatVisitTime, formatMoney } from '@/utils/format'
@@ -133,7 +135,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: '评价订单' }">
+  <NlPageShell title="评价订单">
     <NlSkeleton v-if="orderLoading || checking" :count="3" />
 
     <template v-else-if="order">
@@ -261,7 +263,7 @@ onMounted(() => {
       title="订单不存在"
       description="无法加载该订单，请返回订单列表重试"
     />
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">
