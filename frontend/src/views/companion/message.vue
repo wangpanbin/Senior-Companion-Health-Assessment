@@ -15,17 +15,24 @@
  *   - catch 不重复弹错（拦截器已弹）。
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
-import { NlPhoneShell, NlEmpty, NlIconBox, NlCard } from '@/components'
+import { useRoute, useRouter } from 'vue-router'
+import { NlPageShell, NlMobileOnlyPage, NlEmpty, NlIconBox, NlCard } from '@/components'
 import {
   listMessages, markRead, markAllRead, removeMessage, startUnreadPolling
 } from '@/api/message'
 import { formatDateTime } from '@/utils/format'
 import { useUserStore } from '@/store/modules/user'
 
+const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const roleLabel = computed(() => userStore.roleLabel || '用户')
+
+/**
+ * 本 view 被三条路由共用（ADR-0008 只把 `/elder/message` 列为 mobile-only）。
+ * 判据必须落在**当前路由实例**上，否则会误伤 /family/message 与 /companion/message。
+ */
+const mobileOnlyHere = computed(() => route.name === 'ElderMessage')
 
 const messages = ref([])
 const loading = ref(true)
@@ -101,7 +108,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: `消息（${unreadCount} 条未读）` }">
+  <!-- mobile-only 守卫只对 /elder/message 生效（见脚本里 mobileOnlyHere 的注释） -->
+  <NlMobileOnlyPage :enabled="mobileOnlyHere">
+  <NlPageShell :title="`消息（${unreadCount} 条未读）`">
     <!-- 顶部操作条 -->
     <section class="msg-bar">
       <span class="nl-caption nl-text-muted">
@@ -153,7 +162,8 @@ onBeforeUnmount(() => {
         </li>
       </ul>
     </NlCard>
-  </NlPhoneShell>
+  </NlPageShell>
+  </NlMobileOnlyPage>
 </template>
 
 <style scoped lang="scss">

@@ -20,7 +20,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  NlPhoneShell, NlTimeline, NlCard, NlStatusChip, NlSkeleton, NlEmpty
+  NlPhoneShell, NlMobileOnlyPage, NlTimeline, NlCard, NlStatusChip, NlSkeleton, NlEmpty
 } from '@/components'
 import { getOrder, startService, completeService } from '@/api/order'
 import {
@@ -290,6 +290,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- mobile-only 路由（ADR-0008）：宽屏下由 NlMobileOnlyPage 换成 NlMobileOnlyNotice -->
+  <NlMobileOnlyPage>
   <NlPhoneShell :nav="{ title: '订单执行' }">
     <NlSkeleton v-if="loading" :count="3" class="pad" />
 
@@ -371,7 +373,7 @@ onBeforeUnmount(() => {
           </div>
         </template>
         <div class="loc">
-          <div class="loc__coord is-num" v-if="location.lng && location.lat">
+          <div v-if="location.lng && location.lat" class="loc__coord is-num">
             经度 {{ location.lng }} · 纬度 {{ location.lat }}
           </div>
           <div v-else class="nl-caption nl-text-weak">尚未获取定位，打卡前请先刷新</div>
@@ -440,6 +442,7 @@ onBeforeUnmount(() => {
       </NlCard>
     </template>
   </NlPhoneShell>
+  </NlMobileOnlyPage>
 </template>
 
 <style scoped lang="scss">

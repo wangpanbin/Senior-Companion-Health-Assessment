@@ -10,7 +10,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { NlPhoneShell, NlStatusChip, NlEmpty, NlSkeleton } from '@/components'
+import { NlPageShell, NlStatusChip, NlEmpty, NlSkeleton } from '@/components'
 import { listMyOrders } from '@/api/order'
 import { formatVisitTime, formatMoney } from '@/utils/format'
 
@@ -62,7 +62,7 @@ onMounted(loadOrders)
 </script>
 
 <template>
-  <NlPhoneShell :nav="{ title: '我的订单' }">
+  <NlPageShell title="我的订单">
     <section class="filter-bar">
       <button
         v-for="t in tabs"
@@ -102,7 +102,7 @@ onMounted(loadOrders)
     <p v-if="!loading && orders.length" class="nl-caption nl-text-weak list-foot">
       共 {{ total }} 单
     </p>
-  </NlPhoneShell>
+  </NlPageShell>
 </template>
 
 <style scoped lang="scss">

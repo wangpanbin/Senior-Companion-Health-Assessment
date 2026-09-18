@@ -16,7 +16,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlPhoneShell, NlCard, NlStatusChip, NlNoticeBar } from '@/components'
+import { NlPhoneShell, NlMobileOnlyPage, NlCard, NlStatusChip, NlNoticeBar } from '@/components'
 import { getMyCompanionApplication, applyCompanion } from '@/api/user'
 import { uploadFile } from '@/api/file'
 
@@ -165,6 +165,8 @@ onMounted(loadApplication)
 </script>
 
 <template>
+  <!-- mobile-only 路由（ADR-0008）：宽屏下由 NlMobileOnlyPage 换成 NlMobileOnlyNotice -->
+  <NlMobileOnlyPage>
   <NlPhoneShell :nav="{ title: '陪诊员入驻' }">
     <NlSkeleton v-if="loading" :count="3" class="pad" />
 
@@ -191,12 +193,12 @@ onMounted(loadApplication)
         </div>
       </NlCard>
 
-      <div class="submit-bar" v-if="app.auditStatus === 'REJECTED'">
+      <div v-if="app.auditStatus === 'REJECTED'" class="submit-bar">
         <el-button type="primary" size="large" round class="submit-bar__btn" @click="reApply">
           重新提交资质
         </el-button>
       </div>
-      <div class="submit-bar" v-else-if="app.auditStatus === 'APPROVED'">
+      <div v-else-if="app.auditStatus === 'APPROVED'" class="submit-bar">
         <el-button type="primary" size="large" round class="submit-bar__btn" @click="router.push('/companion/hall')">
           去接单大厅
         </el-button>
@@ -292,6 +294,7 @@ onMounted(loadApplication)
       </div>
     </template>
   </NlPhoneShell>
+  </NlMobileOnlyPage>
 </template>
 
 <style scoped lang="scss">

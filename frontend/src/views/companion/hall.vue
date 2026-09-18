@@ -18,13 +18,18 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  NlPhoneShell, NlTabBar, NlStatusChip, NlEmpty, NlSkeleton
+  NlPhoneShell, NlDesktopShell, NlTabBar, NlCard, NlStatusChip, NlEmpty, NlSkeleton,
+  NlNoticeBar, NlUserMenu
 } from '@/components'
+import { useDevice } from '@/composables/useDevice'
 import { listOrderHall, acceptOrder } from '@/api/order'
 import { getMyCompanionApplication } from '@/api/user'
 import { formatVisitTime, formatMoney } from '@/utils/format'
 
 const router = useRouter()
+
+/** 形态判定（ADR-0007）：窄屏走手机壳，宽屏走桌面壳 */
+const { isMobile } = useDevice()
 
 /** 资质状态：null=从未申请 / PENDING / APPROVED / REJECTED */
 const app = ref(null)
@@ -130,10 +135,16 @@ onMounted(async () => {
 </script>
 
 <template>
+  <!-- ==================== Mobile 形态：原手机版模板，未做任何视觉改动 ==================== -->
   <NlPhoneShell
+    v-if="isMobile"
     :nav="{ title: '接单大厅', back: false }"
     :has-tabs="true"
   >
+    <template #nav-right>
+      <!-- 用户菜单：头像 + 退出登录下拉。桌面形态下由 NlDesktopShell 统一提供。 -->
+      <NlUserMenu size="sm" :show-name="false" />
+    </template>
     <!-- 初始加载骨架 -->
     <NlSkeleton v-if="!ready" :count="3" class="list-pad" />
 
@@ -230,6 +241,88 @@ onMounted(async () => {
       <NlTabBar v-model="activeTab" :tabs="tabs" @change="onTabChange" />
     </template>
   </NlPhoneShell>
+
+  <!-- ==================== Desktop 形态（ADR-0007 · Q7 = Ⅱ COMPANION 高频页之一） ====================
+       内容宽度由 NlDesktopShell 统一限制为 720px 居中。
+       ⚠️ 接了单之后的 /companion/execute/:id 是 mobile-only（要 GPS 打卡），
+          桌面下会落到"NlMobileOnlyNotice"提示页 —— 这是 ADR-0008 的既定契约。
+  ============================================================================================== -->
+  <NlDesktopShell v-else>
+    <template #actions>
+      <el-button text @click="router.push('/companion/order')">我的订单</el-button>
+      <el-button text @click="router.push('/companion/income')">我的收入</el-button>
+      <el-button v-if="certStatus !== 'APPROVED'" type="primary" round @click="goEntry">
+        去提交资质
+      </el-button>
+    </template>
+
+    <NlSkeleton v-if="!ready" :count="3" />
+
+    <NlEmpty
+      v-else-if="isBlocked"
+      type="empty"
+      :title="blockTitle"
+      :description="blockDesc"
+      action-text="去提交资质"
+      @action="goEntry"
+    />
+
+    <template v-else>
+      <NlNoticeBar tone="success">
+        资质已通过，可在大厅抢单。订单执行（GPS 打卡）请用手机端完成。
+      </NlNoticeBar>
+
+      <NlCard>
+        <template #title>
+          <div class="block-head">
+            <span class="nl-h2">待接订单</span>
+            <span class="nl-caption nl-text-muted">共 {{ total }} 单</span>
+          </div>
+        </template>
+
+        <div class="filters filters--desktop">
+          <button
+            v-for="f in [
+              { key: 'all', label: '全部' },
+              { key: 'high', label: '高额（≥150）' }
+            ]"
+            :key="f.key"
+            :class="['filters__btn', { 'is-active': filter === f.key }]"
+            @click="filter = f.key"
+          >
+            {{ f.label }}
+          </button>
+        </div>
+
+        <NlSkeleton v-if="loading" :count="3" />
+
+        <NlEmpty
+          v-else-if="!filtered.length"
+          type="empty"
+          title="暂无订单"
+          description="附近用户暂时没有陪诊需求，请稍后刷新"
+        />
+
+        <ul v-else class="desktop-orders">
+          <li v-for="o in filtered" :key="o.id" class="desktop-orders__row">
+            <div class="desktop-orders__main">
+              <div class="desktop-orders__hospital">
+                {{ o.hospital }}<span class="nl-caption nl-text-muted"> · {{ o.department }}</span>
+              </div>
+              <div class="nl-caption nl-text-muted is-num">
+                {{ o.elderName ? `${o.elderName} · ` : '' }}{{ formatVisitTime(o.visitTime) }}
+              </div>
+              <div v-if="o.address" class="nl-caption nl-text-weak desktop-orders__addr">
+                {{ o.address }}
+              </div>
+            </div>
+            <span class="is-num desktop-orders__fee">{{ formatMoney(o.fee) }}</span>
+            <el-button type="primary" round @click="grab(o)">抢单</el-button>
+          </li>
+        </ul>
+      </NlCard>
+    </template>
+  </NlDesktopShell>
 </template>
 
 <style scoped lang="scss">
@@ -356,5 +449,69 @@ onMounted(async () => {
 .list-foot {
   margin: var(--nl-space-4) 0 0;
   text-align: center;
+}
+
+/* ==========================================================================
+   Desktop 形态专用样式（>= 768px 才渲染，故不做媒体查询）
+   ========================================================================== */
+.block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--nl-space-2);
+}
+
+.filters--desktop {
+  padding: 0;
+  margin-bottom: var(--nl-space-3);
+}
+
+.desktop-orders {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+
+  &__row {
+    display: flex;
+    gap: var(--nl-space-3);
+    align-items: center;
+    padding: var(--nl-space-3) 0;
+    border-bottom: 1px solid var(--nl-divider);
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  &__main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__hospital {
+    overflow: hidden;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--nl-text-1);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__addr {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__fee {
+    flex-shrink: 0;
+    min-width: 80px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--nl-primary);
+    text-align: right;
+  }
 }
 </style>
