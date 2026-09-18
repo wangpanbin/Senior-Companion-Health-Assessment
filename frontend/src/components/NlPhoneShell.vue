@@ -48,10 +48,7 @@ defineProps({
       :back="nav.back !== false"
       :transparent="nav.transparent || false"
     >
-      <template v-if="nav.$slots?.right" #right>
-        <slot name="nav-right" />
-      </template>
-      <template v-if="$slots['nav-right']" #right>
+      <template #right>
         <slot name="nav-right" />
       </template>
     </NlNavBar>

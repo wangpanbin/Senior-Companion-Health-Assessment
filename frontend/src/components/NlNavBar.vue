@@ -36,9 +36,10 @@ function handleBack() {
 
     <h1 class="nl-navbar__title nl-h1">{{ title }}</h1>
 
-    <div class="nl-navbar__right">
+    <div v-if="$slots.right" class="nl-navbar__right">
       <slot name="right" />
     </div>
+    <span v-else class="nl-navbar__placeholder" />
   </header>
 </template>
 
