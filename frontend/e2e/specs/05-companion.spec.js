@@ -111,5 +111,25 @@ test.describe('订单大厅与接单契约', () => {
         await dispose()
       }
     })
+
+    test('同节点重复打卡应返回 4002（CHECKIN_DUPLICATED），且不新增行', async () => {
+      const { ctx, dispose } = await apiAsAccount('comp007')
+      try {
+        // 订单 1007 在种子中已打过 DEPART（ACCEPTED 状态陪诊员常已完成首节点）。
+        // 不变量：连续两次同节点都应被去重拦截（4002），且 order_checkin 行数在两次提交后不变。
+        const before = (await (await ctx.get(`${API}/execution/${SEED.orderAccepted}/checkins`)).json()).data
+        const beforeCount = (before || []).filter((c) => c.node === 'DEPART').length
+        const body1 = { node: 'DEPART', longitude: '110.311422', latitude: '20.021674' }
+        const resp1 = await (await ctx.post(`${API}/execution/${SEED.orderAccepted}/checkin`, { data: body1 })).json()
+        expect(resp1.code, '同节点提交应被去重拦截（4002）').toBe(4002)
+        const resp2 = await (await ctx.post(`${API}/execution/${SEED.orderAccepted}/checkin`, { data: body1 })).json()
+        expect(resp2.code, '再次同节点提交应仍返回 4002（幂等拒绝）').toBe(4002)
+        const after = (await (await ctx.get(`${API}/execution/${SEED.orderAccepted}/checkins`)).json()).data
+        const afterCount = (after || []).filter((c) => c.node === 'DEPART').length
+        expect(afterCount, 'DEPART 节点行数应不变（去重未落库）').toBe(beforeCount)
+      } finally {
+        await dispose()
+      }
+    })
   })
 })
