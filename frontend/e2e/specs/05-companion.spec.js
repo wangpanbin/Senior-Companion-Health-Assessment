@@ -86,4 +86,30 @@ test.describe('订单大厅与接单契约', () => {
       await dispose()
     }
   })
+
+  // ============================================================
+  // M5 验收：plan.md §M5 §验收
+  //   · 打卡坐标超出阈值 → 返回业务错误
+  //   · 同一陪诊员对同一订单重复提交同一打卡类型 → 去重，不产生重复记录
+  //   · 时间线顺序与 order_checkin.create_time 升序完全一致
+  // 报告出处：reports/playwright/e2e-report.md §6（写动作留待下一轮）
+  // ============================================================
+  test.describe('M5 打卡写动作', () => {
+    test('距离订单地址 > 2000m 应返回业务码 4001（CHECKIN_DISTANCE_EXCEEDED）', async () => {
+      const { ctx, dispose } = await apiAsAccount('comp007')
+      try {
+        // 订单 1007 地址在海南 (lat=20.021674, lng=110.311422, FRONTEND_CONTRACT §10.8)；
+        // 北京 (39.9, 116.4) 距其约 2200 km，必然 > 2000m 阈值（nianglin.order.checkin-max-distance-meters）。
+        // ⚠️ DTO 字段是 longitude/latitude（字符串），不是 lat/lng；北京经纬度按 6 位小数截断避免精度尾巴。
+        const body = await (
+          await ctx.post(`${API}/execution/${SEED.orderAccepted}/checkin`, {
+            data: { node: 'ARRIVE', longitude: '116.400000', latitude: '39.900000' }
+          })
+        ).json()
+        expect(body.code, '超距应返回 4001').toBe(4001)
+      } finally {
+        await dispose()
+      }
+    })
+  })
 })
