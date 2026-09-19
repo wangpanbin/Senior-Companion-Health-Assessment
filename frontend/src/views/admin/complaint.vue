@@ -58,7 +58,7 @@ function isTerminal(status) {
   return status === 'RESOLVED' || status === 'REJECTED'
 }
 
-const handleRef = ref(null)
+const handleVisible = ref(false)
 const handleItem = ref(null)
 const handleStatus = ref('PROCESSING')
 const handleResult = ref('')
@@ -70,7 +70,7 @@ function openHandle(c) {
   handleStatus.value = c.status === 'PENDING' ? 'PROCESSING' : 'RESOLVED'
   handleResult.value = ''
   penaltyToTarget.value = false
-  handleRef.value.open()
+  handleVisible.value = true
 }
 
 function statusText(s) {
@@ -95,7 +95,7 @@ async function submitHandle() {
     penaltyToTarget: penaltyToTarget.value
   })
   ElMessage.success('已更新投诉处理状态')
-  handleRef.value.close()
+  handleVisible.value = false
   loadList()
 }
 
@@ -182,7 +182,7 @@ onMounted(loadList)
 
   <!-- 投诉处理对话框 -->
   <el-dialog
-    ref="handleRef"
+    v-model="handleVisible"
     :title="`投诉处理 - ${handleItem?.orderNo || ''}`"
     width="600px"
     align-center
@@ -217,7 +217,7 @@ onMounted(loadList)
     </div>
 
     <template #footer>
-      <el-button @click="handleRef.close()">取消</el-button>
+      <el-button @click="handleVisible = false">取消</el-button>
       <el-button type="primary" @click="submitHandle">确认处理</el-button>
     </template>
   </el-dialog>

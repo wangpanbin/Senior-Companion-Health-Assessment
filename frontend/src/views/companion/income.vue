@@ -10,7 +10,7 @@
  *   - 合规红线：一期只有线上记账 + 线下结算，严禁「在线支付 / 提现 / 原路退回」字样。
  */
 import { ref, computed, onMounted } from 'vue'
-import { NlPageShell, NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlNoticeBar } from '@/components'
+import { NlPageShell, NlAppTabBar, NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlNoticeBar } from '@/components'
 import { listMyOrders } from '@/api/order'
 import { formatMoney, formatDate } from '@/utils/format'
 
@@ -69,7 +69,7 @@ onMounted(loadIncome)
 </script>
 
 <template>
-  <NlPageShell title="我的收入">
+  <NlPageShell title="我的收入" :has-tabs="true" :back="false">
     <NlNoticeBar tone="primary">
       一期为线上记账 + 线下结算，金额以管理员结算为准。
     </NlNoticeBar>
@@ -121,6 +121,10 @@ onMounted(loadIncome)
           </li>
         </ul>
       </NlCard>
+    </template>
+
+    <template #tabbar>
+      <NlAppTabBar />
     </template>
   </NlPageShell>
 </template>

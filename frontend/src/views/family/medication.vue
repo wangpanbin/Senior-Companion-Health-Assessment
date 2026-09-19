@@ -26,7 +26,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  NlPageShell, NlCard, NlStatusChip, NlComplianceBar, NlNoticeBar, NlEmpty, NlSkeleton
+  NlPageShell, NlAppTabBar, NlCard, NlStatusChip, NlComplianceBar, NlNoticeBar, NlEmpty, NlSkeleton
 } from '@/components'
 import { listElder } from '@/api/user'
 import {
@@ -412,7 +412,7 @@ onMounted(loadElders)
 </script>
 
 <template>
-  <NlPageShell title="用药管理">
+  <NlPageShell title="用药管理" :has-tabs="true" :back="false">
     <!-- 老人切换（多老人） -->
     <section v-if="elders.length" class="elder-tabs">
       <button
@@ -669,6 +669,10 @@ onMounted(loadElders)
     </el-dialog>
 
     <NlComplianceBar text="本页仅提供药品通用信息，不构成任何用药建议，请遵医嘱。" />
+
+    <template #tabbar>
+      <NlAppTabBar />
+    </template>
   </NlPageShell>
 </template>
 

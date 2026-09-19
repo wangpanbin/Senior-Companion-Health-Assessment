@@ -15,7 +15,12 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  NlPhoneShell, NlMobileOnlyPage, NlCard, NlAvatar, NlListRow
+  NlPhoneShell,
+  NlAppTabBar,
+  NlMobileOnlyPage,
+  NlCard,
+  NlAvatar,
+  NlListRow
 } from '@/components'
 import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
@@ -66,9 +71,7 @@ const pwdVisible = ref(false)
 const pwdLoading = ref(false)
 const pwdForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 
-const pwdValid = computed(() =>
-  /^(?=.*[A-Za-z])(?=.*\d)\S{6,32}$/.test(pwdForm.newPassword)
-)
+const pwdValid = computed(() => /^(?=.*[A-Za-z])(?=.*\d)\S{6,32}$/.test(pwdForm.newPassword))
 
 function openChangePwd() {
   pwdForm.oldPassword = ''
@@ -114,126 +117,281 @@ async function submitChangePwd() {
   <!-- mobile-only 路由（ADR-0008）：宽屏下由 NlMobileOnlyPage 换成 NlMobileOnlyNotice。
        刻意不重排内部缩进，保持与原文件的 diff 最小。 -->
   <NlMobileOnlyPage>
-  <NlPhoneShell :nav="{ title: '我的', back: false }">
-    <!-- 用户卡片 -->
-    <NlCard>
-      <div class="me">
-        <NlAvatar :src="me?.avatar" :fallback="avatarFallback" :size="64" tone="primary" />
-        <div class="me__body">
-          <div class="me__name">{{ me?.nickname || '未登录' }}</div>
-          <div class="me__role">{{ me?.roleLabel || userStore.roleLabel }}</div>
+    <NlPhoneShell class="profile-page" :nav="{ title: '我的', back: false }" :has-tabs="true">
+      <!-- 用户卡片 -->
+      <NlCard class="profile-hero" :padding="20">
+        <div class="me">
+          <NlAvatar :src="me?.avatar" :fallback="avatarFallback" :size="72" tone="primary" />
+          <div class="me__body">
+            <div class="me__name">{{ me?.nickname || '未登录' }}</div>
+            <div class="me__role">{{ me?.roleLabel || userStore.roleLabel }}</div>
+          </div>
         </div>
+      </NlCard>
+
+      <!-- 老人模式开关 -->
+      <section class="profile-section">
+        <p class="profile-section__label">显示与使用</p>
+        <NlCard class="profile-group" :padding="0">
+          <NlListRow
+            :title="appStore.elderlyMode ? '已开启老人模式' : '老人模式'"
+            subtitle="切换字号 / 简化菜单 / 提高对比度"
+            :chevron="false"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <text
+                  x="12"
+                  y="16"
+                  text-anchor="middle"
+                  font-size="14"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="serif"
+                >
+                  大
+                </text>
+                <circle cx="12" cy="12" r="11" />
+              </svg>
+            </template>
+            <template #extra>
+              <el-switch :model-value="appStore.elderlyMode" @change="toggleElderly" />
+            </template>
+          </NlListRow>
+        </NlCard>
+      </section>
+
+      <!-- 家属角色入口 -->
+      <section v-if="userStore.isFamily" class="profile-section">
+        <p class="profile-section__label">服务管理</p>
+        <NlCard class="profile-group" :padding="0">
+          <NlListRow
+            title="我的老人"
+            subtitle="查看已绑定的老人，可继续新增"
+            chevron
+            @click="router.push('/family/elder')"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="9" cy="8" r="3.5" />
+                <path d="M3 20c0-3 3-5 6-5s6 2 6 5" />
+                <circle cx="17" cy="6" r="2.5" />
+                <path d="M15 14c2 0 6 1 6 4" />
+              </svg>
+            </template>
+          </NlListRow>
+          <NlListRow
+            title="我的订单"
+            subtitle="历史订单与进行中订单"
+            chevron
+            divider
+            @click="router.push('/family/order')"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+                <path d="M8 9h8M8 13h8M8 17h5" />
+              </svg>
+            </template>
+          </NlListRow>
+        </NlCard>
+      </section>
+
+      <!-- 陪诊员角色入口 -->
+      <section v-if="userStore.isCompanion" class="profile-section">
+        <p class="profile-section__label">陪诊服务</p>
+        <NlCard class="profile-group" :padding="0">
+          <NlListRow
+            title="资质入驻"
+            subtitle="提交资质申请 / 查看审核状态"
+            chevron
+            @click="router.push('/companion/entry')"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M9 12l2 2 4-4" />
+              </svg>
+            </template>
+          </NlListRow>
+          <NlListRow
+            title="我的收入"
+            subtitle="查看陪诊服务收入明细"
+            chevron
+            divider
+            @click="router.push('/companion/income')"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 3v18M7 8h7a3 3 0 0 1 0 6H7m0 0h8" />
+              </svg>
+            </template>
+          </NlListRow>
+        </NlCard>
+      </section>
+
+      <!-- 通用设置 -->
+      <section class="profile-section">
+        <p class="profile-section__label">账户与安全</p>
+        <NlCard class="profile-group" :padding="0">
+          <NlListRow title="修改密码" subtitle="定期更换密码更安全" chevron @click="openChangePwd">
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="5" y="11" width="14" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 1 1 8 0v4" />
+              </svg>
+            </template>
+          </NlListRow>
+          <NlListRow
+            v-if="!userStore.isElder"
+            title="服务协议"
+            subtitle="v2.0 已生效"
+            chevron
+            divider
+            @click="router.push('/legal/service')"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M6 3h9l4 4v14H6z" />
+                <path d="M14 3v5h5" />
+              </svg>
+            </template>
+          </NlListRow>
+          <NlListRow
+            v-if="!userStore.isElder"
+            title="隐私政策"
+            chevron
+            divider
+            @click="router.push('/legal/privacy')"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 3l8 4v5c0 5-3 9-8 10-5-1-8-5-8-10V7l8-4z" />
+              </svg>
+            </template>
+          </NlListRow>
+        </NlCard>
+      </section>
+
+      <div class="logout-bar">
+        <el-button type="danger" plain round size="large" class="logout-bar__btn" @click="logout">
+          退出登录
+        </el-button>
       </div>
-    </NlCard>
 
-    <!-- 老人模式开关 -->
-    <NlCard plain>
-      <NlListRow :title="appStore.elderlyMode ? '已开启老人模式' : '老人模式'" subtitle="切换字号 / 简化菜单 / 提高对比度" :chevron="false">
-        <template #icon>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <text x="12" y="16" text-anchor="middle" font-size="14" fill="currentColor" stroke="none" font-family="serif">大</text>
-            <circle cx="12" cy="12" r="11" />
-          </svg>
+      <!-- 修改密码弹窗 -->
+      <el-dialog v-model="pwdVisible" title="修改密码" width="90%" align-center>
+        <el-form label-position="top">
+          <el-form-item label="原密码">
+            <el-input
+              v-model="pwdForm.oldPassword"
+              type="password"
+              show-password
+              placeholder="请输入当前密码"
+              maxlength="32"
+            />
+          </el-form-item>
+          <el-form-item label="新密码">
+            <el-input
+              v-model="pwdForm.newPassword"
+              type="password"
+              show-password
+              placeholder="6-32 位，需同时包含字母与数字"
+              maxlength="32"
+            />
+          </el-form-item>
+          <el-form-item label="确认新密码">
+            <el-input
+              v-model="pwdForm.confirmPassword"
+              type="password"
+              show-password
+              placeholder="请再次输入新密码"
+              maxlength="32"
+            />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="pwdVisible = false">取消</el-button>
+          <el-button type="primary" :loading="pwdLoading" @click="submitChangePwd">确定</el-button>
         </template>
-        <template #extra>
-          <el-switch :model-value="appStore.elderlyMode" @change="toggleElderly" />
-        </template>
-      </NlListRow>
-    </NlCard>
+      </el-dialog>
 
-    <!-- 家属角色入口 -->
-    <NlCard v-if="userStore.isFamily" plain>
-      <NlListRow title="我的老人" subtitle="查看已绑定的老人，可继续新增" chevron @click="router.push('/family/elder')">
-        <template #icon>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="9" cy="8" r="3.5" />
-            <path d="M3 20c0-3 3-5 6-5s6 2 6 5" />
-            <circle cx="17" cy="6" r="2.5" />
-            <path d="M15 14c2 0 6 1 6 4" />
-          </svg>
-        </template>
-      </NlListRow>
-      <NlListRow title="我的订单" subtitle="历史订单与进行中订单" chevron @click="router.push('/family/order')">
-        <template #icon>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="4" width="16" height="16" rx="2" />
-            <path d="M8 9h8M8 13h8M8 17h5" />
-          </svg>
-        </template>
-      </NlListRow>
-    </NlCard>
-
-    <!-- 陪诊员角色入口 -->
-    <NlCard v-if="userStore.isCompanion" plain>
-      <NlListRow title="资质入驻" subtitle="提交资质申请 / 查看审核状态" chevron @click="router.push('/companion/entry')">
-        <template #icon>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M9 12l2 2 4-4" />
-          </svg>
-        </template>
-      </NlListRow>
-      <NlListRow title="我的收入" subtitle="查看陪诊服务收入明细" chevron @click="router.push('/companion/income')">
-        <template #icon>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3v18M7 8h7a3 3 0 0 1 0 6H7m0 0h8" />
-          </svg>
-        </template>
-      </NlListRow>
-    </NlCard>
-
-    <!-- 通用设置 -->
-    <NlCard plain>
-      <NlListRow title="修改密码" subtitle="定期更换密码更安全" chevron @click="openChangePwd">
-        <template #icon>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="5" y="11" width="14" height="10" rx="2" />
-            <path d="M8 11V7a4 4 0 1 1 8 0v4" />
-          </svg>
-        </template>
-      </NlListRow>
-      <NlListRow v-if="!userStore.isElder" title="服务协议" subtitle="v2.0 已生效" chevron>
-        <template #icon>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M6 3h9l4 4v14H6z" />
-            <path d="M14 3v5h5" />
-          </svg>
-        </template>
-      </NlListRow>
-      <NlListRow v-if="!userStore.isElder" title="隐私政策" chevron>
-        <template #icon>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3l8 4v5c0 5-3 9-8 10-5-1-8-5-8-10V7l8-4z" />
-          </svg>
-        </template>
-      </NlListRow>
-    </NlCard>
-
-    <div class="logout-bar">
-      <el-button type="danger" plain round size="large" class="logout-bar__btn" @click="logout">
-        退出登录
-      </el-button>
-    </div>
-
-    <!-- 修改密码弹窗 -->
-    <el-dialog v-model="pwdVisible" title="修改密码" width="90%" align-center>
-      <el-form label-position="top">
-        <el-form-item label="原密码">
-          <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="请输入当前密码" maxlength="32" />
-        </el-form-item>
-        <el-form-item label="新密码">
-          <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="6-32 位，需同时包含字母与数字" maxlength="32" />
-        </el-form-item>
-        <el-form-item label="确认新密码">
-          <el-input v-model="pwdForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码" maxlength="32" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="pwdVisible = false">取消</el-button>
-        <el-button type="primary" :loading="pwdLoading" @click="submitChangePwd">确定</el-button>
+      <template #tabbar>
+        <NlAppTabBar />
       </template>
-    </el-dialog>
-  </NlPhoneShell>
+    </NlPhoneShell>
   </NlMobileOnlyPage>
 </template>
 
@@ -250,20 +408,54 @@ async function submitChangePwd() {
   }
 
   &__name {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--nl-text-1);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--nl-text-inverse);
   }
 
   &__role {
     margin-top: 4px;
     font-size: var(--nl-font-caption);
-    color: var(--nl-primary);
+    color: rgba(255, 255, 255, 0.82);
+  }
+}
+
+.profile-hero {
+  margin: 0 var(--nl-gutter);
+  overflow: hidden;
+  background: var(--nl-primary-gradient);
+  border: none;
+  box-shadow: 0 8px 18px rgba(29, 111, 242, 0.2);
+
+  :deep(.nl-avatar) {
+    box-sizing: border-box;
+    border: 3px solid rgba(255, 255, 255, 0.72);
+  }
+}
+
+.profile-section {
+  margin: 0 var(--nl-gutter);
+
+  &__label {
+    margin: 0 4px 8px;
+    font-size: var(--nl-font-caption);
+    font-weight: 600;
+    color: var(--nl-text-2);
+  }
+}
+
+.profile-group {
+  overflow: hidden;
+
+  :deep(.nl-listrow) {
+    padding-right: var(--nl-space-4);
+    padding-left: var(--nl-space-4);
   }
 }
 
 .logout-bar {
-  padding: var(--nl-space-5) var(--nl-gutter);
+  margin: 0 var(--nl-gutter);
+  padding: var(--nl-space-2) 0 var(--nl-space-4);
 
   &__btn {
     width: 100%;

@@ -15,7 +15,7 @@
  *    其他角色 / 未建档的 ELDER 该字段不存在（NON_NULL）。为空时页面降级为入口引导空态。
  */
 import { ref, computed, onMounted, watch } from 'vue'
-import { NlPageShell, NlCard, NlStatusChip, NlNoticeBar, NlComplianceBar, NlSkeleton, NlEmpty } from '@/components'
+import { NlPageShell, NlAppTabBar, NlCard, NlStatusChip, NlNoticeBar, NlComplianceBar, NlSkeleton, NlEmpty } from '@/components'
 import { getProfile } from '@/api/user'
 import { getTodayTasks, getMedicationCalendar, listMedicationPlans } from '@/api/medication'
 import { formatTime, today } from '@/utils/format'
@@ -159,7 +159,7 @@ const calSummary = computed(() => calData.value?.summary || null)
 </script>
 
 <template>
-  <NlPageShell title="用药管理">
+  <NlPageShell title="用药管理" :has-tabs="true" :back="false">
     <NlNoticeBar tone="warning">
       您正在使用「老人模式」只读视图，服药确认将由家属代为完成。
     </NlNoticeBar>
@@ -258,6 +258,10 @@ const calSummary = computed(() => calData.value?.summary || null)
     </template>
 
     <NlComplianceBar text="本页仅提供药品通用信息，不构成任何用药建议，请遵医嘱。" />
+
+    <template #tabbar>
+      <NlAppTabBar />
+    </template>
   </NlPageShell>
 </template>
 

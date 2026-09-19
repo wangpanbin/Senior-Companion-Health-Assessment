@@ -56,7 +56,7 @@ function onPageChange(p) {
   loadList()
 }
 
-const reviewRef = ref(null)
+const reviewVisible = ref(false)
 const reviewItem = ref(null)
 const reviewFiles = ref([])
 const rejectReason = ref('')
@@ -69,7 +69,7 @@ async function openReview(item) {
     reviewItem.value = detail
     rejectReason.value = detail?.rejectReason || ''
     reviewFiles.value = (detail?.certificates || []).map((c) => ({ name: c.name, url: c.url }))
-    reviewRef.value.open()
+    reviewVisible.value = true
   } catch {
     // 拦截器已提示，无需重复弹
   }
@@ -84,7 +84,7 @@ async function approve() {
   // 通过时不传 rejectReason，避免后端日志里出现一条假原因
   await auditCompanion(reviewItem.value.id, { approved: true })
   ElMessage.success('已通过审核')
-  reviewRef.value.close()
+  reviewVisible.value = false
   loadList()
 }
 
@@ -105,7 +105,7 @@ async function reject() {
   )
   await auditCompanion(reviewItem.value.id, { approved: false, rejectReason: reason })
   ElMessage.success('已驳回')
-  reviewRef.value.close()
+  reviewVisible.value = false
   loadList()
 }
 
@@ -171,7 +171,7 @@ onMounted(loadList)
 
   <!-- 审核对话框 -->
   <el-dialog
-    ref="reviewRef"
+    v-model="reviewVisible"
     :title="`陪诊员资质审核 - ${reviewItem?.realName || ''}`"
     width="640px"
     align-center
@@ -240,11 +240,11 @@ onMounted(loadList)
 
     <template #footer>
       <span v-if="reviewItem?.auditStatus === 'PENDING'" class="audit-actions">
-        <el-button @click="reviewRef.close()">取消</el-button>
+        <el-button @click="reviewVisible = false">取消</el-button>
         <el-button type="danger" @click="reject">驳 回</el-button>
         <el-button type="primary" @click="approve">通 过</el-button>
       </span>
-      <el-button v-else @click="reviewRef.close()">关闭</el-button>
+      <el-button v-else @click="reviewVisible = false">关闭</el-button>
     </template>
   </el-dialog>
 </template>

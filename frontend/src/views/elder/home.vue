@@ -14,9 +14,9 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { HomeFilled, FirstAidKit, Bell, User } from '@element-plus/icons-vue'
+import { FirstAidKit, Bell } from '@element-plus/icons-vue'
 import {
-  NlPhoneShell, NlDesktopShell, NlTabBar, NlCard, NlAvatar, NlStatusChip,
+  NlPhoneShell, NlDesktopShell, NlAppTabBar, NlCard, NlAvatar, NlStatusChip,
   NlSkeleton, NlEmpty, NlNoticeBar, NlUserMenu
 } from '@/components'
 import { useAppStore } from '@/store/modules/app'
@@ -108,25 +108,7 @@ onMounted(async () => {
   await Promise.all([loadTodayMeds(), loadRecentOrders()])
 })
 
-/* ===== Tab 配置 ====== */
-const tabs = [
-  { key: 'home',       label: '首页', icon: HomeFilled },
-  { key: 'medication', label: '用药', icon: FirstAidKit },
-  { key: 'message',    label: '消息', icon: Bell },
-  { key: 'profile',    label: '我的', icon: User }
-]
-const activeTab = computed({
-  get: () => 'home',
-  set: () => {}
-})
-
-function onTabChange(key) {
-  if (key === 'home') return
-  if (key === 'medication') router.push('/elder/medication')
-  if (key === 'message') router.push('/elder/message')
-  if (key === 'profile') router.push('/profile')
-}
-
+/* ===== 底部 Tab 由 NlAppTabBar 统一管理（角色感知 + 路由感知） ===== */
 function toggleElderly() {
   appStore.toggleElderlyMode()
   // 不弹 ElMessage（保持原交互，避免引入额外依赖）
@@ -255,7 +237,7 @@ function goMedication() {
     </NlCard>
 
     <template #tabbar>
-      <NlTabBar v-model="activeTab" :tabs="tabs" @change="onTabChange" />
+      <NlAppTabBar />
     </template>
   </NlPhoneShell>
 

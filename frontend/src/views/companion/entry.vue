@@ -16,7 +16,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlPhoneShell, NlMobileOnlyPage, NlCard, NlStatusChip, NlNoticeBar } from '@/components'
+import { NlPhoneShell, NlMobileOnlyPage, NlCard, NlStatusChip, NlNoticeBar, NlSkeleton } from '@/components'
 import { getMyCompanionApplication, applyCompanion } from '@/api/user'
 import { uploadFile } from '@/api/file'
 

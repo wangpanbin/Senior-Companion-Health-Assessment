@@ -26,14 +26,16 @@ defineProps({
       <div class="nl-listrow__title nl-h3">{{ title }}</div>
       <div v-if="subtitle" class="nl-listrow__subtitle nl-caption">{{ subtitle }}</div>
     </div>
-    <div v-if="$slots.extra" class="nl-listrow__extra">
-      <slot name="extra" />
+    <div class="nl-listrow__trail">
+      <div v-if="$slots.extra" class="nl-listrow__extra">
+        <slot name="extra" />
+      </div>
+      <span v-if="chevron" class="nl-listrow__chev" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 4l4 4-4 4" />
+        </svg>
+      </span>
     </div>
-    <span v-if="chevron" class="nl-listrow__chev" aria-hidden="true">
-      <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M6 4l4 4-4 4" />
-      </svg>
-    </span>
   </div>
 </template>
 
@@ -94,7 +96,17 @@ defineProps({
     white-space: nowrap;
   }
 
+  &__trail {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
+    min-width: 20px;
+  }
+
   &__extra {
+    display: inline-flex;
     flex-shrink: 0;
     font-size: var(--nl-font-body);
     color: var(--nl-text-2);

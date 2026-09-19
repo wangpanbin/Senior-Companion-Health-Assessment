@@ -74,7 +74,13 @@ export const routes = [
         path: 'elder/medication',
         name: 'ElderMedication',
         component: () => import('@/views/elder/medication.vue'),
-        meta: { title: '用药管理', icon: 'FirstAidKit', roles: ['ELDER'], module: 'M6', code: 'M-12' }
+        meta: {
+          title: '用药管理',
+          icon: 'FirstAidKit',
+          roles: ['ELDER'],
+          module: 'M6',
+          code: 'M-12'
+        }
       },
       {
         path: 'elder/message',
@@ -107,19 +113,38 @@ export const routes = [
         path: 'family/elder',
         name: 'FamilyElderList',
         component: () => import('@/views/family/elder-list.vue'),
-        meta: { title: '我的老人', icon: 'UserFilled', roles: ['FAMILY'], module: 'M3', code: 'M-19' }
+        meta: {
+          title: '我的老人',
+          icon: 'UserFilled',
+          roles: ['FAMILY'],
+          module: 'M3',
+          code: 'M-19'
+        }
       },
       {
         path: 'family/elder/bind',
         name: 'FamilyElderBind',
         component: () => import('@/views/family/elder-bind.vue'),
-        meta: { title: '绑定老人', icon: 'Plus', roles: ['FAMILY'], module: 'M3', elderlyHidden: true, code: 'M-19' }
+        meta: {
+          title: '绑定老人',
+          icon: 'Plus',
+          roles: ['FAMILY'],
+          module: 'M3',
+          elderlyHidden: true,
+          code: 'M-19'
+        }
       },
       {
         path: 'family/medication',
         name: 'FamilyMedication',
         component: () => import('@/views/family/medication.vue'),
-        meta: { title: '用药管理', icon: 'FirstAidKit', roles: ['FAMILY'], module: 'M6', code: 'M-12' }
+        meta: {
+          title: '用药管理',
+          icon: 'FirstAidKit',
+          roles: ['FAMILY'],
+          module: 'M6',
+          code: 'M-12'
+        }
       },
       {
         path: 'family/message',
@@ -133,19 +158,37 @@ export const routes = [
         path: 'family/order/step1',
         name: 'OrderStep1',
         component: () => import('@/views/family/order-step1.vue'),
-        meta: { title: '选择就诊人', roles: ['FAMILY'], module: 'M4', elderlyHidden: true, code: 'M-07' }
+        meta: {
+          title: '选择就诊人',
+          roles: ['FAMILY'],
+          module: 'M4',
+          elderlyHidden: true,
+          code: 'M-07'
+        }
       },
       {
         path: 'family/order/step2',
         name: 'OrderStep2',
         component: () => import('@/views/family/order-step2.vue'),
-        meta: { title: '选择医院与时间', roles: ['FAMILY'], module: 'M4', elderlyHidden: true, code: 'M-08' }
+        meta: {
+          title: '选择医院与时间',
+          roles: ['FAMILY'],
+          module: 'M4',
+          elderlyHidden: true,
+          code: 'M-08'
+        }
       },
       {
         path: 'family/order/step3',
         name: 'OrderStep3',
         component: () => import('@/views/family/order-step3.vue'),
-        meta: { title: '确认订单', roles: ['FAMILY'], module: 'M4', elderlyHidden: true, code: 'M-09' }
+        meta: {
+          title: '确认订单',
+          roles: ['FAMILY'],
+          module: 'M4',
+          elderlyHidden: true,
+          code: 'M-09'
+        }
       },
       {
         path: 'family/order',
@@ -157,19 +200,37 @@ export const routes = [
         path: 'family/order/:id',
         name: 'FamilyOrderDetail',
         component: () => import('@/views/family/order-detail.vue'),
-        meta: { title: '订单详情', roles: ['FAMILY'], module: 'M4', elderlyHidden: true, code: 'M-16' }
+        meta: {
+          title: '订单详情',
+          roles: ['FAMILY'],
+          module: 'M4',
+          elderlyHidden: true,
+          code: 'M-16'
+        }
       },
       {
         path: 'family/order/:id/review',
         name: 'OrderReview',
         component: () => import('@/views/family/order-review.vue'),
-        meta: { title: '评价订单', roles: ['FAMILY'], module: 'M7', elderlyHidden: true, code: 'M-17' }
+        meta: {
+          title: '评价订单',
+          roles: ['FAMILY'],
+          module: 'M7',
+          elderlyHidden: true,
+          code: 'M-17'
+        }
       },
       {
         path: 'family/order/:id/complaint',
         name: 'OrderComplaint',
         component: () => import('@/views/family/order-complaint.vue'),
-        meta: { title: '我要投诉', roles: ['FAMILY'], module: 'M7', elderlyHidden: true, code: 'M-18' }
+        meta: {
+          title: '我要投诉',
+          roles: ['FAMILY'],
+          module: 'M7',
+          elderlyHidden: true,
+          code: 'M-18'
+        }
       },
 
       // ---------- 陪诊员端 COMPANION ----------
@@ -216,7 +277,13 @@ export const routes = [
         path: 'companion/order',
         name: 'CompanionOrderList',
         component: () => import('@/views/companion/order-list.vue'),
-        meta: { title: '我的订单', icon: 'Tickets', roles: ['COMPANION'], module: 'M4', code: 'M-15' }
+        meta: {
+          title: '我的订单',
+          icon: 'Tickets',
+          roles: ['COMPANION'],
+          module: 'M4',
+          code: 'M-15'
+        }
       },
       {
         path: 'companion/income',
@@ -230,6 +297,12 @@ export const routes = [
         component: () => import('@/views/companion/message.vue'),
         meta: { title: '消息', icon: 'Bell', roles: ['COMPANION'], module: 'M8', code: 'M-14' }
       },
+      {
+        path: 'message/:id',
+        name: 'MessageDetail',
+        component: () => import('@/views/companion/message-detail.vue'),
+        meta: { title: '消息详情', module: 'M8', code: 'M-25' }
+      },
 
       // ---------- 我的（4 角色共用） ----------
       {
@@ -242,6 +315,21 @@ export const routes = [
         //    桌面后台里若点到 /profile 会落到"请用手机"提示页，这是 ADR-0008 的既定取舍，
         //    但 ADMIN 的入口是 AdminLayout 顶栏下拉，正常路径不会到 /profile。
         meta: { title: '我的', icon: 'User', module: 'M2', mobileOnly: true, code: 'M-22' }
+      },
+      // ---------- 静态说明页（由“我的”页进入） ----------
+      {
+        path: 'legal/service',
+        name: 'ServiceAgreement',
+        component: () => import('@/views/legal/index.vue'),
+        props: { type: 'service' },
+        meta: { title: '服务协议', module: 'M2', mobileOnly: true, code: 'M-23' }
+      },
+      {
+        path: 'legal/privacy',
+        name: 'PrivacyPolicy',
+        component: () => import('@/views/legal/index.vue'),
+        props: { type: 'privacy' },
+        meta: { title: '隐私政策', module: 'M2', mobileOnly: true, code: 'M-24' }
       }
     ]
   },
@@ -257,25 +345,49 @@ export const routes = [
         path: 'dashboard',
         name: 'AdminDashboard',
         component: () => import('@/views/admin/dashboard.vue'),
-        meta: { title: '数据看板', icon: 'TrendCharts', roles: ['ADMIN'], module: 'M10', code: 'W-01' }
+        meta: {
+          title: '数据看板',
+          icon: 'TrendCharts',
+          roles: ['ADMIN'],
+          module: 'M10',
+          code: 'W-01'
+        }
       },
       {
         path: 'companion-audit',
         name: 'AdminCompanionAudit',
         component: () => import('@/views/admin/companion-audit.vue'),
-        meta: { title: '陪诊员资质审核', icon: 'Verified', roles: ['ADMIN'], module: 'M9', code: 'W-02' }
+        meta: {
+          title: '陪诊员资质审核',
+          icon: 'Verified',
+          roles: ['ADMIN'],
+          module: 'M9',
+          code: 'W-02'
+        }
       },
       {
         path: 'order-dispute',
         name: 'AdminOrderDispute',
         component: () => import('@/views/admin/order-dispute.vue'),
-        meta: { title: '订单纠纷仲裁', icon: 'ChatLineSquare', roles: ['ADMIN'], module: 'M9', code: 'W-03' }
+        meta: {
+          title: '订单纠纷仲裁',
+          icon: 'ChatLineSquare',
+          roles: ['ADMIN'],
+          module: 'M9',
+          code: 'W-03'
+        }
       },
       {
         path: 'user',
         name: 'AdminUser',
         component: () => import('@/views/admin/user.vue'),
-        meta: { title: '用户管理', icon: 'UserFilled', roles: ['ADMIN'], module: 'M9', code: 'W-04' }
+        meta: {
+          title: '用户管理',
+          icon: 'UserFilled',
+          roles: ['ADMIN'],
+          module: 'M9',
+          code: 'W-04'
+        }
       },
       {
         path: 'order',
@@ -287,7 +399,13 @@ export const routes = [
         path: 'complaint',
         name: 'AdminComplaint',
         component: () => import('@/views/admin/complaint.vue'),
-        meta: { title: '投诉管理', icon: 'WarningFilled', roles: ['ADMIN'], module: 'M9', code: 'W-06' }
+        meta: {
+          title: '投诉管理',
+          icon: 'WarningFilled',
+          roles: ['ADMIN'],
+          module: 'M9',
+          code: 'W-06'
+        }
       },
       {
         path: 'export',
