@@ -97,12 +97,22 @@ async function unban(u) {
 
 async function resetPwd(u) {
   if (!assertNotAdmin(u)) return
-  await ElMessageBox.confirm(
-    `重置「${u.nickname}」的密码为默认密码？操作记录将写入 admin_oper_log。`,
+  // 与 ban(u) 对称：先让管理员填重置原因，再发请求。
+  // ResetPasswordDTO.remark 是 @NotBlank，缺了就 400；同时这也是 admin_oper_log 的审计字段，
+  // 不能为空 —— 管理员凭一句话就把别人的登录凭据改掉是这套系统里最敏感的操作之一。
+  const { value } = await ElMessageBox.prompt(
+    `重置「${u.nickname}」(${u.username}) 的密码为默认密码？操作记录将写入 admin_oper_log。`,
     '重置密码',
-    { confirmButtonText: '确认重置', type: 'warning' }
+    {
+      confirmButtonText: '确认重置',
+      cancelButtonText: '取消',
+      type: 'warning',
+      inputPlaceholder: '请填写重置原因（如：用户来电请求重置，已核验身份）',
+      inputPattern: /\S+/,
+      inputErrorMessage: '请填写重置原因'
+    }
   )
-  await resetUserPassword(u.id)
+  await resetUserPassword(u.id, { remark: value })
   ElMessage.success('密码已重置，默认密码已通过短信发送给用户')
   loadList()
 }
