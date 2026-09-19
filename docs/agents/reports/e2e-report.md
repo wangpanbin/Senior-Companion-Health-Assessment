@@ -6,6 +6,9 @@
 > 所以干净 clone 上看不到原文件。本副本放在 `docs/agents/reports/` 下，
 > 与 `iteration-test-report-*.md` 同级，便于 clone 内直接阅读 §4 的 F-01…F-06 条目。
 > 各 spec / 代码注释里的「报告出处：reports/playwright/e2e-report.md §F-xx」指的就是本文件。
+>
+> ⚠️ 快照记录的是**那一轮跑测时的配置**：当时 `video: 'retain-on-failure'`（渲染视频需要 ffmpeg 二进制）；
+> 现已改为 `video: 'off'`（见 `playwright.config.js` 的注释与 §13.1），失败取证改用 trace + screenshot。
 
 ---
 # 银龄伴诊 · 全功能 Playwright E2E 测试报告

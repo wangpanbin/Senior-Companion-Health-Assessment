@@ -79,13 +79,15 @@ Senior Companion Health Assessment/
 │       │       ├── db/migration/             构建产物目录（源在 backend/sql/，勿手工放脚本）
 │       │       └── mapper/                   MyBatis XML（如有）
 │       └── test/java/org/company/nianglin/   JUnit5 单测
-└── frontend/
+├── frontend/
     ├── package.json
     ├── vite.config.js
+    ├── playwright.config.js        正式 E2E 套件配置（本机 Chrome；video 关闭，不依赖 ffmpeg）
     ├── eslint.config.js
     ├── .prettierrc.json
     ├── .env.development / .env.production
     ├── index.html
+    ├── e2e/                        Playwright E2E（fixtures / helpers / specs，见 docs/agents/FRONTEND_CONTRACT.md §13）
     └── src/
         ├── main.js / App.vue
         ├── api/                  每个模块一个文件，对应 docs/api/ 下的文档
@@ -113,6 +115,7 @@ Senior Companion Health Assessment/
         │   ├── elder / family / companion / admin / profile / error
         └── components/
             └── ModulePlaceholder.vue   骨架阶段占位组件
+└── tools/e2e/                      E2E 夹具 / 服务脚本 / 探针（11 个脚本，随仓库入库，见 FRONTEND_CONTRACT §12–§13）
 ```
 
 **AI 写代码时**：先按上面这个目录找到归属位置，再决定用什么模板。**不要**在 `controller/` 下塞 Service、**不要**把 Entity 当 VO 返回、**不要**在前端 `views/` 下直接 `import request from '@/utils/request'` 之外的封装方式。
@@ -467,6 +470,9 @@ PENDING ──► ACCEPTED ──► IN_SERVICE ──► COMPLETED ──► RE
 ### 6.2 前端
 
 - 暂无强制单测要求；M12 起补 Pinia store 与工具类的 Vitest 单测。
+- **E2E（Playwright）**：套件在 `frontend/e2e/`，跑法与前置见 `docs/agents/FRONTEND_CONTRACT.md` §13。
+  改动登录态 / 路由守卫 / 页面主流程后，先跑 `pnpm exec playwright test specs/01-auth.spec.js`
+  （含 F-01 两会话回归），再按影响面跑对应 spec。`playwright.config.js` 里 `video: 'off'`，**不需要 ffmpeg**。
 
 ### 6.3 静态检查
 
