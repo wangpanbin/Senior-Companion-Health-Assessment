@@ -141,3 +141,48 @@ test.describe('注销', () => {
     expect(token).toBeFalsy()
   })
 })
+
+// ============================================================
+// F-01：登出**按设备（jti）**生效，不波及其它设备
+// ============================================================
+// 报告出处：reports/playwright/e2e-report.md §F-01
+//   修复前：登出会递增 `pwd:version`，作废该账号**全部**令牌 —— 实测 T1 登出后 T2 也 401。
+//   修复后：只拉黑当前 accessToken / refreshToken 的 jti，其它会话保持在线。
+// ⚠️ 本用例刻意走**接口层**：同一账号两次登录即两台设备（两个 jti），
+//    这正是报告里观测 F-01 的方式；不依赖浏览器，判据最干净。
+test.describe('F-01 登出按设备生效', () => {
+  test('A 设备登出后 B 设备仍在线（同账号两会话）', async () => {
+    const devA = await apiLogin('comp025')
+    const devB = await apiLogin('comp025')
+    expect(devA.token, '两次登录应拿到不同令牌（不同 jti）').not.toBe(devB.token)
+
+    // A 登出：带上自己的 refreshToken，顺带关掉 7 天换发窗口
+    const ctxA = await apiAs(devA.token)
+    try {
+      const out = await (
+        await ctxA.post(`${API}/auth/logout`, { data: { refreshToken: devA.refreshToken } })
+      ).json()
+      expect(out.code, 'A 登出应成功').toBe(200)
+    } finally {
+      await ctxA.dispose()
+    }
+
+    // A 的 accessToken 已进黑名单 → 受保护接口按未认证处理，返回 401
+    const ctxA2 = await apiAs(devA.token)
+    try {
+      expect((await ctxA2.get(`${API}/auth/me`)).status(), 'A 的令牌应已失效').toBe(401)
+    } finally {
+      await ctxA2.dispose()
+    }
+
+    // B 不受影响 —— 这一条就是 F-01 的回归防线
+    const ctxB = await apiAs(devB.token)
+    try {
+      const me = await ctxB.get(`${API}/auth/me`)
+      expect(me.status(), 'B 设备不应被 A 的登出踢下线').toBe(200)
+      expect((await me.json()).code).toBe(200)
+    } finally {
+      await ctxB.dispose()
+    }
+  })
+})

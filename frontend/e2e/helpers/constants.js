@@ -1,5 +1,5 @@
 /**
- * 测试用种子事实常量（页面「该显示几条」的依据）
+ * 测试用常量：种子 id / 路由 / 文案红线。
  *
  * 出处：docs/agents/FRONTEND_CONTRACT.md §10.8（已连库核对）
  * ⚠️ 这是 2026-09-16 的快照。若断言与实测不符，先回库核对，不要随手放宽断言。
@@ -37,12 +37,14 @@ export const SEED = {
   companionProfilePendingUser: 325
 }
 
-/** 期望可见条数（种子事实） */
-export const EXPECT = {
-  hallPendingCount: 6, // 陪诊员大厅「待接单」6 条
-  fam001OrderCount: 2, // fam001 名下 2 条：1031 / 1001
-  companionAuditPending: 4 // 资质待审 4 条
-}
+// ⚠️ 这里**故意不再提供**「该显示几条」的绝对条数常量。
+//    E2E 报告 §F-04 实测：库相对种子已被历史写路径污染 —— internal_message 72→4423、
+//    fam001 名下订单 2→3、comp001 大厅待接单 6→0。绝对条数会把**环境债伪装成代码缺陷**
+//    （或反过来让断言静默失真），因此断言一律改为**不变量**，例如：
+//      · 大厅返回项 status 全为 PENDING
+//      · 列表「含」种子单 1001 且其 status === PENDING
+//    需要新不变量时请写进用例内并注明理由，不要再引入全局绝对条数。
+//    出处：reports/playwright/e2e-report.md §F-04、docs/agents/FRONTEND_CONTRACT.md §10.8
 
 /** 前端路由（与 frontend/src/router/routes.js 一一对应） */
 export const ROUTES = {

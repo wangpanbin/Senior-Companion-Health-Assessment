@@ -84,6 +84,7 @@ Senior Companion Health Assessment/
 | 接口文档 | Knife4j（OpenAPI 3）→ `http://localhost:8080/doc.html` |
 | 报表导出 | EasyExcel |
 | 构建 | Maven / Vite |
+| 端到端测试 | Playwright（`@playwright/test`，套件在 `frontend/e2e/`，见 `docs/agents/FRONTEND_CONTRACT.md` §13） |
 
 ---
 
@@ -121,6 +122,7 @@ pnpm dev                          # 启动，默认 5173，/api 自动代理到 
 pnpm build                        # 生产构建，产物在 dist/
 pnpm lint                         # ESLint 检查并自动修复
 pnpm format                       # Prettier 格式化
+pnpm exec playwright test         # E2E（前置：MySQL/Redis + 后端 8080 + tools/e2e/ 夹具，见契约 §13.1）
 ```
 
 > 若环境只有 npm，可临时用 `npm install` / `npm run dev`，但 lockfile 以 `pnpm-lock.yaml` 为准。

@@ -29,7 +29,9 @@ test.describe('家属端页面（fam001，移动形态）', () => {
   test('消息页', async ({ page }) => {
     await sweep(page, ROUTES.familyMessage)
   })
-  test('我的订单列表：fam001 应显示 2 条', async ({ page }) => {
+  // 用例名与断言必须一致：这里只断言「列表含待接单条目」，
+  // 不断言绝对条数（库已被历史写路径污染，参 e2e-report §F-04）。
+  test('我的订单列表：含「待接单」条目', async ({ page }) => {
     const text = await sweep(page, ROUTES.familyOrder)
     expect(text).toContain('待接单') // 1001
   })
@@ -119,8 +121,10 @@ test.describe('订单接口契约', () => {
         })
       ).json()
       // 允许成功或业务拒绝（类型枚举可能与文档不同）；关键是**不 500、不越权**
-      expect([200]).toContain(200)
-      expect(body.code).toBeDefined()
+      // 原写法 `expect([200]).toContain(200)` 恒真、`toBeDefined()` 对任何响应都成立 ——
+      // 这两条是假绿断言，等于什么都没验证。
+      expect(body.code, '不应 500').not.toBe(500)
+      expect(typeof body.message, '应返回可读 message').toBe('string')
     } finally {
       await dispose()
     }
