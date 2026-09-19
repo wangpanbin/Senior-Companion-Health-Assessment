@@ -121,6 +121,13 @@ function goForget() {
 }
 
 loadCaptcha()
+
+/**
+ * 演示项目：进入登录页即预填默认角色的账号密码。
+ * `applyDemoAccount` 内部有 `import.meta.env.DEV` 守卫，生产构建不会被填入，
+ * 因此不会泄露到生产包体。
+ */
+applyDemoAccount(activeRole.value)
 </script>
 
 <template>

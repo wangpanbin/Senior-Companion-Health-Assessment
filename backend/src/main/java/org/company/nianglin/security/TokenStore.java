@@ -82,7 +82,19 @@ public class TokenStore {
                 .setIfAbsent(RedisKeyConstants.passwordVersion(userId), String.valueOf(DEFAULT_PASSWORD_VERSION));
     }
 
-    /** 密码版本 +1，所有已签发令牌立即失效 */
+    /**
+     * 密码版本 +1，所有已签发令牌立即失效。
+     *
+     * <p><b>使用者边界</b>：本方法是「主动全员失效」的强动作，应当且仅应当被以下场景调用：
+     * 用户<b>主动</b>修改自己的密码、管理员重置用户密码、封禁账号（同步双写）、
+     * 其它「我<b>就是想让这个人的全部会话立刻退出」的场景。</p>
+     *
+     * <p>登出接口（{@code POST /api/auth/logout}）<b>不应</b>再调用本方法——
+     * 那样会让同一账号在其它设备上的会话一起被踢下线，违反「按设备登出」的
+     * 用户期望（详见 {@code reports/playwright/e2e-report.md §F-01} 与
+     * {@code AuthServiceImpl#logout} 的注释）。登出改走 {@link #blacklist(String, long)}，
+     * 只把当前 accessToken / refreshToken 的 jti 拉黑。</p>
+     */
     public int bumpPasswordVersion(Long userId) {
         Long version = redisTemplate.opsForValue().increment(RedisKeyConstants.passwordVersion(userId));
         return version == null ? DEFAULT_PASSWORD_VERSION + 1 : version.intValue();

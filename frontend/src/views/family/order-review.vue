@@ -44,11 +44,6 @@ const form = ref({
 const tags = ['准时', '耐心', '专业', '细心', '善沟通', '态度好', '经验丰富']
 const scoreLabels = ['', '非常差', '差', '一般', '好', '非常好']
 
-/** 是否处于可评价状态：订单存在 + 已完成 + 尚未评价 */
-const canReview = computed(
-  () => order.value != null && order.value.status === 'COMPLETED' && existingReview.value == null
-)
-
 const isCompleted = computed(() => order.value != null && order.value.status === 'COMPLETED')
 
 function setScore(n) {

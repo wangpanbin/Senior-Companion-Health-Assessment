@@ -6,10 +6,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.mock.http.MockHttpInputMessage;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -96,6 +98,47 @@ class GlobalExceptionHandlerClientErrorTest {
                 REQUEST);
 
         assertEquals(ResultCode.PARAM_ERROR.getCode(), result.getCode());
+    }
+
+    /**
+     * 见 {@code reports/playwright/e2e-report.md §F-02}：
+     * {@code POST /api/order/{id}/complete} 要求 {@code @RequestBody}（仅接受 JSON），
+     * 客户端用 {@code application/x-www-form-urlencoded} 缺体调用时，
+     * 旧实现会落进 {@code @ExceptionHandler(Exception.class)} 兜底 → code=500 + ERROR 日志，
+     * 而真"空 body + JSON 头"会被 {@link org.springframework.web.bind.MethodArgumentNotValidException} 接住。
+     * 两条相邻路径同请求只差一个头，返回却不同，违反"客户端错误应统一可预期"的原则。
+     * 此用例锁死统一为 PARAM_ERROR。
+     */
+    @Test
+    @DisplayName("请求体 · Content-Type 不被 @RequestBody 接受（如 form-urlencoded）→ PARAM_ERROR（不再走兜底 500）")
+    void unsupportedMediaTypeShouldBeParamError() {
+        HttpMediaTypeNotSupportedException ex = new HttpMediaTypeNotSupportedException(
+                MediaType.APPLICATION_FORM_URLENCODED,
+                java.util.List.of(MediaType.APPLICATION_JSON));
+
+        Result<Void> result = handler.handleMediaTypeNotSupported(ex, REQUEST);
+
+        assertEquals(ResultCode.PARAM_ERROR.getCode(), result.getCode());
+        assertTrue(result.getMessage().contains("application/json"),
+                "提示语应引导客户端改用 JSON 头：" + result.getMessage());
+    }
+
+    /**
+     * 边界：客户端发了一个"合法但非 JSON 也不在白名单"的 Content-Type（如 {@code text/xml}），
+     * 提示语要把这个实际收到的 type 反映出来，方便排障，而不是吞掉。
+     */
+    @Test
+    @DisplayName("请求体 · Content-Type 是 text/xml（非 JSON 也不白名单）→ PARAM_ERROR 且提示中包含 text/xml")
+    void unsupportedMediaTypeWithNonJsonTypeShouldMentionIt() {
+        HttpMediaTypeNotSupportedException ex = new HttpMediaTypeNotSupportedException(
+                MediaType.APPLICATION_XML,
+                java.util.List.of(MediaType.APPLICATION_JSON));
+
+        Result<Void> result = handler.handleMediaTypeNotSupported(ex, REQUEST);
+
+        assertEquals(ResultCode.PARAM_ERROR.getCode(), result.getCode());
+        assertTrue(result.getMessage().contains("application/xml"),
+                "提示语应包含实际收到的 Content-Type：" + result.getMessage());
     }
 
     @Test

@@ -112,7 +112,7 @@ export function createProgressSocket(orderId, handlers = {}) {
 
     try {
       ws = new WebSocket(buildUrl(orderId))
-    } catch (e) {
+    } catch {
       // 构造阶段就抛（地址非法等），直接进入重连流程
       scheduleReconnect()
       return

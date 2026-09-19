@@ -312,7 +312,7 @@ public class OrderServiceImpl implements OrderService {
 
 | 项 | 数值 / 实现 |
 |---|---|
-| 老人模式基线字号 | ≥ 18px（`--nl-font-base` 在 `elderly-mode` 下切到 `$elderly-font-min`） |
+| 老人模式基线字号 | ≥ 18px（`--nl-font-body` 在 `elderly-mode` 下切到 `$elderly-font-min`） |
 | 可点击元素最小高度 | ≥ 48px（`$elderly-touch-min`，按下 `--nl-touch-min` 切换） |
 | 文字对比度 | ≥ 4.5:1（WCAG AA，`$elderly-contrast-ratio`） |
 | 老人模式触发方式 | `<html>` 上加 class `elderly-mode`（由 `appStore.applyElderlyClass()` 维护，**不要**靠刷新页面） |
