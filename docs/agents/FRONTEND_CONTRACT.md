@@ -689,6 +689,16 @@ pnpm exec playwright show-report ../reports/playwright/html
 用**本机 Chrome**（`channel: 'chrome'`），不下载 Chromium；可用 `CHROME_PATH` 覆盖。
 只读巡检跳过数据回滚：`$env:E2E_FIXTURE="0"`。
 
+> ⚠️ **`tools/e2e/` 不随仓库分发**（根 `.gitignore` 忽略了整个 `tools/e2e/`）。
+> 因此**干净 clone 上直接跑 `pnpm exec playwright test` 会失败** —— 夹具 `fixture.py` 不在。
+> 两条出路：
+> 1. **要数据回滚**（默认行为）：向维护者索取 `tools/e2e/`（11 个脚本）放到仓库根同名目录。
+>    缺夹具时 `global-setup.js` / `global-teardown.js` 会抛出可操作的报错，**不会静默跑过**。
+> 2. **只要只读巡检**：`$env:E2E_FIXTURE="0"` —— 跳过 snapshot / restore / verify，
+>    代价是本轮写接口留下的数据**不回滚**，仅适合纯读巡检。
+>
+> 把夹具改为可分发是待办项：需先确认这些脚本里没有本机路径 / 令牌等不宜入库的内容（参 §12.2）。
+
 ### 13.2 结构
 
 - `e2e/fixtures/`：`auth.setup.js`（7 账号真实 UI 登录 → `storageState`）、`login.js`、`captcha.js`（Redis 取验证码明文）。

@@ -8,10 +8,21 @@
  * 必须显式失败，不能静静过去（否则重演 BUG_LIST L1）。
  */
 import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
 import { REPO_ROOT } from './helpers/paths'
 
+const FIXTURE = path.join(REPO_ROOT, 'tools', 'e2e', 'fixture.py')
+
 function runFixture(sub) {
-  const r = spawnSync('python', ['tools/e2e/fixture.py', sub], {
+  if (!existsSync(FIXTURE)) {
+    throw new Error(
+      `[e2e] 找不到夹具 ${FIXTURE}（tools/e2e/ 被 .gitignore 忽略，不随仓库分发）。\n` +
+        '      数据可能**未回滚** —— 请人工核对 reports/playwright 与本轮写过的表，\n' +
+        '      并按 docs/agents/FRONTEND_CONTRACT.md §13.1 补齐夹具后重跑。'
+    )
+  }
+  const r = spawnSync('python', [FIXTURE, sub], {
     cwd: REPO_ROOT,
     stdio: 'inherit',
     env: process.env,
