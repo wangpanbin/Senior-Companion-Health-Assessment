@@ -685,19 +685,23 @@ pnpm exec playwright test          # Playwright 自起前端 5141；自动 snaps
 pnpm exec playwright show-report ../reports/playwright/html
 ```
 
-前置：`MYSQL_PASSWORD`；`redis-cli`（默认 `D:\develop\Redis-8.8.0\redis-cli.exe`，可用 `REDIS_CLI` 覆盖）。
+前置：`MYSQL_PASSWORD`（**脚本不内置默认口令**）；`redis-cli`（`REDIS_CLI` 可覆盖，
+未设置时先找本机默认路径 `D:\develop\Redis-8.8.0\redis-cli.exe`、不存在则回落 `PATH`）。
 用**本机 Chrome**（`channel: 'chrome'`），不下载 Chromium；可用 `CHROME_PATH` 覆盖。
 只读巡检跳过数据回滚：`$env:E2E_FIXTURE="0"`。
 
-> ⚠️ **`tools/e2e/` 不随仓库分发**（根 `.gitignore` 忽略了整个 `tools/e2e/`）。
-> 因此**干净 clone 上直接跑 `pnpm exec playwright test` 会失败** —— 夹具 `fixture.py` 不在。
-> 两条出路：
-> 1. **要数据回滚**（默认行为）：向维护者索取 `tools/e2e/`（11 个脚本）放到仓库根同名目录。
->    缺夹具时 `global-setup.js` / `global-teardown.js` 会抛出可操作的报错，**不会静默跑过**。
-> 2. **只要只读巡检**：`$env:E2E_FIXTURE="0"` —— 跳过 snapshot / restore / verify，
->    代价是本轮写接口留下的数据**不回滚**，仅适合纯读巡检。
+> ✅ **`tools/e2e/` 的 11 个脚本已随仓库分发**（此前被 `.gitignore` 整体忽略，现已入库）。
+> 干净 clone 上直接 `pnpm exec playwright test` 的三项前置：
+> 1. `MYSQL_PASSWORD` —— 脚本**不内置默认口令**，未设置会直接报错退出；
+> 2. `mysql` / `redis-cli` 可用 —— 两者都按「`MYSQL_BIN` / `REDIS_CLI` 环境变量 >
+>    本机默认路径（存在时）> `PATH`」解析，因此非 Windows 或没有本机默认路径的机器会自动回落 `PATH`；
+> 3. 后端 8080 由 `tools/e2e/start-services.ps1` 拉起（该脚本同样要求先设置 `MYSQL_PASSWORD`）。
 >
-> 把夹具改为可分发是待办项：需先确认这些脚本里没有本机路径 / 令牌等不宜入库的内容（参 §12.2）。
+> 只想只读巡检（不做数据回滚）：`$env:E2E_FIXTURE="0"` —— 跳过 snapshot / restore / verify，
+> 代价是本轮写接口留下的数据**不回滚**，仅适合纯读巡检。
+>
+> ⚠️ 入库的是**脚本**，不是**产出**：`tokens.json` / `storageState` / 截图仍全部落在 `reports/` 下，
+> 那是真实 JWT —— `reports/` 必须**继续**保持被忽略，不要顺手把它也放进入库清单。
 
 ### 13.2 结构
 

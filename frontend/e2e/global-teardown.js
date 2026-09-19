@@ -17,9 +17,9 @@ const FIXTURE = path.join(REPO_ROOT, 'tools', 'e2e', 'fixture.py')
 function runFixture(sub) {
   if (!existsSync(FIXTURE)) {
     throw new Error(
-      `[e2e] 找不到夹具 ${FIXTURE}（tools/e2e/ 被 .gitignore 忽略，不随仓库分发）。\n` +
+      `[e2e] 找不到夹具 ${FIXTURE}（已随仓库入库，缺失说明工作区不完整）。\n` +
         '      数据可能**未回滚** —— 请人工核对 reports/playwright 与本轮写过的表，\n' +
-        '      并按 docs/agents/FRONTEND_CONTRACT.md §13.1 补齐夹具后重跑。'
+        '      并用 git checkout -- tools/e2e/ 补齐后重跑（参契约 §13.1）。'
     )
   }
   const r = spawnSync('python', [FIXTURE, sub], {
