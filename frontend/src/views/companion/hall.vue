@@ -18,7 +18,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  NlPhoneShell, NlDesktopShell, NlTabBar, NlCard, NlStatusChip, NlEmpty, NlSkeleton,
+  NlPhoneShell, NlDesktopShell, NlAppTabBar, NlCard, NlStatusChip, NlEmpty, NlSkeleton,
   NlNoticeBar, NlUserMenu
 } from '@/components'
 import { useDevice } from '@/composables/useDevice'
@@ -42,13 +42,7 @@ const loading = ref(false)
 
 const filter = ref('all') // all / high
 
-const tabs = [
-  { key: 'hall', label: '大厅', icon: 'List' },
-  { key: 'order', label: '订单', icon: 'Tickets' },
-  { key: 'income', label: '收入', icon: 'Money' },
-  { key: 'mine', label: '我的', icon: 'User' }
-]
-const activeTab = ref('hall')
+/* 底部 Tab 由 NlAppTabBar 统一管理（角色感知 + 路由感知） */
 
 const certText = computed(() => {
   if (certStatus.value === 'APPROVED') return '资质已通过 · 可接单'
@@ -111,13 +105,6 @@ async function grab(o) {
 
 function goEntry() {
   router.push('/companion/entry')
-}
-
-function onTabChange(key) {
-  if (key === 'hall') return
-  if (key === 'order') router.push('/companion/order')
-  if (key === 'income') router.push('/companion/income')
-  if (key === 'mine') router.push('/profile')
 }
 
 onMounted(async () => {
@@ -238,7 +225,7 @@ onMounted(async () => {
     </template>
 
     <template #tabbar>
-      <NlTabBar v-model="activeTab" :tabs="tabs" @change="onTabChange" />
+      <NlAppTabBar />
     </template>
   </NlPhoneShell>
 

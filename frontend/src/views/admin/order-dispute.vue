@@ -44,7 +44,7 @@ function onPageChange(p) {
   loadList()
 }
 
-const dialogRef = ref(null)
+const dialogVisible = ref(false)
 const detail = ref(null)
 const decision = ref('COMPLETED')
 const decisionNote = ref('')
@@ -57,7 +57,7 @@ function open(o) {
   decisionNote.value = ''
   refundToFamily.value = false
   penaltyToCompanion.value = false
-  dialogRef.value.open()
+  dialogVisible.value = true
 }
 
 async function forceTerminate() {
@@ -83,7 +83,7 @@ async function forceTerminate() {
     penaltyToCompanion: penaltyToCompanion.value
   })
   ElMessage.success('已执行仲裁，将自动通知家属与陪诊员（站内信）')
-  dialogRef.value.close()
+  dialogVisible.value = false
   loadList()
 }
 
@@ -140,7 +140,7 @@ onMounted(loadList)
   </NlCard>
 
   <el-dialog
-    ref="dialogRef"
+    v-model="dialogVisible"
     :title="`订单纠纷 - ${detail?.orderNo || ''}`"
     width="720px"
     align-center
@@ -190,7 +190,7 @@ onMounted(loadList)
     </div>
 
     <template #footer>
-      <el-button @click="dialogRef.close()">关闭</el-button>
+      <el-button @click="dialogVisible = false">关闭</el-button>
       <el-button type="danger" @click="forceTerminate">执行仲裁 + 通知双方</el-button>
     </template>
   </el-dialog>

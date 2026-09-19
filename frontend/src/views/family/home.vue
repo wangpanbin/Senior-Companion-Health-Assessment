@@ -19,11 +19,11 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  HomeFilled, Tickets, FirstAidKit, Bell, User,
+  Bell,
   Calendar, FirstAidKit as Med, Clock, Plus
 } from '@element-plus/icons-vue'
 import {
-  NlPhoneShell, NlDesktopShell, NlTabBar, NlCard, NlAvatar, NlStatusChip,
+  NlPhoneShell, NlDesktopShell, NlAppTabBar, NlCard, NlAvatar, NlStatusChip,
   NlIconBox, NlSkeleton, NlEmpty, NlNoticeBar, NlUserMenu
 } from '@/components'
 import { useAppStore } from '@/store/modules/app'
@@ -127,21 +127,7 @@ const quickEntries = [
   { key: 'track',   icon: Clock,    label: '进度查看', tone: 'warning', desc: '看正在进行的订单',     path: '/family/order' }
 ]
 
-const tabs = [
-  { key: 'home',       label: '首页', icon: HomeFilled },
-  { key: 'order',      label: '订单', icon: Tickets },
-  { key: 'medication', label: '用药', icon: FirstAidKit },
-  { key: 'message',    label: '消息', icon: Bell },
-  { key: 'profile',    label: '我的', icon: User }
-]
-const activeTab = computed(() => 'home')
-function onTabChange(key) {
-  if (key === 'home') return
-  if (key === 'order') router.push('/family/order')
-  if (key === 'medication') router.push('/family/medication')
-  if (key === 'message') router.push('/family/message')
-  if (key === 'profile') router.push('/profile')
-}
+/* 底部 Tab 由 NlAppTabBar 统一管理（角色感知 + 路由感知） */
 
 function toggleElderly() {
   appStore.toggleElderlyMode()
@@ -355,7 +341,7 @@ onBeforeUnmount(() => {
     </section>
 
     <template #tabbar>
-      <NlTabBar v-model="activeTab" :tabs="tabs" @change="onTabChange" />
+      <NlAppTabBar />
     </template>
   </NlPhoneShell>
 

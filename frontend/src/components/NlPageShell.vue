@@ -67,6 +67,8 @@ const props = defineProps({
   back: { type: Boolean, default: true },
   /** 是否有底部主行动按钮（原 has-cta） */
   hasCta: { type: Boolean, default: false },
+  /** 是否有底部 Tab Bar（仅手机形态；桌面形态不渲染 tabbar） */
+  hasTabs: { type: Boolean, default: false },
   /** 状态栏时间（仅手机形态，原样透传） */
   statusTime: { type: String, default: '' },
   /** 状态栏反色（仅手机形态，原样透传） */
@@ -101,6 +103,7 @@ const phoneCta = computed(() => props.hasCta && !!slots.cta)
     v-if="isMobile"
     :nav="{ title, back }"
     :has-cta="phoneCta"
+    :has-tabs="hasTabs"
     :status-time="statusTime"
     :status-inverse="statusInverse"
     :body-bg="bodyBg"
@@ -118,6 +121,10 @@ const phoneCta = computed(() => props.hasCta && !!slots.cta)
 
     <template #cta>
       <slot name="cta" />
+    </template>
+
+    <template #tabbar>
+      <slot name="tabbar" />
     </template>
   </NlPhoneShell>
 

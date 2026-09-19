@@ -60,6 +60,14 @@ function onPageChange(p) {
   loadList()
 }
 
+const viewVisible = ref(false)
+const viewOrder = ref(null)
+
+function openView(row) {
+  viewOrder.value = row
+  viewVisible.value = true
+}
+
 onMounted(loadList)
 </script>
 
@@ -129,8 +137,8 @@ onMounted(loadList)
           <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
         </el-table-column>
         <el-table-column label="操作" min-width="120" fixed="right">
-          <template #default>
-            <el-button text size="small" type="primary">查看</el-button>
+          <template #default="{ row }">
+            <el-button text size="small" type="primary" @click="openView(row)">查看</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -146,6 +154,36 @@ onMounted(loadList)
       />
     </template>
   </NlCard>
+
+  <el-dialog v-model="viewVisible" title="订单详情" width="560px" align-center>
+    <div v-if="viewOrder" class="order-view">
+      <section class="ov-row"><span class="ov-label">订单号</span><span>{{ viewOrder.orderNo }}</span></section>
+      <section class="ov-row"><span class="ov-label">就诊人</span><span>{{ viewOrder.elderName }}</span></section>
+      <section class="ov-row"><span class="ov-label">医院</span><span>{{ viewOrder.hospital }}</span></section>
+      <section v-if="viewOrder.department" class="ov-row">
+        <span class="ov-label">科室</span><span>{{ viewOrder.department }}</span>
+      </section>
+      <section v-if="viewOrder.visitTime" class="ov-row">
+        <span class="ov-label">就诊时间</span><span>{{ formatDateTime(viewOrder.visitTime) }}</span>
+      </section>
+      <section class="ov-row">
+        <span class="ov-label">陪诊员</span><span>{{ viewOrder.companionName || '未接单' }}</span>
+      </section>
+      <section class="ov-row">
+        <span class="ov-label">服务费</span><span class="is-num">{{ formatMoney(viewOrder.fee) }}</span>
+      </section>
+      <section class="ov-row">
+        <span class="ov-label">状态</span>
+        <NlStatusChip :status="viewOrder.status" :text="viewOrder.statusLabel" />
+      </section>
+      <section class="ov-row">
+        <span class="ov-label">创建时间</span><span>{{ formatDateTime(viewOrder.createTime) }}</span>
+      </section>
+    </div>
+    <template #footer>
+      <el-button @click="viewVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped lang="scss">
@@ -159,5 +197,28 @@ onMounted(loadList)
 .order-pager {
   margin-top: var(--nl-space-4);
   justify-content: flex-end;
+}
+
+.order-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  .ov-row {
+    display: flex;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--nl-divider);
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  .ov-label {
+    flex-shrink: 0;
+    width: 72px;
+    color: var(--nl-text-3);
+  }
 }
 </style>

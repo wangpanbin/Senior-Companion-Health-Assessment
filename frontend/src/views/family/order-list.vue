@@ -21,7 +21,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { NlPageShell, NlStatusChip, NlEmpty, NlSkeleton } from '@/components'
+import { NlPageShell, NlAppTabBar, NlStatusChip, NlEmpty, NlSkeleton } from '@/components'
 import { listMyOrders } from '@/api/order'
 import { formatVisitTime, formatMoney } from '@/utils/format'
 
@@ -74,7 +74,7 @@ onMounted(loadOrders)
 </script>
 
 <template>
-  <NlPageShell title="我的订单">
+  <NlPageShell title="我的订单" :has-tabs="true" :back="false">
     <section class="filter-bar">
       <button
         v-for="t in tabs"
@@ -120,6 +120,10 @@ onMounted(loadOrders)
     <p v-if="!loading && orders.length" class="nl-caption nl-text-weak list-foot">
       共 {{ total }} 单
     </p>
+
+    <template #tabbar>
+      <NlAppTabBar />
+    </template>
   </NlPageShell>
 </template>
 

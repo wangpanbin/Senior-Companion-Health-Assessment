@@ -10,15 +10,28 @@
  *
  * 关键点：
  *   - 接口按当前登录 token 返回该角色的消息，天然按角色工作（读 useUserStore().role 仅用于展示）。
- *   - 一期砍掉 IM：无输入框、无对话气泡，点击消息仅标记已读（并按 linkUrl 跳转）。
+ *   - 一期砍掉 IM：无输入框、无对话气泡；点击消息进入只读详情页，并标记已读。
  *   - onBeforeUnmount 必须 stop() 轮询。
  *   - catch 不重复弹错（拦截器已弹）。
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NlPageShell, NlMobileOnlyPage, NlEmpty, NlIconBox, NlCard } from '@/components'
+import { ElMessageBox } from 'element-plus'
 import {
-  listMessages, markRead, markAllRead, removeMessage, startUnreadPolling
+  NlPageShell,
+  NlAppTabBar,
+  NlMobileOnlyPage,
+  NlEmpty,
+  NlIconBox,
+  NlCard,
+  NlSkeleton
+} from '@/components'
+import {
+  listMessages,
+  markRead,
+  markAllRead,
+  removeMessage,
+  startUnreadPolling
 } from '@/api/message'
 import { formatDateTime } from '@/utils/format'
 import { useUserStore } from '@/store/modules/user'
@@ -68,9 +81,25 @@ async function openItem(item) {
     item.isRead = true // 乐观更新，避免红点闪烁
     markRead(item.id).catch(() => {})
   }
-  if (item.linkUrl) {
-    router.push(item.linkUrl)
-  }
+  // 后端历史 linkUrl 可能仍指向已调整的旧路由；先进入统一详情页，避免用户落到 404。
+  router.push({
+    name: 'MessageDetail',
+    params: { id: String(item.id) },
+    state: {
+      message: {
+        id: item.id,
+        type: item.type,
+        typeLabel: item.typeLabel,
+        title: item.title,
+        content: item.content,
+        bizType: item.bizType,
+        bizId: item.bizId,
+        linkUrl: item.linkUrl,
+        isRead: true,
+        createTime: item.createTime
+      }
+    }
+  })
 }
 
 async function doMarkAll() {
@@ -84,6 +113,16 @@ async function doMarkAll() {
 }
 
 async function removeItem(item) {
+  try {
+    await ElMessageBox.confirm('删除后消息无法恢复，是否继续？', '确认删除', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+
   try {
     await removeMessage(item.id)
     messages.value = messages.value.filter((m) => m.id !== item.id)
@@ -110,59 +149,75 @@ onBeforeUnmount(() => {
 <template>
   <!-- mobile-only 守卫只对 /elder/message 生效（见脚本里 mobileOnlyHere 的注释） -->
   <NlMobileOnlyPage :enabled="mobileOnlyHere">
-  <NlPageShell :title="`消息（${unreadCount} 条未读）`">
-    <!-- 顶部操作条 -->
-    <section class="msg-bar">
-      <span class="nl-caption nl-text-muted">
-        共 {{ total }} 条 · {{ unreadCount }} 条未读 · {{ roleLabel }}
-      </span>
-      <el-button text size="small" :disabled="!unreadCount" @click="doMarkAll">
-        全部已读
-      </el-button>
-    </section>
+    <NlPageShell :title="`消息（${unreadCount} 条未读）`" :has-tabs="true" :back="false">
+      <!-- 顶部操作条 -->
+      <section class="msg-bar">
+        <span class="nl-caption nl-text-muted">
+          共 {{ total }} 条 · {{ unreadCount }} 条未读 · {{ roleLabel }}
+        </span>
+        <el-button text size="small" :disabled="!unreadCount" @click="doMarkAll">
+          全部已读
+        </el-button>
+      </section>
 
-    <NlSkeleton v-if="loading" :count="3" class="pad" />
+      <NlSkeleton v-if="loading" :count="3" class="pad" />
 
-    <NlEmpty
-      v-else-if="!hasAny"
-      type="empty"
-      title="暂无新消息"
-      description="订单事件、资质审核、漏服提醒、系统公告会在这里出现"
-    />
+      <NlEmpty
+        v-else-if="!hasAny"
+        type="empty"
+        title="暂无新消息"
+        description="订单事件、资质审核、漏服提醒、系统公告会在这里出现"
+      />
 
-    <NlCard v-else title="站内信" plain>
-      <ul class="msg-list">
-        <li
-          v-for="item in messages"
-          :key="item.id"
-          class="msg-item"
-          @click="openItem(item)"
-        >
-          <NlIconBox :tone="toneOf(item.type)" :size="36">
-            <svg viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M2 4h12v8H2z M2 4l6 4 6-4" />
-            </svg>
-          </NlIconBox>
-          <div class="msg-item__body">
-            <div class="msg-item__title">
-              <span :class="['nl-h3', { 'is-unread': !item.isRead }]">{{ item.title }}</span>
-              <span v-if="item.typeLabel" class="nl-caption msg-item__tag">{{ item.typeLabel }}</span>
+      <NlCard v-else title="站内信" plain>
+        <ul class="msg-list">
+          <li v-for="item in messages" :key="item.id" class="msg-item" @click="openItem(item)">
+            <NlIconBox :tone="toneOf(item.type)" :size="36">
+              <svg
+                viewBox="0 0 16 16"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M2 4h12v8H2z M2 4l6 4 6-4" />
+              </svg>
+            </NlIconBox>
+            <div class="msg-item__body">
+              <div class="msg-item__title">
+                <span :class="['nl-h3', { 'is-unread': !item.isRead }]">{{ item.title }}</span>
+                <span v-if="item.typeLabel" class="nl-caption msg-item__tag">
+                  {{ item.typeLabel }}
+                </span>
+              </div>
+              <p class="nl-caption msg-item__brief">{{ item.content }}</p>
             </div>
-            <p class="nl-caption msg-item__brief">{{ item.content }}</p>
-          </div>
-          <div class="msg-item__right">
-            <span class="nl-caption nl-text-muted is-num">{{ formatDateTime(item.createTime) }}</span>
-            <span v-if="!item.isRead" class="msg-item__dot" aria-label="未读" />
-            <el-button
-              text size="small" type="danger"
-              class="msg-item__del"
-              @click.stop="removeItem(item)"
-            >删除</el-button>
-          </div>
-        </li>
-      </ul>
-    </NlCard>
-  </NlPageShell>
+            <div class="msg-item__right">
+              <span class="nl-caption nl-text-muted is-num">
+                {{ formatDateTime(item.createTime) }}
+              </span>
+              <span v-if="!item.isRead" class="msg-item__dot" aria-label="未读" />
+              <el-button
+                text
+                size="small"
+                type="danger"
+                class="msg-item__del"
+                @click.stop="removeItem(item)"
+              >
+                删除
+              </el-button>
+            </div>
+          </li>
+        </ul>
+      </NlCard>
+
+      <template #tabbar>
+        <NlAppTabBar />
+      </template>
+    </NlPageShell>
   </NlMobileOnlyPage>
 </template>
 

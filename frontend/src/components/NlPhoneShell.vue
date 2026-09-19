@@ -20,7 +20,6 @@
  *     </template>
  *   </NlPhoneShell>
  */
-import NlStatusBar from './NlStatusBar.vue'
 import NlNavBar from './NlNavBar.vue'
 
 defineProps({
@@ -41,7 +40,6 @@ defineProps({
 
 <template>
   <div class="nl-shell">
-    <NlStatusBar :inverse="statusInverse" :time="statusTime" />
     <NlNavBar
       v-if="nav"
       :title="nav.title || ''"
