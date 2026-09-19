@@ -248,22 +248,43 @@ public class AuthServiceImpl implements AuthService {
     public void logout(String refreshToken) {
         LoginUser loginUser = SecurityUtils.currentUser();
 
-        // bumpPasswordVersion 让该用户所有未过期的刷新令牌一并失效，覆盖客户端不传 refreshToken
-        // 时的盲区（refreshToken 7 天内仍可换发 accessToken，是 XSS/SDK 泄漏的真实攻击路径）
-        tokenStore.bumpPasswordVersion(loginUser.userId());
+        // ⚠️ 设计变更（响应 reports/playwright/e2e-report.md §F-01）：
+        // 早期实现这里会调 bumpPasswordVersion(loginUser.userId())，以一次性作废该账号
+        // 所有未过期的 accessToken / refreshToken，动机是「客户端不传 refreshToken 时的
+        // 盲区 —— 攻击者拿到 refreshToken 后 7 天内仍可换发 accessToken」。
+        // 但这与「按设备登出」的常识冲突：同一账号在手机 / 网页 / 桌面端并发登录时，
+        // 一台点退出其它设备会被一起踢下线，不是用户期望的行为（e2e 套件自身也
+        // 因此出现令牌互相污染的干扰，见 e2e-report.md §5）。
+        //
+        // 新策略是「按 jti 拉黑」，覆盖原盲区的方式是：
+        //   ① 当前 accessToken 的 jti 立刻拉黑（剩余 TTL） —— 当前会话立即失效；
+        //   ② refreshToken 的 jti 也立刻拉黑 —— 7 天换发窗口关闭；
+        //   ③ 同一账号在其它设备签发的 jti 不在黑名单里 → 仍然有效，符合用户预期。
+        // 如果某天需要「一键踢全部」（管理员处置被盗号），改走
+        // {@link org.company.nianglin.service.impl.AdminServiceImpl#disableUser}，
+        // 它内部仍然 bumpPasswordVersion，是有意为之的强动作。
 
-        // 顺手把当前 accessToken 的 jti 拉黑，让它立刻不可用（不必等 JWT 自然过期）
+        // 当前 accessToken 立刻拉黑
         long remain = tokenProvider.remainingSeconds(loginUser.expiresAtMillis());
         tokenStore.blacklist(loginUser.jti(), remain);
 
         if (refreshToken != null && !refreshToken.isBlank()) {
+            TokenPayload payload = null;
             try {
-                TokenPayload payload = tokenProvider.parse(refreshToken);
+                payload = tokenProvider.parse(refreshToken);
+            } catch (Exception e) {
+                // 刷新令牌本来就无效（业务异常 / 过期 / 签名错误 / 任何反序列化 NPE），
+                // 没有拉黑的必要。登出必须成功 ——
+                // 不能因为一个附属令牌有问题就让用户「退不出去」。
+                // 用 Exception 而非 BusinessException 是为了覆盖 JJWT 在过期/签名错时可能抛的
+                // 运行时异常（如 NPE、IllegalArgumentException），这些同样不该阻塞登出。
+                log.debug("登出时 refreshToken 无效，已忽略 | userId={} | err={}", loginUser.userId(), e.toString());
+            }
+            // ⚠️ 拉黑这一步必须留在 try 之外：它失败意味着「7 天换发窗口没关上」，
+            // 属于登出**没完成**，不能被上面的解析兜底一并吞掉 ——
+            // 否则日志会记 success，而这张 refreshToken 仍然可用。
+            if (payload != null) {
                 tokenStore.blacklist(payload.jti(), tokenProvider.remainingSeconds(payload.expiresAtMillis()));
-            } catch (BusinessException e) {
-                // 刷新令牌本来就无效，没有拉黑的必要。登出必须成功 ——
-                // 不能因为一个附属令牌有问题就让用户「退不出去」
-                log.debug("登出时 refreshToken 无效，已忽略 | userId={}", loginUser.userId());
             }
         }
 

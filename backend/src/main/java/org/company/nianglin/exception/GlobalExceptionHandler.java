@@ -10,6 +10,7 @@ import org.company.nianglin.common.ResultCode;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
@@ -117,6 +118,30 @@ public class GlobalExceptionHandler {
     public Result<Void> handleMessageNotReadable(HttpMessageNotReadableException e, HttpServletRequest request) {
         log.warn("请求体解析失败 | {} {} | {}", request.getMethod(), request.getRequestURI(), e.getMessage());
         return Result.fail(ResultCode.PARAM_ERROR, "请求体格式不正确");
+    }
+
+    /**
+     * 请求的 {@code Content-Type} 不在 {@code @RequestBody} 接受范围内。
+     *
+     * <p>典型场景：客户端发了 {@code application/x-www-form-urlencoded} 或没设 {@code Content-Type}，
+     * 但接口签名是 {@code @Valid @RequestBody OrderCompleteDTO}（只接受 JSON）。
+     * 不单独处理的话它会落进兜底分支，被记成 ERROR 级「系统异常」并返回 code 500 —— 用户看到
+     * 「服务器开小差了」，而真实原因是请求头写错，这种错重发一百次也不会变好。</p>
+     *
+     * <p>这与 {@link HttpMessageNotReadableException} 是相邻的两个异常：
+     * 一个是「头对了但体坏了」，一个是「头就错了」。两个都属于<b>纯客户端错误</b>，
+     * 且都在<b>参数解析阶段</b>抛出，早于方法级 {@code @PreAuthorize}。把它们都翻译成
+     * {@code PARAM_ERROR} 后，{@code e2e-report.md §F-02} 报告的「缺体 + 错的 Content-Type
+     * 走兜底 500」的不一致就被消除，统一返回业务错误码。</p>
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public Result<Void> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e, HttpServletRequest request) {
+        String contentType = e.getContentType() != null ? e.getContentType().toString() : "(未设置)";
+        log.warn("Content-Type 不支持 | {} {} | contentType={} | supported={}",
+                request.getMethod(), request.getRequestURI(),
+                contentType, e.getSupportedMediaTypes());
+        return Result.fail(ResultCode.PARAM_ERROR,
+                "请求 Content-Type 不受支持：" + contentType + "，需 application/json");
     }
 
     /* ==================== 认证与鉴权 ==================== */

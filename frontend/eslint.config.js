@@ -8,7 +8,9 @@ import prettierConfig from 'eslint-config-prettier'
  */
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'public/**', '*.min.js']
+    // e2e/ 是 Playwright 测试套件（Node 环境、含 console / process / Buffer 等），
+    // 与应用源码的规则不同，故整目录排除在应用 lint 之外。
+    ignores: ['dist/**', 'node_modules/**', 'public/**', '*.min.js', 'e2e/**', 'playwright.config.js']
   },
 
   js.configs.recommended,

@@ -14,15 +14,17 @@ import org.company.nianglin.security.TokenStore;
  * 「写死 ver=0」在<b>干净的 Redis</b> 上恰好能跑通 —— 直到下面这条路径被触发：</p>
  *
  * <ol>
- *   <li>{@code AuthServiceImpl#logout} 会调用 {@link TokenStore#bumpPasswordVersion(Long)}
- *       —— 登出即吊销该用户全部令牌，所以<b>登出一次，版本号就从 0 变成 1</b>；</li>
+ *   <li>会把版本号抬起来的是「修改密码」与「管理员封禁 / 解封」
+ *       （{@code AuthServiceImpl#changePassword}、{@code AdminServiceImpl#disableUser} 等调用
+ *       {@link TokenStore#bumpPasswordVersion(Long)}）—— <b>改一次密，版本号就从 0 变成 1</b>；
+ *       注意 <b>登出不在此列</b>：F-01 起登出改为按 {@code jti} 拉黑，不再递增密码版本
+ *       （见 {@code docs/api/01-auth-user.md}「多设备并发登录的语义」）；</li>
  *   <li>该键<b>没有 TTL</b>（{@code ensurePasswordVersion} 用 {@code setIfAbsent} 写入，
  *       不设过期），所以它<b>永久</b>留在 Redis 里；</li>
- *   <li>端到端脚本 {@code e2e_auth.py} 的 E1 用例正是以 {@code elder001} 身份调用
- *       {@code POST /auth/logout}。</li>
+ *   <li>端到端 / 集成脚本跑过改密、封禁类用例后，该键的值就不再是默认的 0。</li>
  * </ol>
  *
- * <p>结果：跑完一次端到端，{@code pwd:version:201} 变成 1 且再无过期之日；
+ * <p>结果：跑过一轮改密 / 封禁类用例后，{@code pwd:version:201} 变成 1 且再无过期之日；
  * 任何「写死 ver=0 签 elder001 令牌」的用例此后一律拿到 <b>401</b>（验票失败）
  * 而不是预期的 403/200。这类失败极具迷惑性 —— 它看起来是鉴权坏了，
  * 实际是测试自己把一个<b>会随运行历史漂移的运行时状态</b>当成了常量。</p>

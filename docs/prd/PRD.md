@@ -50,7 +50,7 @@
 
 | 项 | 数值 / 实现 |
 |---|---|
-| 基线字号 | ≥ 18px(`--nl-font-base`) |
+| 基线字号 | ≥ 18px(`--nl-font-body`) |
 | 可点击元素最小高度 | ≥ 48px(`$elderly-touch-min`) |
 | 文字对比度 | ≥ 4.5:1(WCAG 2.1 AA) |
 | 老人模式触发 | `<html class="elderly-mode">` 一键切换 |

@@ -262,6 +262,21 @@
   若不豁免，老人账号登录后将无法退出。
 - 前端清理 localStorage（token / refreshToken / userInfo）。
 
+### 多设备并发登录的语义
+
+采用**按 jti 拉黑**（而非按用户全员失效）：
+
+- 同一账号在手机 / 网页 / 桌面端并发登录，各端持有不同 jti 的 accessToken。
+- 一台设备点「退出登录」，只把当前请求的 accessToken / refreshToken 的 jti 拉黑；
+  其它设备的 jti 不在黑名单里，**保持在线**，符合用户预期。
+- 如果用户主动「修改密码」或管理员「封禁账号」，该走
+  {@link org.company.nianglin.security.TokenStore#bumpPasswordVersion(Long)}，
+  那才是「我就是要让这个人的全部会话立刻退出」的强动作——登出<b>不</b>走这条路径。
+
+> 设计取舍参考：`reports/playwright/e2e-report.md §F-01`。
+> 早期实现这里也调 `bumpPasswordVersion`，会出现「同一账号连登两次得 T1/T2，
+> 用 T1 登出后 T2 也返 401」的歧义行为，在 e2e 套件里甚至引发令牌互相污染。
+
 ---
 
 ## 6. 获取当前用户信息

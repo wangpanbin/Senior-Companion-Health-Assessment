@@ -36,15 +36,18 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -351,6 +354,67 @@ class AuthServiceTest {
         // 这是「改密后强制重新登录」的唯一实现手段，必须被调用
         verify(tokenStore).bumpPasswordVersion(anyLong());
         verify(sysUserMapper).updateById(any(SysUser.class));
+    }
+
+    /* ================================================================== */
+    /* 登出（F-01 修复后：仅按 jti 拉黑，不再 bumpPasswordVersion）             */
+    /* ================================================================== */
+
+    /**
+     * F-01 修复后的正确语义：logout 只拉黑当前 accessToken 的 jti 与 refreshToken 的 jti，
+     * <b>不能</b> bump 该用户的密码版本 —— 那会让同账号其它设备上的会话被一并踢下线，
+     * 与「按设备登出」的用户期望冲突。
+     */
+    @Test
+    @DisplayName("登出：仅 blacklist 当前 accessToken / refreshToken 的 jti，不 bump 密码版本")
+    void logoutShouldBlacklistByJtiOnlyNotBumpPasswordVersion() {
+        loginAs(normalUser());
+        given(tokenProvider.remainingSeconds(anyLong())).willReturn(1800L);
+
+        authService.logout("refresh-token-string");
+
+        // 核心变更断言：bumpPasswordVersion 不应被调用
+        verify(tokenStore, never()).bumpPasswordVersion(anyLong());
+        // 但当前 accessToken 的 jti 必然被拉黑，且 TTL > 0
+        verify(tokenStore).blacklist(eq("jti-access"), eq(1800L));
+    }
+
+    /**
+     * 登出同时传入 refreshToken 时，该 refreshToken 的 jti 也必须拉黑 —— 否则
+     * 「refreshToken 7 天内仍可换发 accessToken」的盲区就关了不严。
+     */
+    @Test
+    @DisplayName("登出：传入 refreshToken → 解析后把它的 jti 也拉黑")
+    void logoutShouldBlacklistRefreshTokenJti() {
+        loginAs(normalUser());
+        TokenPayload refreshPayload = refreshPayload();
+        given(tokenProvider.remainingSeconds(anyLong())).willReturn(1800L);
+        given(tokenProvider.parse("refresh-token-string")).willReturn(refreshPayload);
+
+        authService.logout("refresh-token-string");
+
+        verify(tokenStore).blacklist(eq("jti-access"), eq(1800L));
+        verify(tokenStore).blacklist(eq("jti-refresh"), eq(1800L));
+    }
+
+    /**
+     * 登出时客户端没传 refreshToken（或已过期）必须<b>依然成功</b> —— 不能因为
+     * 一个附属参数有问题就让用户「退不出去」。
+     */
+    @Test
+    @DisplayName("登出：refreshToken 解析失败 → 登出依然成功，仅当前 accessToken 的 jti 被拉黑")
+    void logoutShouldSucceedEvenWhenRefreshTokenUnparseable() {
+        loginAs(normalUser());
+        given(tokenProvider.remainingSeconds(anyLong())).willReturn(1800L);
+        given(tokenProvider.parse("garbage-token"))
+                .willThrow(new BusinessException(ResultCode.UNAUTHORIZED, "刷新令牌无效"));
+
+        // 不能抛异常
+        assertDoesNotThrow(() -> authService.logout("garbage-token"));
+
+        verify(tokenStore).blacklist(eq("jti-access"), eq(1800L));
+        // refreshToken 那一次 blacklist 不会发生（解析失败被吞）
+        verify(tokenStore, times(1)).blacklist(anyString(), anyLong());
     }
 
     /* ================================================================== */

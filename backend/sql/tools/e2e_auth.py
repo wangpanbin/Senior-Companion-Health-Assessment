@@ -311,10 +311,11 @@ def main():
     mysql_value("DELETE FROM `sys_user` WHERE `username` LIKE 'e2e%';")
     mysql_value("DELETE FROM `sys_login_log` WHERE `username` LIKE 'e2e%';")
 
-    # 关键：E1 用 elder001 调了 /auth/logout，而登出会 bumpPasswordVersion，
+    # 关键：本脚本会以种子账号跑「递增密码版本」的用例（改密 / 封禁类；
+    # 注意 F-01 之后**登出不再**递增 —— 它只按 jti 拉黑当前会话），
     # 且 pwd:version:{userId} 这个键「没有 TTL」—— 不复位就会永久留在 Redis 里。
     # 后果是任何「用固定 ver=0 签种子账号令牌」的测试都变成 401（验票失败），
-    # 且现象极具迷惑性（看起来像鉴权坏了）。所以这里把本脚本登录/登出过的
+    # 且现象极具迷惑性（看起来像鉴权坏了）。所以这里把本脚本登录 / 操作过的
     # 全部种子账号复位到「未设置」状态（读取时回落为默认 0，与种子库一致）。
     seed_version_keys = []
     for uname in (ACC_FAMILY, ACC_ELDER, ACC_COMPANION, ACC_ADMIN):
