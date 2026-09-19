@@ -82,11 +82,13 @@ async function openItem(item) {
     markRead(item.id).catch(() => {})
   }
   // 后端历史 linkUrl 可能仍指向已调整的旧路由；先进入统一详情页，避免用户落到 404。
-  router.push({
-    name: 'MessageDetail',
-    params: { id: String(item.id) },
-    state: {
-      message: {
+  // 跳转时把已脱敏的消息体通过 query.snapshot 一并传到详情页。
+  // 用 base64(JSON) 编码避免 router 4 在 query 上做 URL 转义时丢字段；
+  // 即便用户刷新或通过浏览器后退返回，URL 仍带 snapshot，详情页可即时渲染，
+  // 不再依赖 window.history.state（其受扩展/中间件影响，不稳定）。
+  const snapshot = btoa(
+    encodeURIComponent(
+      JSON.stringify({
         id: item.id,
         type: item.type,
         typeLabel: item.typeLabel,
@@ -97,8 +99,13 @@ async function openItem(item) {
         linkUrl: item.linkUrl,
         isRead: true,
         createTime: item.createTime
-      }
-    }
+      })
+    )
+  )
+  router.push({
+    name: 'MessageDetail',
+    params: { id: String(item.id) },
+    query: { snapshot }
   })
 }
 
