@@ -269,9 +269,9 @@ public class AuthServiceImpl implements AuthService {
         tokenStore.blacklist(loginUser.jti(), remain);
 
         if (refreshToken != null && !refreshToken.isBlank()) {
+            TokenPayload payload = null;
             try {
-                TokenPayload payload = tokenProvider.parse(refreshToken);
-                tokenStore.blacklist(payload.jti(), tokenProvider.remainingSeconds(payload.expiresAtMillis()));
+                payload = tokenProvider.parse(refreshToken);
             } catch (Exception e) {
                 // 刷新令牌本来就无效（业务异常 / 过期 / 签名错误 / 任何反序列化 NPE），
                 // 没有拉黑的必要。登出必须成功 ——
@@ -279,6 +279,12 @@ public class AuthServiceImpl implements AuthService {
                 // 用 Exception 而非 BusinessException 是为了覆盖 JJWT 在过期/签名错时可能抛的
                 // 运行时异常（如 NPE、IllegalArgumentException），这些同样不该阻塞登出。
                 log.debug("登出时 refreshToken 无效，已忽略 | userId={} | err={}", loginUser.userId(), e.toString());
+            }
+            // ⚠️ 拉黑这一步必须留在 try 之外：它失败意味着「7 天换发窗口没关上」，
+            // 属于登出**没完成**，不能被上面的解析兜底一并吞掉 ——
+            // 否则日志会记 success，而这张 refreshToken 仍然可用。
+            if (payload != null) {
+                tokenStore.blacklist(payload.jti(), tokenProvider.remainingSeconds(payload.expiresAtMillis()));
             }
         }
 
