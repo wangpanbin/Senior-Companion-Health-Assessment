@@ -7,15 +7,19 @@
 **不证明页面上是真数据**。一个永远显示「暂无数据」的页面同样能判绿。
 所以联调验收必须有两层：
 
-    第 1 层（run_ui_sweep.py）  页面能渲染、无 JS 错、无 ≥400
-    第 2 层（本脚本）          每个页面依赖的接口**确实返回了种子数据**
+    第 1 层（pnpm exec playwright test）  11 个 spec 覆盖页面渲染 / API 200 / 状态机
+    第 2 层（本脚本）                  每个页面依赖的接口**确实返回了种子数据**
 
-本脚本用真令牌直连接口，把关键字段单独拎出来打印 ——
-这样「前端为什么不显示」能立刻定位到「后端没给」还是「前端没取」。
+本脚本用 Playwright 已落的 storageState 拿 accessToken,直连接口,把关键字段
+单独拎出来打印 —— 这样「前端为什么不显示」能立刻定位到「后端没给」还是
+「前端没取」。
 
 用法（PowerShell）：
     $env:PYTHONUTF8=1
     python tools/e2e/probe_api.py
+
+前置：必须先跑过 `pnpm -C frontend exec playwright test --project=setup`
+      让 reports/playwright/.auth/*.json 存在 —— 见 tools/e2e/_probe_http.py
 
 补充：本脚本只打**读接口**（不污染数据）。写接口（通用文件上传）的验证在
 `tools/e2e/probe_backend_gaps.py`，它会上传 1 个真实文件，**跑完须按提示清理**。
@@ -26,10 +30,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from harvest_tokens import http  # noqa: E402  复用同一套请求封装
+from _probe_http import read_token, http  # noqa: E402  共享 storageState + HTTP
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-TOKENS = os.path.join(ROOT, "reports", "e2e", "tokens.json")
 
 
 def dig(obj, path):
@@ -138,20 +141,26 @@ def check(body, assertions):
 
 
 def main():
-    with open(TOKENS, "r", encoding="utf-8") as f:
-        tokens = json.load(f)
-
     total_ok = total_bad = 0
     lines = []
     for username, probes in PROBES:
-        rec = (tokens.get("accounts") or {}).get(username)
-        if not rec:
-            lines.append("[MISS] %s 不在 tokens.json 里" % username)
+        try:
+            tok = read_token(username)
+        except FileNotFoundError as e:
+            lines.append("[MISS] %s —— %s" % (username, e))
             continue
-        tok = rec["accessToken"]
+        except KeyError as e:
+            lines.append("[FAIL] %s —— %s" % (username, e))
+            continue
+        # role 仅用于报告打印,从 helpers/accounts.js 注释里的对应关系读
+        role_for_account = {
+            "admin": "ADMIN", "fam001": "FAMILY", "fam019": "FAMILY",
+            "comp001": "COMPANION", "comp007": "COMPANION", "elder001": "ELDER",
+            "comp025": "COMPANION",
+        }.get(username, "?")
         lines.append("")
         lines.append("=" * 78)
-        lines.append("账号 %s  (role=%s)" % (username, rec.get("role")))
+        lines.append("账号 %s  (role=%s)" % (username, role_for_account))
         lines.append("=" * 78)
         for label, path, asserts in probes:
             status, body = http("GET", path, token=tok)

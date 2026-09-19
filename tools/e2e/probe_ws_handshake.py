@@ -18,15 +18,19 @@
 用法（PowerShell）：
     $env:PYTHONUTF8=1
     python tools/e2e/probe_ws_handshake.py
+
+前置：必须先跑过 `pnpm -C frontend exec playwright test --project=setup`
+      让 reports/playwright/.auth/*.json 存在 —— 见 tools/e2e/_probe_http.py
 """
 
-import json
 import os
 import socket
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _probe_http import read_token  # noqa: E402  共享 storageState 读取
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-TOKENS = os.path.join(ROOT, "reports", "e2e", "tokens.json")
 
 # 被测样本：(账号, 订单 id)。
 # 多准备几组做**归因差分**：如果只有 comp007/1007 挂，那是数据问题；
@@ -83,21 +87,20 @@ def handshake(host, port, path, origin, timeout=8):
 
 
 def main():
-    if not os.path.exists(TOKENS):
-        print(f"缺少 {TOKENS}，先跑 harvest_tokens.py")
-        return 1
-    with open(TOKENS, encoding="utf-8") as f:
-        accounts = json.load(f)["accounts"]
-
     out_lines = []
     bad = 0
     for username, order_id in CASES:
-        rec = accounts.get(username)
-        if not rec:
-            print(f"[FAIL] {username} 不在 tokens.json 里")
+        try:
+            token = read_token(username)
+        except FileNotFoundError as e:
+            print("[FAIL] %s —— %s" % (username, e))
+            print("       请先跑 `pnpm -C frontend exec playwright test --project=setup` 让 storageState 落下来")
             bad += 1
             continue
-        token = rec["accessToken"]
+        except KeyError as e:
+            print("[FAIL] %s —— %s" % (username, e))
+            bad += 1
+            continue
         path = f"/ws/progress?token={token}&orderId={order_id}"
         verdicts = {}
         for label, host, port, origin in TARGETS:

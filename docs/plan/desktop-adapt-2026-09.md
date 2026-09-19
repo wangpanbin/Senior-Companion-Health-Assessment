@@ -321,7 +321,7 @@ const { isMobile } = useDevice()
 ### 9.4 验证证据
 
 工具（均为临时脚本，`.playwright-cli/` 已在 `.gitignore` 中）：
-真实后端 8080 + 前端 dev 5141 + 真实接口签发的四角色令牌（`tools/e2e/harvest_tokens.py`），
+真实后端 8080 + 前端 dev 5141 + Playwright 真实 UI 登录落的 storageState（`reports/playwright/.auth/*.json`），
 浏览器用系统 Edge（本机 `ms-playwright` 无 chromium 二进制，故 `channel: 'msedge'`）。
 
 | 套件 | 覆盖 | 结果 |

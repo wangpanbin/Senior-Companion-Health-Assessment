@@ -593,7 +593,7 @@ $sql = "SHOW COLUMNS FROM medication_task;"
 
 ## 12 · Playwright 联调巡检（`tools/e2e/`）——踩过的坑与两条硬判据
 
-脚本：`harvest_tokens.py`（取真令牌）→ `probe_api.py`（直连接口验真数据）→ `run_ui_sweep.py`（浏览器逐页巡检）。
+脚本：`pnpm exec playwright test`（浏览器逐页巡检，自动 snapshot / restore）→ `probe_api.py`（直连接口验真数据）→ `probe_backend_gaps.py`（写路径真机探针）。
 
 ### 12.1 ⚠️ 最严重的一次**假绿**：换账号不清 localStorage
 
@@ -611,7 +611,7 @@ $sql = "SHOW COLUMNS FROM medication_task;"
 
 **两条防线（缺一不可）**：
 - 每个账号开始前 `localStorage.clear()` + `sessionStorage.clear()`，再由守卫从
-  `/auth/me` 重新取角色（`run_ui_sweep.py` 的 `RESET_JS`）；
+  `/auth/me` 重新取角色（`frontend/e2e/fixtures/auth.setup.js` 的 localStorage.clear()）；
 - **每页断言 `new URL(page.url()).pathname === 目标路由`**，不一致直接判红
   （`rec.pathMismatch`）。少了这条，「重定向」能把整个矩阵变成同一页的复读而没人发现。
 - 跑完再按账号比对截图 MD5，重复即报警（`duplicateShots`）—— 这是自动哨兵，比人眼可靠。
@@ -636,7 +636,7 @@ $sql = "SHOW COLUMNS FROM medication_task;"
   → vite 起不来 → 巡检报「浏览器 session 预热失败」，很容易被误判成前端改坏了。
   **换端口即可**：`pnpm dev -- --host 127.0.0.1 --port 5410`
   （如使用 npm：`npm run dev -- --host 127.0.0.1 --port 5410`）
-  + `$env:NIANGLIN_APP="http://localhost:5410"`（`run_ui_sweep.py` 已支持该环境变量覆盖）。
+  + `$env:NIANGLIN_APP="http://localhost:5410"`（`frontend/playwright.config.js` 直接读该变量）。
 - ⚠️ **换前端端口后，如果只有 WebSocket 红、HTTP 接口全绿，先查 CORS 放行来源**：
   浏览器对 `ws://` 升级**必带 `Origin`**，跨源会被 CORS 拒掉（**403，且落在鉴权拦截器之前，
   连订单归属的 WARN 日志都不会打**）；而页面上的普通 XHR 走 vite 代理是**同源**、压根不带 Origin，
@@ -652,14 +652,14 @@ $sql = "SHOW COLUMNS FROM medication_task;"
   四组合差分（直连带 Origin / 直连同源 Origin / 直连不带 Origin / 走 vite 代理），
   一条命令分清算谁的账 —— 浏览器控制台那句 `WebSocket connection failed` 是**不带状态码**的，
   没有这个探针只能靠猜。
-- 跑巡检前先确认**两个**服务都在：后端 8080（`probe_api.py` 用）+ 前端 dev server（`run_ui_sweep.py` 用）。
+- 跑巡检前先确认**两个**服务都在：后端 8080（`probe_*.py` 用）+ 前端 dev server（由 Playwright `webServer` 自动拉起）。
   只起后端跑巡检，必然预热失败。
 
 ### 12.3 判据分层（别只看一层）
 
 | 层 | 脚本 | 证明什么 |
 |---|---|---|
-| 1 | `run_ui_sweep.py` | 页面能渲染、无 JS 错、无 ≥400、**落地路径正确** |
+| 1 | `pnpm exec playwright test`（11 个 spec） | 页面能渲染、无 JS 错、无 ≥400、**落地路径正确**；`helpers/pageAudit.js` 等价于旧的"页面健康"判定 |
 | 2 | `probe_api.py` | 页面依赖的接口**确实返回了种子数据**（不是「暂无数据」也能判绿） |
 | 3 | `probe_backend_gaps.py` | **写接口**真的能写（通用上传成功 / CHECKIN 被拒 / ELDER 403 / 魔数非法被拒）|
 
@@ -673,8 +673,8 @@ $sql = "SHOW COLUMNS FROM medication_task;"
 ## 13 · 正式 Playwright E2E 套件（`frontend/e2e/`）
 
 > 与 §12 的关系：§12 是**临时**巡检（`playwright-cli` + Python，产物不进库）；
-> §13 是**成体系**的正规套件（`@playwright/test`，随代码进库）。两者并存：日常回归用 §13，
-> 需要快速逐页取证时仍可用 §12 的 `run_ui_sweep.py`。
+> §13 是**成体系**的正规套件（`@playwright/test`，随代码进库）。日常回归用 §13；
+> 需要快速逐页取证时改跑 `pnpm exec playwright test --grep=<route>` + `helpers/pageAudit.js#sweep` 复用断言。
 
 ### 13.1 怎么跑
 
