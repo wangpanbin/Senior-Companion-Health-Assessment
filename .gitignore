@@ -79,9 +79,14 @@ backend/sql/tools/jmeter_fixture_snapshot.json
 # Claude 本地 skills / 工作目录
 .claude/
 # E2E 探测产物（含真实 JWT —— 与 backend/sql/tools/jmeter_token.txt 同级红线）
-reports/
-# Python 探测脚本（harvest_tokens / probe_*）
-tools/e2e/
+# ⚠️ reports/ 必须**保持**忽略：tokens.json / storageState 是真实令牌。
+#    tools/e2e/ 的脚本本身已入库，但它们的**产出**永远落在 reports/ 下，两者不要混为一谈。
+# ⚠️ 必须锚定到仓库根：未锚定的 `reports/` 会连带忽略**任意层级**的 reports 目录 ——
+#    实际踩到：docs/agents/reports/（已有 3 份迭代报告被跟踪）被误伤，新报告 git add 直接被拒。
+/reports/
+# Python 字节码缓存（tools/e2e/ 的脚本已入库，缓存不入库）
+__pycache__/
+*.pyc
 # 临时调试 SQL / 根目录孤儿 package.json（前端真实 package.json 在 frontend/）
 /.tmp_q.sql
 /package.json

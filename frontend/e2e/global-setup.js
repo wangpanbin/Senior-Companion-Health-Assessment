@@ -3,8 +3,7 @@
  *   1) 探活后端 8080 与前端 5141（前端由 playwright.config 的 webServer 拉起）
  *   2) 调 tools/e2e/fixture.py snapshot —— 记录 17 张被写表的 id 水位 + 白名单行影子表
  *
- * ⚠️ 前置：`MYSQL_PASSWORD` + 本机存在 `tools/e2e/`（该目录被根 .gitignore 忽略，
- *    **不随仓库分发**，干净 clone 上必然缺失；缺失时本文件给出可操作的报错而不是 ENOENT）。
+ * ⚠️ 前置：`MYSQL_PASSWORD`（夹具不内置默认口令）+ `tools/e2e/fixture.py`（已随仓库入库）。
  * 用 E2E_FIXTURE=0 可跳过夹具（只读巡检时，不做数据回滚）。
  */
 import { spawnSync } from 'node:child_process'
@@ -39,8 +38,8 @@ function runFixture(sub) {
   if (!existsSync(FIXTURE)) {
     throw new Error(
       `[e2e] 找不到夹具 ${FIXTURE}\n` +
-        '      tools/e2e/ 被根 .gitignore 忽略，不随仓库分发，干净 clone 上必然缺失。\n' +
-        '      → 需要数据回滚（默认行为）：向维护者索取 tools/e2e/ 后重试；\n' +
+        '      tools/e2e/ 已随仓库入库，缺失说明工作区不完整（被 git clean 清掉 / 稀疏检出等）。\n' +
+        '      → 用 git checkout -- tools/e2e/ 补齐后重试；\n' +
         '      → 只跑只读巡检（不做 snapshot / restore / verify）：设 E2E_FIXTURE=0。\n' +
         '      详见 docs/agents/FRONTEND_CONTRACT.md §13.1。'
     )

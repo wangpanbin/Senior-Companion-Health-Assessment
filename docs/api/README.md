@@ -127,7 +127,7 @@
   让参数校验先返业务错误更有指导性，告诉对方「这不是你的接口」之外的额外信息
   （如订单必填项缺什么）。**不构成越权数据泄露** —— 业务错误不返回任何越权才能看到的数据。
 
-**越权矩阵测试侧的要求**（参 `reports/playwright/e2e-report.md §F-05`）：
+**越权矩阵测试侧的要求**（参 `docs/agents/reports/e2e-report.md §F-05`）：
 
 - 断言「角色不匹配 → 403」时，**必须用合法请求体**，否则会拿到参数校验业务错误而非 403。
 - 现有 `security/*MatrixTest` 已遵守：`ExecutionAccessMatrixTest#jpeg()`
