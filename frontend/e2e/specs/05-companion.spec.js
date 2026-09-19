@@ -92,6 +92,7 @@ test.describe('订单大厅与接单契约', () => {
   //   · 打卡坐标超出阈值 → 返回业务错误
   //   · 同一陪诊员对同一订单重复提交同一打卡类型 → 去重，不产生重复记录
   //   · 时间线顺序与 order_checkin.create_time 升序完全一致
+  //   · 家属端在不刷新页面的前提下，3 秒内收到陪诊进度推送
   // 报告出处：reports/playwright/e2e-report.md §6（写动作留待下一轮）
   // ============================================================
   test.describe('M5 打卡写动作', () => {
@@ -131,5 +132,67 @@ test.describe('订单大厅与接单契约', () => {
         await dispose()
       }
     })
+  })
+})
+
+// ============================================================
+// M5 推送验证：plan §M5「3 秒内收到陪诊进度推送」
+//
+// ⚠️ 种子里的 ACCEPTED 订单 1007 family_id=107 而非 fam001（user_id=101）；
+// fam107 在 ACCOUNTS 里没列，且 fam001 名下 ACTIVE 订单只有 PENDING。
+// 这里走 API 自建场景：fam001 下单 → comp007 接单 → 打卡 → 验证推送。
+// ============================================================
+test.describe('M5 推送验证（fam001 下单 + comp007 接单 + 打卡 → 推送落库）', () => {
+  test.use({ storageState: authFile('fam001') })
+
+  test('打卡成功后 fam001 收到 ORDER_PROGRESS 站内信（推送落库）', async () => {
+    const { ctx: famCtx, dispose: famDispose } = await apiAsAccount('fam001')
+    const { ctx: compCtx, dispose: compDispose } = await apiAsAccount('comp007')
+    try {
+      // 1. fam001 下单（用 elder_id=401 张德海，hospital/department/address 与订单 1007 同模板便于比较）
+      const t0 = Date.now()
+      const create = await (
+        await famCtx.post(`${API}/order`, {
+          data: {
+            elderId: 401,
+            hospital: '海南省人民医院',
+            department: '心血管内科',
+            visitTime: '2099-09-20 09:30:00', // 未来时，避免被自动取消
+            address: '海南省海口市琼山区',
+            longitude: '110.311422',
+            latitude: '20.021674',
+            remark: 'e2e M5 推送验证'
+          }
+        })
+      ).json()
+      expect(create.code, '下单应成功').toBe(200)
+      // ⚠️ OrderCreateResultVO 字段是 orderId 不是 id（看 OrderController.java:111 + VO 定义）
+      const orderId = create.data.orderId
+      expect(orderId, 'create.data.orderId 应有值').toBeTruthy()
+
+      // 2. comp007 接单（无请求体）
+      const accept = await (await compCtx.post(`${API}/order/${orderId}/accept`)).json()
+      expect(accept.code, '接单应成功').toBe(200)
+
+      // 3. comp007 提交 ARRIVE 打卡（订单新，无 DEPART 也不会被去重）
+      const checkin = await (
+        await compCtx.post(`${API}/execution/${orderId}/checkin`, {
+          data: { node: 'DEPART', longitude: '110.311422', latitude: '20.021674' }
+        })
+      ).json()
+      expect(checkin.code, 'DEPART 打卡应业务码 200').toBe(200)
+
+      // 4. ≤3s 内 fam001 应有 ORDER_PROGRESS（bizId=orderId）消息
+      await new Promise((r) => setTimeout(r, 1500))
+      const after = await (await famCtx.get(`${API}/message?page=1&size=50`)).json()
+      const newMsg = (after.data?.records || []).find(
+        (m) => m.type === 'ORDER_PROGRESS' && m.bizId === orderId
+      )
+      expect(newMsg, 'fam001 应收到针对该订单的 ORDER_PROGRESS 推送').toBeTruthy()
+      expect(Date.now() - t0, '落库总耗时应 < 3000ms').toBeLessThan(3000)
+    } finally {
+      await famDispose()
+      await compDispose()
+    }
   })
 })
