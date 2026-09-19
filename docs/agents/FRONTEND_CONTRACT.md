@@ -702,6 +702,9 @@ pnpm exec playwright show-report ../reports/playwright/html
 >
 > ⚠️ 入库的是**脚本**，不是**产出**：`tokens.json` / `storageState` / 截图仍全部落在 `reports/` 下，
 > 那是真实 JWT —— `reports/` 必须**继续**保持被忽略，不要顺手把它也放进入库清单。
+>
+> 📄 首轮跑测报告（§4 的 F-01…F-06 与 §5 的源头）已入库为
+> `docs/agents/reports/e2e-report.md`，与 `iteration-test-report-*.md` 同级。
 
 ### 13.2 结构
 

@@ -273,7 +273,7 @@
   {@link org.company.nianglin.security.TokenStore#bumpPasswordVersion(Long)}，
   那才是「我就是要让这个人的全部会话立刻退出」的强动作——登出<b>不</b>走这条路径。
 
-> 设计取舍参考：`reports/playwright/e2e-report.md §F-01`。
+> 设计取舍参考：`docs/agents/reports/e2e-report.md §F-01`（入库快照；原文件生成于 `reports/playwright/`，该目录被 .gitignore 忽略）。
 > 早期实现这里也调 `bumpPasswordVersion`，会出现「同一账号连登两次得 T1/T2，
 > 用 T1 登出后 T2 也返 401」的歧义行为，在 e2e 套件里甚至引发令牌互相污染。
 
