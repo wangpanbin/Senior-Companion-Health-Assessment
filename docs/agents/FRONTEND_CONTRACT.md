@@ -667,3 +667,43 @@ $sql = "SHOW COLUMNS FROM medication_task;"
 `getUnreadCount` 读 `unreadCount`（真值 `total`）就是第 1 层漏、只有回库/直连才发现的例子。
 第 3 层是**唯一会改数据的**，跑完必须按脚本提示清理 `sys_file` 行与磁盘文件
 （详见 `docs/agents/FIXTURE_ROLLBACK_PLAN.md`）。
+
+---
+
+## 13 · 正式 Playwright E2E 套件（`frontend/e2e/`）
+
+> 与 §12 的关系：§12 是**临时**巡检（`playwright-cli` + Python，产物不进库）；
+> §13 是**成体系**的正规套件（`@playwright/test`，随代码进库）。两者并存：日常回归用 §13，
+> 需要快速逐页取证时仍可用 §12 的 `run_ui_sweep.py`。
+
+### 13.1 怎么跑
+
+```powershell
+.\tools\e2e\start-services.ps1     # 确保 MySQL/Redis 在跑 + 起后端 8080
+cd frontend
+pnpm exec playwright test          # Playwright 自起前端 5141；自动 snapshot → 跑 → restore → verify
+pnpm exec playwright show-report ../reports/playwright/html
+```
+
+前置：`MYSQL_PASSWORD`；`redis-cli`（默认 `D:\develop\Redis-8.8.0\redis-cli.exe`，可用 `REDIS_CLI` 覆盖）。
+用**本机 Chrome**（`channel: 'chrome'`），不下载 Chromium；可用 `CHROME_PATH` 覆盖。
+只读巡检跳过数据回滚：`$env:E2E_FIXTURE="0"`。
+
+### 13.2 结构
+
+- `e2e/fixtures/`：`auth.setup.js`（7 账号真实 UI 登录 → `storageState`）、`login.js`、`captcha.js`（Redis 取验证码明文）。
+- `e2e/helpers/`：`constants.js`（路由 / 种子 id / 阈值）、`api.js`（接口层直连）、`pageAudit.js`（**落地路径**断言 + console/接口收集）。
+- `e2e/specs/`：`01`…`11` 按模块分文件。
+- `tools/e2e/fixture.py`：`snapshot / restore / verify` 三子命令（17 张被写表水位 + 6 张表白名单影子表 + Redis `order:seq`/`pwd:version` + 上传文件）。
+- 产物全落 `reports/playwright/`（`/reports/` 已 gitignore —— `storageState` 含真实 JWT，**严禁入库**）。
+
+### 13.3 两条硬规则（违反会得到「假绿」或「假红」）
+
+1. **每个页面巡检必须断言「落地路径 === 目标路由」**（§12.1 事故的正式防线）。
+2. **登出用例必须用「专用账号 + 空登录态」**，不能挂在共享 `storageState` 上 ——
+   后端登出是**按用户**生效的（登出会自增 Redis `pwd:version:<userId>`，作废该账号全部令牌），
+   拿共享账号做登出会让后续所有复用其登录态的 spec 全线 401。当前专用账号：`comp025`。
+
+> 另：接口的「角色校验（`@PreAuthorize`）」发生在**参数校验之后**，
+> 越权角色 + 非法请求体先拿到参数校验业务错，不是 403；要验证 403 必须传**合法请求体**
+> （`/api/admin/**` 是例外，它在过滤链上，非法体也是 403）。
