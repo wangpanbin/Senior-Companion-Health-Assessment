@@ -132,6 +132,23 @@ test.describe('订单大厅与接单契约', () => {
         await dispose()
       }
     })
+
+    test('打卡记录列表按时间升序（create_time 单调不减）', async () => {
+      const { ctx, dispose } = await apiAsAccount('comp007')
+      try {
+        const body = await (await ctx.get(`${API}/execution/${SEED.orderAccepted}/checkins`)).json()
+        expect(body.code, '列表接口应可用').toBe(200)
+        const rows = body.data || []
+        // 不变量：相邻行的 checkinTime 必须单调不减（升序），这是 plan §M5 §验收「时间线顺序与 order_checkin.create_time 升序完全一致」
+        for (let i = 1; i < rows.length; i++) {
+          const prev = new Date(rows[i - 1].checkinTime).getTime()
+          const cur = new Date(rows[i].checkinTime).getTime()
+          expect(cur >= prev, `第 ${i} 行应不早于第 ${i - 1} 行（prev=${rows[i - 1].checkinTime}, cur=${rows[i].checkinTime})`).toBeTruthy()
+        }
+      } finally {
+        await dispose()
+      }
+    })
   })
 })
 
