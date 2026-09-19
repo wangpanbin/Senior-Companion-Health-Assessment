@@ -21,6 +21,9 @@
 用法（PowerShell）：
     $env:PYTHONUTF8=1; $env:PYTHONIOENCODING="utf-8"
     python tools/e2e/probe_backend_gaps.py
+
+前置：必须先跑过 `pnpm -C frontend exec playwright test --project=setup`
+      让 reports/playwright/.auth/*.json 存在 —— 见 tools/e2e/_probe_http.py
 """
 
 import json
@@ -31,7 +34,7 @@ import urllib.request
 import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from harvest_tokens import BASE, http, login  # noqa: E402
+from _probe_http import read_token, http  # noqa: E402  共享 storageState + HTTP
 
 # 隐私红线：列表 VO 里一旦出现这些字段就是回归
 FORBIDDEN_IN_LIST = ["familyId", "elderId", "companionId", "address", "remark", "version"]
@@ -85,16 +88,17 @@ def post_multipart(path, token, fields, files):
 
 
 def main():
-    print(f"BASE = {BASE}\n")
+    print("前置: 三个账号的 storageState 已落 (见 _probe_http.py 错误信息的解决路径)\n")
 
-    # ---------- 取三个账号的真令牌 ----------
+    # ---------- 从 Playwright storageState 取三个账号的真令牌 ----------
+    # 注意: role 仅用于报告打印(原本 login() 需要 userId 做密码哈希,现在 read_token 只需要 username)
     tokens = {}
-    for username, role, uid in [("elder001", "ELDER", 201), ("fam001", "FAMILY", 101), ("comp001", "COMPANION", 301)]:
-        rec, err = login(username, role, uid)
-        if err:
-            check(f"登录 {username}", False, err)
+    for username, role in [("elder001", "ELDER"), ("fam001", "FAMILY"), ("comp001", "COMPANION")]:
+        try:
+            tokens[role] = read_token(username)
+        except (FileNotFoundError, KeyError) as e:
+            check(f"读 storageState {username}", False, str(e))
             return 1
-        tokens[role] = rec["accessToken"]
 
     # ---------- 缺口 1：elderId 下发 ----------
     st, body = http("GET", "/auth/me", token=tokens["ELDER"])

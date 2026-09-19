@@ -1,6 +1,6 @@
 # 写路径 E2E 夹具与回滚策略
 
-> 适用场景：前端 UI 全量巡检（`tools/e2e/run_ui_sweep.py`）在**真实写接口**上跑完之后，
+> 适用场景：`pnpm exec playwright test` 写路径用例（`frontend/e2e/` 的 fixture 在**真实写接口**上跑完之后，
 > 如何把数据库与 Redis 恢复到「跑之前一模一样」的干净状态。
 >
 > 现状证据：`internal_message` 已被污染到 **3180 行**（种子 72 行），
@@ -224,7 +224,7 @@ ALTER TABLE order_status_log AUTO_INCREMENT = :wm_order_status_log + 1;
 | 0 | **重建干净基线**：把 `internal_message` 削回 72 行（`DELETE FROM internal_message WHERE id > 40072`），或直接按 Flyway V1–V3 重新初始化库 | 删数据操作，**执行前需确认** |
 | 1 | 写 `tools/e2e/fixture.py`（snapshot / restore / verify 三子命令） | 低 |
 | 2 | 把 `jmeter_fixture.py` 的 `medication_task 20002` 逻辑合并进来，避免两套夹具 | 低 |
-| 3 | 在 `run_ui_sweep.py` 最前面接 `snapshot`、最后面接 `restore` + `verify`，并把 `verify` 结果写进巡检报告 | 低 |
+| 3 | 在 Playwright `frontend/e2e/global-setup.js` 调 `fixture.py snapshot`、`frontend/e2e/global-teardown.js` 调 `restore` + `verify`（已实现），并把 `verify` 结果写进巡检报告 | 低 |
 | 4 | 在 `FRONTEND_CONTRACT.md` 增补一节「写路径 E2E 必须先 snapshot」，把「先清 localStorage」同级的硬规则补上 | 低 |
 
 ---

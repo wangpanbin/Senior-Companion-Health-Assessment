@@ -2,7 +2,7 @@
  * E2E 账号与路由常量
  *
  * 账号与口令出处：docs/agents/FRONTEND_CONTRACT.md §10.7 / §10.8
- * 页面 → 账号矩阵出处：tools/e2e/run_ui_sweep.py 的 MATRIX
+ * 页面 → 账号矩阵出处：frontend/e2e/specs/*.spec.js 与 helpers/seedOrder.js（见 §10.7）
  *
  * 登录必须带图形验证码；验证码明文存 Redis `captcha:<key>`（dev 特性），
  * 由 fixtures/auth.setup.js 自动旁路，无需人工识别。

@@ -8,6 +8,7 @@ import { authFile } from '../helpers/paths'
 import { ROUTES, SEED, CHECKIN_NODES } from '../helpers/constants'
 import { sweep } from '../helpers/pageAudit'
 import { apiAsAccount, API } from '../helpers/api'
+import { seedAcceptedOrder, PUSH_DEADLINE_MS, PUSH_SETTLE_MS } from '../helpers/seedOrder'
 
 test.describe('陪诊员端页面（comp007，移动形态）', () => {
   test.use({ storageState: authFile('comp007'), viewport: { width: 390, height: 844 } })
@@ -84,6 +85,109 @@ test.describe('订单大厅与接单契约', () => {
       expect(body.code).toBe(200)
     } finally {
       await dispose()
+    }
+  })
+
+  // ============================================================
+  // M5 验收：plan.md §M5 §验收
+  //   · 打卡坐标超出阈值 → 返回业务错误
+  //   · 同一陪诊员对同一订单重复提交同一打卡类型 → 去重，不产生重复记录
+  //   · 时间线顺序与 order_checkin.create_time 升序完全一致
+  //   · 家属端在不刷新页面的前提下，3 秒内收到陪诊进度推送
+  // 报告出处：reports/playwright/e2e-report.md §6（写动作留待下一轮）
+  // ============================================================
+  test.describe('M5 打卡写动作', () => {
+    test('距离订单地址 > 2000m 应返回业务码 4001（CHECKIN_DISTANCE_EXCEEDED）', async () => {
+      const { ctx, dispose } = await apiAsAccount('comp007')
+      try {
+        // 订单 1007 地址在海南 (lat=20.021674, lng=110.311422, FRONTEND_CONTRACT §10.8)；
+        // 北京 (39.9, 116.4) 距其约 2200 km，必然 > 2000m 阈值（nianglin.order.checkin-max-distance-meters）。
+        // ⚠️ DTO 字段是 longitude/latitude（字符串），不是 lat/lng；北京经纬度按 6 位小数截断避免精度尾巴。
+        const body = await (
+          await ctx.post(`${API}/execution/${SEED.orderAccepted}/checkin`, {
+            data: { node: 'ARRIVE', longitude: '116.400000', latitude: '39.900000' }
+          })
+        ).json()
+        expect(body.code, '超距应返回 4001').toBe(4001)
+      } finally {
+        await dispose()
+      }
+    })
+
+    test('同节点重复打卡应返回 4002（CHECKIN_DUPLICATED），且不新增行', async () => {
+      const { ctx, dispose } = await apiAsAccount('comp007')
+      try {
+        // 订单 1007 在种子中已打过 DEPART（ACCEPTED 状态陪诊员常已完成首节点）。
+        // 不变量：连续两次同节点都应被去重拦截（4002），且 order_checkin 行数在两次提交后不变。
+        const before = (await (await ctx.get(`${API}/execution/${SEED.orderAccepted}/checkins`)).json()).data
+        const beforeCount = (before || []).filter((c) => c.node === 'DEPART').length
+        const body1 = { node: 'DEPART', longitude: '110.311422', latitude: '20.021674' }
+        const resp1 = await (await ctx.post(`${API}/execution/${SEED.orderAccepted}/checkin`, { data: body1 })).json()
+        expect(resp1.code, '同节点提交应被去重拦截（4002）').toBe(4002)
+        const resp2 = await (await ctx.post(`${API}/execution/${SEED.orderAccepted}/checkin`, { data: body1 })).json()
+        expect(resp2.code, '再次同节点提交应仍返回 4002（幂等拒绝）').toBe(4002)
+        const after = (await (await ctx.get(`${API}/execution/${SEED.orderAccepted}/checkins`)).json()).data
+        const afterCount = (after || []).filter((c) => c.node === 'DEPART').length
+        expect(afterCount, 'DEPART 节点行数应不变（去重未落库）').toBe(beforeCount)
+      } finally {
+        await dispose()
+      }
+    })
+
+    test('打卡记录列表按时间升序（create_time 单调不减）', async () => {
+      const { ctx, dispose } = await apiAsAccount('comp007')
+      try {
+        const body = await (await ctx.get(`${API}/execution/${SEED.orderAccepted}/checkins`)).json()
+        expect(body.code, '列表接口应可用').toBe(200)
+        const rows = body.data || []
+        // 不变量：相邻行的 checkinTime 必须单调不减（升序），这是 plan §M5 §验收「时间线顺序与 order_checkin.create_time 升序完全一致」
+        for (let i = 1; i < rows.length; i++) {
+          const prev = new Date(rows[i - 1].checkinTime).getTime()
+          const cur = new Date(rows[i].checkinTime).getTime()
+          expect(cur >= prev, `第 ${i} 行应不早于第 ${i - 1} 行（prev=${rows[i - 1].checkinTime}, cur=${rows[i].checkinTime})`).toBeTruthy()
+        }
+      } finally {
+        await dispose()
+      }
+    })
+  })
+})
+
+// ============================================================
+// M5 推送验证：plan §M5「3 秒内收到陪诊进度推送」
+//
+// ⚠️ 种子里的 ACCEPTED 订单 1007 family_id=107 而非 fam001（user_id=101）；
+// fam107 在 ACCOUNTS 里没列，且 fam001 名下 ACTIVE 订单只有 PENDING。
+// 这里走 API 自建场景：fam001 下单 → comp007 接单 → 打卡 → 验证推送。
+// ============================================================
+test.describe('M5 推送验证（fam001 下单 + comp007 接单 + 打卡 → 推送落库）', () => {
+  test.use({ storageState: authFile('fam001') })
+
+  test('打卡成功后 fam001 收到 ORDER_PROGRESS 站内信（推送落库）', async () => {
+    const { ctx: famCtx, dispose: famDispose } = await apiAsAccount('fam001')
+    const { ctx: compCtx, dispose: compDispose } = await apiAsAccount('comp007')
+    try {
+      // 1. 自建 ACTIVE 订单（seed 里的订单 1007 family=107 不是 fam001）
+      const t0 = Date.now()
+      const { orderId } = await seedAcceptedOrder({ famCtx, compCtx, remark: 'e2e M5 推送验证' })
+      // 2. comp007 提交 DEPART 打卡（订单新，无任何节点）
+      const checkin = await (
+        await compCtx.post(`${API}/execution/${orderId}/checkin`, {
+          data: { node: 'DEPART', longitude: '110.311422', latitude: '20.021674' }
+        })
+      ).json()
+      expect(checkin.code, 'DEPART 打卡应业务码 200').toBe(200)
+      // 3. ≤3s 内 fam001 应有 ORDER_PROGRESS（bizId=orderId）消息
+      await new Promise((r) => setTimeout(r, PUSH_SETTLE_MS))
+      const after = await (await famCtx.get(`${API}/message?page=1&size=50`)).json()
+      const newMsg = (after.data?.records || []).find(
+        (m) => m.type === 'ORDER_PROGRESS' && m.bizId === orderId
+      )
+      expect(newMsg, 'fam001 应收到针对该订单的 ORDER_PROGRESS 推送').toBeTruthy()
+      expect(Date.now() - t0, '落库总耗时应 < PUSH_DEADLINE_MS').toBeLessThan(PUSH_DEADLINE_MS)
+    } finally {
+      await famDispose()
+      await compDispose()
     }
   })
 })
