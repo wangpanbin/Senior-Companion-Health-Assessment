@@ -688,6 +688,10 @@ pnpm exec playwright show-report ../reports/playwright/html
 前置：`MYSQL_PASSWORD`（**脚本不内置默认口令**）；`redis-cli`（`REDIS_CLI` 可覆盖，
 未设置时先找本机默认路径 `D:\develop\Redis-8.8.0\redis-cli.exe`、不存在则回落 `PATH`）。
 用**本机 Chrome**（`channel: 'chrome'`），不下载 Chromium；可用 `CHROME_PATH` 覆盖。
+**不需要 ffmpeg**：`playwright.config.js` 里 `video: 'off'`（刻意关闭，理由见该文件注释）——
+Playwright 只要配置了 video（哪怕只是 `'retain-on-failure'`），就会在 `newContext` 阶段要求
+ms-playwright 缓存里的 ffmpeg 二进制，缺失时**所有用例在 `newPage` 直接失败**；
+失败取证改用 `trace: 'on-first-retry'` + `screenshot: 'only-on-failure'`，两者都不需要 ffmpeg。
 只读巡检跳过数据回滚：`$env:E2E_FIXTURE="0"`。
 
 > ✅ **`tools/e2e/` 的 11 个脚本已随仓库分发**（此前被 `.gitignore` 整体忽略，现已入库）。

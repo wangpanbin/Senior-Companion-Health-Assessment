@@ -52,7 +52,14 @@ export default defineConfig({
     ...browserUse,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    // ⚠️ video **刻意关闭**（不是漏配）：Playwright 只要配置了 video（哪怕只是
+    //    'retain-on-failure'），就会在 newContext 阶段要求 ms-playwright 缓存里的
+    //    ffmpeg 二进制存在；缺失时**所有用例在 newPage 直接失败**，报错还是
+    //    「Video rendering requires ffmpeg binary」—— 与用例内容毫无关系，极具迷惑性。
+    //    失败取证改用 trace（on-first-retry）+ screenshot（only-on-failure），两者都不需要 ffmpeg。
+    //    确需录像时：先 `pnpm exec playwright install ffmpeg`，再把这里改回
+    //    'retain-on-failure'，并同步 FRONTEND_CONTRACT §13.1 的前置说明。
+    video: 'off',
     actionTimeout: 10_000,
     navigationTimeout: 15_000,
     locale: 'zh-CN',
