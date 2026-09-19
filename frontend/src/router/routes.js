@@ -301,7 +301,9 @@ export const routes = [
         path: 'message/:id',
         name: 'MessageDetail',
         component: () => import('@/views/companion/message-detail.vue'),
-        meta: { title: '消息详情', module: 'M8', code: 'M-25' }
+        // 站内信详情只对业务角色开放；管理员通过 AdminLayout 的「投诉管理 / 订单管理」处理,
+        // 不在此处暴露。AGENTS.md 2.8：鉴权不能只靠前端，必须在路由 meta 上声明。
+        meta: { title: '消息详情', roles: ['ELDER', 'FAMILY', 'COMPANION'], module: 'M8', code: 'M-25' }
       },
 
       // ---------- 我的（4 角色共用） ----------
@@ -317,19 +319,23 @@ export const routes = [
         meta: { title: '我的', icon: 'User', module: 'M2', mobileOnly: true, code: 'M-22' }
       },
       // ---------- 静态说明页（由“我的”页进入） ----------
+      // 服务协议 / 隐私政策面向业务角色，与 AGENTS.md 0.1 红线一致：
+      //   0.1.1 不做诊断、不开药方  → privacy 页面已加免责声明
+      //   0.1.3 一期不做在线支付 → service 页面明确"线上记账 + 线下结算"
+      // 管理员不通过此路径查看，后台有自己的合规页脚。
       {
         path: 'legal/service',
         name: 'ServiceAgreement',
         component: () => import('@/views/legal/index.vue'),
         props: { type: 'service' },
-        meta: { title: '服务协议', module: 'M2', mobileOnly: true, code: 'M-23' }
+        meta: { title: '服务协议', roles: ['ELDER', 'FAMILY', 'COMPANION'], module: 'M2', mobileOnly: true, code: 'M-23' }
       },
       {
         path: 'legal/privacy',
         name: 'PrivacyPolicy',
         component: () => import('@/views/legal/index.vue'),
         props: { type: 'privacy' },
-        meta: { title: '隐私政策', module: 'M2', mobileOnly: true, code: 'M-24' }
+        meta: { title: '隐私政策', roles: ['ELDER', 'FAMILY', 'COMPANION'], module: 'M2', mobileOnly: true, code: 'M-24' }
       }
     ]
   },

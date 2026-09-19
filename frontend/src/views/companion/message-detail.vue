@@ -2,9 +2,10 @@
 /**
  * 站内信详情（M8）
  *
- * 消息列表没有单条详情接口，因此优先读取列表页通过 history state 传入的已脱敏消息；
- * 用户刷新或直接访问时，再从本人消息列表中查找该 ID。找不到时只提示消息已删除，
- * 不展示任何其他用户的信息。
+ * 消息列表没有单条详情接口。列表页跳转时通过 query.snapshot（base64 编码 JSON）
+ * 传入已脱敏的消息体；用户刷新或直接访问 URL 时仍能即时渲染。
+ * query.snapshot 缺失或解码失败时，再从本人消息列表中查找该 ID；
+ * 仍然找不到时只提示消息已删除，不展示任何其他用户的信息。
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -30,9 +31,17 @@ function isCurrentMessage(item) {
   return String(item?.id) === String(route.params.id)
 }
 
-function readHistoryMessage() {
-  const cached = window.history.state?.message
-  return isCurrentMessage(cached) ? cached : null
+function readSnapshotMessage() {
+  const raw = route.query.snapshot
+  if (!raw || typeof raw !== 'string') return null
+  try {
+    const json = decodeURIComponent(atob(raw))
+    const parsed = JSON.parse(json)
+    return isCurrentMessage(parsed) ? parsed : null
+  } catch {
+    // snapshot 损坏（被改写、长度超限等）时降级为从列表查
+    return null
+  }
 }
 
 const relatedTarget = computed(() => {
@@ -71,7 +80,7 @@ const relatedTarget = computed(() => {
 })
 
 async function loadMessage() {
-  const cached = readHistoryMessage()
+  const cached = readSnapshotMessage()
   if (cached) {
     message.value = cached
     loading.value = false
@@ -79,7 +88,9 @@ async function loadMessage() {
   }
 
   try {
-    const data = await listMessages({ page: 1, size: 100 })
+    // 详情接口尚未提供（M8 欠账）；先查最近 200 条兜底，超出范围的旧消息
+    // 会落到「消息已不可查看」空态，由后续消息中心单条接口替换。
+    const data = await listMessages({ page: 1, size: 200 })
     message.value = (data?.records || []).find(isCurrentMessage) || null
   } catch {
     message.value = null

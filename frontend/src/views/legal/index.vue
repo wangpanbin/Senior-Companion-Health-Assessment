@@ -4,6 +4,12 @@
  *
  * 两类文档共享同一份移动端阅读布局，由路由 props 区分内容；
  * 页面只展示静态条款，不请求接口，也不展示任何个人敏感信息。
+ *
+ * 合规依据（plan.md / AGENTS.md §0.1）：
+ *   - 0.1.1 不做诊断、不开药方：privacy.sections[0] 明确"不提供医疗诊断、处方开具或用药剂量建议"。
+ *   - 0.1.3 一期不做在线支付：service.sections[2] 明确"一期仅提供线上记账与线下结算"。
+ *   - 0.1.2 隐私最小化：privacy.sections[1][2] 明确"密码不可逆加密 / 页面与日志脱敏 / 不向无关第三方共享"。
+ * 修改本页面前请同步 plan.md "合规与隐私说明" 章节，并通知产品 / 法务同学一起 review。
  */
 import { computed } from 'vue'
 import { NlPhoneShell, NlMobileOnlyPage, NlCard } from '@/components'
