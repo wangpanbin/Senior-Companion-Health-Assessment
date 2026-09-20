@@ -270,7 +270,7 @@
 
 | 项目 | 约定 |
 |---|---|
-| 协议 | WebSocket（生产环境由 Nginx 升级转发，需 `Upgrade` / `Connection` 头） |
+| 协议 | WebSocket（反向代理层需透传 `Upgrade` / `Connection` 头） |
 | 鉴权 | query 参数 `token`（连接时校验 JWT 与订单归属，失败直接关闭连接） |
 | 心跳 | 客户端每 30 秒发一次 `ping`，服务端回 `pong`；超时 60 秒断开 |
 | 重连 | 前端指数退避重连（1s / 2s / 4s / 8s，上限 30s） |

@@ -92,7 +92,7 @@ POST /{orderId}/checkin
   + **订单归属**（`OrderService.requireInvolved`）。只验令牌不够 —— 否则任何登录用户都能订阅别人的陪诊进度。
 - 鉴权失败：401（令牌无效，前端走刷新）/ 403（非相关方，别白试），握手阶段直接拒，连接不建立。
 - 身份存 `WebSocketSession.attributes`（握手在 A 线程、帧处理在 B 线程，`SecurityContextHolder` 早被清空）。
-- 连接日志只记 `userId`/`role`/`orderId`，**不记 token**；部署时 Nginx 需过滤 `access_log` 中的 `token=`。
+- 连接日志只记 `userId`/`role`/`orderId`，**不记 token**；反向代理 / 网关层需过滤 `token=` 参数，避免 token 进入访问日志。
 
 ---
 

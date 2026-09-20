@@ -17,7 +17,7 @@
 | `plan.md` | 工程拆分 + 验收标准 | 14 模块全覆盖 |
 | `docs/api/`(9 份) | 接口契约 | 全模块 |
 | `docs/agents/designs/Mx-xxx.md`(7 份) | 关键模块设计评审 | M4/M5/M6/M7/M8/M9/M10 |
-| `docs/adr/0001-0004` | 架构决策 | 4 个决策点 |
+| `docs/adr/0001-0003` | 架构决策 | 3 个决策点 |
 | `docs/db/` | ER 图 / 数据字典 / EXPLAIN / 种子说明 | M1 |
 | **缺**:**PRD** | **产品视角**(愿景/用户/旅程/价值/NFR/风险) | — |
 
@@ -43,7 +43,7 @@ docs/prd/PRD.md            ← 产品视角(本文档上篇 / 中篇)
 plan.md                    ← 工程视角(具体职责 / 验收 / 范围调整)
 docs/api/0X-xxx.md         ← 接口契约
 docs/agents/designs/Mx.md  ← 关键模块设计评审
-docs/adr/0001-0004         ← 架构决策
+docs/adr/0001-0003         ← 架构决策
 docs/db/                   ← 数据视角
 ```
 
@@ -101,4 +101,3 @@ docs/db/                   ← 数据视角
 ## 相关 ADR
 
 - `0006-prd-version-locking.md`(PRD 版本锁节奏,与本 ADR 协同定义 PRD 维护流程)
-- `0004-m13-docker-fallback.md`(无直接关联,但同属"文档体系"类决策)

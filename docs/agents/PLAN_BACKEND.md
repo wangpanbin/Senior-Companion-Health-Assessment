@@ -1,30 +1,10 @@
-# 后端开发计划 v1.0（W17 答辩前 · M4–M13）
+# 后端开发计划 v1.0（W17 终交付前 · M4–M10）
 
 > 生成时间：2026-09-15
-> 范围：M4 收尾 → M13 部署（M0–M3 已交付，见 git log `6bc37c5 / 0199770 / d17056a / f464fcd / f3b1416`）
+> 范围：M4 收尾（M0–M3 已交付，见 git log `6bc37c5 / 0199770 / d17056a / f464fcd / f3b1416`）
 > 计划归宿：本文件 `docs/agents/PLAN_BACKEND.md`（单一真源）
 > 上游约束：`AGENTS.md`（规范红线）、`plan.md`（模块验收标准）、`docs/api/README.md`（接口约定）
-> 配套 ADR：`docs/adr/0001-m5-websocket-auth.md` / `0002-m6-redis-lock.md` / `0003-m10-stats-cache.md` / `0004-m13-docker-fallback.md`
-
----
-
-## 0 · ⚠️ 范围调整（2026-09-16 更新）
-
-**M13「部署与交付物」现阶段不纳入交付范围。** 这不是延期，是本阶段主动裁剪。
-
-| 项 | 结论 | 理由 |
-|---|---|---|
-| Dockerfile / docker-compose / deploy.sh | **不做** | 课程验收在本机演示，容器化不产生验收价值 |
-| 部署文档（环境要求 / 启动 / FAQ） | **不做** | 无部署动作，文档没有使用对象 |
-| 用户手册（4 角色 × 5 截图） | **不做** | 依赖前端界面，而一期不推进前端 |
-| 演示视频（3 段） | **不做** | 非本阶段目标 |
-| 答辩 PPT（3 份） | **不做** | 时间点未到（W17 才用），现在做会随代码变动反复返工 |
-
-**替代兜底**：答辩若要现场演示，用本机 `mvn spring-boot:run` + Knife4j 接口文档（`/doc.html`）
-直接展示全部 REST 端点与在线调试，不依赖容器与前端页面。ADR-0004 相应标记为 `DEFERRED`。
-
-**本阶段聚焦**：M0–M10 后端功能完整性 + M12 测试横切（JaCoCo 门禁 / Service 单测 / 越权矩阵）。
-下表 §7 排期与 §8 WBS 中 M13 相关条目**保持原样仅作历史记录**，不再作为交付承诺。
+> 配套 ADR：`docs/adr/0001-m5-websocket-auth.md` / `0002-m6-redis-lock.md` / `0003-m10-stats-cache.md`
 
 ---
 
@@ -32,7 +12,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 时间窗口 | 2026-09-15（今天） → 2027-01-19（W17 答辩） |
+| 时间窗口 | 2026-09-15（今天） → 2027-01-19（W17 终交付） |
 | 当前状态 | M0/M1/M2/M3 已交付 + 单测全绿（144/144）+ e2e_user_profile 86 项断言通过 |
 | M4 状态 | 代码写完未提交（工作区 untracked：OrderController/Service/DTOs/VOs/ComplianceCheckUtil/PaymentStatus 等） |
 | 工作分支 | `feature/M2-auth`（分支名待重命名为 `feature/M4-order`） |
@@ -52,7 +32,7 @@ M4(收尾) → M5 → M7 → M9
 
 ### 旁路径（D DB + 项目管理）
 ```
-M8 → M6 → M10(预写骨架) → M13
+M8 → M6 → M10(预写骨架)
                 ↓ M9 完成后
         M10 补管理后台维度
 ```
@@ -126,7 +106,6 @@ M8 → M6 → M10(预写骨架) → M13
 | `0001-m5-websocket-auth.md` | M5 | WebSocket 握手鉴权方案选型 | **待填**（M5 开工时细化） |
 | `0002-m6-redis-lock.md` | M6 | Redis 分布式锁选型（手写 SET NX + Lua vs Redisson） | **待填**（M6 开工时细化） |
 | `0003-m10-stats-cache.md` | M10 | 统计接口缓存策略（不缓存 / 短 TTL / 物化视图） | **待填**（M10 开工时细化） |
-| `0004-m13-docker-fallback.md` | M13 | Docker 安装受阻时的兜底部署方案 | **待填**（M13 开工时细化） |
 
 ADR 仅写"不可逆 + 跨模块 + 真实权衡"的决策，结构遵循 `mattpocock-skills` 的 ADR-FORMAT。
 
@@ -145,10 +124,10 @@ ADR 仅写"不可逆 + 跨模块 + 真实权衡"的决策，结构遵循 `mattpo
 | **W8–W9** | 11/3 – 11/16 | **M7 实现**（OrderReview + Complaint + 敏感词过滤 + 平均分聚合） | **M6 设计评审 + 实现**（MedicineDict + MedicationPlan + Spring Task + Redis 锁） | — | — |
 | **W10–W11** | 11/17 – 11/30 | **M7 收口 + e2e_review.py** + **M9 设计评审 + 实现起步**（审核列表 + 封禁/解封 + admin_oper_log） | **M6 续**（每日 07:00 生成 medication_task + 30min 漏服扫描 + 家属推送） | JaCoCo 覆盖率门禁上线 | — |
 | **W12** | 12/1 – 12/7 | **M9 实现**（订单管理 + 纠纷处理强制终态） | **M10 设计评审 + 骨架**（统计 SQL + ECharts 模板 + EasyExcel 导出骨架） | — | **W12 竞讲交付**（评价 + 用药 + 通知闭环） |
-| **W13** | 12/8 – 12/14 | **M9 收口 + e2e_admin.py** | **M10 骨架续** + **M13 设计评审 + Docker 安装尝试** | — | **W13 竞讲交付**（管理后台 + 数据看板） |
-| **W14–W15** | 12/15 – 12/28 | M9 与 M10 数据维度对接 + 横切测试加固 | **M10 数据维度收口**（审核 / 封禁 / 纠纷）+ **M13 实现**（Dockerfile / docker-compose / deploy.sh） | 跨模块 e2e 全绿 | — |
-| **W16** | 12/29 – 1/4 | 全链路演练 + JMeter 压测报告 v2 | **M13 收口**（部署文档 + 用户手册 5 张截图 + 演示视频） | 测试报告归档 | **W16 完整系统交付** |
-| **W17** | 1/5 – 1/19 | 答辩 PPT + 答辩准备 | 答辩 PPT + 演示视频剪辑 | 遗留 Bug 清单 P0/P1 清零 | **W17 最终答辩** |
+| **W13** | 12/8 – 12/14 | **M9 收口 + e2e_admin.py** | **M10 骨架续** | — | **W13 竞讲交付**（管理后台 + 数据看板） |
+| **W14–W15** | 12/15 – 12/28 | M9 与 M10 数据维度对接 + 横切测试加固 | **M10 数据维度收口**（审核 / 封禁 / 纠纷） | 跨模块 e2e 全绿 | — |
+| **W16** | 12/29 – 1/4 | JMeter 压测报告 v2 | — | 测试报告归档 | **W16 完整系统交付** |
+| **W17** | 1/5 – 1/19 | 代码整理与收尾 | — | 遗留 Bug 清单 P0/P1 清零 | **W17 最终交付** |
 
 > 注：以上日期为计划估算，受 W7/W12/W13/W16 四个竞讲节点倒推；如遇压测阻塞或需求变更，由 daily sync 决定调整。
 
@@ -236,20 +215,6 @@ ADR 仅写"不可逆 + 跨模块 + 真实权衡"的决策，结构遵循 `mattpo
 - [ ] 三个迭代测试报告归档（迭代二 / 三 / 五）
 - [ ] 遗留 Bug 清单 P0/P1 W16 前清零
 
-### M13 部署与交付物（D 主导 + C 配合）—— ⏸️ **现阶段排除，见 §0**
-
-> 以下条目不作为本阶段交付承诺，保留仅作历史记录。ADR-0004 标记为 `DEFERRED`。
-
-- [~] **M13 ADR-0004**：Docker 兜底策略确定（→ DEFERRED）
-- [~] 优先尝试 Docker Desktop 安装（环境 P0 缺口）
-  - [~] 若成功：编写 `Dockerfile` + `docker-compose.yml` + `deploy.sh`
-  - [~] 若失败：保留文件照写 + 用本机 `java -jar` + Nginx 兜底
-- [~] 部署文档：环境要求 / 启动步骤 / FAQ
-- [~] 用户手册：4 角色 × 5 张截图
-- [~] 演示视频：每迭代一段（3 段）
-- [~] 答辩 PPT：每迭代一份（3 份）
-- [~] W16 前 24 小时全链路演练
-
 ---
 
 ## 9 · 风险与兜底
@@ -261,7 +226,6 @@ ADR 仅写"不可逆 + 跨模块 + 真实权衡"的决策，结构遵循 `mattpo
 | R-M6 | Redis 锁在 Windows 移植版行为差异 | SET NX PX 兼容性 | Lua 脚本手动释放 + 看门狗 | D / ADR-0002 |
 | R-M9 | 纠纷处理强制终态破坏状态机不变量 | 业务边界没理清 | M9 设计评审时拉 B + D 一起过 | B |
 | R-M10 | 1 万订单聚合 > 2s | 索引 + 缓存策略 | 先上 SQL 索引优化，不行再上物化视图 | D / ADR-0003 |
-| R-M13 | Docker Desktop 安装受阻（WSL2 / Hyper-V 权限） | 管理员权限 / BIOS 虚拟化未开 | 本机 `java -jar` + Nginx 演示 + 录屏兜底 | D / ADR-0004 |
 | R-env | Chrome / JMeter / PlantUML 未装 | 用户未授权安装 | Edge 代替 Chrome；JUnit5 并发压测代替 JMeter 临时；PlantUML 用 IDEA 插件 | B |
 
 ---
@@ -286,7 +250,6 @@ ADR 仅写"不可逆 + 跨模块 + 真实权衡"的决策，结构遵循 `mattpo
 | WebSocket 鉴权方式 | 默认 STOMP `CONNECT` 帧 `Authorization` header（复用 JwtAuthenticationFilter） | M5 设计评审时确认 |
 | Redis 分布式锁 | 默认手写 SET NX PX + Lua | M6 设计评审时确认 |
 | 统计缓存策略 | 默认不缓存 + 索引优化（验收 1 万 < 2s 是 SQL 层目标） | M10 设计评审时确认 |
-| Docker 兜底 | 默认先尝试安装，受阻则本机 `java -jar` 兜底 | M13 设计评审时确认 |
 | 分支重命名 | 默认 `feature/M4-order`（替代过时的 `feature/M2-auth`） | M4 commit 前 |
 
 ---
@@ -303,12 +266,10 @@ ADR 仅写"不可逆 + 跨模块 + 真实权衡"的决策，结构遵循 `mattpo
 | `docs/agents/designs/M8-message.md` | M8 设计评审 | M8 开工前 |
 | `docs/agents/designs/M9-admin.md` | M9 设计评审 | M9 开工前 |
 | `docs/agents/designs/M10-statistics.md` | M10 设计评审 | M10 开工前 |
-| `docs/agents/designs/M13-deploy.md` | M13 设计评审 | M13 开工前 |
 | `docs/adr/0001-m5-websocket-auth.md` | M5 WebSocket 鉴权 ADR | M5 开工前 |
 | `docs/adr/0002-m6-redis-lock.md` | M6 Redis 锁 ADR | M6 开工前 |
 | `docs/adr/0003-m10-stats-cache.md` | M10 缓存策略 ADR | M10 开工前 |
-| `docs/adr/0004-m13-docker-fallback.md` | M13 Docker 兜底 ADR | M13 开工前 |
 
 ---
 
-> 📌 **核心一句话**：本计划覆盖 W3–W17 共 15 周，B 主路径（M4→M5→M7→M9）+ D 旁路径（M8→M6→M10→M13）双线并行；每个模块交付 = 5 件套；M5/M6/M10/M13 在开工前再 grill 一次并落 ADR。
+> 📌 **核心一句话**：本计划覆盖 W3–W17 共 15 周，B 主路径（M4→M5→M7→M9）+ D 旁路径（M8→M6→M10）双线并行；每个模块交付 = 5 件套；M5/M6/M10 在开工前再 grill 一次并落 ADR。

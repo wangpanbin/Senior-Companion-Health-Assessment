@@ -12,7 +12,7 @@
 
 ## 背景
 
-M6 有两个定时任务在多实例部署时必须单实例执行（plan.md M6 验收：「并发启动 2 个后端实例，定时任务仅 1 个实例实际执行（日志可证）」）：
+M6 有两个定时任务在多实例运行时必须单实例执行（plan.md M6 验收：「并发启动 2 个后端实例，定时任务仅 1 个实例实际执行（日志可证）」）：
 
 1. **每日 07:00**：`MedicationScheduler.generateDailyTasks` 生成当日 `medication_task`
 2. **每 30 分钟**：`MedicationScheduler.scanMissedTasks` 扫描漏服任务
@@ -134,7 +134,6 @@ M6 有两个定时任务在多实例部署时必须单实例执行（plan.md M6 
 
 - `0001-m5-websocket-auth.md`（无直接关联）
 - `0003-m10-stats-cache.md`（共用 Redis，但用途不同：本 ADR 用锁，该 ADR 决策**不用**缓存）
-- `0004-m13-docker-fallback.md`（无直接关联）
 
 ---
 

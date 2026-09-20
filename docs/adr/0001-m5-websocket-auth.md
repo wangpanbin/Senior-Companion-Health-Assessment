@@ -69,7 +69,7 @@ WebSocket 握手（HTTP Upgrade）阶段如何复用这条链路？
 
 5. **连接日志脱敏**
    - 只记 `userId` / `role` / `orderId`，**不记 token 本身**
-   - Nginx access log 默认会记完整 query string，部署时必须配 `access_log` 过滤 `token=` 参数
+   - 反向代理 / 网关层必须配置过滤 `token=` 参数，避免 token 进入访问日志
 
 ---
 
@@ -90,7 +90,7 @@ WebSocket 握手（HTTP Upgrade）阶段如何复用这条链路？
 ### 已知局限
 
 - **握手后无法强制下线**：JWT 过期 / 拉黑 / 改密后，已建立的 WebSocket 连接不会主动断开。当前接受该风险，靠客户端心跳重连 + 后端 `OrderProgressHub` 清理机制兜底。
-- **token 落 Nginx access log**：部署文档必须明确 `access_log` 过滤 `token=` 参数。
+- **token 落访问日志**：反向代理 / 网关层必须明确过滤 `token=` 参数。
 
 ---
 
@@ -120,7 +120,7 @@ WebSocket 握手（HTTP Upgrade）阶段如何复用这条链路？
 
 ## 后续待办
 
-- [ ] 部署文档明确 Nginx `access_log` 过滤 `token=` 参数
+- [ ] 反向代理 / 网关层配置过滤 `token=` 参数，避免 token 进入访问日志
 - [ ] M12+ 接入 JMeter WebSocket 插件做 100 并发稳定性压测
 - [ ] 如未来需要「踢下线」能力，引入 STOMP 走方案 1（参见 ADR 0003 缓存策略）
 
@@ -130,4 +130,3 @@ WebSocket 握手（HTTP Upgrade）阶段如何复用这条链路？
 
 - `0002-m6-redis-lock.md`（M6 漏服推送走 M8 SSE，鉴权路径与本 ADR 同源）
 - `0003-m10-stats-cache.md`（无直接关联）
-- `0004-m13-docker-fallback.md`（无直接关联）

@@ -126,7 +126,6 @@ M10 提供管理后台看板的统计接口：
 - `0001-m5-websocket-auth.md`（无直接关联）
 - `0002-m6-redis-lock.md`（共用同一 Redis 实例，但本 ADR 决策**不使用** Redis 做缓存；
   该 ADR 用 Redis 做分布式锁，用途正交）
-- `0004-m13-docker-fallback.md`（无直接关联）
 
 ---
 
