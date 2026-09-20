@@ -105,4 +105,3 @@ ADMIN 专属：forceTerminal（仅允许 COMPLETED / CANCELLED）—— 纠纷�
 ## 5 · 遗留与风险
 
 - `e2e_order.py` 会残留数据（站内信 907 行 vs 种子 72），需在 M12 统一清理策略。
-- M13 阶段排除（见 `PLAN_BACKEND.md §0`）。

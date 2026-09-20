@@ -40,12 +40,26 @@ export function disableUser(userId, data) {
   return request({ url: `/admin/user/${userId}/disable`, method: 'post', data })
 }
 
-export function enableUser(userId) {
-  return request({ url: `/admin/user/${userId}/enable`, method: 'post' })
+/**
+ * 解封用户。
+ *
+ * 后端契约（{@code docs/api/08-admin.md} §6）：请求体 {@code remark} 可选，
+ * 但接口签名是 {@code @RequestBody UserEnableDTO} —— body 缺失会触发
+ * {@code HttpMessageNotReadableException}。调用方不写备注时也要发空对象，
+ * 不能省略 data，否则 Spring 把"没 body"也当成"格式不对"误报。
+ */
+export function enableUser(userId, data = {}) {
+  return request({ url: `/admin/user/${userId}/enable`, method: 'post', data })
 }
 
-export function resetUserPassword(userId) {
-  return request({ url: `/admin/user/${userId}/reset-password`, method: 'post' })
+/**
+ * 重置密码。
+ *
+ * 后端契约（{@code docs/api/08-admin.md} §7）：{@code remark} 必填，
+ * 且是审计字段（谁、为什么重置）—— 调用方必须经表单/prompt 收集原因再传入。
+ */
+export function resetUserPassword(userId, data) {
+  return request({ url: `/admin/user/${userId}/reset-password`, method: 'post', data })
 }
 
 /* ---------------- 订单与纠纷 ---------------- */

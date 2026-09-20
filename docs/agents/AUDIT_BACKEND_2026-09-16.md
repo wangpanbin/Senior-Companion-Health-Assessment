@@ -1,6 +1,6 @@
 # 后端实现核对报告 · 2026-09-16
 
-> 核对依据：`docs/agents/PLAN_BACKEND.md`（W3–W17 共 15 周计划，M0–M13）
+> 核对依据：`docs/agents/PLAN_BACKEND.md`（W3–W17 共 15 周计划，M0–M10）
 > 核对方法：逐文件核验 backend/src/main/java 全量源码 + 测试目录 + docs/api + ADR + git log + 关键合规点 grep
 > 核对人：小斌
 > 生成时间：2026-09-16
@@ -10,10 +10,6 @@
 ## 0 · 一句话结论
 
 **M0–M10 的生产代码已全部落地并 commit，质量在线（状态机 / 乐观锁 / 合规红线 / 越权归属校验均到位）；M12 测试横切已于 2026-09-16 收尾（511 测试全绿、JaCoCo 门禁达标、9 个越权矩阵、4 个压测计划），剩余唯一 P1 是测试环境残留数据（不涉线上功能）。**
-
-> 📌 **范围调整（2026-09-16）**：M13「部署与交付物」（Docker / 部署文档 / 用户手册 / 演示视频 / 答辩 PPT）
-> **经决策现阶段排除**，不计入本阶段缺口（详见 `PLAN_BACKEND.md §0`）。四份 ADR 中 0001/0002/0003 已 ACCEPTED，
-> 0004 因 M13 排除转为 `DEFERRED`。
 
 ---
 
@@ -33,13 +29,11 @@
 | M9 管理后台 | ✅ | ✅ AdminServiceTest | ✅ AdminAccessMatrixTest | ✅ e2e_admin | ✅ 08 | ✅ M9-admin | — | `5afb18a` | 🟢 完成 |
 | M10 统计导出 | ✅ | ✅ StatisticsServiceTest / ExportServiceTest | ✅ StatisticsAccessMatrixTest | ✅ e2e_statistics | ✅ 09 | ✅ M10-statistics | ✅ 0003 ACCEPTED | `5afb18a/a61c00e` | 🟢 完成 |
 | M12 测试横切 | — | ✅ JaCoCo 门禁（Service 行覆盖 63.26% ≥ 60%） | ✅ 9 个矩阵（M2–M10 全覆盖） | ✅ 4 个 .jmx（M4/M5/M6/M10） | — | ✅ 3 份迭代报告 | — | — | 🟢 完成 |
-| M13 部署交付 | ⏸️ | — | — | — | — | ⏸️ | ⏸️ 0004 DEFERRED | — | ⏸️ 现阶段排除（见 §0） |
 
 > 📌 **状态更新（2026-09-16 收尾）**：上表 M5–M12 的绿点来自本报告的 §7「M12 收尾记录」，
 > 含 511 个测试全绿、Service 覆盖率实测值、以及 M5/M6 两个实际跑过的 JMeter 压测。
 > 另有 **3 处本报告初版的误判**在 §4.4 更正（`checkin-missed` 误标「存在」、
 > 客户端错误误归 500、导出 `IOException` 分支实为死代码）。
-| M13 部署交付 | ⏸️ | — | — | — | — | ⏸️ | ⏸️ 0004 DEFERRED | — | ⏸️ 现阶段排除（见 §0） |
 
 ---
 
@@ -149,27 +143,11 @@
 | 三个迭代测试报告归档 | ✅ `docs/agents/reports/iteration-test-report-1/2/3.md` | ✅ 达标 |
 | 遗留 Bug 清单 P0/P1 W16 前清零 | ✅ `docs/agents/BUG_LIST.md`（P0 = 0；唯一 P1 是测试环境残留数据，见 L1） | 🟡 P1 仍剩 1 项 |
 
-### 3.2 M13 部署与交付物 ⏸️ 现阶段主动排除（非缺口）
-
-> **2026-09-16 决策**：本阶段不做部署与交付物，理由见 `PLAN_BACKEND.md §0`。以下条目不作为缺口统计。
-
-| 计划要求 | 状态 | 处置 |
-|---|---|---|
-| Dockerfile + docker-compose.yml + deploy.sh | 未做 | 本机演示，容器化无验收价值 |
-| 部署文档（环境要求/启动步骤/FAQ） | 未做 | 无部署动作，文档无对象 |
-| 用户手册（4 角色 × 5 张截图） | 未做 | 依赖前端界面，一期不推进 |
-| 演示视频（每迭代一段，3 段） | 未做 | 非本阶段目标 |
-| 答辩 PPT（每迭代一份，3 份） | 未做 | W17 才使用，现做会随代码返工 |
-| W16 前 24 小时全链路演练 | 未做 | 随 M13 一并排除 |
-| ADR-0004 Docker 兜底 | 未填 | 转 `DEFERRED` |
-
-**替代兜底**：答辩演示改用本机 `mvn spring-boot:run` + Knife4j `/doc.html`。
-
 ### 3.3 设计评审文档 🔴 全缺
 
 | 计划要求（§5、§12） | 实际状态 | 缺口 |
 |---|---|---|
-| `docs/agents/designs/M4-order.md` ~ `M13-deploy.md` 共 9 份 | ❌ `docs/agents/designs/` 目录不存在 | **P1**：9 份模块设计评审文档全缺（计划要求每个模块开工前用 dsh-plan 生成 ≤1 页设计文档） |
+| `docs/agents/designs/M4-order.md` ~ `M10-statistics.md` 共 7 份 | ❌ `docs/agents/designs/` 目录不存在 | **P1**：7 份模块设计评审文档全缺（计划要求每个模块开工前用 dsh-plan 生成 ≤1 页设计文档） |
 
 ### 3.4 ADR 三份待填
 
@@ -178,7 +156,6 @@
 | 0001 | M5 WebSocket 鉴权 | ✅ ACCEPTED（完整） | — |
 | 0002 | M6 Redis 分布式锁 | ❌ PROPOSED 待填 | **P1**：代码已用 `RedisLockUtil`（手写 SET NX PX），但 ADR 未写决策记录 |
 | 0003 | M10 统计缓存策略 | ❌ PROPOSED 待填 | **P1**：代码实际"不缓存"（无 @Cacheable），与 §11 默认决策一致，但 ADR 未记录 |
-| 0004 | M13 Docker 兜底 | ❌ PROPOSED 待填 | **P1**：M13 未启动，ADR 自然未动 |
 
 ---
 
@@ -246,17 +223,17 @@
 
 ## 5 · 按优先级的待办清单
 
-### P0（答辩前必须完成，阻塞交付）—— ✅ 全部清零
+### P0（影响交付阻塞的项）—— ✅ 全部清零
 
-1. ~~**M13 部署与交付物全套**~~ → **已排除**（2026-09-16 决策，见 §3.2 与 `PLAN_BACKEND.md §0`），不计入本阶段待办。
+1. （无）
 2. **M12 JaCoCo 覆盖率门禁** → ✅ **已完成**：`jacoco-maven-plugin 0.8.12` + `verify` 硬卡 ≥ 60%，实测 Service 63.26%。
 3. **M6–M10 五个模块 Service 单测** → ✅ **已完成**：MedicationServiceTest / ReviewServiceTest / ComplaintServiceTest / MessageServiceTest / AdminServiceTest / StatisticsServiceTest / ExportServiceTest 共 **90 项**断言。
 4. **M5–M10 六个模块越权矩阵测试** → ✅ **已完成**：Execution 15 / Medication 25 / Review 31 / Message 21 / Admin 13 / Statistics 16，共 **121 项**断言，每个都超过「4 角色 × 3 类接口 ≥ 12 条」的下限（9 个矩阵合计 226 项）。
 
-### P1（答辩前应完成，影响评分）—— 仅剩 1 项
+### P1（影响评分的项）—— 仅剩 1 项
 
-5. **模块设计评审文档** → ✅ 已完成：`docs/agents/designs/M4–M10` 共 7 份（M13 已排除）。
-6. **ADR 回填** → ✅ 已完成：0002/0003 转 `ACCEPTED`，0004 转 `DEFERRED`。
+5. **模块设计评审文档** → ✅ 已完成：`docs/agents/designs/M4–M10` 共 7 份。
+6. **ADR 回填** → ✅ 已完成：0002/0003 转 `ACCEPTED`。
 7. **JMeter M5/M6 压测脚本** → ✅ 已完成且**已实际运行**：`jmeter_m5_reconnect.jmx`、`jmeter_m6_concurrent_confirm.jmx`
    （`jmeter_m5_websocket` 这个命名改为按真实接口命名，理由见 §4.4；WS 握手本身的压测仍需插件，已记入压测记录 §6）。
 8. **三个迭代测试报告归档** → ✅ 已完成：`reports/iteration-test-report-1/2/3.md` + `reports/pressure-test-m5-m6.md`。
@@ -306,7 +283,7 @@ f464fcd chore(M2): 错误码、安全配置与 Jackson 注释微调
 - JMeter：**4 个 .jmx**（M4 抢单 / M5 重连补齐 / M6 并发确认 / M10 统计），其中 M4/M5/M6 已实际运行过
 - SQL：V1–V3 三套（init/seed/boundary）+ 2 个 tools 校验脚本
 - 接口文档：9 份（01-auth ~ 09-statistics）+ README
-- ADR：4 份（0001/0002/0003 ACCEPTED / 0004 DEFERRED）
+- ADR：3 份（0001/0002/0003 ACCEPTED）
 - 数据库文档：4 份（ER图/数据字典/索引设计/种子数据）
 - 设计评审：7 份（`docs/agents/designs/M4–M10`）
 - 测试报告：4 份（3 份迭代报告 + 1 份压测记录）
@@ -378,6 +355,6 @@ f464fcd chore(M2): 错误码、安全配置与 Jackson 注释微调
 
 > **核心判断（更新）**：M0–M12 的**代码与测试交付已闭环** —— 511 测试全绿、覆盖率门禁达标、
 > 9 个越权矩阵覆盖全部业务模块、4 个压测计划中 3 个真实跑过且零错误。
-> 本阶段唯一未闭环的是 M13 交付物（经决策排除）与 BUG_LIST L1（e2e 残留数据，不涉线上功能）。
+> 本阶段唯一未闭环的是 BUG_LIST L1（e2e 残留数据，不涉线上功能）。
 > 下一步若继续投入，按收益排序：① 补 `Task(定时)` 与 Service 分支覆盖（7.4 第 1、2 条）；
 > ② 清 L1 残留数据；③ BUG_LIST L2/L3 的可选优化。

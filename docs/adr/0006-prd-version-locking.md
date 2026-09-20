@@ -63,7 +63,7 @@ PRD(`docs/prd/PRD.md`)作为课程评审和团队对齐的"顶层文档",需要�
   1. 所引用的 `plan.md §Mx` 是否需要更新?
   2. 所引用的 `docs/api/0X` 接口签名是否仍一致?
   3. 所引用的 `docs/agents/designs/Mx` 设计评审是否仍准确?
-  4. 所引用的 `docs/adr/0001-0004` 是否仍成立?
+  4. 所引用的 `docs/adr/0001-0003` 是否仍成立?
   5. 是否需要在 `README.md` 文档索引中追加新章节引用?
 - **竞讲前 1 周提醒**——用 issue 或 cron 在 W7/W12/W17 前 1 周提醒"PRD 待修订评审"
 - **历史版本不删**——v1.0 / v1.1 / v1.2 等历史版本可归档到 `docs/prd/archive/`,方便回顾
@@ -91,4 +91,3 @@ PRD(`docs/prd/PRD.md`)作为课程评审和团队对齐的"顶层文档",需要�
 ## 相关 ADR
 
 - `0005-prd-planmd-layers.md`(PRD 与 plan.md 分层关系,本 ADR 协同定义 PRD 维护流程)
-- `0004-m13-docker-fallback.md`(M13 阶段排除,影响 PRD §5.2 未来迭代设想章节;若 M13 重启,需同步更新 PRD v1.x 或 v2.0)

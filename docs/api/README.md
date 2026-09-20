@@ -35,7 +35,7 @@
 | 项目 | 约定 |
 |---|---|
 | 基础路径 | `/api` |
-| 协议 | HTTP/1.1（~~生产环境由 Nginx 终止 HTTPS~~ — ⏸️ 现阶段不做部署上线） |
+| 协议 | HTTP/1.1（生产环境 HTTPS 终止由反向代理层负责） |
 | 请求编码 | UTF-8 |
 | 请求内容类型 | `application/json;charset=UTF-8`（文件上传用 `multipart/form-data`） |
 | 响应内容类型 | `application/json;charset=UTF-8`（文件下载用 `application/octet-stream`） |
@@ -480,7 +480,7 @@ M4 继续追加**订单状态机与相关方边界**：
 }
 ```
 
-**用途**：前端探活、健康检查（~~部署脚本健康检查、`docker-compose` healthcheck~~ — ⏸️ 现阶段不做部署上线）。
+**用途**：前端探活、健康检查。
 
 ---
 
@@ -494,7 +494,7 @@ M4 继续追加**订单状态机与相关方边界**：
 | 单请求上限 | 20 MB |
 | 允许类型 | `image/jpeg`、`image/png`、`image/webp`、`application/pdf` |
 | 返回 | `{ "fileId": "...", "url": "/uploads/xxx.jpg", "size": 102400 }` |
-| 存储 | 一期落本地磁盘 `./uploads/{yyyyMM}/{uuid}.{ext}`，路径写入数据库；~~M13~~ 二期可替换为对象存储 |
+| 存储 | 一期落本地磁盘 `./uploads/{yyyyMM}/{uuid}.{ext}`，路径写入数据库；二期可替换为对象存储 |
 
 ⚠️ 上传接口必须校验文件类型与大小，禁止信任前端传来的 `Content-Type`，需读取文件头（magic bytes）二次确认。
 

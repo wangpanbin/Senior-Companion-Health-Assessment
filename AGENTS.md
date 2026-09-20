@@ -430,7 +430,7 @@ PENDING ──► ACCEPTED ──► IN_SERVICE ──► COMPLETED ──► RE
 | 单请求上限 | 20 MB |
 | 允许类型 | `image/jpeg`、`image/png`、`image/webp`、`application/pdf` |
 | 返回 | `{ fileId, url, size }` |
-| 存储 | 一期落本地 `./uploads/{yyyyMM}/{uuid}.{ext}`，M13 可替换为对象存储 |
+| 存储 | 一期落本地 `./uploads/{yyyyMM}/{uuid}.{ext}`，后续可替换为对象存储 |
 | 校验 | 必须读文件头（magic bytes）二次确认，**禁止**信任前端传来的 `Content-Type` |
 
 ---
