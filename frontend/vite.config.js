@@ -2,6 +2,8 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
+/// <reference types="vitest/config" />
+
 /**
  * Vite 配置
  *
@@ -90,6 +92,18 @@ export default defineConfig(({ mode }) => {
           }
         }
       }
+    },
+
+    // Vitest 配置：jsdom 环境跑单测（composables / store / util）
+    // （AGENTS.md §6.2 计划 M12 起补 Vitest 单测；本次 desktop-adapt-v2 T-01 提前落地。）
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      include: ['src/**/__tests__/**/*.{test,spec}.{js,mjs}'],
+      // 排除 e2e 目录（那是 Playwright 的事，不在 Vitest 范围）
+      exclude: ['node_modules', 'dist', 'e2e/**'],
+      // 单测里需要 matchMedia，用 setup 文件 mock 一份默认实现，避免每个 case 单独打桩
+      setupFiles: ['./src/__tests__/setup.js']
     }
   }
 })

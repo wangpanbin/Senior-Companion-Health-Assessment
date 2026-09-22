@@ -8,6 +8,10 @@
 //   @use '@/styles/variables.scss' as *;
 // ==========================================================================
 
+// 断点定义（forward 自 _breakpoints.scss，与 composables/useResponsive.js 共享同一套数值）
+// 新增断点请同步改两边。详见 _breakpoints.scss 头部注释。
+@forward 'breakpoints';
+
 // -------------------- 品牌色 --------------------
 $nl-primary: #1d6ff2; // 主色：医疗蓝
 $nl-primary-dark: #1557c8; // 按压态 / 老人模式主色

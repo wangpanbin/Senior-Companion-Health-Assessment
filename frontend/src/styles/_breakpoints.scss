@@ -1,0 +1,27 @@
+/**
+ * 断点定义 · desktop-adapt-v2
+ *
+ * 与 `composables/useResponsive.js` 共享同一套数值；JS / SCSS 两边改时必须同步。
+ *
+ * 5 档断点：
+ *   sm     < 1024       平板横屏 / 小 PC
+ *   md  1024 - 1279     标准 PC(主流笔记本)
+ *   lg     ≥ 1280       大屏
+ *
+ *   xsPhone   ≤ 360       小屏 Android
+ *   landPhone ≤ 480 且高度 ≤ 480  横屏模式
+ *
+ * 引入方式（必须显式 @use，不走 vite additionalData，详见 AGENTS.md §3.4）：
+ *   @use '@/styles/variables.scss' as *;
+ *   @media (max-width: $bp-sm - 1) { ... }
+ *
+ * ⚠️ 不要在 .vue 的 <style scoped> 里直接 @use '@/styles/_breakpoints.scss'：
+ *    variables.scss 已经 @forward 了 _breakpoints.scss，重复引入会导致 Sass 模块加载冲突。
+ */
+
+$bp-sm: 1024px;
+$bp-md: 1280px;
+$bp-lg: 1600px;
+
+$bp-phone-xs: 360px;
+$bp-phone-landscape: 480px;
