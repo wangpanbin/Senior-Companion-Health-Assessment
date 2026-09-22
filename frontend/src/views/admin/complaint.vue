@@ -13,7 +13,7 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlCard, NlStatusChip, NlSkeleton, NlEmpty } from '@/components'
+import { NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
 import { listComplaints, handleComplaint } from '@/api/admin'
 import { formatDateTime, labelOf, COMPLAINT_STATUS_TEXT } from '@/utils/format'
 
@@ -99,6 +99,19 @@ async function submitHandle() {
   loadList()
 }
 
+/** 列定义（desktop 9 列；mobile 关键 4 字段：编号 / 家属 / 状态 / 操作） */
+const columns = [
+  { key: 'id',              label: '投诉编号', width: 90 },
+  { key: 'orderNo',         label: '关联订单', width: 180 },
+  { key: 'complainantName', label: '投诉家属', width: 100 },
+  { key: 'targetUserName',  label: '涉及陪诊员', width: 100 },
+  { key: 'type',            label: '类型',     width: 120 },
+  { key: 'content',         label: '详情',     minWidth: 220 },
+  { key: 'status',          label: '状态',     width: 100 },
+  { key: 'createTime',      label: '提交时间', width: 160, formatter: (v) => formatDateTime(v) }
+]
+const mobileFields = ['id', 'complainantName', 'status']
+
 onMounted(loadList)
 </script>
 
@@ -129,55 +142,45 @@ onMounted(loadList)
       description="当前筛选条件下没有投诉记录"
     />
 
-    <template v-else>
-      <el-table :data="list">
-        <el-table-column prop="id" label="投诉编号" width="90" />
-        <el-table-column prop="orderNo" label="关联订单" width="180" />
-        <el-table-column prop="complainantName" label="投诉家属" width="100" />
-        <el-table-column prop="targetUserName" label="涉及陪诊员" width="100" />
-        <el-table-column label="类型" width="120">
-          <template #default="{ row }">{{ row.typeLabel || row.type }}</template>
-        </el-table-column>
-        <el-table-column prop="content" label="详情" min-width="220" show-overflow-tooltip />
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <NlStatusChip
-              :status="row.status"
-              scope="complaint"
-              :text="row.statusLabel"
-              :dot="row.status === 'PENDING' || row.status === 'PROCESSING'"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column label="提交时间" width="160">
-          <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" min-width="120" fixed="right">
-          <template #default="{ row }">
-            <el-button
-              v-if="!isTerminal(row.status)"
-              type="primary"
-              text
-              size="small"
-              @click="openHandle(row)"
-            >
-              处理
-            </el-button>
-            <span v-else class="nl-caption nl-text-muted">已结案</span>
-          </template>
-        </el-table-column>
-      </el-table>
+    <NlAdminTable
+      v-else
+      :data="list"
+      :columns="columns"
+      :mobile-fields="mobileFields"
+      empty-text="暂无投诉"
+    >
+      <template #cell-type="{ row }">{{ row.typeLabel || row.type }}</template>
+      <template #cell-status="{ row }">
+        <NlStatusChip
+          :status="row.status"
+          scope="complaint"
+          :text="row.statusLabel"
+          :dot="row.status === 'PENDING' || row.status === 'PROCESSING'"
+        />
+      </template>
+      <template #actions="{ row }">
+        <el-button
+          v-if="!isTerminal(row.status)"
+          type="primary"
+          text
+          size="small"
+          @click="openHandle(row)"
+        >
+          处理
+        </el-button>
+        <span v-else class="nl-caption nl-text-muted">已结案</span>
+      </template>
+    </NlAdminTable>
 
-      <el-pagination
-        v-if="total > size"
-        class="complaint-pager"
-        layout="prev, pager, next"
-        :total="total"
-        :page-size="size"
-        :current-page="page"
-        @current-change="onPageChange"
-      />
-    </template>
+    <el-pagination
+      v-if="total > size"
+      class="complaint-pager"
+      layout="prev, pager, next"
+      :total="total"
+      :page-size="size"
+      :current-page="page"
+      @current-change="onPageChange"
+    />
   </NlCard>
 
   <!-- 投诉处理对话框 -->

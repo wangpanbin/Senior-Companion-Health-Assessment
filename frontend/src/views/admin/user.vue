@@ -8,7 +8,7 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlCard, NlStatusChip, NlSkeleton, NlEmpty } from '@/components'
+import { NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
 import { listUsers, disableUser, enableUser, resetUserPassword } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 
@@ -117,6 +117,18 @@ async function resetPwd(u) {
   loadList()
 }
 
+/** 列定义（desktop 8 列全展示；mobile 4 字段关键） */
+const columns = [
+  { key: 'username',   label: '账号',     width: 120 },
+  { key: 'nickname',   label: '昵称',     width: 120 },
+  { key: 'role',       label: '角色',     width: 100 },
+  { key: 'phone',      label: '手机号',   width: 140 },
+  { key: 'realName',   label: '真实姓名', width: 120 },
+  { key: 'createTime', label: '注册时间', width: 160, formatter: (v) => formatDateTime(v) },
+  { key: 'status',     label: '状态',     width: 100 }
+]
+const mobileFields = ['username', 'role', 'status']
+
 onMounted(loadList)
 </script>
 
@@ -165,60 +177,51 @@ onMounted(loadList)
       description="当前筛选条件下没有用户"
     />
 
-    <template v-else>
-      <el-table :data="list">
-        <el-table-column prop="username" label="账号" width="120" />
-        <el-table-column prop="nickname" label="昵称" width="120" />
-        <el-table-column label="角色" width="100">
-          <template #default="{ row }">
-            <el-tag size="small" type="info">{{ row.roleLabel || row.role }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="phone" label="手机号" width="140" />
-        <el-table-column prop="realName" label="真实姓名" width="120" />
-        <el-table-column label="注册时间" width="160">
-          <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <NlStatusChip :status="row.status" scope="user" :text="row.statusLabel" />
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" min-width="240" fixed="right">
-          <template #default="{ row }">
-            <el-button text type="primary" size="small" @click="resetPwd(row)">重置密码</el-button>
-            <el-button
-              v-if="row.status === 'NORMAL'"
-              text
-              type="danger"
-              size="small"
-              @click="ban(row)"
-            >
-              封禁
-            </el-button>
-            <el-button
-              v-else
-              text
-              type="primary"
-              size="small"
-              @click="unban(row)"
-            >
-              解封
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+    <NlAdminTable
+      v-else
+      :data="list"
+      :columns="columns"
+      :mobile-fields="mobileFields"
+      empty-text="暂无用户"
+    >
+      <template #cell-role="{ row }">
+        <el-tag size="small" type="info">{{ row.roleLabel || row.role }}</el-tag>
+      </template>
+      <template #cell-status="{ row }">
+        <NlStatusChip :status="row.status" scope="user" :text="row.statusLabel" />
+      </template>
+      <template #actions="{ row }">
+        <el-button text type="primary" size="small" @click="resetPwd(row)">重置密码</el-button>
+        <el-button
+          v-if="row.status === 'NORMAL'"
+          text
+          type="danger"
+          size="small"
+          @click="ban(row)"
+        >
+          封禁
+        </el-button>
+        <el-button
+          v-else
+          text
+          type="primary"
+          size="small"
+          @click="unban(row)"
+        >
+          解封
+        </el-button>
+      </template>
+    </NlAdminTable>
 
-      <el-pagination
-        v-if="total > size"
-        class="user-pager"
-        layout="prev, pager, next"
-        :total="total"
-        :page-size="size"
-        :current-page="page"
-        @current-change="onPageChange"
-      />
-    </template>
+    <el-pagination
+      v-if="total > size"
+      class="user-pager"
+      layout="prev, pager, next"
+      :total="total"
+      :page-size="size"
+      :current-page="page"
+      @current-change="onPageChange"
+    />
   </NlCard>
 </template>
 

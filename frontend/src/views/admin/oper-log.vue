@@ -5,9 +5,12 @@
  * 数据来自 listOperLogs（分页 page/size，响应 { total, page, size, pages, records }）。
  * 操作类型中文名后端已通过 operTypeLabel 下发，直接用它，不再在前端维护 actionMap，
  * 避免「代码里两套中文」对不上号。
+ *
+ * desktop-adapt-v2（T-05c）：表格改用 NlAdminTable，<1280 走卡片 fallback。
+ * mobile 关键 4 字段：时间 / 操作人 / 动作 / 对象（详情省略，靠卡片 max-height 内联显示）。
  */
 import { ref, computed, onMounted } from 'vue'
-import { NlCard, NlSkeleton, NlEmpty } from '@/components'
+import { NlCard, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
 import { listOperLogs } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 
@@ -38,6 +41,16 @@ function onPageChange(p) {
   loadList()
 }
 
+/** 列定义（desktop 5 列；mobile 关键 4 字段：时间 / 操作人 / 动作 / 对象） */
+const columns = [
+  { key: 'operTime',      label: '时间',     width: 170, formatter: (v) => formatDateTime(v) },
+  { key: 'operatorName',  label: '操作人',   width: 100 },
+  { key: 'operTypeLabel', label: '动作',     width: 140 },
+  { key: 'targetDesc',    label: '对象',     width: 200 },
+  { key: 'remark',        label: '详情',     minWidth: 280 }
+]
+const mobileFields = ['operTime', 'operatorName', 'operTypeLabel', 'targetDesc']
+
 onMounted(loadList)
 </script>
 
@@ -56,31 +69,27 @@ onMounted(loadList)
       description="当前还没有任何管理操作记录"
     />
 
-    <template v-else>
-      <el-table :data="list">
-        <el-table-column label="时间" width="170">
-          <template #default="{ row }">{{ formatDateTime(row.operTime) }}</template>
-        </el-table-column>
-        <el-table-column prop="operatorName" label="操作人" width="100" />
-        <el-table-column label="动作" width="140">
-          <template #default="{ row }">
-            <el-tag size="small" type="info">{{ row.operTypeLabel || row.operType }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="targetDesc" label="对象" width="200" />
-        <el-table-column prop="remark" label="详情" min-width="280" show-overflow-tooltip />
-      </el-table>
+    <NlAdminTable
+      v-else
+      :data="list"
+      :columns="columns"
+      :mobile-fields="mobileFields"
+      empty-text="暂无操作日志"
+    >
+      <template #cell-operTypeLabel="{ row }">
+        <el-tag size="small" type="info">{{ row.operTypeLabel || row.operType }}</el-tag>
+      </template>
+    </NlAdminTable>
 
-      <el-pagination
-        v-if="total > size"
-        class="oper-pager"
-        layout="prev, pager, next"
-        :total="total"
-        :page-size="size"
-        :current-page="page"
-        @current-change="onPageChange"
-      />
-    </template>
+    <el-pagination
+      v-if="total > size"
+      class="oper-pager"
+      layout="prev, pager, next"
+      :total="total"
+      :page-size="size"
+      :current-page="page"
+      @current-change="onPageChange"
+    />
   </NlCard>
 </template>
 

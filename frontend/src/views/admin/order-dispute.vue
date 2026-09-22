@@ -13,7 +13,8 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlCard, NlStatusChip, NlSkeleton, NlEmpty } from '@/components'
+import { NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
+import { useResponsive } from '@/composables/useResponsive'
 import { listAllOrders, arbitrateOrder } from '@/api/admin'
 import { formatDateTime, formatMoney } from '@/utils/format'
 
@@ -87,6 +88,21 @@ async function forceTerminate() {
   loadList()
 }
 
+/** 列定义（desktop 8 列；mobile 关键 4 字段：订单号 / 就诊人 / 状态 / 操作） */
+const columns = [
+  { key: 'orderNo',       label: '订单号',   width: 180 },
+  { key: 'elderName',     label: '就诊人',   width: 100 },
+  { key: 'companionName', label: '陪诊员',   width: 100 },
+  { key: 'hospital',      label: '医院',     minWidth: 180 },
+  { key: 'fee',           label: '服务费',   width: 100, formatter: (v) => formatMoney(v), align: 'right' },
+  { key: 'status',        label: '状态',     width: 120 },
+  { key: 'createTime',    label: '创建时间', width: 160, formatter: (v) => formatDateTime(v) }
+]
+const mobileFields = ['orderNo', 'elderName', 'status']
+
+/** 仲裁弹窗 < 768 fullscreen（admin 平板 fallback，与 T-02 admin/order 同款策略） */
+const { isMd } = useResponsive()
+
 onMounted(loadList)
 </script>
 
@@ -101,48 +117,37 @@ onMounted(loadList)
       description="当前没有可仲裁的订单"
     />
 
-    <template v-else>
-      <el-table :data="list" style="width: 100%">
-        <el-table-column prop="orderNo" label="订单号" width="180" />
-        <el-table-column prop="elderName" label="就诊人" width="100" />
-        <el-table-column prop="companionName" label="陪诊员" width="100" />
-        <el-table-column prop="hospital" label="医院" min-width="180" />
-        <el-table-column label="服务费" width="100">
-          <template #default="{ row }">
-            <span class="is-num">{{ formatMoney(row.fee) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">
-            <NlStatusChip :status="row.status" :text="row.statusLabel" />
-          </template>
-        </el-table-column>
-        <el-table-column label="创建时间" width="160">
-          <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" min-width="120" fixed="right">
-          <template #default="{ row }">
-            <el-button type="primary" text size="small" @click="open(row)">处理</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+    <NlAdminTable
+      v-else
+      :data="list"
+      :columns="columns"
+      :mobile-fields="mobileFields"
+      empty-text="暂无订单"
+    >
+      <template #cell-status="{ row }">
+        <NlStatusChip :status="row.status" :text="row.statusLabel" />
+      </template>
+      <template #actions="{ row }">
+        <el-button type="primary" text size="small" @click="open(row)">处理</el-button>
+      </template>
+    </NlAdminTable>
 
-      <el-pagination
-        v-if="total > size"
-        class="dispute-pager"
-        layout="prev, pager, next"
-        :total="total"
-        :page-size="size"
-        :current-page="page"
-        @current-change="onPageChange"
-      />
-    </template>
+    <el-pagination
+      v-if="total > size"
+      class="dispute-pager"
+      layout="prev, pager, next"
+      :total="total"
+      :page-size="size"
+      :current-page="page"
+      @current-change="onPageChange"
+    />
   </NlCard>
 
   <el-dialog
     v-model="dialogVisible"
     :title="`订单纠纷 - ${detail?.orderNo || ''}`"
     width="720px"
+    :fullscreen="!isMd"
     align-center
   >
     <div v-if="detail" class="dispute">

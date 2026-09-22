@@ -12,7 +12,8 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlCard, NlStatusChip, NlSkeleton, NlEmpty } from '@/components'
+import { NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
+import { useResponsive } from '@/composables/useResponsive'
 import { listAuditApplications, getAuditDetail, auditCompanion } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 
@@ -109,6 +110,25 @@ async function reject() {
   loadList()
 }
 
+/** 列定义（desktop 9 列；mobile 关键 4 字段：账号 / 姓名 / 状态 / 操作） */
+const columns = [
+  { key: 'id',         label: '编号',     width: 100 },
+  { key: 'username',   label: '账号',     width: 110 },
+  { key: 'realName',   label: '姓名',     width: 80 },
+  { key: 'phone',      label: '手机号',   width: 120 },
+  { key: 'idCard',     label: '身份证号', width: 170 },
+  { key: 'certCount',  label: '证件数',   width: 80 },
+  { key: 'submitTime', label: '提交时间', width: 160, formatter: (v) => formatDateTime(v) },
+  { key: 'auditStatus', label: '状态',    width: 120 }
+]
+const mobileFields = ['username', 'realName', 'auditStatus']
+const emptyText = computed(() =>
+  tab.value === 'PENDING' ? '暂无待审申请' : tab.value === 'APPROVED' ? '尚无通过记录' : '尚无驳回记录'
+)
+
+/** 详情弹窗 < 768 fullscreen（admin 平板 fallback，与 T-02 admin/order 同款） */
+const { isMd } = useResponsive()
+
 onMounted(loadList)
 </script>
 
@@ -128,45 +148,35 @@ onMounted(loadList)
       :title="tab === 'PENDING' ? '暂无待审申请' : tab === 'APPROVED' ? '尚无通过记录' : '尚无驳回记录'"
     />
 
-    <template v-else>
-      <el-table :data="list" style="width: 100%" :empty-text="tab === 'PENDING' ? '暂无待审申请' : tab === 'APPROVED' ? '尚无通过记录' : '尚无驳回记录'">
-        <el-table-column prop="id" label="编号" width="100" />
-        <el-table-column prop="username" label="账号" width="110" />
-        <el-table-column prop="realName" label="姓名" width="80" />
-        <el-table-column prop="phone" label="手机号" width="120" />
-        <el-table-column prop="idCard" label="身份证号" width="170" />
-        <el-table-column label="证件数" width="80">
-          <template #default="{ row }">
-            <el-tag size="small" type="info">{{ (row.certificates || []).length }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="提交时间" width="160">
-          <template #default="{ row }">{{ formatDateTime(row.submitTime) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">
-            <NlStatusChip :status="row.auditStatus" scope="audit" :text="row.auditStatusLabel" />
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" min-width="120" fixed="right">
-          <template #default="{ row }">
-            <el-button type="primary" text size="small" @click="openReview(row)">
-              {{ row.auditStatus === 'PENDING' ? '审核' : '查看' }}
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+    <NlAdminTable
+      v-else
+      :data="list"
+      :columns="columns"
+      :mobile-fields="mobileFields"
+      :empty-text="emptyText"
+    >
+      <template #cell-certCount="{ row }">
+        <el-tag size="small" type="info">{{ (row.certificates || []).length }}</el-tag>
+      </template>
+      <template #cell-auditStatus="{ row }">
+        <NlStatusChip :status="row.auditStatus" scope="audit" :text="row.auditStatusLabel" />
+      </template>
+      <template #actions="{ row }">
+        <el-button type="primary" text size="small" @click="openReview(row)">
+          {{ row.auditStatus === 'PENDING' ? '审核' : '查看' }}
+        </el-button>
+      </template>
+    </NlAdminTable>
 
-      <el-pagination
-        v-if="total > size"
-        class="audit-pager"
-        layout="prev, pager, next"
-        :total="total"
-        :page-size="size"
-        :current-page="page"
-        @current-change="onPageChange"
-      />
-    </template>
+    <el-pagination
+      v-if="total > size"
+      class="audit-pager"
+      layout="prev, pager, next"
+      :total="total"
+      :page-size="size"
+      :current-page="page"
+      @current-change="onPageChange"
+    />
   </NlCard>
 
   <!-- 审核对话框 -->
@@ -174,6 +184,7 @@ onMounted(loadList)
     v-model="reviewVisible"
     :title="`陪诊员资质审核 - ${reviewItem?.realName || ''}`"
     width="640px"
+    :fullscreen="!isMd"
     align-center
   >
     <div v-if="reviewItem" class="audit-dialog">
