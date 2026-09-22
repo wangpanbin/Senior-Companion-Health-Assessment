@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { getElderlyMode, setElderlyMode } from '@/utils/auth'
+import { getElderlyMode, setElderlyMode, getSidebarMode, setSidebarMode as setSidebarModeLS } from '@/utils/auth'
 import { isElderlyModeDisabled } from '@/composables/useDevice'
 
 /**
@@ -11,10 +11,11 @@ export const useAppStore = defineStore('app', {
   state: () => ({
     /** 页面标题 */
     title: import.meta.env.VITE_APP_TITLE || '银龄伴诊',
-    /** 侧边栏是否折叠 */
-    sidebarCollapsed: false,
     /** 老人模式：字号放大 + 高对比 + 菜单精简 */
     elderlyMode: getElderlyMode(),
+    /** admin 侧栏模式：'auto' / 'expanded' / 'collapsed'（desktop-adapt-v2 T-03）
+     *  仅 admin 路由使用；client 路由无侧栏。 */
+    sidebarMode: getSidebarMode(),
     /** 全局 loading 计数（并发请求时避免闪烁） */
     loadingCount: 0
   }),
@@ -26,8 +27,14 @@ export const useAppStore = defineStore('app', {
   },
 
   actions: {
-    toggleSidebar() {
-      this.sidebarCollapsed = !this.sidebarCollapsed
+    /**
+     * 设置 admin 侧栏模式，立即写 localStorage 以便 reload 后保持。
+     * AdminLayout 模板负责按 mode + 当前 isMd 算出实际 width / collapsed。
+     */
+    setSidebarMode(mode) {
+      if (mode !== 'auto' && mode !== 'expanded' && mode !== 'collapsed') return
+      this.sidebarMode = mode
+      setSidebarModeLS(mode)
     },
 
     /**

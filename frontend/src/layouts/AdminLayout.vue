@@ -2,22 +2,35 @@
 /**
  * AdminLayout · 管理后台桌面端布局（design.md §4 · 1440×900）
  *
- * - 左栏 220px：Logo + 侧边菜单（选中态 3px 主色条 + 浅蓝底）
+ * - 左栏自适应：auto 模式按 useResponsive().isMd 翻转（<1280 收起 / ≥1280 展开）
+ *   手动态 'expanded' / 'collapsed' 强制覆盖，偏好写 localStorage（reload 保持）
  * - 内容区：顶部 64px（面包屑 + 管理员信息）→ 内容 padding 24
- * - 表格：表头 --nl-bg-sunken、行高 48、hover --nl-primary-ghost、斑马纹关闭、分页器右对齐
  * - 适老化：菜单项高度 56 / 字号 18，老人模式下边栏只隐藏 elderlyHidden 项
+ *
+ * desktop-adapt-v2（T-03）：侧栏模式从硬编码 expanded → auto + 手动 + 持久化
  */
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
+import { useResponsive } from '@/composables/useResponsive'
+import { resolveSidebarMode, toggleSidebarMode as computeNextMode } from '@/utils/sidebar'
 import { routes } from '@/router/routes'
 
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
+
+/** 形态判定（desktop-adapt-v2 复用 useResponsive） */
+const { isMd } = useResponsive()
+
+/**
+ * 实际侧栏 width / collapsed / mode 三元组
+ * 模板只读这几个值；状态推进（toggle / change mode）由 action 负责
+ */
+const sidebar = computed(() => resolveSidebarMode(appStore.sidebarMode, isMd.value))
 
 /** 从路由表 admin 区段生成菜单 */
 const menus = computed(() => {
@@ -42,6 +55,12 @@ const activeMenu = computed(() => route.path)
 const pageTitle = computed(() => route.meta?.title || '')
 const pageModule = computed(() => route.meta?.module || '')
 
+/** 用户点 header 的 toggle 按钮：auto ↔ 手动态（语义见 utils/sidebar.js） */
+function handleToggleSidebar() {
+  const next = computeNextMode(appStore.sidebarMode, isMd.value)
+  appStore.setSidebarMode(next)
+}
+
 async function handleLogout() {
   try {
     await ElMessageBox.confirm('确定要退出登录吗？', '提示', { type: 'warning' })
@@ -60,17 +79,17 @@ function handleCommand(cmd) {
 
 <template>
   <el-container class="admin">
-    <!-- ==================== 侧边栏 ==================== -->
-    <el-aside class="admin__aside" :width="appStore.sidebarCollapsed ? '64px' : '220px'">
+    <!-- ==================== 侧边栏（断点驱动 + 持久化） ==================== -->
+    <el-aside class="admin__aside" :width="`${sidebar.width}px`">
       <div class="admin__logo">
         <span class="admin__logo-mark">银</span>
-        <span v-show="!appStore.sidebarCollapsed" class="admin__logo-text">银龄伴诊 · 后台</span>
+        <span v-show="!sidebar.collapsed" class="admin__logo-text">银龄伴诊 · 后台</span>
       </div>
 
       <el-menu
         class="admin__menu"
         :default-active="activeMenu"
-        :collapse="appStore.sidebarCollapsed"
+        :collapse="sidebar.collapsed"
         :collapse-transition="false"
         router
       >
@@ -85,8 +104,10 @@ function handleCommand(cmd) {
       <!-- ==================== 顶栏 ==================== -->
       <el-header class="admin__header">
         <div class="admin__header-left">
-          <el-button text @click="appStore.toggleSidebar()">
-            <el-icon size="20"><Fold /></el-icon>
+          <el-button text :title="sidebar.collapsed ? '展开侧栏' : '收起侧栏'" @click="handleToggleSidebar">
+            <el-icon size="20">
+              <component :is="sidebar.collapsed ? 'Expand' : 'Fold'" />
+            </el-icon>
           </el-button>
           <span class="admin__page-title">{{ pageTitle }}</span>
           <el-tag v-if="pageModule" size="small" type="info" effect="plain">{{ pageModule }}</el-tag>
@@ -185,6 +206,7 @@ function handleCommand(cmd) {
     color: var(--nl-text-inverse);
     background: var(--nl-primary);
     border-radius: 50%;
+    flex-shrink: 0;
   }
 
   &__logo-text {

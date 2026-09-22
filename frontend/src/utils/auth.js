@@ -11,6 +11,7 @@ const TOKEN_KEY = 'nianglin_access_token'
 const REFRESH_TOKEN_KEY = 'nianglin_refresh_token'
 const USER_INFO_KEY = 'nianglin_user_info'
 const ELDERLY_MODE_KEY = 'nianglin_elderly_mode'
+const APP_SIDEBAR_MODE_KEY = 'nianglin_admin_sidebar_mode'
 
 /* -------------------- Access Token -------------------- */
 
@@ -78,6 +79,24 @@ export function getElderlyMode() {
 
 export function setElderlyMode(enabled) {
   localStorage.setItem(ELDERLY_MODE_KEY, String(!!enabled))
+}
+
+/* -------------------- admin 侧栏模式（desktop-adapt-v2 T-03） -------------------- */
+
+/**
+ * 取 admin 侧栏用户偏好: 'auto' | 'expanded' | 'collapsed'
+ * null/undefined/无效值均视为 'auto'
+ */
+export function getSidebarMode() {
+  const raw = localStorage.getItem(APP_SIDEBAR_MODE_KEY)
+  if (raw === 'auto' || raw === 'expanded' || raw === 'collapsed') return raw
+  return 'auto'
+}
+
+export function setSidebarMode(mode) {
+  if (mode === 'auto' || mode === 'expanded' || mode === 'collapsed') {
+    localStorage.setItem(APP_SIDEBAR_MODE_KEY, mode)
+  }
 }
 
 /* -------------------- 一键清空登录态 -------------------- */
