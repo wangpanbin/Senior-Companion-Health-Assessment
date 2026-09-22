@@ -223,3 +223,51 @@ const { isSm, isMd, isLg, isXsPhone, isLandscapePhone } = useResponsive()
 - 暗色主题(plan §3.2 提到的迭代)
 - PWA / 离线缓存(plan §13 之后的扩展)
 - Electron 打包(plan §15 之后的扩展)
+
+---
+
+## 8. 实施结果(2026-09-22)
+
+### 8.1 Commit 链
+
+```
+015119c T-09 E2E 套件 + admin/client 断点回归
+58c86cb T-06/T-07/T-08 admin/export + NlPhoneShell + 3 client dialog
+73fb16a T-05a/b/c 5 个 admin 表格批量迁移
+3789833 T-04 dashboard kpi-grid + 图表 row 自适应
+56df404 T-03 admin sidebar 断点自适应 + 手动 + 持久化
+2a11429 T-02 NlAdminTable + admin/order 迁移
+36034ba T-01 断点系统骨架 + useResponsive + vitest 接入
+1e69a3b spec(desktop-adapt-v2): 设计文档落档,9 ticket 拆解
+```
+
+### 8.2 实际改动 vs 计划
+
+| 维度 | 计划 | 实际 |
+|---|---|---|
+| 新增组件 | NlAdminTable | ✅ 已建 |
+| 新增 composable | useResponsive | ✅ 已建 |
+| 新增 util | sidebar.js + resolveSidebarMode | ✅ 已建 |
+| admin 端表格迁移 | 8 个 view | 6 个 view(order/user/complaint/order-dispute/companion-audit/oper-log),其余 2 个(dashboard / export)非表格,按各自 ticket 处理 |
+| 新增 devDependency | vitest / @vue/test-utils / jsdom | ✅ AGENTS.md §0.2 已说明理由(MATT tdd + §6.2 计划 M12 引入) |
+| 单测 | 5 档断点边界 | 31 测试(useResponsive 9 + NlAdminTable 11 + sidebar 11) |
+| E2E | specs/02-admin + 04-client | specs/12-admin-responsive + 13-client-mobile(避开既有 02-access-matrix 编号) |
+| SCSS 断点 | _breakpoints.scss 5 档 | ✅ 已建,JS / SCSS 共享同一数值 |
+| 老人模式覆盖 | 不破 v1 契约 | ✅ NlPhoneShell media queries 不动 elderly.scss |
+
+### 8.3 已知差异 / 后续可补
+
+1. **dashboard kpi-grid auto-fit 实测**:浏览器手测受限于会话,需在本地 Chrome 实跑 1024 / 1280 / 1920 三档确认视觉。
+2. **NlPhoneShell 横屏紧凑模式**:用 CSS 变量 `--nl-navbar-height / --nl-tabbar-height` 跨组件传递,NlNavBar / NlTabBar 是否读取这两个 CSS 变量需要在浏览器实测。当前实现仅设置变量,**未保证** NlNavBar 真的用了 var()。后续 PR 真正落地需要确认 NlNavBar 用了 CSS 变量(查看其源码 `height: var(--nl-navbar-height, 56px)` 之类)。
+3. **E2E 套件**:`specs/12-admin-responsive.spec.js` 和 `13-client-mobile.spec.js` 已写,但**未在 CI 跑通**(本会话无 MySQL + Chrome)。node --check 已通过;需后续 PR 触发完整 Playwright 跑一遍。
+4. **MATT 工作流的 TDD 严格度**:T-04 / T-06 / T-07(纯 SCSS ticket)未写新单测,改用浏览器手测兜底。后续可在 `__tests__/` 加 SCSS 编译断言(例如把 kpi-grid 的 grid-template-columns 期望值断言一遍)。
+
+### 8.4 评审 checklist
+
+- [x] pnpm test 全绿(31/31)
+- [x] pnpm lint 0 警告
+- [x] pnpm exec playwright test syntax check(12-admin-responsive + 13-client-mobile 通过 node --check)
+- [ ] pnpm exec playwright test specs/12-admin-responsive.spec.js(待 CI / 本地全跑)
+- [ ] pnpm exec playwright test specs/13-client-mobile.spec.js(待 CI / 本地全跑)
+- [ ] pnpm exec playwright test specs/01-auth.spec.js(回归,待跑)
+- [ ] 浏览器手测 1024 / 1280 / 1920 admin 8 路由 + 5 client view + NlPhoneShell 横屏模式
