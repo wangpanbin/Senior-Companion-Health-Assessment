@@ -117,15 +117,18 @@ async function resetPwd(u) {
   loadList()
 }
 
-/** 列定义（desktop 8 列全展示；mobile 4 字段关键） */
+/** 列定义（desktop 8 列全展示；mobile 4 字段关键）
+ *  固定 width 只给短内容列（账号 / 角色 / 手机号 / 状态）；
+ *  昵称 / 真实姓名 / 注册时间用 minWidth，宽屏下按比例分摊剩余宽度，避免右侧留白。
+ */
 const columns = [
-  { key: 'username',   label: '账号',     width: 120 },
-  { key: 'nickname',   label: '昵称',     width: 120 },
-  { key: 'role',       label: '角色',     width: 100 },
-  { key: 'phone',      label: '手机号',   width: 140 },
-  { key: 'realName',   label: '真实姓名', width: 120 },
-  { key: 'createTime', label: '注册时间', width: 160, formatter: (v) => formatDateTime(v) },
-  { key: 'status',     label: '状态',     width: 100 }
+  { key: 'username',   label: '账号',     width: 130 },
+  { key: 'nickname',   label: '昵称',     minWidth: 120 },
+  { key: 'role',       label: '角色',     width: 110 },
+  { key: 'phone',      label: '手机号',   width: 150 },
+  { key: 'realName',   label: '真实姓名', minWidth: 120 },
+  { key: 'createTime', label: '注册时间', minWidth: 170, formatter: (v) => formatDateTime(v) },
+  { key: 'status',     label: '状态',     width: 80 }
 ]
 const mobileFields = ['username', 'role', 'status']
 
@@ -133,7 +136,7 @@ onMounted(loadList)
 </script>
 
 <template>
-  <NlCard title="用户管理" plain>
+  <NlCard title="用户管理" plain class="user-card">
     <section class="filters">
       <el-select
         v-model="filter.role"
@@ -159,9 +162,9 @@ onMounted(loadList)
       </el-select>
       <el-input
         v-model="filter.keyword"
+        class="filter-keyword"
         placeholder="搜索账号 / 昵称 / 手机号"
         clearable
-        style="width: 240px"
         @keyup.enter="onFilterChange"
         @clear="onFilterChange"
       />
@@ -179,6 +182,8 @@ onMounted(loadList)
 
     <NlAdminTable
       v-else
+      fill
+      action-width="180"
       :data="list"
       :columns="columns"
       :mobile-fields="mobileFields"
@@ -191,25 +196,26 @@ onMounted(loadList)
         <NlStatusChip :status="row.status" scope="user" :text="row.statusLabel" />
       </template>
       <template #actions="{ row }">
-        <el-button text type="primary" size="small" @click="resetPwd(row)">重置密码</el-button>
-        <el-button
-          v-if="row.status === 'NORMAL'"
-          text
-          type="danger"
-          size="small"
-          @click="ban(row)"
-        >
-          封禁
-        </el-button>
-        <el-button
-          v-else
-          text
-          type="primary"
-          size="small"
-          @click="unban(row)"
-        >
-          解封
-        </el-button>
+        <div class="user-actions">
+          <el-button
+            class="user-actions__btn"
+            text
+            type="primary"
+            size="small"
+            @click="resetPwd(row)"
+          >
+            重置密码
+          </el-button>
+          <el-button
+            class="user-actions__btn"
+            text
+            :type="row.status === 'NORMAL' ? 'danger' : 'primary'"
+            size="small"
+            @click="row.status === 'NORMAL' ? ban(row) : unban(row)"
+          >
+            {{ row.status === 'NORMAL' ? '封禁' : '解封' }}
+          </el-button>
+        </div>
       </template>
     </NlAdminTable>
 
@@ -226,15 +232,54 @@ onMounted(loadList)
 </template>
 
 <style scoped lang="scss">
+@use '@/styles/variables.scss' as *;
+
+/* 卡片占满视口剩余高度：100vh - 顶栏 64px - el-main 上下 padding 各 24px */
+.user-card {
+  height: calc(100vh - #{$header-height} - #{$nl-space-6} * 2);
+}
+
 .filters {
   display: flex;
   gap: var(--nl-space-3);
   margin-bottom: var(--nl-space-4);
   flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* 搜索框吃掉筛选行剩余宽度，消除右上方留白 */
+.filter-keyword {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* 表格纵向撑满卡片剩余空间（el-table height="100%"，表头固定、表体内部滚动） */
+.user-card :deep(.nl-admin-table) {
+  flex: 1;
+  min-height: 0;
+}
+
+.user-card :deep(.nl-admin-table__desktop) {
+  height: 100%;
+}
+
+/* 操作按钮组：两个按钮等宽、水平平铺（desktop 表格单元格与 mobile 卡片底部共用） */
+.user-actions {
+  display: flex;
+  gap: var(--nl-space-2);
+  width: 100%;
+
+  &__btn {
+    flex: 1;
+    min-width: 0;
+    margin-left: 0;
+  }
 }
 
 .user-pager {
-  margin-top: var(--nl-space-4);
+  flex-shrink: 0;
+  /* margin-top 不再叠加：卡片自身的 flex gap(12px) 已提供间距 */
+  margin-top: 0;
   justify-content: flex-end;
 }
 </style>

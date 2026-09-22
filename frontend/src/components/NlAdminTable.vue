@@ -16,6 +16,9 @@
  * - mobileFields: Array<string=key>    移动卡片要展示的字段（key 顺序即卡片顺序）
  * - rowKey      : string               行唯一键字段名,默认 'id'
  * - emptyText   : string               空态文案
+ * - fill         : boolean              是否纵向铺满父容器（el-table height="100%"，
+ *                                       表头固定、表体内部滚动；父容器需有确定高度）
+ * - actionWidth : number|string         操作列宽度，默认 140
  *
  * ## Slots
  *
@@ -33,7 +36,9 @@ const props = defineProps({
   columns: { type: Array, required: true },
   mobileFields: { type: Array, default: () => [] },
   rowKey: { type: String, default: 'id' },
-  emptyText: { type: String, default: '暂无数据' }
+  emptyText: { type: String, default: '暂无数据' },
+  fill: { type: Boolean, default: false },
+  actionWidth: { type: [String, Number], default: 140 }
 })
 
 const { isLg } = useResponsive()
@@ -57,7 +62,7 @@ function formatCell(col, row) {
   <div class="nl-admin-table">
     <!-- ==================== Desktop · el-table 形态（≥1280） ==================== -->
     <div v-if="isLg" class="nl-admin-table__desktop">
-      <el-table :data="data" :row-key="rowKey" stripe>
+      <el-table :data="data" :row-key="rowKey" :height="fill ? '100%' : undefined" stripe>
         <el-table-column
           v-for="col in desktopColumns"
           :key="col.key"
@@ -74,7 +79,7 @@ function formatCell(col, row) {
           </template>
         </el-table-column>
         <!-- 操作列 -->
-        <el-table-column v-if="$slots.actions" label="操作" :width="140" align="right">
+        <el-table-column v-if="$slots.actions" label="操作" :width="actionWidth" align="right">
           <template #default="{ row }">
             <slot name="actions" :row="row" />
           </template>
