@@ -78,6 +78,8 @@ backend/sql/tools/jmeter_fixture_snapshot.json
 # ============================ 本地工具 / 探测产物（不提交） ============================
 # Claude 本地 skills / 工作目录
 .claude/
+# 本地 ticket 草稿 / scratch 笔记（如 .scratch/desktop-adapt-v2/issues/ 的拆卡草稿）
+/.scratch/
 # E2E 探测产物（含真实 JWT —— 与 backend/sql/tools/jmeter_token.txt 同级红线）
 # ⚠️ reports/ 必须**保持**忽略：tokens.json / storageState 是真实令牌。
 #    tools/e2e/ 的脚本本身已入库，但它们的**产出**永远落在 reports/ 下，两者不要混为一谈。
