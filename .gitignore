@@ -94,3 +94,23 @@ __pycache__/
 # 与 reports/ 同级红线，不入版本库（该目录自己的注释也是这么写的）
 /tests/
 
+# ============================ 测试文件（仅忽略未跟踪项，不取消已跟踪） ============================
+# 说明：.gitignore 只对【新增 / 未跟踪】文件生效，不会移除已被 Git 跟踪的文件。
+#   - 既有 frontend/e2e/、frontend/src/**/__tests__/、backend/src/test/ 等已提交测试文件保持现状。
+#   - tools/e2e/ 属测试基础设施，按既有约定入库，此处不复盖。
+#   - 以下模式仅防止将来新增的测试文件与测试产物被误纳入版本库。
+#
+# 前端单元测试文件名（Jest / Vitest 约定，任意层级新增均忽略）
+*.test.js
+*.test.ts
+*.test.jsx
+*.test.tsx
+*.spec.js
+*.spec.ts
+*.spec.jsx
+*.spec.tsx
+# 前端测试产物（Playwright / 覆盖率报告，纯构建产物，不应入库）
+playwright-report/
+test-results/
+frontend/coverage/
+
