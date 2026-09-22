@@ -423,7 +423,9 @@ watch(range, loadDashboard)
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  // desktop-adapt-v2 T-04：auto-fit + minmax(180px) 让 KPI 数量随容器宽度自适应
+  // < 1024 → 2-3 列;≥ 1280 → 4-6 列;不会在小屏挤死、也不会在大屏留白
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: $nl-space-4;
 }
 
@@ -459,11 +461,18 @@ watch(range, loadDashboard)
 
 .row {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  // desktop-adapt-v2 T-04：< 1024 堆叠;≥ 1024 双列,完成率卡片有最小宽度不被压扁
+  grid-template-columns: 1fr;
   gap: $nl-space-4;
 
   &__main, &__side {
     margin: 0;
+  }
+}
+
+@media (min-width: 1024px) {
+  .row {
+    grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
   }
 }
 
