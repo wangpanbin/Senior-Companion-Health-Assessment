@@ -179,6 +179,18 @@ async function exportFile() {
   display: flex;
   flex-direction: column;
   gap: $nl-space-4;
+  // desktop-adapt-v2 T-06：大屏表单 max-width + 居中，避免在 1920 屏拉得过长
+  // < 1024 直接撑满容器；1024-1599 限到 560；≥ 1600 限到 720
+  max-width: 100%;
+  margin: 0 auto;
+
+  @media (min-width: 1024px) {
+    max-width: 560px;
+  }
+
+  @media (min-width: 1600px) {
+    max-width: 720px;
+  }
 
   &__row {
     display: flex;
@@ -197,7 +209,19 @@ async function exportFile() {
 }
 
 .export-bar {
-  padding: $nl-space-5 0;
+  padding: $nl-space-5 0 0;
+
+  // 按钮宽度跟随 .form 容器一致（大屏居中、窄屏撑满）
+  max-width: 100%;
+  margin: 0 auto;
+
+  @media (min-width: 1024px) {
+    max-width: 560px;
+  }
+
+  @media (min-width: 1600px) {
+    max-width: 720px;
+  }
 
   &__btn {
     width: 100%;

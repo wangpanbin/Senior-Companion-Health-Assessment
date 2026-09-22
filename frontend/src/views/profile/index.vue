@@ -22,6 +22,7 @@ import {
   NlAvatar,
   NlListRow
 } from '@/components'
+import { useResponsive } from '@/composables/useResponsive'
 import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
 import { getProfile } from '@/api/user'
@@ -70,6 +71,9 @@ async function logout() {
 const pwdVisible = ref(false)
 const pwdLoading = ref(false)
 const pwdForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+
+/** < 768 让修改密码弹窗 fullscreen，避免小屏字段被压扁（T-08） */
+const { isMd } = useResponsive()
 
 const pwdValid = computed(() => /^(?=.*[A-Za-z])(?=.*\d)\S{6,32}$/.test(pwdForm.newPassword))
 
@@ -352,7 +356,7 @@ async function submitChangePwd() {
       </div>
 
       <!-- 修改密码弹窗 -->
-      <el-dialog v-model="pwdVisible" title="修改密码" width="90%" align-center>
+      <el-dialog v-model="pwdVisible" title="修改密码" width="90%" :fullscreen="!isMd" align-center>
         <el-form label-position="top">
           <el-form-item label="原密码">
             <el-input

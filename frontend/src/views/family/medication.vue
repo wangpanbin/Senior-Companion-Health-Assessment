@@ -28,6 +28,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   NlPageShell, NlAppTabBar, NlCard, NlStatusChip, NlComplianceBar, NlNoticeBar, NlEmpty, NlSkeleton
 } from '@/components'
+import { useResponsive } from '@/composables/useResponsive'
 import { listElder } from '@/api/user'
 import {
   getTodayTasks, getMedicationCalendar, listMedicationPlans,
@@ -120,6 +121,9 @@ const planMode = ref('create') // create | edit
 const editingPlanId = ref(null)
 const planSaving = ref(false)
 const medicineOptions = ref([])
+
+/** < 768 让新建/编辑计划弹窗 fullscreen（T-08） */
+const { isMd } = useResponsive()
 const medicineLoading = ref(false)
 const selectedDisclaimer = ref('')
 
@@ -591,6 +595,7 @@ onMounted(loadElders)
       v-model="planDialog"
       :title="planMode === 'create' ? '新建用药计划' : '编辑用药计划'"
       width="92%"
+      :fullscreen="!isMd"
       top="5vh"
       append-to-body
     >

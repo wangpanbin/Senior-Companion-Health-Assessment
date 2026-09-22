@@ -112,5 +112,36 @@ defineProps({
     right: 0;
     z-index: 10;
   }
+
+  // ==================== desktop-adapt-v2 T-07 ====================
+  // 小屏 Android（≤360px）：padding 收紧、底部留白压缩，避免一屏只能看到一行
+  @media (max-width: $bp-phone-xs) {
+    &__main {
+      gap: $nl-space-3;
+      padding: $nl-space-3 0 calc(#{$nl-space-3} + 16px);
+
+      &.has-tabs {
+        // 让 has-tabs 走窄屏专属底部 padding（缩小 tabbar 安全留白）
+        padding-bottom: calc(#{$nl-tabbar-height} + #{$nl-tabbar-padding-v} + env(safe-area-inset-bottom, 0));
+      }
+    }
+
+    &__cta {
+      padding: $nl-space-3;
+      padding-bottom: calc(#{$nl-space-3} + env(safe-area-inset-bottom, 0));
+    }
+  }
+
+  // 横屏紧凑模式（高度 ≤ 480px）：nav / tabbar 压缩，让主区拿到更多高度
+  // 同时启用 NlNavBar 高度的 CSS 自定义属性 --nl-navbar-height，让 NlNavBar 同步收紧
+  @media (max-height: $bp-phone-landscape) and (orientation: landscape) {
+    --nl-navbar-height: 40px;
+    --nl-tabbar-height: 48px;
+    --nl-tabbar-padding-v: 6px;
+
+    &__main.has-tabs {
+      padding-bottom: calc(48px + 6px * 2 + env(safe-area-inset-bottom, 0));
+    }
+  }
 }
 </style>

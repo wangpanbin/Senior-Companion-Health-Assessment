@@ -23,6 +23,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   NlPageShell, NlAvatar, NlEmpty, NlSkeleton, NlStatusChip
 } from '@/components'
+import { useResponsive } from '@/composables/useResponsive'
 import { listElder, getElder, removeElder, unbindElder } from '@/api/user'
 import { formatDate } from '@/utils/format'
 
@@ -38,6 +39,9 @@ const pageSize = 50
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detail = ref(null)
+
+/** < 768 让详情弹窗 fullscreen（T-08） */
+const { isMd } = useResponsive()
 
 const isEmpty = computed(() => !loading.value && !elders.value.length)
 
@@ -167,7 +171,7 @@ onMounted(loadElders)
     </div>
 
     <!-- 详情弹窗（getElder，含脱敏身份证/地址/病史等详情级字段） -->
-    <el-dialog v-model="detailVisible" title="老人档案" width="92%">
+    <el-dialog v-model="detailVisible" title="老人档案" width="92%" :fullscreen="!isMd">
       <NlSkeleton v-if="detailLoading" :count="4" />
       <template v-else-if="detail">
         <div class="detail-head">
