@@ -1,10 +1,10 @@
 /**
  * sidebar 模式解析（desktop-adapt-v2 T-03）
  *
- * 依据：`docs/spec/desktop-adapt-v2.md` §4.5 + ticket 03
+ * 依据：`docs/spec/desktop-adapt-v2.md` §2.1 / §4.5 + ticket 03
  *
  * AdminLayout 的侧栏有 3 个状态：
- *   - 'auto'      默认；按 useResponsive().isMd 翻转（<1280 收起 / ≥1280 展开）
+ *   - 'auto'      默认；按 useResponsive().isLg 翻转（<1280 收起 / ≥1280 展开）
  *   - 'expanded'  强制展开，忽略断点
  *   - 'collapsed' 强制收起，忽略断点
  *
@@ -13,8 +13,12 @@
  *   - 当前是 auto 且实际收起 → 切到 expanded（手动展，再 toggle 回 collapsed 即可）
  *   - 当前是手动态 → 切回 auto（让断点接管）
  *
- * 设计：状态机解析独立成纯函数 `resolveSidebarMode(storedMode, isMd)`，
+ * 设计：状态机解析独立成纯函数 `resolveSidebarMode(storedMode, isLg)`，
  * AdminLayout 模板只消费结果，不做判断逻辑。便于单测 + 给 store / 其它 view 复用。
+ *
+ * ⚠️ 第二个参数语义是「当前是否 ≥1280」，不是「1024-1279」（那是 isMd）。
+ *    useResponsive 5 档中 md 是 1024-1279 区间，不是"中等"档；命名易误用。
+ *    T-09 跑测发现此 bug 后（12-admin-responsive 3 档断点全败），改传 isLg。
  */
 
 export const SIDEBAR_MODE_AUTO = 'auto'
@@ -27,13 +31,13 @@ export const SIDEBAR_WIDTH_EXPANDED = 220
 export const SIDEBAR_WIDTH_COLLAPSED = 64
 
 /**
- * 把 "storedMode × isMd" 解析成实际的展示参数。
+ * 把 "storedMode × isLg" 解析成实际的展示参数。
  *
  * @param {string|null|undefined} storedMode  'auto' / 'expanded' / 'collapsed'，null/undefined 走 auto
- * @param {boolean}                isMd       useResponsive().isMd（≥1280）
+ * @param {boolean}                isLg       useResponsive().isLg（≥1280）
  * @returns {{ width: number, collapsed: boolean, mode: 'expanded'|'collapsed' }}
  */
-export function resolveSidebarMode(storedMode, isMd) {
+export function resolveSidebarMode(storedMode, isLg) {
   const mode = storedMode || SIDEBAR_MODE_AUTO
   // 手动态优先；auto 模式按断点
   let effective
@@ -43,7 +47,7 @@ export function resolveSidebarMode(storedMode, isMd) {
     effective = SIDEBAR_MODE_COLLAPSED
   } else {
     // auto
-    effective = isMd ? SIDEBAR_MODE_EXPANDED : SIDEBAR_MODE_COLLAPSED
+    effective = isLg ? SIDEBAR_MODE_EXPANDED : SIDEBAR_MODE_COLLAPSED
   }
   return {
     width: effective === SIDEBAR_MODE_EXPANDED ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_COLLAPSED,
@@ -60,15 +64,15 @@ export function resolveSidebarMode(storedMode, isMd) {
  *   - 当前手动 collapsed → 切回 auto
  *
  * @param {string|null|undefined} storedMode  当前存储的 mode
- * @param {boolean}                isMd       当前断点
+ * @param {boolean}                isLg       当前断点（≥1280）
  * @returns {string}                            下一个 mode（auto / expanded / collapsed）
  */
-export function toggleSidebarMode(storedMode, isMd) {
+export function toggleSidebarMode(storedMode, isLg) {
   const mode = storedMode || SIDEBAR_MODE_AUTO
   // 手动态 → 回到 auto（让断点接管）
   if (mode === SIDEBAR_MODE_EXPANDED || mode === SIDEBAR_MODE_COLLAPSED) {
     return SIDEBAR_MODE_AUTO
   }
   // auto：按当前实际状态反向手动
-  return isMd ? SIDEBAR_MODE_COLLAPSED : SIDEBAR_MODE_EXPANDED
+  return isLg ? SIDEBAR_MODE_COLLAPSED : SIDEBAR_MODE_EXPANDED
 }

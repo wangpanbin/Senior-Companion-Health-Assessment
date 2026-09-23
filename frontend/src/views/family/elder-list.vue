@@ -40,8 +40,8 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detail = ref(null)
 
-/** < 768 让详情弹窗 fullscreen（T-08） */
-const { isMd } = useResponsive()
+/** < 768 让详情弹窗 fullscreen（T-08；用 isXs(≤767)替代 !isMd 修复大屏 PC bug） */
+const { isXs } = useResponsive()
 
 const isEmpty = computed(() => !loading.value && !elders.value.length)
 
@@ -171,7 +171,7 @@ onMounted(loadElders)
     </div>
 
     <!-- 详情弹窗（getElder，含脱敏身份证/地址/病史等详情级字段） -->
-    <el-dialog v-model="detailVisible" title="老人档案" width="92%" :fullscreen="!isMd">
+    <el-dialog v-model="detailVisible" title="老人档案" width="92%" :fullscreen="isXs">
       <NlSkeleton v-if="detailLoading" :count="4" />
       <template v-else-if="detail">
         <div class="detail-head">

@@ -5,13 +5,14 @@ import { computed, ref } from 'vue'
  *
  * 依据：`docs/spec/desktop-adapt-v2.md` §4.3 + `docs/plan/desktop-adapt-2026-09.md` Q12
  *
- * ## 5 档断点（与 _breakpoints.scss 同步）
+ * ## 6 档断点（与 _breakpoints.scss 同步）
  *
+ *   xs     < 768        窄手机竖屏 / 小平板竖屏(T-08 dialog fullscreen 阈值)
  *   sm     < 1024       平板横屏 / 小 PC
  *   md  1024 - 1279     标准 PC(主流笔记本)
  *   lg     ≥ 1280       大屏
  *
- *   xsPhone   ≤ 360       小屏 Android
+ *   xsPhone   ≤ 360       小屏 Android(极窄)
  *   landPhone ≤ 480 且高度 ≤ 480  横屏紧凑模式
  *
  * ## 三条实现约定（沿用 useDevice 的 §2.2）
@@ -25,12 +26,13 @@ import { computed, ref } from 'vue'
  *    （所有 boolean 默认为 false,breakpoint 返回 'lg' 作为最宽松档）。
  *
  * ⚠️ 与 `useDevice` 的关系：useDevice 是 v1 形态判定（mobile vs desktop 二元），
- *    useResponsive 是 v2 档位细化（5 档）。两个 composable 并存,useDevice 暂时不动。
+ *    useResponsive 是 v2 档位细化（6 档）。两个 composable 并存,useDevice 暂时不动。
  *    后续 view 改造陆续从 `isMobile / isDesktop` 迁到 `useResponsive()` 的 tier 接口。
  */
 
-/** 5 档断点 → MediaQueryList query 字符串映射 */
+/** 6 档断点 → MediaQueryList query 字符串映射 */
 const QUERIES = {
+  xs: '(max-width: 767px)',
   sm: '(max-width: 1023px)',
   md: '(min-width: 1024px) and (max-width: 1279px)',
   lg: '(min-width: 1280px)',
@@ -40,6 +42,7 @@ const QUERIES = {
 
 /** 模块级 ref：每档一个 boolean，记录当前是否命中 */
 const matches = {
+  xs:   ref(false),
   sm:   ref(false),
   md:   ref(false),
   lg:   ref(false),
@@ -81,20 +84,22 @@ function ensureInit() {
 }
 
 /**
- * 取当前 5 档断点状态。多次调用返回同一份 ref，保证跨组件一致。
+ * 取当前 6 档断点状态。多次调用返回同一份 ref，保证跨组件一致。
  *
  * @returns {{
+ *   isXs: ComputedRef<boolean>,
  *   isSm: ComputedRef<boolean>,
  *   isMd: ComputedRef<boolean>,
  *   isLg: ComputedRef<boolean>,
  *   isXsPhone: ComputedRef<boolean>,
  *   isLandscapePhone: ComputedRef<boolean>,
- *   breakpoint: ComputedRef<'xsPhone'|'sm'|'md'|'lg'|'landPhone'>
+ *   breakpoint: ComputedRef<'xsPhone'|'xs'|'sm'|'md'|'lg'|'landPhone'>
  * }}
  */
 export function useResponsive() {
   ensureInit()
   return {
+    isXs: computed(() => matches.xs.value),
     isSm: computed(() => matches.sm.value),
     isMd: computed(() => matches.md.value),
     isLg: computed(() => matches.lg.value),
@@ -102,12 +107,13 @@ export function useResponsive() {
     isLandscapePhone: computed(() => matches.landPhone.value),
     /**
      * 当前激活的断点档位。
-     * 优先级：xsPhone > sm > md > lg > landPhone
+     * 优先级：xsPhone > xs > sm > md > lg > landPhone
      * - xsPhone 优先级最高（≤360 必须先识别出来）
      * - landPhone 优先级最低（横屏是 "在某个更宽档上的额外属性"，不替代主档位）
      */
     breakpoint: computed(() => {
       if (matches.xsPhone.value) return 'xsPhone'
+      if (matches.xs.value) return 'xs'
       if (matches.sm.value) return 'sm'
       if (matches.md.value) return 'md'
       if (matches.lg.value) return 'lg'
@@ -121,12 +127,13 @@ export function useResponsive() {
 /**
  * 供 **非组件上下文**（Pinia store action / 模块顶层）同步判断档位用。
  *
- * 为什么不直接用 `useResponsive()`：`breakpoint` 是 computed 取值要 .value，
+ * 为什么不直接用 `useResponsive()`：`breakpoint` 是 computed 取值要 .value,
  * 在 store 里写 `useResponsive().breakpoint.value` 语义别扭且容易漏 .value。
  */
 export function currentBreakpoint() {
   ensureInit()
   if (matches.xsPhone.value) return 'xsPhone'
+  if (matches.xs.value) return 'xs'
   if (matches.sm.value) return 'sm'
   if (matches.md.value) return 'md'
   if (matches.lg.value) return 'lg'

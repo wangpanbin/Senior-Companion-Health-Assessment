@@ -29,7 +29,11 @@ const ROUTES_FAMILY = [
 for (const vp of VIEWPORTS) {
   test.describe(`client viewport ${vp.name} (${vp.width}x${vp.height})`, () => {
     test.use({
-      storageState: authFile('family'),
+      // ⚠️ AC 'family' 角色下的具体账号叫 'fam001' / 'fam019'，没有 'family' 这个账号
+      //    (e2e/helpers/accounts.js#ACCOUNTS)。T-09 误用 authFile('family') 导致
+      //    setup 阶段不会写 family.json → ENOENT → 全 spec 立即失败。
+      //    13-client-mobile 用的是 family 端页面 + 移动形态断点，与 fam001 通用。
+      storageState: authFile('fam001'),
       viewport: { width: vp.width, height: vp.height }
     })
 

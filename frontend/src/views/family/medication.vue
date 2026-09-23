@@ -122,8 +122,8 @@ const editingPlanId = ref(null)
 const planSaving = ref(false)
 const medicineOptions = ref([])
 
-/** < 768 让新建/编辑计划弹窗 fullscreen（T-08） */
-const { isMd } = useResponsive()
+/** < 768 让新建/编辑计划弹窗 fullscreen（T-08；用 isXs(≤767)替代 !isMd 修复大屏 PC bug） */
+const { isXs } = useResponsive()
 const medicineLoading = ref(false)
 const selectedDisclaimer = ref('')
 
@@ -595,7 +595,7 @@ onMounted(loadElders)
       v-model="planDialog"
       :title="planMode === 'create' ? '新建用药计划' : '编辑用药计划'"
       width="92%"
-      :fullscreen="!isMd"
+      :fullscreen="isXs"
       top="5vh"
       append-to-body
     >

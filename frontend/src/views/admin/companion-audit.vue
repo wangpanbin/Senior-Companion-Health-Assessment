@@ -126,8 +126,8 @@ const emptyText = computed(() =>
   tab.value === 'PENDING' ? '暂无待审申请' : tab.value === 'APPROVED' ? '尚无通过记录' : '尚无驳回记录'
 )
 
-/** 详情弹窗 < 768 fullscreen（admin 平板 fallback，与 T-02 admin/order 同款） */
-const { isMd } = useResponsive()
+/** 详情弹窗 < 768 fullscreen（admin 平板 fallback，与 T-02 admin/order 同款；用 isXs(≤767)替代 !isMd 修复大屏 PC bug） */
+const { isXs } = useResponsive()
 
 onMounted(loadList)
 </script>
@@ -184,7 +184,7 @@ onMounted(loadList)
     v-model="reviewVisible"
     :title="`陪诊员资质审核 - ${reviewItem?.realName || ''}`"
     width="640px"
-    :fullscreen="!isMd"
+    :fullscreen="isXs"
     align-center
   >
     <div v-if="reviewItem" class="audit-dialog">

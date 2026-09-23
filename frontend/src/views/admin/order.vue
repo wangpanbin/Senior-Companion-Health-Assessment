@@ -89,8 +89,8 @@ const columns = [
 ]
 const mobileFields = ['orderNo', 'elderName', 'status', 'fee']
 
-/** 详情弹窗全屏策略：< 768 全屏（admin 端理论上不会进 mobile，但留 fallback 给平板） */
-const { isMd } = useResponsive()
+/** 详情弹窗全屏策略：< 768 全屏（admin 端理论上不会进 mobile，但留 fallback 给平板；用 isXs(≤767)替代 !isMd 修复大屏 PC bug） */
+const { isXs } = useResponsive()
 
 onMounted(loadList)
 </script>
@@ -167,7 +167,7 @@ onMounted(loadList)
     />
   </NlCard>
 
-  <el-dialog v-model="viewVisible" title="订单详情" width="560px" :fullscreen="!isMd" align-center>
+  <el-dialog v-model="viewVisible" title="订单详情" width="560px" :fullscreen="isXs" align-center>
     <div v-if="viewOrder" class="order-view">
       <section class="ov-row"><span class="ov-label">订单号</span><span>{{ viewOrder.orderNo }}</span></section>
       <section class="ov-row"><span class="ov-label">就诊人</span><span>{{ viewOrder.elderName }}</span></section>
