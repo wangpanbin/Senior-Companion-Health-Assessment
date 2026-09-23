@@ -100,8 +100,8 @@ const columns = [
 ]
 const mobileFields = ['orderNo', 'elderName', 'status']
 
-/** 仲裁弹窗 < 768 fullscreen（admin 平板 fallback，与 T-02 admin/order 同款策略） */
-const { isMd } = useResponsive()
+/** 仲裁弹窗 < 768 fullscreen（admin 平板 fallback，与 T-02 admin/order 同款策略；用 isXs(≤767)替代 !isMd 修复大屏 PC bug） */
+const { isXs } = useResponsive()
 
 onMounted(loadList)
 </script>
@@ -147,7 +147,7 @@ onMounted(loadList)
     v-model="dialogVisible"
     :title="`订单纠纷 - ${detail?.orderNo || ''}`"
     width="720px"
-    :fullscreen="!isMd"
+    :fullscreen="isXs"
     align-center
   >
     <div v-if="detail" class="dispute">
