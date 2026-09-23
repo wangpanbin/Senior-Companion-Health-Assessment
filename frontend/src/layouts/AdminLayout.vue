@@ -23,14 +23,19 @@ const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
 
-/** 形态判定（desktop-adapt-v2 复用 useResponsive） */
-const { isMd } = useResponsive()
+/** 形态判定（desktop-adapt-v2 复用 useResponsive）
+ *  ⚠️ 断点用的是 `isLg`（≥1280），不是 `isMd`（1024-1279）：
+ *     useResponsive 5 档中 `md` 是 1024-1279 区间，语义不是"中等屏"，
+ *     命名易误用。sidebar 设计语义见 docs/spec/desktop-adapt-v2.md §2.1 / sidebar.js 注释：
+ *     <1280 收起、≥1280 展开。E2E 12-admin-responsive.spec.js:38 直接覆盖这条契约。
+ */
+const { isLg } = useResponsive()
 
 /**
  * 实际侧栏 width / collapsed / mode 三元组
  * 模板只读这几个值；状态推进（toggle / change mode）由 action 负责
  */
-const sidebar = computed(() => resolveSidebarMode(appStore.sidebarMode, isMd.value))
+const sidebar = computed(() => resolveSidebarMode(appStore.sidebarMode, isLg.value))
 
 /** 从路由表 admin 区段生成菜单 */
 const menus = computed(() => {
@@ -57,7 +62,7 @@ const pageModule = computed(() => route.meta?.module || '')
 
 /** 用户点 header 的 toggle 按钮：auto ↔ 手动态（语义见 utils/sidebar.js） */
 function handleToggleSidebar() {
-  const next = computeNextMode(appStore.sidebarMode, isMd.value)
+  const next = computeNextMode(appStore.sidebarMode, isLg.value)
   appStore.setSidebarMode(next)
 }
 
