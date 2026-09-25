@@ -3,7 +3,7 @@
 - **模块**：M9（主路径 B）
 - **评审时间**：2026-09-16（依落地代码反向补齐）
 - **关联**：`docs/api/08-admin.md`、`PLAN_BACKEND.md §8 M9`
-- **代码**：`controller/admin/AdminController`、`service/impl/AdminServiceImpl`、`mapper/AdminReadMapper`、`constant/OperType`、`constant/OperTargetType`
+- **代码**：`controller/admin/AdminController`、`service/impl/AdminServiceImpl`、`service/support/OperLogRecorder`、`mapper/AdminReadMapper`、`constant/OperType`、`constant/OperTargetType`
 
 ---
 
@@ -37,15 +37,15 @@
     → AdminServiceImpl.xxx
         ① 参数与状态校验
         ② 业务表变更（条件更新，防并发覆盖）
-        ③ **writeOperLog(operType, targetType, targetId, ...)** ← 必写，六处调用
-        ④ MessageService.send(...) 通知当事用户（M8 双发）
+         ③ **OperLogRecorder.record(operType, targetType, targetId, ...)** ← 必写，Admin 与 Review 共用
+         ④ MessageService.send(...) 通知当事用户（M8 双发）
 
 纠纷仲裁（接口 9）的特殊路径：
   AdminServiceImpl.arbitrate()
     ├─ 先读一次拿 beforeStatus（用于日志）
     ├─ orderService.forceTerminal(id, target, remark)
     │     仅允许 COMPLETED / CANCELLED；条件更新防并发覆盖
-    ├─ writeOperLog(ARBITRATE_ORDER, ORDER, ...)
+     ├─ operLogRecorder.record(ARBITRATE_ORDER, ORDER, ...)
     └─ M8 双发消息（通知家属 + 陪诊员）
 
 表 → Mapper → Service → Controller：
@@ -57,9 +57,10 @@
   admin_oper_log ─────────────────┘（只增不改）
 ```
 
-**`writeOperLog` 调用点**（六处，覆盖全部写操作）：
+**审计 module 调用点**（七个，覆盖全部写操作）：
 `AUDIT_COMPANION`（审核）· `DISABLE_USER`（封禁）· `ENABLE_USER`（解封）·
-`RESET_PASSWORD`（重置密码）· `ARBITRATE_ORDER`（仲裁）· `HANDLE_COMPLAINT`（处理投诉）。
+`RESET_PASSWORD`（重置密码）· `ARBITRATE_ORDER`（仲裁）· `HANDLE_COMPLAINT`（处理投诉）·
+`REVIEW_RULING`（评价裁定）。
 
 ---
 
@@ -107,7 +108,7 @@ PENDING（待审）──decide──→ APPROVED（通过） / REJECTED（驳�
 | # | 验收项 | 状态 |
 |---|---|---|
 | 1 | 审核 / 用户管理 / 订单管理 / 操作日志 四子模块 | ✅（+投诉处理共五块） |
-| 2 | `admin_oper_log` 必写 | ✅ 六处 `writeOperLog` |
+| 2 | `admin_oper_log` 必写 | ✅ 七个 caller 共用 `OperLogRecorder` |
 | 3 | 纠纷处理强制终态 | ✅ `arbitrate` → `forceTerminal` |
 | 4 | 封禁 + JWT 黑名单 | ✅ `disableUser` + `isBanned` 前置判定 |
 | 5 | 双发消息（家属 + 陪诊员） | ✅ `MessageService` |

@@ -10,7 +10,6 @@ import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.ComplaintHandleDTO;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
-import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.dto.UserDisableDTO;
 import org.company.nianglin.dto.UserEnableDTO;
 import org.company.nianglin.entity.CompanionOrder;
@@ -25,7 +24,6 @@ import org.company.nianglin.vo.ComplaintHandleResultVO;
 import org.company.nianglin.vo.ComplaintVO;
 import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
-import org.company.nianglin.vo.ReviewRulingResultVO;
 import org.company.nianglin.vo.UserStatusResultVO;
 
 import java.util.List;
@@ -129,22 +127,6 @@ public interface AdminService {
      * @throws org.company.nianglin.exception.BusinessException 6004 不存在 / 409 非法流转
      */
     ComplaintHandleResultVO handleComplaint(Long id, ComplaintHandleDTO dto);
-
-    /**
-     * 评价有效性裁定（E4 评价公信力闭环）。
-     *
-     * <p>本期仅支持「有效 → 无效」单向裁定：理由是恢复有效性意味着撤销一次
-     * 已通知双方的裁定，其公信力代价远大于收益。误裁走线下沟通 + 备注记录。</p>
-     *
-     * <p>三件套同事务：① 写 {@code order_review.is_valid = 0}（乐观条件）②
-     * 调 {@link ReviewService#refreshCompanionScore} 重算陪诊员评分 ③ 写
-     * {@code admin_oper_log}（{@code OperType.REVIEW_RULING} +
-     * {@code OperTargetType.REVIEW}）。最后向家属 + 陪诊员各发一条站内信。</p>
-     *
-     * @throws org.company.nianglin.exception.BusinessException
-     *         6005 评价不存在 / 409 已裁定过（含并发穿透）/ 400 isValid=true 或 reason 长度不合法
-     */
-    ReviewRulingResultVO reviewValidity(Long reviewId, ReviewRulingDTO dto);
 
     /* ==================== 操作日志 ==================== */
 

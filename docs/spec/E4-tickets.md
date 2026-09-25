@@ -46,9 +46,9 @@
 
 | 项 | 内容 |
 |---|---|
-| RED | `ReviewRulingServiceTest`（Mockito）覆盖：① 正常裁定（isValid=false + reason=20 字）② 已裁定过 → `409` ③ isValid=true → `400` ④ reason < 10 字 → `400` ⑤ 评价不存在 → `6005` ⑥ 乐观条件失败（update rows=0）→ `409` ⑦ `refreshCompanionScore` 被调用（verify）⑧ 双收件人通知（verify messageService.send × 2 with REVIEW_INVALIDATED）⑨ `admin_oper_log` 被写入（verify `writeOperLog` with `OperType.REVIEW_RULING, OperTargetType.REVIEW, target_id=reviewId, reason=...`）|
-| GREEN | `dto/ReviewRulingDTO.java`（`@AssertTrue isValid=false` + `reason 10..200`）；`vo/ReviewRulingResultVO.java`；`AdminService.reviewValidity` + `AdminServiceImpl.reviewValidity`；`AdminController.reviewValidity` |
-| REFACTOR | 把 "取评价 + 乐观更新 + 重算 + 日志 + 通知" 5 步封装成 1 个事务方法，私有方法清晰分块 |
+| RED | `ReviewRulingServiceTest`（Review interface，Mockito）覆盖：① 正常裁定（isValid=false + reason=20 字）② 已裁定过 → `409` ③ isValid=true → `400` ④ reason < 10 字 → `400` ⑤ 评价不存在 → `6005` ⑥ 乐观条件失败（update rows=0）→ `409` ⑦ Review implementation 内部评分刷新 ⑧ 双收件人通知（verify messageService.send × 2 with REVIEW_INVALIDATED）⑨ 共享审计 module 收到 `OperType.REVIEW_RULING, OperTargetType.REVIEW, target_id=reviewId, reason=...` ⑩ 通知异常向外传播特征 |
+| GREEN | `dto/ReviewRulingDTO.java`（`@AssertTrue isValid=false` + `reason 10..200`）；`vo/ReviewRulingResultVO.java`；`ReviewService.reviewValidity` + `ReviewServiceImpl.reviewValidity`；`AdminController` 直接委托 Review interface；共享审计 module 负责 `admin_oper_log` |
+| REFACTOR | 把有效性写入、评分同步、审计与通知编排集中到 Review implementation；共享审计 module 保留 Admin 与 Review 两个 caller 的 locality |
 | 越权矩阵扩展 | 4 条裁定越权（FAMILY/COMPANION/ELDER 调 `/api/admin/review/{id}/validity` → 403；ADMIN 重复裁定 → 409）|
 | 验收 | `mvn test -Dtest='ReviewRulingServiceTest,ReviewAccessMatrixTest'` 全绿 |
 

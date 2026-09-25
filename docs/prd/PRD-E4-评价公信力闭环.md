@@ -58,7 +58,7 @@ M7 交付的评价体系是**单向**的：家属评陪诊员（1–5 星 + 标�
 
 | 指标 | 目标值 | 口径 | 验证手段 |
 |---|---|---|---|
-| 裁定后评分一致性 | 裁定生效后，`GET /api/review/companion/{id}/score` 与页面分数 **立即一致** | 裁定事务内调用既有 `refreshCompanionScore`（快照刷新 + Redis 缓存删除，TTL 10 分钟仅兜底） | e2e：裁定 → 立即查 score，断言与手工 SQL `AVG(score) WHERE is_valid=1` 一致 |
+| 裁定后评分一致性 | 裁定生效后，`GET /api/review/companion/{id}/score` 与页面分数 **立即一致** | 裁定由 Review module 内部完成评分快照刷新与 Redis 缓存删除（TTL 10 分钟仅兜底） | e2e：裁定 → 立即查 score，断言与手工 SQL `AVG(score) WHERE is_valid=1` 一致 |
 | 无效评价剔除率 | 100% | `is_valid=0` 的评价不出现在陪诊员公开评价列表、不计入平均分 / 星级分布 / 好评率 / 排行榜 | 既有 3 处 SQL 口径已实现，新增用例断言 |
 | 回复内容安全 | 敏感词命中 100% 拒绝 | 复用 `SensitiveWordUtil.firstHit`，返回 `6003` | 单测 + e2e |
 | 越权拦截 | 陪诊员 A 回复陪诊员 B 的评价 → `3004`；家属/老人调回复接口 → `403` | Service 层归属校验：`review.companionId == 当前用户` | 越权矩阵追加（见 §十一） |
@@ -90,7 +90,7 @@ M7 交付的评价体系是**单向**的：家属评陪诊员（1–5 星 + 标�
 | 1 | 陪诊员回复评价（新端点 `POST /api/review/{id}/reply`） | 功能 |
 | 2 | 申诉通道：`ComplaintType` 新增 `REVIEW_APPEAL` 枚举值，复用既有投诉创建/列表/详情/管理端处置全链路 | 功能 |
 | 3 | 管理员有效性裁定（新端点 `POST /api/admin/review/{id}/validity`） | 功能 |
-| 4 | 裁定后评分实时重算（复用 `refreshCompanionScore`） | 功能 |
+| 4 | 裁定后评分实时重算（由 Review module 内部同步评分） | 功能 |
 | 5 | 回复与裁定的站内信通知（`MessageType` 新增 3 个模板） | 功能 |
 | 6 | `ReviewVO` 透出 `isValid` / `replyTime`（`companionReply` 已有） | 数据 |
 | 7 | 前端入口：陪诊员「收到的评价」页（含回复表单）、家属订单详情展示回复与裁定标注、admin 投诉管理页的裁定操作 | 功能 |
@@ -307,7 +307,7 @@ M7 交付的评价体系是**单向**的：家属评陪诊员（1–5 星 + 标�
 1. 评价必须存在，否则 `6005`。
 2. **单向裁定**：本接口只做「有效 → 无效」。理由：恢复有效性意味着撤销一次已通知双方的裁定，其公信力代价远大于收益；若确属误裁，处置路径是管理员线下沟通 + 记录在案（本期不做「恢复有效」入口，记入 §十四遗留）。
 3. 已裁定（`is_valid=0`）的评价再次裁定返回 `409`（与投诉「状态只能正向流转」同风格）。
-4. 裁定必须在一个事务内完成四件事：① `order_review.is_valid` 置 0；② 写 `admin_oper_log`（操作类型 `REVIEW_RULING`，目标=评价，记录理由）；③ 调用 `ReviewService#refreshCompanionScore(companionId)`（**既有 public 方法，事务内刷新快照 + 删缓存**，`ReviewServiceImpl:274-287`）；④ 向评价家属与陪诊员各发一条站内信。
+4. 裁定必须在一个事务内完成四件事：① `order_review.is_valid` 置 0；② Review module 内部完成评分快照刷新与 Redis 删除；③ 通过共享审计 module 写 `admin_oper_log`（操作类型 `REVIEW_RULING`，目标=评价，记录理由）；④ 向评价家属与陪诊员各发一条站内信。
 5. 裁定**禁止**修改 `score` / `content` / `tags` / `companion_reply` 中任何内容——裁定只动 `is_valid` 一个字段。
 6. 裁定**不要求**存在关联申诉（场景 3：巡查主动裁定）。
 
@@ -510,7 +510,7 @@ PENDING → PROCESSING → RESOLVED / REJECTED     （ComplaintStatus 既有流�
 
 | 依赖项 | 所属 | 分级 | 最晚就绪时限 | 影响与替代 |
 |---|---|---|---|---|
-| 既有 `refreshCompanionScore` public 方法 | 内部 | **并行**（已就绪，`ReviewServiceImpl:274`） | — | 无 |
+| Review module 内部评分同步 | 内部 | **并行**（已就绪，`ReviewServiceImpl` 私有 implementation） | — | 无 |
 | `MessageService.send` + SSE 链路 | 内部 | **并行**（已就绪） | — | 无 |
 | 前端「收到的评价」新页面 | 内部 | **并行** | 步骤 6 | 无外部依赖；先于后端可用 Mock 契约开发 |
 | Flyway 迁移 | — | **可绕过**（零迁移） | — | 本期承诺不新开 V4 |
@@ -559,7 +559,7 @@ PENDING → PROCESSING → RESOLVED / REJECTED     （ComplaintStatus 既有流�
 | `order_review.companion_reply` / `reply_time` / `is_valid` | `V1__init_schema.sql`（已建，不可改） | 直接写入，零 DDL |
 | `ReviewVO.companionReply` | `ReviewVO.java:77` | 已透出，补 `isValid` / `replyTime` |
 | `is_valid=1` 过滤（3 处） | `ReviewServiceImpl:193` · `ReviewReadMapper:49,61` · `StatisticsMapper:193,195` | 零改动，固化口径 |
-| `refreshCompanionScore` | `ReviewServiceImpl:274`（public，事务内快照+缓存） | 裁定事务内直接调用 |
+| Review module 内部评分同步 | `ReviewServiceImpl` 私有 implementation | 裁定与创建共用事务内评分刷新 |
 | 投诉创建/推导/唯一约束/敏感词 | `ComplaintServiceImpl:76-144` | 加类型与两个校验，链路复用 |
 | 投诉状态机 + 管理端处置 + 双方通知 | `ComplaintStatus` · `AdminController:176` | 零改动 |
 | 敏感词 `6003` | `SensitiveWordUtil.firstHit` | 直接复用 |

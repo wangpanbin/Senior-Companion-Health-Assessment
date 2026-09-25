@@ -22,6 +22,7 @@ import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.dto.UserDisableDTO;
 import org.company.nianglin.dto.UserEnableDTO;
 import org.company.nianglin.service.AdminService;
+import org.company.nianglin.service.ReviewService;
 import org.company.nianglin.vo.AdminOrderVO;
 import org.company.nianglin.vo.AdminUserVO;
 import org.company.nianglin.vo.ArbitrateResultVO;
@@ -45,14 +46,14 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 管理后台接口。
  *
- * <p>对应 {@code docs/api/08-admin.md} §1 ~ §12。</p>
+ * <p>对应 {@code docs/api/08-admin.md} §1 ~ §13。</p>
  *
  * <h3>整类的 {@code @PreAuthorize} 写在类上</h3>
  *
  * <p>文档顶部第一条硬性约束是「本组接口<b>仅 ADMIN 可访问</b>，其他角色一律 403」。
  * 把注解写在类上是刻意的：12 个接口各写一遍，将来新增第 13 个时忘写一次，
  * 就是一个能看全平台数据的洞 —— 而漏写不会报错、不会被编译拦下，只会在某天被翻出来。
- * 写在类上，新方法默认继承这条规则，漏写是「多一次注解」而不是「少一次保护」。</p>
+ * 写在类上，13 个管理端接口默认继承这条规则，漏写是「多一次注解」而不是「少一次保护」。</p>
  *
  * <p>类级注解与 {@code SecurityConfig} 的路径规则互不冲突：后者只管
  * 「要不要登录」，前者管「是不是管理员」。</p>
@@ -65,10 +66,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('" + RoleConstants.ADMIN + "')")
-@Tag(name = "08-管理后台", description = "资质审核、用户管理、订单纠纷、投诉处理与操作日志")
+@Tag(name = "08-管理后台", description = "资质审核、用户管理、订单纠纷、投诉处理、评价裁定与操作日志")
 public class AdminController {
 
     private final AdminService adminService;
+    private final ReviewService reviewService;
 
     /* ==================== 资质审核 ==================== */
 
@@ -197,7 +199,7 @@ public class AdminController {
     public Result<ReviewRulingResultVO> reviewValidity(
             @Parameter(description = "评价 ID", example = "30001") @PathVariable("id") Long reviewId,
             @Valid @RequestBody ReviewRulingDTO dto) {
-        return Result.success("裁定已生效", adminService.reviewValidity(reviewId, dto));
+        return Result.success("裁定已生效", reviewService.reviewValidity(reviewId, dto));
     }
 
     /* ==================== 操作日志 ==================== */

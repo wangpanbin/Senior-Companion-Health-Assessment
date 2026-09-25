@@ -14,7 +14,7 @@
 |---|---|---|---|
 | M7-Reply | 陪诊员回复评价 | `order_review.companion_reply` / `reply_time`（V1 已建）、`SensitiveWordUtil` | `POST /api/review/{id}/reply`、`ReviewService.reply()`、`ReviewReplyDTO` |
 | M7-Appeal | 评价申诉（复用投诉通道） | `complaint` 表、`ComplaintService.create` 推导逻辑、`FileBizType.COMPLAINT` | `ComplaintType.REVIEW_APPEAL`、`ComplaintCreateDTO.reviewId` 可选字段 |
-| M7-Ruling | 管理员有效性裁定 | `ReviewService.refreshCompanionScore`（M7 public）、`MessageService`（M8）、`AdminOperLog`（M9） | `POST /api/admin/review/{id}/validity`、`AdminService.reviewValidity()`、`ReviewRulingDTO` |
+| M7-Ruling | 管理员有效性裁定 | Review module 内部评分同步、`MessageService`（M8）、共享审计 module（M9） | `POST /api/admin/review/{id}/validity`、`ReviewService.reviewValidity()`、`ReviewRulingDTO` |
 | M7-Notify | 三类通知 | `MessageTemplateUtil` | `MessageType.REVIEW_REPLIED` / `REVIEW_APPEAL_SUBMITTED` / `REVIEW_INVALIDATED` |
 | M7-Read | 无效评价读口径固化 + ReviewVO 字段透出 | `ReviewVO` 既有 | `ReviewVO.isValid` / `replyTime` |
 | Frontend | 4 个页面 | 既有 NlCard/NlPageShell | `companion/reviews.vue`、`admin/review-audit.vue`、`family/order-detail.vue` 回复区、`admin/complaint.vue` 裁定入口 |
@@ -34,7 +34,7 @@
 | 错误码 | `6005` 评价不存在 · `6006` 已回复 · `6003` 敏感词 · `3004` 非该评价的陪诊员 · `403` FAMILY/ADMIN（注解）· `403` ELDER（拦截器）|
 | 事务边界 | `@Transactional(rollbackFor = Exception.class)`，事务内：① 校验评价 + 归属 ② 写 `companion_reply` + `reply_time` ③ 通知家属 |
 | 通知 | `MessageType.REVIEW_REPLIED` → 评价家属；bizId=orderId；title=`"陪诊员已回复您的评价"`；content=`"陪诊员回复了您对订单 %s 的评价（%s…）"`，其中 `s…` 为回复前 30 字摘要 |
-| 评分影响 | **不**触发 `refreshCompanionScore`（回复不参与聚合）|
+| 评分影响 | **不**触发 Review module 内部评分同步（回复不参与聚合）|
 
 ### 2.2 POST /api/complaint · 评价申诉（复用通道）
 
@@ -55,9 +55,9 @@
 | 请求体 | `{ "isValid": Boolean（仅 false）, "reason": String, 10..200 chars }` |
 | 成功响应 | `Result<{ reviewId, isValid, companionId }>` 用于前端跳转陪诊员评分页 |
 | 错误码 | `6005` 评价不存在 · `409` 已裁定过（`is_valid=0`）· `400` 仅接受 `isValid=false`（防误操作恢复有效）· `400` reason < 10 字 |
-| 事务边界 | 一个事务内：① `order_review.is_valid = 0`（带乐观条件 `eq(is_valid, 1)`）② 写 `admin_oper_log`（`OperType.REVIEW_RULING` + `OperTargetType.REVIEW`）③ `reviewService.refreshCompanionScore(companionId)`（事务内快照刷新 + Redis 删）④ 通知家属 + 陪诊员 |
+| 事务边界 | 一个事务内：① `order_review.is_valid = 0`（带乐观条件 `eq(is_valid, 1)`）② Review module 内部评分快照刷新 + Redis 删除 ③ 通过共享审计 module 写 `admin_oper_log`（`OperType.REVIEW_RULING` + `OperTargetType.REVIEW`）④ 通知家属 + 陪诊员 |
 | 通知 | `MessageType.REVIEW_INVALIDATED` → 家属 + 陪诊员；bizId=orderId；content=`"订单 %s 中的一条评价被平台裁定为无效（%s…）"` |
-| 操作日志 | `target_type=REVIEW`、`target_id=reviewId`、`target_desc="评价 #" + reviewId`、`before=null`、`after="IS_VALID:0"`、`reason`（写入 reason 字段）|
+| 操作日志 | `target_type=REVIEW`、`target_id=reviewId`、`target_desc="评价 #" + reviewId`、`before="IS_VALID:1"`、`after="IS_VALID:0"`、`reason`（写入 reason 字段）|
 
 ### 2.4 GET /api/review/order/{orderId} / /api/review/companion/{id}（既有）
 
@@ -180,7 +180,7 @@ case REVIEW_INVALIDATED -> "平台裁定订单 %s 中的一条评价为无效（
     value(p, "orderNo"), truncate(emptyIfMissing(p, "reasonDigest"), 30));
 ```
 
-`reasonDigest` 由 AdminService.reviewValidity 传 `reason.substring(0, Math.min(30, reason.length()))`。
+`reasonDigest` 由 ReviewService.reviewValidity 传 `reason.substring(0, Math.min(30, reason.length()))`。
 
 ---
 
@@ -209,9 +209,9 @@ WHERE type = 'REVIEW_APPEAL'
 > 反查评价→订单的写法避免在 `complaint` 表加 `review_id` 列，与「零迁移」一致；
 > 子查询命中 `order_review.id` 主键 + `order_id` 索引，O(1) 一次扫描。
 
-### 6.3 AdminOperLogMapper（已有，**零新增**）
+### 6.3 共享审计 module（已有 `AdminOperLogMapper`，新增 `OperLogRecorder` seam）
 
-通过 `AdminServiceImpl` 既有 `writeOperLog(...)` 工具方法（行 631+）。
+通过 `OperLogRecorder` 统一组装并写入 `admin_oper_log`；Admin 原有动作与 Review 裁定共用该 module。
 
 ---
 
@@ -256,7 +256,7 @@ public ReviewReplyResultVO reply(Long reviewId, ReviewReplyDTO dto) {
 
 要点：
 - `isNull(companionReply)` 兜住并发穿透（与 `create()` 的 DuplicateKey 风格一致）。
-- 事务内调用 `messageService.send`：若 `MessageService.send` 异常已由其内部 try/catch 吞掉（见既有实现），事务不需补偿。
+- 事务内调用 `messageService.send`：阶段一保持当前异常外抛与事务回滚语义；通知可靠性调整留待阶段二。
 
 ### 7.2 ComplaintServiceImpl.create() · REVIEW_APPEAL 分支
 
@@ -283,13 +283,16 @@ if (type == ComplaintType.REVIEW_APPEAL) {
 
 依赖注入：`OrderReviewMapper orderReviewMapper`（新增 final 字段）+ `@Value("${nianglin.review.appeal-deadline-days:15}") int appealDeadlineDays`。
 
-### 7.3 AdminServiceImpl.reviewValidity(Long reviewId, ReviewRulingDTO dto)
+### 7.3 ReviewServiceImpl.reviewValidity(Long reviewId, ReviewRulingDTO dto)
 
 伪代码：
 
 ```java
 @Transactional(rollbackFor = Exception.class)
 public ReviewRulingResultVO reviewValidity(Long reviewId, ReviewRulingDTO dto) {
+    LoginUser currentUser = SecurityUtils.currentUser();
+    if (!RoleConstants.ADMIN.equals(currentUser.role()))
+        throw new BusinessException(FORBIDDEN);
     if (Boolean.TRUE.equals(dto.getIsValid()))
         throw new BusinessException(PARAM_ERROR, "本接口仅支持裁定为无效，恢复有效请走线下流程");
     String reason = dto.getReason().trim();
@@ -301,19 +304,18 @@ public ReviewRulingResultVO reviewValidity(Long reviewId, ReviewRulingDTO dto) {
     if (Integer.valueOf(0).equals(review.getIsValid()))
         throw new BusinessException(CONFLICT, "该评价已被裁定无效");
 
-    LoginUser me = SecurityUtils.currentUser();
     int rows = orderReviewMapper.update(null, Wrappers.<OrderReview>lambdaUpdate()
             .eq(OrderReview::getId, reviewId)
             .eq(OrderReview::getIsValid, 1)              // 乐观条件
             .set(OrderReview::getIsValid, 0));
     if (rows == 0) throw new BusinessException(CONFLICT, "该评价已被裁定无效（并发抢占）");
 
-    reviewService.refreshCompanionScore(review.getCompanionId());
+    refreshCompanionScore(review.getCompanionId());
 
-    writeOperLog(OperType.REVIEW_RULING, OperTargetType.REVIEW, reviewId,
+    operLogRecorder.record(OperType.REVIEW_RULING, OperTargetType.REVIEW, reviewId,
             "评价 #" + reviewId, "IS_VALID:1", "IS_VALID:0", reason);
 
-    String digest = reason.length() > 30 ? reason.substring(0, 30) + "…" : reason;
+    String digest = truncateDigest(reason);
     Map<String, Object> params = new HashMap<>();
     params.put("orderNo", review.getOrderNo());
     params.put("reasonDigest", digest);
@@ -321,13 +323,13 @@ public ReviewRulingResultVO reviewValidity(Long reviewId, ReviewRulingDTO dto) {
     messageService.send(review.getCompanionId(), MessageType.REVIEW_INVALIDATED, review.getOrderId(), params);
 
     log.info("评价已被裁定无效 | reviewId={} | companionId={} | adminId={}",
-            reviewId, review.getCompanionId(), me.userId());
+            reviewId, review.getCompanionId(), currentUser.userId());
     return ReviewRulingResultVO.of(reviewId, false, review.getCompanionId());
 }
 ```
 
 要点：
-- **三件套同事务**（置位/重算/日志/通知）：`refreshCompanionScore` 内部已经走 `@Transactional`，外层事务罩着；通知失败按既有惯例不阻塞（`MessageServiceImpl.send` 内部 try/catch）。
+- **三件套同事务**（置位/重算/日志/通知）：Review implementation 内部评分同步与外层事务共同保证原子性；阶段一保持当前行为，Message module 的落库异常会向外传播并触发回滚，阶段二再单独处理通知可靠性。
 - 乐观条件 `.eq(isValid, 1)` 与响应中 `if (rows == 0)` 翻译 `409`：挡住「在我之前已经有人裁定过」的并发场景。
 
 ---
@@ -357,7 +359,7 @@ public Result<ReviewReplyResultVO> reply(
 public Result<ReviewRulingResultVO> reviewValidity(
         @PathVariable("id") Long reviewId,
         @Valid @RequestBody ReviewRulingDTO dto) {
-    return Result.success("裁定已生效", adminService.reviewValidity(reviewId, dto));
+    return Result.success("裁定已生效", reviewService.reviewValidity(reviewId, dto));
 }
 ```
 
@@ -370,7 +372,7 @@ public Result<ReviewRulingResultVO> reviewValidity(
 | 类 | 覆盖 |
 |---|---|
 | `ReviewServiceReplyTest`（新）| 正常回复、已回复 `6006`、非本陪诊员 `3004`、敏感词 `6003`、评价不存在 `6005`、并发穿透（lambdaUpdate 返回 0 → `6006`）、通知发送（mock MessageService 收到 REVIEW_REPLIED）|
-| `ReviewServiceValidityTest`（新）| 正常裁定、已裁定 `409`、isValid=true `400`、reason <10 字符 `400`、通知发送（双收件人）、`refreshCompanionScore` 被调用（mock ReviewService）|
+| `ReviewRulingServiceTest`（Review interface）| 正常裁定、已裁定 `409`、isValid=true `400`、reason <10 字符 `400`、评分刷新、审计记录、双收件人通知、通知异常传播特征 |
 | `ComplaintServiceAppealTest`（新）| 正常申诉、超期 `409`、同 reviewId 已有未结案 `409`、reviewId 缺失 `400`、review 与订单不一致 `3004`、review 不属于本陪诊员 `3004`、评价不存在 `6005`|
 
 ### 9.2 越权矩阵（`ReviewAccessMatrixTest` 扩展）

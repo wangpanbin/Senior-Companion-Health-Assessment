@@ -13,6 +13,7 @@ import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.ReviewReadMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.impl.ReviewServiceImpl;
+import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.vo.CompanionScoreVO;
@@ -91,13 +92,17 @@ class ReviewServiceTest {
     @Mock
     private MessageService messageService;
 
+    @Mock
+    private OperLogRecorder operLogRecorder;
+
     private ReviewServiceImpl service;
 
     @BeforeEach
     void setUp() {
         MybatisLambdaCache.warmUp();
         service = new ReviewServiceImpl(reviewMapper, reviewReadMapper, companionProfileMapper,
-                orderService, userNameResolver, redisTemplate, new ObjectMapper(), messageService);
+                orderService, userNameResolver, redisTemplate, new ObjectMapper(), messageService,
+                operLogRecorder);
         loginAs(RoleConstants.FAMILY, FAMILY_ID);
     }
 

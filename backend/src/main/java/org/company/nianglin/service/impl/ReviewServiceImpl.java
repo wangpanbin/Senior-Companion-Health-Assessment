@@ -8,12 +8,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.MessageType;
+import org.company.nianglin.constant.OperTargetType;
+import org.company.nianglin.constant.OperType;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RedisKeyConstants;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.ReviewCreateDTO;
 import org.company.nianglin.dto.ReviewQuery;
 import org.company.nianglin.dto.ReviewReplyDTO;
+import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.OrderReview;
@@ -26,11 +29,13 @@ import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.ReviewService;
+import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.SensitiveWordUtil;
 import org.company.nianglin.vo.CompanionScoreVO;
 import org.company.nianglin.vo.ReviewCreateResultVO;
 import org.company.nianglin.vo.ReviewReplyResultVO;
+import org.company.nianglin.vo.ReviewRulingResultVO;
 import org.company.nianglin.vo.ReviewVO;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -89,14 +94,8 @@ public class ReviewServiceImpl implements ReviewService {
     private final UserNameResolver userNameResolver;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-    /**
-     * 站内信发送入口。
-     *
-     * <p>回复评价时向评价家属发 {@code REVIEW_REPLIED}。{@code @RequiredArgsConstructor}
-     * 会把它放进构造器，调用方按声明顺序注入；测试通过反射赋值绕过
-     * 7 个必填依赖（M7 既有 7 个 + 新增 1 个 = 8 个）。</p>
-     */
     private final MessageService messageService;
+    private final OperLogRecorder operLogRecorder;
 
     /* ================================================================== */
     /* 1. 提交评价                                                         */
@@ -294,8 +293,7 @@ public class ReviewServiceImpl implements ReviewService {
      *
      * <p>Redis 删除失败不影响事务：缓存有自己的 TTL，最坏 10 分钟后自愈。</p>
      */
-    @Override
-    public void refreshCompanionScore(Long companionId) {
+    private void refreshCompanionScore(Long companionId) {
         CompanionScoreVO score = aggregate(companionId);
         companionProfileMapper.update(null, Wrappers.<CompanionProfile>lambdaUpdate()
                 .eq(CompanionProfile::getUserId, companionId)
@@ -389,6 +387,56 @@ public class ReviewServiceImpl implements ReviewService {
         }
         return content.substring(0, NOTIFY_DIGEST_MAX) + "…";
     }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ReviewRulingResultVO reviewValidity(Long reviewId, ReviewRulingDTO dto) {
+        LoginUser currentUser = SecurityUtils.currentUser();
+        if (!RoleConstants.ADMIN.equals(currentUser.role())) {
+            throw new BusinessException(ResultCode.FORBIDDEN);
+        }
+        if (dto == null || dto.getIsValid() == null || Boolean.TRUE.equals(dto.getIsValid())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "本期仅支持裁定为无效，恢复有效请走线下流程");
+        }
+        String reason = dto.getReason() == null ? "" : dto.getReason().trim();
+        if (reason.length() < 10 || reason.length() > 200) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "裁定理由长度应为 10–200 个字符");
+        }
+
+        OrderReview review = reviewMapper.selectById(reviewId);
+        if (review == null) {
+            throw new BusinessException(ResultCode.REVIEW_NOT_FOUND);
+        }
+        if (review.getIsValid() != null && review.getIsValid() == 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "该评价已被裁定无效");
+        }
+
+        int rows = reviewMapper.update(null, Wrappers.<OrderReview>lambdaUpdate()
+                .eq(OrderReview::getId, reviewId)
+                .eq(OrderReview::getIsValid, 1)
+                .set(OrderReview::getIsValid, 0));
+        if (rows == 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "该评价已被裁定无效");
+        }
+
+        refreshCompanionScore(review.getCompanionId());
+        operLogRecorder.record(OperType.REVIEW_RULING, OperTargetType.REVIEW, reviewId,
+                "评价 #" + reviewId, "IS_VALID:1", "IS_VALID:0", reason);
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("orderNo", review.getOrderNo());
+        params.put("reasonDigest", truncateDigest(reason));
+        messageService.send(review.getFamilyId(), MessageType.REVIEW_INVALIDATED,
+                review.getOrderId(), params);
+        messageService.send(review.getCompanionId(), MessageType.REVIEW_INVALIDATED,
+                review.getOrderId(), params);
+
+        log.info("评价已被裁定无效 | reviewId={} | companionId={} | adminId={}",
+                reviewId, review.getCompanionId(), currentUser.userId());
+        return ReviewRulingResultVO.of(reviewId, false, review.getCompanionId());
+    }
+
     /* ================================================================== */
     /* 内部：缓存                                                          */
     /* ================================================================== */

@@ -28,7 +28,6 @@ import org.company.nianglin.dto.CertificateItem;
 import org.company.nianglin.dto.ComplaintHandleDTO;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
-import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.dto.UserDisableDTO;
 import org.company.nianglin.dto.UserEnableDTO;
 import org.company.nianglin.entity.AdminOperLog;
@@ -37,7 +36,6 @@ import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.Complaint;
 import org.company.nianglin.entity.ElderProfile;
-import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.AdminOperLogMapper;
@@ -47,7 +45,6 @@ import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.mapper.ComplaintMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
-import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
@@ -56,11 +53,10 @@ import org.company.nianglin.security.TokenStore;
 import org.company.nianglin.service.AdminService;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderService;
-import org.company.nianglin.service.ReviewService;
+import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.AesUtil;
 import org.company.nianglin.util.MaskUtil;
-import org.company.nianglin.util.RequestInfoUtil;
 import org.company.nianglin.vo.AdminOrderVO;
 import org.company.nianglin.vo.AdminUserVO;
 import org.company.nianglin.vo.ArbitrateResultVO;
@@ -72,7 +68,6 @@ import org.company.nianglin.vo.ComplaintVO;
 import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.OrderVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
-import org.company.nianglin.vo.ReviewRulingResultVO;
 import org.company.nianglin.vo.UserStatusResultVO;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -117,15 +112,13 @@ public class AdminServiceImpl implements AdminService {
     /** 驳回原因的最小长度（文档 §3：5–200 字符） */
     private static final int MIN_REJECT_REASON_LENGTH = 5;
 
-    /** {@code admin_oper_log.target_desc} 的列宽，超长会直接抛「Data too long」 */
-    private static final int MAX_TARGET_DESC_LENGTH = 100;
-
     private final CompanionAuditRecordMapper auditRecordMapper;
     private final CompanionProfileMapper companionProfileMapper;
     private final SysUserMapper sysUserMapper;
     private final ComplaintMapper complaintMapper;
     private final CompanionOrderMapper orderMapper;
     private final AdminOperLogMapper operLogMapper;
+    private final OperLogRecorder operLogRecorder;
     private final AdminReadMapper adminReadMapper;
     private final OrderReadMapper orderReadMapper;
     private final MessageService messageService;
@@ -135,21 +128,6 @@ public class AdminServiceImpl implements AdminService {
     private final SecurityProperties securityProperties;
     private final TokenStore tokenStore;
     private final ObjectMapper objectMapper;
-    /**
-     * 评价表读 mapper（E4 评价裁定专用）。
-     *
-     * <p>裁定接口要先把评价读出来比对 {@code is_valid}，再决定能否置位。</p>
-     */
-    private final OrderReviewMapper orderReviewMapper;
-    /**
-     * 评价服务（E4 评价裁定专用）。
-     *
-     * <p>裁定生效后必须调 {@link ReviewService#refreshCompanionScore} 立即
-     * 重算陪诊员评分 —— 该方法已经把「更新 {@code companion_profile.score}
-     * + 删 Redis 缓存」封装成一个 public 方法，这里直接调，
-     * 避免「裁定生效但分数没变」的中间态。</p>
-     */
-    private final ReviewService reviewService;
 
     /* ================================================================== */
     /* 1 / 2 / 3. 资质审核                                                 */
@@ -262,7 +240,7 @@ public class AdminServiceImpl implements AdminService {
         params.put("rejectReason", approved ? "" : "原因：" + rejectReason);
         messageService.send(record.getApplicantUserId(), MessageType.AUDIT_RESULT, record.getId(), params);
 
-        writeOperLog(OperType.AUDIT_COMPANION, OperTargetType.COMPANION, record.getApplicantUserId(),
+        operLogRecorder.record(OperType.AUDIT_COMPANION, OperTargetType.COMPANION, record.getApplicantUserId(),
                 "资质申请 #" + record.getId(), current.name(),
                 approved ? AuditStatus.APPROVED.name() : AuditStatus.REJECTED.name(),
                 approved ? "审核通过" : "审核驳回：" + rejectReason);
@@ -345,7 +323,7 @@ public class AdminServiceImpl implements AdminService {
         params.put("content", "您的账号已被封禁，原因：" + reason + "。如有疑问请联系平台管理员。");
         messageService.send(id, MessageType.SYSTEM_NOTICE, null, params);
 
-        writeOperLog(OperType.DISABLE_USER, OperTargetType.USER, id, user.getUsername(),
+        operLogRecorder.record(OperType.DISABLE_USER, OperTargetType.USER, id, user.getUsername(),
                 AccountStatus.NORMAL, AccountStatus.DISABLED, reason);
 
         log.info("用户已封禁 | userId={} | adminId={}", id, SecurityUtils.currentUserId());
@@ -375,7 +353,7 @@ public class AdminServiceImpl implements AdminService {
         params.put("content", "您的账号已恢复正常，可以继续使用。");
         messageService.send(id, MessageType.SYSTEM_NOTICE, null, params);
 
-        writeOperLog(OperType.ENABLE_USER, OperTargetType.USER, id, user.getUsername(),
+        operLogRecorder.record(OperType.ENABLE_USER, OperTargetType.USER, id, user.getUsername(),
                 AccountStatus.DISABLED, AccountStatus.NORMAL, trimmed(dto.getRemark()));
 
         log.info("用户已解封 | userId={} | adminId={}", id, SecurityUtils.currentUserId());
@@ -400,7 +378,7 @@ public class AdminServiceImpl implements AdminService {
         params.put("content", "您的登录密码已被管理员重置，请使用默认密码登录并立即修改。");
         messageService.send(id, MessageType.SYSTEM_NOTICE, null, params);
 
-        writeOperLog(OperType.RESET_PASSWORD, OperTargetType.USER, id, user.getUsername(),
+        operLogRecorder.record(OperType.RESET_PASSWORD, OperTargetType.USER, id, user.getUsername(),
                 null, null, dto.getRemark().trim());
 
         log.info("用户密码已重置 | userId={} | adminId={}", id, SecurityUtils.currentUserId());
@@ -463,7 +441,7 @@ public class AdminServiceImpl implements AdminService {
         messageService.send(before.getFamilyId(), messageType, id, params);
         messageService.send(before.getCompanionId(), messageType, id, params);
 
-        writeOperLog(OperType.ARBITRATE_ORDER, OperTargetType.ORDER, id, before.getOrderNo(),
+        operLogRecorder.record(OperType.ARBITRATE_ORDER, OperTargetType.ORDER, id, before.getOrderNo(),
                 before.getStatus(), after.getStatus(), remark.toString());
 
         log.info("纠纷处理完成 | orderId={} | {} → {} | adminId={}",
@@ -572,7 +550,7 @@ public class AdminServiceImpl implements AdminService {
             messageService.send(complaint.getTargetUserId(), MessageType.COMPLAINT_HANDLED, id, params);
         }
 
-        writeOperLog(OperType.HANDLE_COMPLAINT, OperTargetType.COMPLAINT, id, complaint.getOrderNo(),
+        operLogRecorder.record(OperType.HANDLE_COMPLAINT, OperTargetType.COMPLAINT, id, complaint.getOrderNo(),
                 current.name(), target.name(), dto.getHandleResult().trim());
 
         log.info("投诉已处理 | complaintId={} | {} → {} | adminId={}",
@@ -619,90 +597,6 @@ public class AdminServiceImpl implements AdminService {
 
         Page<AdminOperLog> page = operLogMapper.selectPage(query.toMpPage(), wrapper);
         return PageResult.of(page, page.getRecords().stream().map(OperLogVO::of).toList());
-    }
-
-    /* ================================================================== */
-    /* 11. 评价有效性裁定（E4）                                              */
-    /* ================================================================== */
-
-    /**
-     * 摘要长度上限（与回复评价共用同一常量 {@code ReviewServiceImpl.NOTIFY_DIGEST_MAX}）。
-     *
-     * <p>这里再声明一份而非引用 {@code ReviewServiceImpl.NOTIFY_DIGEST_MAX} 是因为该字段是
-     * private static —— 跨类复用必须开放可见性，而开放可见性会让外部代码产生「
-     * 改一处即影响两处」的耦合。重复一份 30 字常量是更小的债。</p>
-     */
-    private static final int RULING_DIGEST_MAX = 30;
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public ReviewRulingResultVO reviewValidity(Long reviewId, ReviewRulingDTO dto) {
-        // 入参校验：DTO 上 @AssertTrue 已挡住 isValid=true；这里兜底 reason 长度（DTO 注解已做，这里再校一遍防 NPE）
-        if (Boolean.TRUE.equals(dto.getIsValid())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR,
-                    "本期仅支持裁定为无效，恢复有效请走线下流程");
-        }
-        String reason = dto.getReason() == null ? "" : dto.getReason().trim();
-        if (reason.length() < 10 || reason.length() > 200) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "裁定理由长度应为 10–200 个字符");
-        }
-
-        OrderReview review = orderReviewMapper.selectById(reviewId);
-        if (review == null) {
-            throw new BusinessException(ResultCode.REVIEW_NOT_FOUND);
-        }
-        if (review.getIsValid() != null && review.getIsValid() == 0) {
-            // 已裁定过：幂等拒绝（不是 6002「订单已评价」这种业务码，用 409 更准确——
-            // 「当前状态不允许该操作」的语义）
-            throw new BusinessException(ResultCode.CONFLICT, "该评价已被裁定无效");
-        }
-
-        // 乐观条件：eq(is_valid, 1) 挡住「在我做检查与 update 之间被对方抢锁」的并发场景。
-        // 与回复评价的 isNull(companion_reply) 同款双防线。
-        int rows = orderReviewMapper.update(null, Wrappers.<OrderReview>lambdaUpdate()
-                .eq(OrderReview::getId, reviewId)
-                .eq(OrderReview::getIsValid, 1)
-                .set(OrderReview::getIsValid, 0));
-        if (rows == 0) {
-            // 影响行 = 0 = 并发穿透：另一个管理员在我之前已经裁定。
-            // 此时绝对不能调 refreshCompanionScore 与通知，否则会出现「数据库没改但
-            // 评分已重算 + 用户收到通知」的鬼故事
-            throw new BusinessException(ResultCode.CONFLICT, "该评价已被裁定无效");
-        }
-
-        // 评分重算：放在事务内，order_review.is_valid 与 companion_profile.score
-        // 要么一起生效要么一起回滚
-        reviewService.refreshCompanionScore(review.getCompanionId());
-
-        // 操作日志：target_desc = "评价 #" + id（不暴露评价文字本身，避免把
-        // 敏感词 / 攻击性文字从日志里二次传播出去）
-        writeOperLog(OperType.REVIEW_RULING, OperTargetType.REVIEW, reviewId,
-                "评价 #" + reviewId, "IS_VALID:1", "IS_VALID:0", reason);
-
-        // 双收件人通知：摘要硬截 30 字 + 省略号
-        Map<String, Object> params = new HashMap<>();
-        params.put("orderNo", review.getOrderNo());
-        params.put("reasonDigest", truncateForNotify(reason));
-        messageService.send(review.getFamilyId(), MessageType.REVIEW_INVALIDATED,
-                review.getOrderId(), params);
-        messageService.send(review.getCompanionId(), MessageType.REVIEW_INVALIDATED,
-                review.getOrderId(), params);
-
-        log.info("评价已被裁定无效 | reviewId={} | companionId={} | adminId={}",
-                reviewId, review.getCompanionId(), SecurityUtils.currentUserId());
-        return ReviewRulingResultVO.of(reviewId, false, review.getCompanionId());
-    }
-
-    /**
-     * 摘要：原文 ≤ 30 字直接用，否则截断 + 省略号。
-     *
-     * <p>裁定理由摘要直接进入站内信正文，控制在 30 字避免长篇大论污染通知流。</p>
-     */
-    private static String truncateForNotify(String content) {
-        if (content.length() <= RULING_DIGEST_MAX) {
-            return content;
-        }
-        return content.substring(0, RULING_DIGEST_MAX) + "…";
     }
 
     /* ================================================================== */
@@ -807,43 +701,7 @@ public class AdminServiceImpl implements AdminService {
     }
 
     /* ================================================================== */
-    /* 内部：写日志（每个写操作的最后一件事）                               */
-    /* ================================================================== */
-
-    /**
-     * 写入一条管理员操作日志。
-     *
-     * <p>在<b>事务内</b>写：操作与日志必须一起生效或一起回滚。
-     * 若把日志放到事务提交后，一次因业务异常回滚的操作会留下日志 ——
-     * 于是审计记录显示「已封禁」，而数据库里那个人其实还好好的，
-     * 这种不一致比没有日志更危险（会让人对着日志做出错误判断）。</p>
-     *
-     * <p>操作人姓名取当前登录用户的姓名快照，IP 与请求路径从当前请求读。</p>
-     */
-    private void writeOperLog(OperType operType, OperTargetType targetType, Long targetId,
-                              String targetDesc, String beforeStatus, String afterStatus, String remark) {
-        LoginUser me = SecurityUtils.currentUser();
-        AdminOperLog log = new AdminOperLog();
-        log.setOperatorId(me.userId());
-        log.setOperatorName(userNameResolver.resolve(me.userId()));
-        log.setOperType(operType.name());
-        log.setTargetType(targetType.name());
-        log.setTargetId(targetId);
-        // 只截断、不脱敏：订单号是审计时的检索键，把它遮掉就没法靠日志串起时间线；
-        // 而「被操作的对象是谁」本来就是这条日志存在的理由
-        log.setTargetDesc(truncate(targetDesc, MAX_TARGET_DESC_LENGTH));
-        log.setBeforeStatus(beforeStatus);
-        log.setAfterStatus(afterStatus);
-        log.setRemark(remark);
-        log.setRequestUrl(RequestInfoUtil.requestUrl());
-        log.setRequestMethod(RequestInfoUtil.requestMethod());
-        log.setIp(RequestInfoUtil.clientIp());
-        log.setOperTime(LocalDateTime.now());
-        operLogMapper.insert(log);
-    }
-
-    /* ================================================================== */
-    /* 内部：查询条件                                                      */
+    /* 内部：查询条件                                                        */
     /* ================================================================== */
 
     /**
@@ -1052,14 +910,6 @@ public class AdminServiceImpl implements AdminService {
 
     private static String trimmed(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
-    }
-
-    /** 按列宽截断；{@code null} 原样返回 */
-    private static String truncate(String value, int maxLength) {
-        if (value == null) {
-            return null;
-        }
-        return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     /** 由出生日期算年龄；出生日期缺失返回 {@code null} */

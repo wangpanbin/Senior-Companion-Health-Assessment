@@ -8,22 +8,14 @@ import org.company.nianglin.constant.OperTargetType;
 import org.company.nianglin.constant.OperType;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.ReviewRulingDTO;
-import org.company.nianglin.entity.AdminOperLog;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.exception.BusinessException;
-import org.company.nianglin.mapper.AdminOperLogMapper;
-import org.company.nianglin.mapper.AdminReadMapper;
-import org.company.nianglin.mapper.CompanionAuditRecordMapper;
-import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
-import org.company.nianglin.mapper.ComplaintMapper;
-import org.company.nianglin.mapper.OrderReadMapper;
 import org.company.nianglin.mapper.OrderReviewMapper;
-import org.company.nianglin.mapper.SysUserMapper;
+import org.company.nianglin.mapper.ReviewReadMapper;
 import org.company.nianglin.security.LoginUser;
-import org.company.nianglin.security.SecurityProperties;
-import org.company.nianglin.security.TokenStore;
-import org.company.nianglin.service.impl.AdminServiceImpl;
+import org.company.nianglin.service.impl.ReviewServiceImpl;
+import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.support.MybatisLambdaCache;
 import org.junit.jupiter.api.AfterEach;
@@ -36,10 +28,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -82,47 +76,31 @@ class ReviewRulingServiceTest {
     private static final Long ADMIN_ID = 1L;
 
     @Mock
-    private CompanionAuditRecordMapper auditRecordMapper;
+    private OrderReviewMapper orderReviewMapper;
+    @Mock
+    private ReviewReadMapper reviewReadMapper;
     @Mock
     private CompanionProfileMapper companionProfileMapper;
-    @Mock
-    private SysUserMapper sysUserMapper;
-    @Mock
-    private ComplaintMapper complaintMapper;
-    @Mock
-    private CompanionOrderMapper orderMapper;
-    @Mock
-    private AdminOperLogMapper operLogMapper;
-    @Mock
-    private AdminReadMapper adminReadMapper;
-    @Mock
-    private OrderReadMapper orderReadMapper;
-    @Mock
-    private MessageService messageService;
     @Mock
     private OrderService orderService;
     @Mock
     private UserNameResolver userNameResolver;
     @Mock
-    private PasswordEncoder passwordEncoder;
+    private StringRedisTemplate redisTemplate;
     @Mock
-    private SecurityProperties securityProperties;
+    private ObjectMapper objectMapper;
     @Mock
-    private TokenStore tokenStore;
+    private MessageService messageService;
     @Mock
-    private OrderReviewMapper orderReviewMapper;
-    @Mock
-    private ReviewService reviewService;
+    private OperLogRecorder operLogRecorder;
 
-    private AdminServiceImpl service;
+    private ReviewService service;
 
     @BeforeEach
     void setUp() {
         MybatisLambdaCache.warmUp();
-        service = new AdminServiceImpl(auditRecordMapper, companionProfileMapper, sysUserMapper,
-                complaintMapper, orderMapper, operLogMapper, adminReadMapper, orderReadMapper,
-                messageService, orderService, userNameResolver, passwordEncoder, securityProperties,
-                tokenStore, new ObjectMapper(), orderReviewMapper, reviewService);
+        service = new ReviewServiceImpl(orderReviewMapper, reviewReadMapper, companionProfileMapper,
+                orderService, userNameResolver, redisTemplate, objectMapper, messageService, operLogRecorder);
         loginAs(RoleConstants.ADMIN, ADMIN_ID);
     }
 
@@ -141,6 +119,8 @@ class ReviewRulingServiceTest {
         OrderReview review = validReview();
         given(orderReviewMapper.selectById(REVIEW_ID)).willReturn(review);
         given(orderReviewMapper.update(any(), any())).willReturn(1);
+        given(reviewReadMapper.selectAverageScore(COMPANION_ID)).willReturn(new BigDecimal("4.50"));
+        given(reviewReadMapper.selectScoreDistribution(COMPANION_ID)).willReturn(List.of());
 
         service.reviewValidity(REVIEW_ID, rulingDto(false,
                 "家属描述与打卡记录明显不符，证据充分，裁定为无效评价"));
@@ -159,19 +139,11 @@ class ReviewRulingServiceTest {
         assertEquals(true, sqlSet.contains("is_valid="),
                 "SET 子句必须包含 is_valid=（置位，无空格）");
 
-        // ② 评分重算
-        verify(reviewService).refreshCompanionScore(COMPANION_ID);
-
-        // ③ admin_oper_log 写入（带 OperType.REVIEW_RULING + OperTargetType.REVIEW + reason）
-        ArgumentCaptor<AdminOperLog> logCap = ArgumentCaptor.forClass(AdminOperLog.class);
-        verify(operLogMapper).insert(logCap.capture());
-        AdminOperLog log = logCap.getValue();
-        assertEquals(OperType.REVIEW_RULING.name(), log.getOperType());
-        assertEquals(OperTargetType.REVIEW.name(), log.getTargetType());
-        assertEquals(REVIEW_ID, log.getTargetId());
-        assertEquals("IS_VALID:1", log.getBeforeStatus());
-        assertEquals("IS_VALID:0", log.getAfterStatus());
-        assertEquals("家属描述与打卡记录明显不符，证据充分，裁定为无效评价", log.getRemark());
+        verify(companionProfileMapper).update(eq(null), any());
+        verify(redisTemplate).delete(any(String.class));
+        verify(operLogRecorder).record(eq(OperType.REVIEW_RULING), eq(OperTargetType.REVIEW),
+                eq(REVIEW_ID), eq("评价 #" + REVIEW_ID), eq("IS_VALID:1"), eq("IS_VALID:0"),
+                eq("家属描述与打卡记录明显不符，证据充分，裁定为无效评价"));
 
         // ④ 双收件人通知（家属 + 陪诊员，bizId=orderId）
         @SuppressWarnings("unchecked")
@@ -190,6 +162,35 @@ class ReviewRulingServiceTest {
                 eq(ORDER_ID), any());
     }
 
+    @Test
+    @DisplayName("特征基线 · 通知异常向外传播，阶段一保持事务回滚语义")
+    void rulingShouldPropagateNotificationFailure() {
+        OrderReview review = validReview();
+        given(orderReviewMapper.selectById(REVIEW_ID)).willReturn(review);
+        given(orderReviewMapper.update(any(), any())).willReturn(1);
+        given(reviewReadMapper.selectAverageScore(COMPANION_ID)).willReturn(new BigDecimal("4.50"));
+        given(reviewReadMapper.selectScoreDistribution(COMPANION_ID)).willReturn(List.of());
+        willThrow(new IllegalStateException("message store unavailable"))
+                .given(messageService).send(any(), eq(MessageType.REVIEW_INVALIDATED), eq(ORDER_ID), any());
+
+        assertThrows(IllegalStateException.class,
+                () -> service.reviewValidity(REVIEW_ID, rulingDto(false,
+                        "家属描述与打卡记录明显不符，证据充分，裁定为无效评价")));
+    }
+
+    @Test
+    @DisplayName("裁定 · 非管理员直调 Review interface → 403")
+    void rulingShouldRejectNonAdminActor() {
+        loginAs(RoleConstants.FAMILY, FAMILY_ID);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.reviewValidity(REVIEW_ID, rulingDto(false,
+                        "家属描述与打卡记录明显不符，证据充分，裁定为无效评价")));
+
+        assertEquals(ResultCode.FORBIDDEN.getCode(), ex.getCode());
+        verify(orderReviewMapper, never()).selectById(any());
+    }
+
     /* ================================================================== */
     /* 2 · 五条失败路径                                                     */
     /* ================================================================== */
@@ -203,8 +204,8 @@ class ReviewRulingServiceTest {
                 () -> service.reviewValidity(REVIEW_ID, rulingDto(false, "理由足够长足够长足够长足够长")));
         assertEquals(ResultCode.REVIEW_NOT_FOUND.getCode(), ex.getCode());
         verify(orderReviewMapper, never()).update(any(), any());
-        verify(reviewService, never()).refreshCompanionScore(any());
-        verify(operLogMapper, never()).insert(any(AdminOperLog.class));
+        verify(companionProfileMapper, never()).update(any(), any());
+        verify(operLogRecorder, never()).record(any(), any(), any(), any(), any(), any(), any());
         verify(messageService, never()).send(any(), any(), any(), any());
     }
 
@@ -250,8 +251,8 @@ class ReviewRulingServiceTest {
                 () -> service.reviewValidity(REVIEW_ID, rulingDto(false, "理由足够长足够长足够长足够长")));
         assertEquals(ResultCode.CONFLICT.getCode(), ex.getCode());
         // 关键：并发穿透时不应触发重算与通知 —— 否则会出现「数据库没改但评分已重算 + 用户收到通知」的鬼故事
-        verify(reviewService, never()).refreshCompanionScore(any());
-        verify(operLogMapper, never()).insert(any(AdminOperLog.class));
+        verify(companionProfileMapper, never()).update(any(), any());
+        verify(operLogRecorder, never()).record(any(), any(), any(), any(), any(), any(), any());
         verify(messageService, never()).send(any(), any(), any(), any());
     }
 

@@ -106,7 +106,7 @@ public final class MessageTemplateUtil {
             case REVIEW_APPEAL_SUBMITTED -> "陪诊员 %s 就订单 %s 发起评价申诉（%s），请及时处理。".formatted(
                     value(p, "submitterName"), value(p, "orderNo"), value(p, "typeLabel"));
             case REVIEW_INVALIDATED -> {
-                // reasonDigest 由 AdminService.reviewValidity 截到 30 字以内（含省略号）
+                // reasonDigest 由 ReviewService.reviewValidity 截到 30 字以内（含省略号）
                 String orderNo = value(p, "orderNo");
                 String reason = emptyIfMissing(p, "reasonDigest");
                 yield reason.isEmpty()

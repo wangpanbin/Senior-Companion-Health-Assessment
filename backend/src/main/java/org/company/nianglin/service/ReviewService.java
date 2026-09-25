@@ -3,10 +3,12 @@ package org.company.nianglin.service;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.dto.ReviewCreateDTO;
 import org.company.nianglin.dto.ReviewQuery;
+import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.dto.ReviewReplyDTO;
 import org.company.nianglin.vo.CompanionScoreVO;
 import org.company.nianglin.vo.ReviewCreateResultVO;
 import org.company.nianglin.vo.ReviewReplyResultVO;
+import org.company.nianglin.vo.ReviewRulingResultVO;
 import org.company.nianglin.vo.ReviewVO;
 
 /**
@@ -53,16 +55,7 @@ public interface ReviewService {
     /** 陪诊员评分聚合（优先走缓存；无评价返回 0.00 而不是 null） */
     CompanionScoreVO score(Long companionId);
 
-    /**
-     * 重算并同步陪诊员的评分快照与缓存。
-     *
-     * <p>对外暴露是为了让 M9（管理员判定某条评价无效）能触发重算。
-     * 若把它藏在 {@code create} 内部，M9 就只能自己写一遍
-     * 「更新 companion_profile.score + 删 Redis」——
-     * 而「判定无效后忘记重算」正好是这个功能最典型的 bug，
-     * 一次漏算会让陪诊员的分数永远停在被判定无效之前的水平。</p>
-     */
-    void refreshCompanionScore(Long companionId);
+    ReviewRulingResultVO reviewValidity(Long reviewId, ReviewRulingDTO dto);
 
     /**
      * 陪诊员回复评价（E4 评价公信力闭环）。

@@ -1,7 +1,11 @@
 package org.company.nianglin.security;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RoleConstants;
+import org.company.nianglin.entity.CompanionOrder;
+import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.support.TestTokens;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,8 +16,12 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -50,8 +58,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>服药任务 20002（老人 401、状态 PENDING）用于验证写路径上的归属：
  * 家属 102 去确认 401 的药，必须先被归属拦下。</p>
  *
- * <p>本类只发「必然被拒」的写请求与只读请求，不改动任何数据，可随时重跑。
- * 唯一一处写接口的「正面用例」（家属读自己老人的计划）也是只读请求。</p>
+ * <p>本类默认只发只读或必然被拒的请求；两个依赖当前业务状态的负例在各自测试事务内
+ * 临时固定前置条件，测试结束自动回滚，可重复运行。</p>
  *
  * @author 银龄伴诊团队
  * @since M6
@@ -84,6 +92,9 @@ class MedicationAccessMatrixTest {
 
     @Autowired
     private TokenStore tokenStore;
+
+    @Autowired
+    private CompanionOrderMapper companionOrderMapper;
 
     /* ================================================================== */
     /* 1 · 药品字典（读）：登录即可，无归属概念                              */
@@ -210,10 +221,22 @@ class MedicationAccessMatrixTest {
     }
 
     @Test
+    @Transactional
     @DisplayName("归属 · 陪诊员读「没有在途订单」的老人用药计划 → 2006")
     void companionShouldNotReadUnrelatedElder() throws Exception {
-        // 301 的在途单子不涉及老人 401；陪诊员只在 PENDING/ACCEPTED/IN_SERVICE 期间
-        // 才与老人存在「陪诊关系」，单子结了就不该还能读人家的用药计划
+        companionOrderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .eq(CompanionOrder::getElderId, ELDER_PROFILE_OF_101)
+                .eq(CompanionOrder::getCompanionId, COMPANION_301)
+                .in(CompanionOrder::getStatus,
+                        List.of(OrderStatus.PENDING.name(), OrderStatus.ACCEPTED.name(), OrderStatus.IN_SERVICE.name()))
+                .set(CompanionOrder::getStatus, OrderStatus.COMPLETED.name()));
+
+        assertEquals(0, companionOrderMapper.selectCount(Wrappers.<CompanionOrder>lambdaQuery()
+                .eq(CompanionOrder::getElderId, ELDER_PROFILE_OF_101)
+                .eq(CompanionOrder::getCompanionId, COMPANION_301)
+                .in(CompanionOrder::getStatus,
+                        List.of(OrderStatus.PENDING.name(), OrderStatus.ACCEPTED.name(), OrderStatus.IN_SERVICE.name()))));
+
         mockMvc.perform(get("/api/medication/plan")
                         .param("elderId", String.valueOf(ELDER_PROFILE_OF_101))
                         .header(AUTH_HEADER, companion(COMPANION_301)))

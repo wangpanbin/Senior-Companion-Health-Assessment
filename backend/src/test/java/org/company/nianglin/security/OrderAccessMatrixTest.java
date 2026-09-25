@@ -1,7 +1,11 @@
 package org.company.nianglin.security;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.RoleConstants;
+import org.company.nianglin.entity.CompanionProfile;
+import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.support.TestTokens;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,9 +16,11 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -42,15 +48,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>陪诊员资质：{@code comp001}(301) 已通过；{@code comp025}(325) 待审核；
  * {@code comp029}(329) 已驳回 —— 后两者用来验证「大厅的第二重拦截」。</p>
  *
- * <h3>本类不修改任何数据，可以随时重跑</h3>
+ * <h3>本类的数据前置条件可重复</h3>
  *
- * <p>这里刻意只保留<b>读操作</b>与<b>必然被拒的写操作</b>：归属校验、状态判断、
- * 资质校验都发生在落库之前，所以跑完种子数据原封不动。
+ * <p>这里默认只保留<b>读操作</b>与<b>必然被拒的写操作</b>：归属校验、状态判断、
+ * 资质校验都发生在落库之前。依赖当前资质状态的负例在各自测试事务内临时固定状态，
+ * 测试结束自动回滚，不会污染共享开发数据库。
  * 真正会改变数据的路径（下单成功、接单、开服务、完成、并发抢单）
  * 由 {@code backend/sql/tools/e2e_order.py} 端到端覆盖，那里自带清理。</p>
- *
- * <p>这样分工的好处是：本类可以在开发过程中被反复执行而不用管脏数据，
- * 而需要造数据的那部分集中在一个有清理逻辑的地方。</p>
  *
  * @author 银龄伴诊团队
  * @since M4
@@ -101,6 +105,9 @@ class OrderAccessMatrixTest {
     /** 密码版本必须读实时值 —— 登出会 bump 版本，写死 0 会被 e2e 的历史遗留状态击穿 */
     @Autowired
     private TokenStore tokenStore;
+
+    @Autowired
+    private CompanionProfileMapper companionProfileMapper;
 
     /* ================================================================== */
     /* 1 · 角色门槛：有些角色完全不该进这个接口                              */
@@ -184,8 +191,13 @@ class OrderAccessMatrixTest {
     /* ================================================================== */
 
     @Test
+    @Transactional
     @DisplayName("资质 · 待审核的陪诊员看大厅 → 2003（角色对，资质没到）")
     void pendingAuditCompanionShouldNotSeeHall() throws Exception {
+        assertTrue(companionProfileMapper.update(null, Wrappers.<CompanionProfile>lambdaUpdate()
+                .eq(CompanionProfile::getUserId, COMPANION_PENDING_AUDIT)
+                .set(CompanionProfile::getAuditStatus, AuditStatus.PENDING.name())) > 0);
+
         mockMvc.perform(get("/api/order/hall").header(AUTH_HEADER, companion(COMPANION_PENDING_AUDIT)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(ResultCode.COMPANION_NOT_AUDITED.getCode()));

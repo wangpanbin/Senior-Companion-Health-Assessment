@@ -19,12 +19,12 @@ import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.mapper.ComplaintMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
-import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
 import org.company.nianglin.security.TokenStore;
 import org.company.nianglin.service.impl.AdminServiceImpl;
+import org.company.nianglin.service.support.OperLogRecorderImpl;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.vo.AuditDecisionResultVO;
@@ -108,12 +108,6 @@ class AdminServiceTest {
     private OrderReadMapper orderReadMapper;
 
     @Mock
-    private OrderReviewMapper orderReviewMapper;
-
-    @Mock
-    private ReviewService reviewService;
-
-    @Mock
     private MessageService messageService;
 
     @Mock
@@ -137,9 +131,10 @@ class AdminServiceTest {
     void setUp() {
         MybatisLambdaCache.warmUp();
         service = new AdminServiceImpl(auditRecordMapper, companionProfileMapper, sysUserMapper,
-                complaintMapper, orderMapper, operLogMapper, adminReadMapper, orderReadMapper,
+                complaintMapper, orderMapper, operLogMapper,
+                new OperLogRecorderImpl(operLogMapper, userNameResolver), adminReadMapper, orderReadMapper,
                 messageService, orderService, userNameResolver, passwordEncoder, securityProperties,
-                tokenStore, new ObjectMapper(), orderReviewMapper, reviewService);
+                tokenStore, new ObjectMapper());
         loginAsAdmin();
     }
 
