@@ -34,6 +34,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlPageShell, NlCard, NlStatusChip, NlTimeline, NlAvatar, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
 import { getOrder, getOrderTimeline, cancelOrder } from '@/api/order'
 import { listCheckins, connectProgressSocket } from '@/api/execution'
+import { getReviewByOrder } from '@/api/review'
 import { formatDateTime, CHECKIN_NODE_ORDER } from '@/utils/format'
 
 const route = useRoute()
@@ -43,6 +44,7 @@ const orderId = route.params.id
 const order = ref(null)
 const statusLogs = ref([])
 const checkins = ref([])
+const review = ref(null)
 const loading = ref(true)
 const loadError = ref(false)
 const liveConnected = ref(false)
@@ -51,15 +53,17 @@ let socket = null
 
 async function loadAll() {
   try {
-    // 三个请求互不依赖，并发拉取，减少首屏等待
-    const [detail, logs, checks] = await Promise.all([
+    // 四个请求互不依赖，并发拉取，减少首屏等待
+    const [detail, logs, checks, rev] = await Promise.all([
       getOrder(orderId),
       getOrderTimeline(orderId).catch(() => []),
-      listCheckins(orderId).catch(() => [])
+      listCheckins(orderId).catch(() => []),
+      getReviewByOrder(orderId).catch(() => null)
     ])
     order.value = detail
     statusLogs.value = logs || []
     checkins.value = checks || []
+    review.value = rev || null
     loadError.value = false
   } catch {
     loadError.value = true
@@ -333,6 +337,41 @@ onBeforeUnmount(() => {
         </ul>
       </NlCard>
 
+      <!-- 我的评价（E4 评价公信力闭环） -->
+      <!--
+        byOrder 接口总是返回该订单的评价（含 is_valid=0 的），
+        无效评价仍对相关方可见但带「平台已裁定为无效评价」灰色标注；
+        公开列表与聚合口径已在后端过滤掉，订单详情是「相关方能看到自己
+        提交过什么、收到什么回复、是否被裁定」的唯一视角。
+      -->
+      <NlCard v-if="review" title="我的评价">
+        <div class="review">
+          <div class="review__head">
+            <span class="review__score">{{ review.score }} 星</span>
+            <span class="review__time">{{ formatDateTime(review.createTime) }}</span>
+            <el-tag
+              v-if="review.isValid === false"
+              type="info"
+              effect="plain"
+              size="small"
+              class="review__invalid"
+            >
+              平台已裁定为无效评价
+            </el-tag>
+          </div>
+          <div v-if="review.content" class="review__content">{{ review.content }}</div>
+          <div v-if="review.tags?.length" class="review__tags">
+            <span v-for="t in review.tags" :key="t" class="review__tag">{{ t }}</span>
+          </div>
+          <div v-if="review.companionReply" class="review__reply">
+            <div class="review__reply-label">
+              陪诊员回复 · {{ formatDateTime(review.replyTime) }}
+            </div>
+            <div class="review__reply-body">{{ review.companionReply }}</div>
+          </div>
+        </div>
+      </NlCard>
+
       <!-- 操作记录（含操作人快照与备注，来自 order_status_log） -->
       <NlCard v-if="statusLogs.length" title="操作记录" plain>
         <ul class="logs">
@@ -456,6 +495,71 @@ onBeforeUnmount(() => {
   &__fee-val {
     font-size: 18px;
     color: var(--nl-primary) !important;
+  }
+}
+
+/* 我的评价（E4 评价公信力闭环） */
+.review {
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: $nl-space-3;
+    margin-bottom: $nl-space-2;
+  }
+
+  &__score {
+    font-weight: 600;
+    color: var(--nl-primary);
+    font-size: 16px;
+  }
+
+  &__time {
+    color: var(--nl-text-3);
+    font-size: 12px;
+  }
+
+  &__invalid {
+    margin-left: auto;
+  }
+
+  &__content {
+    color: var(--nl-text-1);
+    line-height: 1.6;
+    margin-bottom: $nl-space-2;
+  }
+
+  &__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $nl-space-2;
+    margin-bottom: $nl-space-3;
+  }
+
+  &__tag {
+    padding: 2px 10px;
+    background: var(--nl-primary-light);
+    color: var(--nl-primary);
+    border-radius: $nl-radius-pill;
+    font-size: 12px;
+  }
+
+  &__reply {
+    margin-top: $nl-space-3;
+    padding: $nl-space-3;
+    background: var(--nl-bg);
+    border-radius: $nl-radius-sm;
+    border-left: 3px solid var(--nl-primary);
+  }
+
+  &__reply-label {
+    font-size: 12px;
+    color: var(--nl-text-3);
+    margin-bottom: $nl-space-1;
+  }
+
+  &__reply-body {
+    color: var(--nl-text-1);
+    line-height: 1.5;
   }
 }
 

@@ -292,6 +292,18 @@ export const routes = [
         meta: { title: '我的收入', icon: 'Money', roles: ['COMPANION'], module: 'M4', code: 'M-21' }
       },
       {
+        path: 'companion/reviews',
+        name: 'CompanionReviews',
+        component: () => import('@/views/companion/reviews.vue'),
+        meta: {
+          title: '收到的评价',
+          icon: 'StarFilled',
+          roles: ['COMPANION'],
+          module: 'M7',
+          code: 'M-26'
+        }
+      },
+      {
         path: 'companion/message',
         name: 'CompanionMessage',
         component: () => import('@/views/companion/message.vue'),

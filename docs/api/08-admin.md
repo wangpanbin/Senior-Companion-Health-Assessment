@@ -59,7 +59,7 @@
 | `operatorName` | String | 操作人姓名 |
 | `operType` | String | 操作类型，见下表 |
 | `operTypeLabel` | String | 中文类型 |
-| `targetType` | String | 目标类型：`USER` / `ORDER` / `COMPANION` / `COMPLAINT` |
+| `targetType` | String | 目标类型：`USER` / `ORDER` / `COMPANION` / `COMPLAINT` / `REVIEW`（E4） |
 | `targetId` | Long | 目标 ID |
 | `targetDesc` | String | 目标描述（如订单号） |
 | `beforeStatus` | String | 变更前状态 |
@@ -78,6 +78,7 @@
 | `RESET_PASSWORD` | 重置密码 |
 | `ARBITRATE_ORDER` | 订单纠纷处理 |
 | `HANDLE_COMPLAINT` | 处理投诉 |
+| `REVIEW_RULING` | 评价有效性裁定（E4 评价公信力闭环） |
 | `PUBLISH_NOTICE` | 发布系统公告 |
 
 ---
@@ -490,6 +491,42 @@
 
 - 日志表**只增不改不删**：代码层面不提供 UPDATE / DELETE 接口。
 - 时间区间与操作类型组合筛选结果必须正确（验收项）。
+
+---
+
+## 13. 评价有效性裁定（E4）
+
+`POST /api/admin/review/{id}/validity`　权限：**ADMIN**
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 约束 | 说明 |
+|---|---|---|---|---|
+| `isValid` | Boolean | ✓ | **仅接受 `false`**（恢复有效不在本期范围） | 裁定结论 |
+| `reason` | String | ✓ | 10–200 字符 | 裁定理由（对双方可见） |
+
+### 业务规则
+
+1. 评价必须存在，否则 `6005`。
+2. **单向裁定**：本接口只做「有效 → 无效」。恢复有效走线下沟通 + 备注记录。
+3. 已裁定（`is_valid=0`）的评价再次裁定返回 `409`。
+4. 同一事务内：① `order_review.is_valid = 0`（乐观条件 `eq(is_valid, 1)`）② 写 `admin_oper_log`（`OperType.REVIEW_RULING` + `OperTargetType.REVIEW`）③ `ReviewService#refreshCompanionScore`（事务内快照刷新 + Redis 缓存删除）④ 向评价家属 + 陪诊员各发一条 `REVIEW_INVALIDATED` 站内信。
+5. 裁定禁止修改 `score` / `content` / `tags` / `companion_reply` 中任何内容。
+6. 不要求存在关联申诉（管理员可主动巡查裁定）。
+
+### 响应
+
+```json
+{
+  "code": 200,
+  "message": "裁定已生效",
+  "data": {
+    "reviewId": 30001,
+    "isValid": false,
+    "companionId": 307
+  }
+}
+```
 
 ---
 

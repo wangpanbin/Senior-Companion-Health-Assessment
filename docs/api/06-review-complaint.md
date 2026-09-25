@@ -23,7 +23,9 @@
 | `familyName` | String | 评价人姓名（匿名时为 `匿***`） |
 | `companionId` | Long | 被评价陪诊员 ID |
 | `companionName` | String | 陪诊员姓名（脱敏） |
-| `companionReply` | String | 陪诊员回复（可选） |
+| `companionReply` | String | 陪诊员回复（可选，E4 一评一回复） |
+| `replyTime` | String | 陪诊员回复时间（未回复时 null，Jackson non_null 自动省略） |
+| `isValid` | Boolean | 是否有效评价；`false` 表示被管理员裁定无效（E4） |
 | `createTime` | String | 评价时间 |
 
 ### CompanionScoreVO（评分聚合）
@@ -65,6 +67,7 @@
 | `INCOMPLETE` | 服务未完成 |
 | `FEE_DISPUTE` | 费用纠纷 |
 | `PRIVACY` | 隐私泄露 |
+| `REVIEW_APPEAL` | 评价申诉（E4 评价公信力闭环，复用投诉通道） |
 | `OTHER` | 其他 |
 
 ---
@@ -217,6 +220,41 @@
 
 ---
 
+## 4b. 陪诊员回复评价（E4）
+
+`POST /api/review/{id}/reply`　权限：**COMPANION**（注解收口 + 拦截器兜底）
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 约束 | 说明 |
+|---|---|---|---|---|
+| `content` | String | ✓ | 5–200 字符 | 回复内容 |
+
+### 业务规则
+
+1. 评价必须存在，否则 `6005`。
+2. 归属校验：必须是该评价的陪诊员（`review.companionId == me`），否则 `3004`。
+3. 一评一回复：`companion_reply` 已非空返回 `6006`；提交后不可修改、不可删除。
+4. 内容命中敏感词返回 `6003`。
+5. 回复不触发评分重算（不参与聚合）。
+6. 回复成功后向评价家属发送 `REVIEW_REPLIED` 站内信（订单详情跳转）。
+
+### 响应
+
+```json
+{
+  "code": 200,
+  "message": "回复已提交",
+  "data": {
+    "reviewId": 30003,
+    "companionReply": "当日 08:20 已到院打卡（可查证），迟到或因老人下楼较慢。",
+    "replyTime": "2026-09-25 10:30:00"
+  }
+}
+```
+
+---
+
 ## 5. 提交投诉
 
 `POST /api/complaint`　权限：已登录（家属投诉陪诊员 / 陪诊员投诉家属）
@@ -315,6 +353,8 @@
 | code | 场景 |
 |---|---|
 | 6004 | 投诉记录不存在 |
+| 6005 | 评价不存在（E4） |
+| 6006 | 该评价已回复，不能重复回复（E4） |
 | 403 | 非相关方查看（越权） |
 
 ---

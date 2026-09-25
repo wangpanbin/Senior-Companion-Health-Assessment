@@ -30,6 +30,17 @@ export function getCompanionScore(companionId) {
   return request({ url: `/review/companion/${companionId}/score`, method: 'get' })
 }
 
+/**
+ * 陪诊员回复评价（E4 评价公信力闭环）。
+ *
+ * 「一评一回复，落库即定稿」：同一评价只能成功一次；重复调用后端会回 6006。
+ * @param {number} reviewId 评价 ID
+ * @param {{content: string}} data 5–200 字
+ */
+export function replyReview(reviewId, data) {
+  return request({ url: `/review/${reviewId}/reply`, method: 'post', data })
+}
+
 /* ---------------- 投诉 ---------------- */
 
 export function createComplaint(data) {

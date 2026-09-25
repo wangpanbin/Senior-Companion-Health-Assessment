@@ -83,6 +83,17 @@ export function handleComplaint(complaintId, data) {
   return request({ url: `/admin/complaint/${complaintId}/handle`, method: 'post', data })
 }
 
+/**
+ * 管理员裁定评价有效性（E4 评价公信力闭环）。
+ *
+ * 本期仅接受 {@code isValid:false}（单向裁定）；后端对 isValid=true 返 400。
+ * @param {number} reviewId 评价 ID
+ * @param {{isValid: false, reason: string}} data 理由 10–200 字
+ */
+export function rulingReview(reviewId, data) {
+  return request({ url: `/admin/review/${reviewId}/validity`, method: 'post', data })
+}
+
 /* ---------------- 操作日志 ---------------- */
 
 export function listOperLogs(params) {
