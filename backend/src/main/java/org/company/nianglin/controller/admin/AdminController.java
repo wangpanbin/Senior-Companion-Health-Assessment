@@ -18,6 +18,7 @@ import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.ComplaintHandleDTO;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
+import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.dto.UserDisableDTO;
 import org.company.nianglin.dto.UserEnableDTO;
 import org.company.nianglin.service.AdminService;
@@ -31,6 +32,7 @@ import org.company.nianglin.vo.ComplaintHandleResultVO;
 import org.company.nianglin.vo.ComplaintVO;
 import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
+import org.company.nianglin.vo.ReviewRulingResultVO;
 import org.company.nianglin.vo.UserStatusResultVO;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -178,6 +180,24 @@ public class AdminController {
             @Parameter(description = "投诉 ID", example = "3001") @PathVariable("id") Long id,
             @Valid @RequestBody ComplaintHandleDTO dto) {
         return Result.success("投诉已处理", adminService.handleComplaint(id, dto));
+    }
+
+    /**
+     * 评价有效性裁定（E4 评价公信力闭环）。
+     *
+     * <p>角色门槛由类级 {@code @PreAuthorize("hasRole('ADMIN')")} 兜底 —— 业务角色
+     / ELDER 调本路径在过滤链预检阶段直接 403，早于参数解析。
+     * 因此越权用例的请求体可以「随便填」也能稳定拿到 403，不存在 RK-05「假绿」陷阱。</p>
+     */
+    @Operation(summary = "评价有效性裁定",
+            description = "本期仅支持「有效 → 无效」单向裁定；isValid=true 直接 400。"
+                    + "已裁定过返回 409；理由 10–200 字符，对双方可见。"
+                    + "同一事务内：is_valid 置 0 + 评分重算 + 写操作日志 + 双收件人通知")
+    @PostMapping("/review/{id}/validity")
+    public Result<ReviewRulingResultVO> reviewValidity(
+            @Parameter(description = "评价 ID", example = "30001") @PathVariable("id") Long reviewId,
+            @Valid @RequestBody ReviewRulingDTO dto) {
+        return Result.success("裁定已生效", adminService.reviewValidity(reviewId, dto));
     }
 
     /* ==================== 操作日志 ==================== */

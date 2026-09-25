@@ -28,6 +28,7 @@ import org.company.nianglin.dto.CertificateItem;
 import org.company.nianglin.dto.ComplaintHandleDTO;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
+import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.dto.UserDisableDTO;
 import org.company.nianglin.dto.UserEnableDTO;
 import org.company.nianglin.entity.AdminOperLog;
@@ -36,6 +37,7 @@ import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.Complaint;
 import org.company.nianglin.entity.ElderProfile;
+import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.AdminOperLogMapper;
@@ -45,6 +47,7 @@ import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.mapper.ComplaintMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
+import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
@@ -53,6 +56,7 @@ import org.company.nianglin.security.TokenStore;
 import org.company.nianglin.service.AdminService;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderService;
+import org.company.nianglin.service.ReviewService;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.AesUtil;
 import org.company.nianglin.util.MaskUtil;
@@ -68,6 +72,7 @@ import org.company.nianglin.vo.ComplaintVO;
 import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.OrderVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
+import org.company.nianglin.vo.ReviewRulingResultVO;
 import org.company.nianglin.vo.UserStatusResultVO;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -130,6 +135,21 @@ public class AdminServiceImpl implements AdminService {
     private final SecurityProperties securityProperties;
     private final TokenStore tokenStore;
     private final ObjectMapper objectMapper;
+    /**
+     * 评价表读 mapper（E4 评价裁定专用）。
+     *
+     * <p>裁定接口要先把评价读出来比对 {@code is_valid}，再决定能否置位。</p>
+     */
+    private final OrderReviewMapper orderReviewMapper;
+    /**
+     * 评价服务（E4 评价裁定专用）。
+     *
+     * <p>裁定生效后必须调 {@link ReviewService#refreshCompanionScore} 立即
+     * 重算陪诊员评分 —— 该方法已经把「更新 {@code companion_profile.score}
+     * + 删 Redis 缓存」封装成一个 public 方法，这里直接调，
+     * 避免「裁定生效但分数没变」的中间态。</p>
+     */
+    private final ReviewService reviewService;
 
     /* ================================================================== */
     /* 1 / 2 / 3. 资质审核                                                 */
@@ -599,6 +619,90 @@ public class AdminServiceImpl implements AdminService {
 
         Page<AdminOperLog> page = operLogMapper.selectPage(query.toMpPage(), wrapper);
         return PageResult.of(page, page.getRecords().stream().map(OperLogVO::of).toList());
+    }
+
+    /* ================================================================== */
+    /* 11. 评价有效性裁定（E4）                                              */
+    /* ================================================================== */
+
+    /**
+     * 摘要长度上限（与回复评价共用同一常量 {@code ReviewServiceImpl.NOTIFY_DIGEST_MAX}）。
+     *
+     * <p>这里再声明一份而非引用 {@code ReviewServiceImpl.NOTIFY_DIGEST_MAX} 是因为该字段是
+     * private static —— 跨类复用必须开放可见性，而开放可见性会让外部代码产生「
+     * 改一处即影响两处」的耦合。重复一份 30 字常量是更小的债。</p>
+     */
+    private static final int RULING_DIGEST_MAX = 30;
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ReviewRulingResultVO reviewValidity(Long reviewId, ReviewRulingDTO dto) {
+        // 入参校验：DTO 上 @AssertTrue 已挡住 isValid=true；这里兜底 reason 长度（DTO 注解已做，这里再校一遍防 NPE）
+        if (Boolean.TRUE.equals(dto.getIsValid())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "本期仅支持裁定为无效，恢复有效请走线下流程");
+        }
+        String reason = dto.getReason() == null ? "" : dto.getReason().trim();
+        if (reason.length() < 10 || reason.length() > 200) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "裁定理由长度应为 10–200 个字符");
+        }
+
+        OrderReview review = orderReviewMapper.selectById(reviewId);
+        if (review == null) {
+            throw new BusinessException(ResultCode.REVIEW_NOT_FOUND);
+        }
+        if (review.getIsValid() != null && review.getIsValid() == 0) {
+            // 已裁定过：幂等拒绝（不是 6002「订单已评价」这种业务码，用 409 更准确——
+            // 「当前状态不允许该操作」的语义）
+            throw new BusinessException(ResultCode.CONFLICT, "该评价已被裁定无效");
+        }
+
+        // 乐观条件：eq(is_valid, 1) 挡住「在我做检查与 update 之间被对方抢锁」的并发场景。
+        // 与回复评价的 isNull(companion_reply) 同款双防线。
+        int rows = orderReviewMapper.update(null, Wrappers.<OrderReview>lambdaUpdate()
+                .eq(OrderReview::getId, reviewId)
+                .eq(OrderReview::getIsValid, 1)
+                .set(OrderReview::getIsValid, 0));
+        if (rows == 0) {
+            // 影响行 = 0 = 并发穿透：另一个管理员在我之前已经裁定。
+            // 此时绝对不能调 refreshCompanionScore 与通知，否则会出现「数据库没改但
+            // 评分已重算 + 用户收到通知」的鬼故事
+            throw new BusinessException(ResultCode.CONFLICT, "该评价已被裁定无效");
+        }
+
+        // 评分重算：放在事务内，order_review.is_valid 与 companion_profile.score
+        // 要么一起生效要么一起回滚
+        reviewService.refreshCompanionScore(review.getCompanionId());
+
+        // 操作日志：target_desc = "评价 #" + id（不暴露评价文字本身，避免把
+        // 敏感词 / 攻击性文字从日志里二次传播出去）
+        writeOperLog(OperType.REVIEW_RULING, OperTargetType.REVIEW, reviewId,
+                "评价 #" + reviewId, "IS_VALID:1", "IS_VALID:0", reason);
+
+        // 双收件人通知：摘要硬截 30 字 + 省略号
+        Map<String, Object> params = new HashMap<>();
+        params.put("orderNo", review.getOrderNo());
+        params.put("reasonDigest", truncateForNotify(reason));
+        messageService.send(review.getFamilyId(), MessageType.REVIEW_INVALIDATED,
+                review.getOrderId(), params);
+        messageService.send(review.getCompanionId(), MessageType.REVIEW_INVALIDATED,
+                review.getOrderId(), params);
+
+        log.info("评价已被裁定无效 | reviewId={} | companionId={} | adminId={}",
+                reviewId, review.getCompanionId(), SecurityUtils.currentUserId());
+        return ReviewRulingResultVO.of(reviewId, false, review.getCompanionId());
+    }
+
+    /**
+     * 摘要：原文 ≤ 30 字直接用，否则截断 + 省略号。
+     *
+     * <p>裁定理由摘要直接进入站内信正文，控制在 30 字避免长篇大论污染通知流。</p>
+     */
+    private static String truncateForNotify(String content) {
+        if (content.length() <= RULING_DIGEST_MAX) {
+            return content;
+        }
+        return content.substring(0, RULING_DIGEST_MAX) + "…";
     }
 
     /* ================================================================== */

@@ -11,9 +11,11 @@ import org.company.nianglin.common.Result;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.ReviewCreateDTO;
 import org.company.nianglin.dto.ReviewQuery;
+import org.company.nianglin.dto.ReviewReplyDTO;
 import org.company.nianglin.service.ReviewService;
 import org.company.nianglin.vo.CompanionScoreVO;
 import org.company.nianglin.vo.ReviewCreateResultVO;
+import org.company.nianglin.vo.ReviewReplyResultVO;
 import org.company.nianglin.vo.ReviewVO;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -87,5 +89,27 @@ public class ReviewController {
     public Result<CompanionScoreVO> score(
             @Parameter(description = "陪诊员用户 ID", example = "10088") @PathVariable("companionId") Long companionId) {
         return Result.success(reviewService.score(companionId));
+    }
+
+    /**
+     * 回复评价（E4 评价公信力闭环）。
+     *
+     * <p>角色门槛写在注解上：{@code COMPANION} 以外的请求会被 Spring Security 直接挡掉。
+     * 归属校验（{@code review.companionId == me}）由 Service 完成 —— 注解只能挡角色，
+     * 挡不住陪诊员 A 回复陪诊员 B 的评价。</p>
+     *
+     * <p>FAMILY 调本接口 → 403（注解）；ELDER 调本接口 → 403（{@code ElderReadOnlyInterceptor}
+     * 拦截所有写操作，自动覆盖，无需重复声明）。</p>
+     */
+    @Operation(summary = "回复评价",
+            description = "「一评一回复，落库即定稿」：同一评价只能回复一次，重复提交返回 6006；"
+                    + "回复内容命中敏感词返回 6003；非本评价的陪诊员调用返回 3004；"
+                    + "回复成功后向评价家属发送站内信，但不触发评分重算（回复不参与聚合）")
+    @PreAuthorize("hasRole('" + RoleConstants.COMPANION + "')")
+    @PostMapping("/{id}/reply")
+    public Result<ReviewReplyResultVO> reply(
+            @Parameter(description = "评价 ID", example = "2001") @PathVariable("id") Long reviewId,
+            @Valid @RequestBody ReviewReplyDTO dto) {
+        return Result.success("回复已提交", reviewService.reply(reviewId, dto));
     }
 }

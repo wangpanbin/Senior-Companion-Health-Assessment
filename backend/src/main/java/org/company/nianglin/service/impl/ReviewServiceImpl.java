@@ -7,11 +7,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RedisKeyConstants;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.ReviewCreateDTO;
 import org.company.nianglin.dto.ReviewQuery;
+import org.company.nianglin.dto.ReviewReplyDTO;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.OrderReview;
@@ -21,12 +23,14 @@ import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.ReviewReadMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
+import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.ReviewService;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.SensitiveWordUtil;
 import org.company.nianglin.vo.CompanionScoreVO;
 import org.company.nianglin.vo.ReviewCreateResultVO;
+import org.company.nianglin.vo.ReviewReplyResultVO;
 import org.company.nianglin.vo.ReviewVO;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -36,12 +40,14 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -61,6 +67,15 @@ public class ReviewServiceImpl implements ReviewService {
     /** 标签的存储上限（与 {@code docs/api/06-review-complaint.md} §1 一致） */
     private static final int MAX_TAGS = 5;
 
+    /**
+     * 站内信摘要长度上限（E4）。
+     *
+     * <p>评价文字 / 回复 / 裁定理由三处的用户输入在站内信里一律走「前 30 字 + 省略号」：
+     * 摘要的存在是为了「通知这件事发生了」，不是「复述全文」；
+     * 30 字足以覆盖一句话的事实陈述，又短到无法承载医疗建议 / 攻击性语言。</p>
+     */
+    private static final int NOTIFY_DIGEST_MAX = 30;
+
     /** 单个标签的字符上限 */
     private static final int MAX_TAG_LENGTH = 10;
 
@@ -74,6 +89,14 @@ public class ReviewServiceImpl implements ReviewService {
     private final UserNameResolver userNameResolver;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    /**
+     * 站内信发送入口。
+     *
+     * <p>回复评价时向评价家属发 {@code REVIEW_REPLIED}。{@code @RequiredArgsConstructor}
+     * 会把它放进构造器，调用方按声明顺序注入；测试通过反射赋值绕过
+     * 7 个必填依赖（M7 既有 7 个 + 新增 1 个 = 8 个）。</p>
+     */
+    private final MessageService messageService;
 
     /* ================================================================== */
     /* 1. 提交评价                                                         */
@@ -284,6 +307,87 @@ public class ReviewServiceImpl implements ReviewService {
         } catch (Exception e) {
             log.warn("评分缓存失效失败（将由 TTL 兜底） | companionId={} | {}", companionId, e.getMessage());
         }
+    }
+
+    /* ================================================================== */
+    /* 5. 陪诊员回复评价（E4）                                                */
+    /* ================================================================== */
+
+    /**
+     * 陪诊员回复评价。一评一回复，落库即定稿。
+     *
+     * <p>不调 {@link #refreshCompanionScore} —— 回复不参与评分聚合（见
+     * {@code docs/spec/E4-review-credibility.md} §2.1），让缓存白清一次反而
+     * 会让本单的下游读流量付出无谓的回源代价。</p>
+     *
+     * <p>并发穿透防御：{@code update} 的 {@code isNull(companion_reply)} 条件 +
+     * 影响行 = 0 的翻译逻辑，与 {@link #create} 的 DuplicateKeyException 同款双防线。</p>
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ReviewReplyResultVO reply(Long reviewId, ReviewReplyDTO dto) {
+        LoginUser me = SecurityUtils.currentUser();
+
+        OrderReview review = reviewMapper.selectById(reviewId);
+        if (review == null) {
+            throw new BusinessException(ResultCode.REVIEW_NOT_FOUND);
+        }
+        // 归属优先于角色：注解 hasRole('COMPANION') 只能挡住非陪诊员，
+        // 陪诊员 A 回复陪诊员 B 的评价必须在这里拦下
+        if (!Objects.equals(review.getCompanionId(), me.userId())) {
+            throw new BusinessException(ResultCode.ORDER_NO_PERMISSION);
+        }
+        // 先查后写：companion_reply 已非空时直接拒，不再走 update 路径
+        if (StringUtils.hasText(review.getCompanionReply())) {
+            throw new BusinessException(ResultCode.REVIEW_ALREADY_REPLIED);
+        }
+
+        String content = dto.getContent().trim();
+        String hit = SensitiveWordUtil.firstHit(content);
+        if (hit != null) {
+            log.info("回复评价命中敏感词，已拒绝 | reviewId={} | hit={}", reviewId, hit);
+            throw new BusinessException(ResultCode.CONTENT_SENSITIVE,
+                    "回复内容包含敏感词：" + hit);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        int rows = reviewMapper.update(null, Wrappers.<OrderReview>lambdaUpdate()
+                .eq(OrderReview::getId, reviewId)
+                // 乐观条件：与我做「isNull」检查的间隙里，对方可能抢先提交。
+                // 影响行 = 0 时不再判断具体发生了什么，直接按已回复处理 —— 反正两条回复里
+                // 只有先到的那条会写入，后到这条就是「已回复」语义
+                .isNull(OrderReview::getCompanionReply)
+                .set(OrderReview::getCompanionReply, content)
+                .set(OrderReview::getReplyTime, now));
+        if (rows == 0) {
+            log.info("回复评价被乐观条件拦截（疑似并发双提交） | reviewId={}", reviewId);
+            throw new BusinessException(ResultCode.REVIEW_ALREADY_REPLIED);
+        }
+
+        // 通知家属：摘要硬截 30 字 + 省略号，避免回复原文穿透到站内信
+        Map<String, Object> params = new HashMap<>();
+        params.put("orderNo", review.getOrderNo());
+        params.put("replyDigest", truncateDigest(content));
+        messageService.send(review.getFamilyId(), MessageType.REVIEW_REPLIED,
+                review.getOrderId(), params);
+
+        log.info("评价已回复 | reviewId={} | orderId={} | companionId={} | replyLen={}",
+                reviewId, review.getOrderId(), me.userId(), content.length());
+        return ReviewReplyResultVO.of(reviewId, content, now);
+    }
+
+    /**
+     * 摘要：原文 ≤ {@value #NOTIFY_DIGEST_MAX} 字直接用，否则截断并加省略号。
+     *
+     * <p>截断长度在模板侧由 {@link org.company.nianglin.util.MessageTemplateUtil}
+     * 的 {@code value(...)} 兜底，本方法只需保证入参不超过「30 + 1」即可。
+     * 提前在这里处理是为了让模板保持简单 —— 模板不应该知道「摘要」是什么。</p>
+     */
+    private static String truncateDigest(String content) {
+        if (content.length() <= NOTIFY_DIGEST_MAX) {
+            return content;
+        }
+        return content.substring(0, NOTIFY_DIGEST_MAX) + "…";
     }
     /* ================================================================== */
     /* 内部：缓存                                                          */

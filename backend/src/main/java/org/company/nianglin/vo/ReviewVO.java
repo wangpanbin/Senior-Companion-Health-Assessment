@@ -76,6 +76,13 @@ public class ReviewVO {
     @Schema(description = "陪诊员回复", example = "感谢信任，祝老人早日康复。")
     private String companionReply;
 
+    @Schema(description = "陪诊员回复时间，未回复为 null", example = "2026-09-25 10:30:00")
+    private LocalDateTime replyTime;
+
+    @Schema(description = "评价是否有效（true=有效，false=管理员已裁定无效）",
+            example = "true")
+    private Boolean isValid;
+
     @Schema(description = "评价时间", example = "2026-09-20 18:30:00")
     private LocalDateTime createTime;
 
@@ -92,6 +99,8 @@ public class ReviewVO {
             return null;
         }
         boolean anonymous = entity.getIsAnonymous() != null && entity.getIsAnonymous() == 1;
+        // is_valid: 1 → true / 0 → false；null 视为有效（兜底，V1 老数据无 is_valid 字段）
+        boolean valid = entity.getIsValid() == null || entity.getIsValid() == 1;
         return new ReviewVO()
                 .setId(entity.getId())
                 .setOrderId(entity.getOrderId())
@@ -106,6 +115,8 @@ public class ReviewVO {
                 .setCompanionId(entity.getCompanionId())
                 .setCompanionName(MaskUtil.name(companionName))
                 .setCompanionReply(entity.getCompanionReply())
+                .setReplyTime(entity.getReplyTime())
+                .setIsValid(valid)
                 .setCreateTime(entity.getCreateTime());
     }
 }

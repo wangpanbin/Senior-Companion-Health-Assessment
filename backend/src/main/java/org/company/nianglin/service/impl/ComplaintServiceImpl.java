@@ -15,9 +15,11 @@ import org.company.nianglin.dto.ComplaintCreateDTO;
 import org.company.nianglin.dto.ComplaintQuery;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.Complaint;
+import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.ComplaintMapper;
+import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
@@ -29,15 +31,18 @@ import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.util.SensitiveWordUtil;
 import org.company.nianglin.vo.ComplaintCreateResultVO;
 import org.company.nianglin.vo.ComplaintVO;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -66,6 +71,25 @@ public class ComplaintServiceImpl implements ComplaintService {
     private final MessageService messageService;
     private final UserNameResolver userNameResolver;
     private final ObjectMapper objectMapper;
+
+    /**
+     * 评价表读 mapper（E4 评价申诉专用）。
+     *
+     * <p>复用 {@code OrderReviewMapper}（V1 已建，零迁移），不引入新表 —— 申诉
+     * 通过 {@code (reviewId → orderId → complaint.orderId + type=REVIEW_APPEAL)} 三段反查
+     * 完成关联，详见 {@code ComplaintMapper.countOpenAppealByReviewId} 的注释。</p>
+     */
+    private final OrderReviewMapper orderReviewMapper;
+
+    /**
+     * 评价申诉时限（E4）。
+     *
+     * <p>评价提交后多少日内可发起申诉；超时由本类的「REVIEW_APPEAL 分支」
+     * 返回 409。阈值落 {@code application.yml} 的 {@code nianglin.review.appeal-deadline-days}
+     * （默认 15），不在代码里硬编码 —— 与项目既有「业务阈值走配置」的惯例一致。</p>
+     */
+    @Value("${nianglin.review.appeal-deadline-days:15}")
+    private int appealDeadlineDays;
 
     /* ================================================================== */
     /* 5. 提交投诉                                                         */
@@ -106,6 +130,13 @@ public class ComplaintServiceImpl implements ComplaintService {
             // 家属在「还没人接单」时投诉：此时订单里根本不存在服务方，
             // 硬写一条 target_user_id 为空的投诉会让管理员无从下手
             throw new BusinessException(ResultCode.CONFLICT, "订单尚未被接单，暂无被投诉对象");
+        }
+
+        // 评价申诉（E4）专属校验：归属三方一致 + 时限 + 同评价未结案唯一。
+        // 必须排在「订单未结案投诉」之前：若已有同订单未结案投诉（普通投诉或别的申诉），
+        // 应当走那条共用的「已有未结案」409，本分支的同评价唯一约束只针对同 reviewId 增量检查。
+        if (type == ComplaintType.REVIEW_APPEAL) {
+            validateReviewAppeal(dto, order, complainantId);
         }
 
         Long openCount = complaintMapper.selectCount(Wrappers.<Complaint>lambdaQuery()
@@ -210,6 +241,53 @@ public class ComplaintServiceImpl implements ComplaintService {
         }
         return toVO(complaint, userNameResolver.resolveAll(
                 List.of(complaint.getComplainantId(), complaint.getTargetUserId())));
+    }
+
+    /* ================================================================== */
+    /* 内部：评价申诉校验（E4）                                              */
+    /* ================================================================== */
+
+    /**
+     * 评价申诉的归属 / 时限 / 同评价未结案唯一 三重校验。
+     *
+     * <p>任何一项不满足都直接抛 {@link BusinessException}，调用方不必再判断返回值。
+     * 顺序刻意是「评价存在 → 评价属于本陪诊员 → 评价与订单一致 → 时限 → 同评价未结案」：
+     * 越靠前的越接近「数据完整性」问题（评价不存在 / 不属于本人），越靠后越接近
+     * 「业务约束」（时限 / 唯一性），前面失败时不会触发后面那条更慢的 SQL。</p>
+     */
+    private void validateReviewAppeal(ComplaintCreateDTO dto, CompanionOrder order, Long complainantId) {
+        Long reviewId = dto.getReviewId();
+        if (reviewId == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "评价申诉必须传入 reviewId");
+        }
+
+        OrderReview review = orderReviewMapper.selectById(reviewId);
+        if (review == null) {
+            throw new BusinessException(ResultCode.REVIEW_NOT_FOUND);
+        }
+        if (!Objects.equals(review.getCompanionId(), complainantId)) {
+            throw new BusinessException(ResultCode.ORDER_NO_PERMISSION);
+        }
+        if (!Objects.equals(review.getOrderId(), order.getId())) {
+            // 「评价 ↔ 订单 ↔ 申诉人」三方一致：dto.orderId 已通过 requireInvolved 校验，
+            // 这里只比 review.orderId 与之相等。顺序反了就会漏掉这一类伪造
+            throw new BusinessException(ResultCode.ORDER_NO_PERMISSION);
+        }
+
+        // 时限：评价提交后多少日内可申诉。createTime 是评价的提交时间，不是申诉时间；
+        // 用「评价提交时间 + N 天 ≤ now」反推「是否在 N 日内」，而不是「now - 评价时间 ≤ N」
+        // —— 两者数学上等价，但前者读起来更接近自然语言
+        LocalDateTime deadline = review.getCreateTime().plusDays(appealDeadlineDays);
+        if (deadline.isBefore(LocalDateTime.now())) {
+            throw new BusinessException(ResultCode.CONFLICT,
+                    "评价申诉须在评价提交后 " + appealDeadlineDays + " 日内发起");
+        }
+
+        // 同 reviewId 已有未结案（PENDING/PROCESSING）申诉 → 409（PRD §RK-01 防滥用）
+        long openAppeal = complaintMapper.countOpenAppealByReviewId(reviewId);
+        if (openAppeal > 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "该评价的申诉正在处理中");
+        }
     }
 
     /* ================================================================== */

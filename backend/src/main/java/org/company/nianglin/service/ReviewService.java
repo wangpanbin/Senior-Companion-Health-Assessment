@@ -3,8 +3,10 @@ package org.company.nianglin.service;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.dto.ReviewCreateDTO;
 import org.company.nianglin.dto.ReviewQuery;
+import org.company.nianglin.dto.ReviewReplyDTO;
 import org.company.nianglin.vo.CompanionScoreVO;
 import org.company.nianglin.vo.ReviewCreateResultVO;
+import org.company.nianglin.vo.ReviewReplyResultVO;
 import org.company.nianglin.vo.ReviewVO;
 
 /**
@@ -61,4 +63,16 @@ public interface ReviewService {
      * 一次漏算会让陪诊员的分数永远停在被判定无效之前的水平。</p>
      */
     void refreshCompanionScore(Long companionId);
+
+    /**
+     * 陪诊员回复评价（E4 评价公信力闭环）。
+     *
+     * <p>「一评一回复，落库即定稿」：成功后 {@code companion_reply} 与
+     * {@code reply_time} 写入；本方法不触发评分重算（回复不参与聚合），
+     * 仅向评价家属发送一条站内信（{@code MessageType.REVIEW_REPLIED}）。</p>
+     *
+     * @throws org.company.nianglin.exception.BusinessException
+     *         6005 评价不存在 / 6006 已回复（含并发穿透）/ 6003 敏感词 / 3004 非该评价的陪诊员
+     */
+    ReviewReplyResultVO reply(Long reviewId, ReviewReplyDTO dto);
 }

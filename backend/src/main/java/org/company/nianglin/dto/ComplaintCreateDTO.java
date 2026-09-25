@@ -26,6 +26,13 @@ import java.util.List;
  * 而 {@code FormData} 里所有字段都变成字符串，
  * {@code orderId} 的类型校验会静默失效。</p>
  *
+ * <h3>评价申诉（E4）专用字段 {@code reviewId}</h3>
+ *
+ * <p>{@code type=REVIEW_APPEAL} 时必填，其它类型时忽略。
+ * 不写成 {@code @NotNull} 是因为这字段对普通投诉毫无意义 —— 强校验放在
+ * Service 层做条件判断（{@code type == REVIEW_APPEAL && reviewId == null → 400}），
+ * 比在 DTO 上用条件注解更清晰，{@code @NotNull(groups = ...)} 那种写法太容易漏。</p>
+ *
  * @author 银龄伴诊团队
  * @since M7
  */
@@ -38,7 +45,7 @@ public class ComplaintCreateDTO {
     @NotNull(message = "订单 ID 不能为空")
     private Long orderId;
 
-    @Schema(description = "投诉类型：LATE / ATTITUDE / INCOMPLETE / FEE_DISPUTE / PRIVACY / OTHER",
+    @Schema(description = "投诉类型：LATE / ATTITUDE / INCOMPLETE / FEE_DISPUTE / PRIVACY / REVIEW_APPEAL / OTHER",
             example = "LATE", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank(message = "投诉类型不能为空")
     private String type;
@@ -52,4 +59,13 @@ public class ComplaintCreateDTO {
     @Schema(description = "证据材料 URL 列表，最多 6 张", example = "[\"/uploads/202609/ghi789.jpg\"]")
     @Size(max = 6, message = "证据材料最多 6 张")
     private List<@Size(max = 255, message = "证据 URL 过长") String> evidence;
+
+    /**
+     * 评价 ID（E4 评价申诉专用）。
+     *
+     * <p>仅当 {@code type=REVIEW_APPEAL} 时必填且必须校验归属；
+     * 普通投诉时此字段必须为 {@code null}，由 Service 层做互斥校验。</p>
+     */
+    @Schema(description = "评价 ID（仅 type=REVIEW_APPEAL 时必填）", example = "30003")
+    private Long reviewId;
 }
