@@ -99,6 +99,11 @@ nianglin:
     auto-cancel-minutes: 60
     # 打卡坐标允许偏离订单地址的最大距离（米），用于防虚假打卡
     checkin-max-distance-meters: 2000
+  # 评价（E4 评价公信力闭环）
+  review:
+    # 评价提交后多少日内可发起 REVIEW_APPEAL 申诉；超时由 Service 层返回 409。
+    # 改这里需要同步更新 docs/spec/E4-review-credibility.md §4.7 的注释。
+    appeal-deadline-days: 15
   # 附件存储（打卡照片 / 投诉证据 / 资质证件 / 头像）
   file:
     # 落盘根目录；对外通过 /uploads/** 暴露，映射见 WebMvcConfig#addResourceHandlers

@@ -29,6 +29,13 @@ public enum OperType {
     RESET_PASSWORD("重置密码"),
     ARBITRATE_ORDER("订单纠纷处理"),
     HANDLE_COMPLAINT("处理投诉"),
+    /**
+     * 评价有效性裁定（E4）。
+     *
+     * <p>管理员将评价由「有效」裁定为「无效」。与 {@link #HANDLE_COMPLAINT} 是两次独立操作：
+     * 申诉是触发线索，裁定是评价侧的写动作；管理员先裁定、再单独结案投诉。</p>
+     */
+    REVIEW_RULING("评价有效性裁定"),
     PUBLISH_NOTICE("发布系统公告"),
     ;
 

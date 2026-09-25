@@ -25,6 +25,14 @@ public enum OperTargetType {
     ORDER("订单"),
     COMPANION("陪诊员"),
     COMPLAINT("投诉"),
+    /**
+     * 评价（E4）。
+     *
+     * <p>与 {@link #ORDER} 同源（评价以订单为外键），但操作动作（裁定）只动评价
+     * 的 {@code is_valid} 一个字段，不触碰订单状态 —— 拆开便于审计：查「谁裁定了哪条评价」
+     * 时不需要再联合 order_review 与 companion_order。</p>
+     */
+    REVIEW("评价"),
     ;
 
     private final String label;

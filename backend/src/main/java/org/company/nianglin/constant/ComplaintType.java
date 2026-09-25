@@ -22,6 +22,17 @@ public enum ComplaintType {
     INCOMPLETE("服务未完成"),
     FEE_DISPUTE("费用纠纷"),
     PRIVACY("隐私泄露"),
+    /**
+     * 评价申诉（E4 评价公信力闭环）。
+     *
+     * <p>复用既有投诉通道：陪诊员对收到的评价发起申诉，投诉人 = 陪诊员、
+     * 被投诉人 = 该订单的下单家属，由订单关系自动推导（{@code ComplaintServiceImpl#create}
+     * 的推导逻辑天然支持「陪诊员 → 家属」方向，零改动）。</p>
+     *
+     * <p>与普通投诉的差别仅在：① 多了 {@code reviewId} 入参 ② 多了「评价 ≤ 15 日」
+     * 时限校验 ③ 多了「同评价未结案唯一」约束。处置仍走 {@code handleComplaint} 状态机。</p>
+     */
+    REVIEW_APPEAL("评价申诉"),
     OTHER("其他"),
     ;
 

@@ -99,6 +99,21 @@ public enum ResultCode {
     ORDER_ALREADY_REVIEWED(6002, "该订单已评价"),
     CONTENT_SENSITIVE(6003, "内容包含敏感词，请修改后重试"),
     COMPLAINT_NOT_FOUND(6004, "投诉记录不存在"),
+    /**
+     * 评价不存在（含 {@code deleted=1}）。
+     *
+     * <p>与 {@link #COMPLAINT_NOT_FOUND} 同样的语义：把「真的没了」与「不给我看」
+     * 合成同一个码会让排障无从下手，因此为评价侧单独留一个码。</p>
+     */
+    REVIEW_NOT_FOUND(6005, "评价不存在"),
+    /**
+     * 该评价已由陪诊员回复，不能重复回复。
+     *
+     * <p>「一评一回复」是产品决策（详见 {@code docs/spec/E4-review-credibility.md} §七）：
+     * 落库即定稿，不接受编辑也不接受删除。重复提交会被 {@code isNull(companion_reply)}
+     * 乐观条件翻译成此码，与并发穿透走同一出口。</p>
+     */
+    REVIEW_ALREADY_REPLIED(6006, "该评价已回复，不能重复回复"),
 
     /* ==================== 7xxx 站内信 ==================== */
     MESSAGE_NOT_FOUND(7001, "消息不存在"),

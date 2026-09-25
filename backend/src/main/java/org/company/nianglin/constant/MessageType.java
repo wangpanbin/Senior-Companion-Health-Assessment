@@ -32,6 +32,26 @@ public enum MessageType {
     MEDICATION_REMIND("用药提醒", MessageBizType.MEDICATION),
     COMPLAINT_SUBMITTED("新投诉待处理", MessageBizType.COMPLAINT),
     COMPLAINT_HANDLED("投诉处理结果", MessageBizType.COMPLAINT),
+    /**
+     * 陪诊员回复了评价（E4）。
+     *
+     * <p>接收人是评价人（家属），{@code bizId=orderId}；文案携带订单号与
+     * 回复前 30 字摘要，避免站内信成为绕过脱敏的正文泄露出口。</p>
+     */
+    REVIEW_REPLIED("评价被回复", MessageBizType.ORDER),
+    /**
+     * 陪诊员对评价发起申诉，通知被申诉家属 + 全部管理员（E4）。
+     *
+     * <p>{@code bizId=complaintId}；跳转投诉详情由 {@code linkUrl} 给出。</p>
+     */
+    REVIEW_APPEAL_SUBMITTED("收到评价申诉", MessageBizType.COMPLAINT),
+    /**
+     * 管理员裁定评价无效（E4）。
+     *
+     * <p>接收人是评价家属 + 陪诊员，{@code bizId=orderId}；文案携带订单号与
+     * 裁定理由前 30 字摘要。</p>
+     */
+    REVIEW_INVALIDATED("评价被裁定无效", MessageBizType.ORDER),
     SYSTEM_NOTICE("系统公告", MessageBizType.SYSTEM),
     ;
 

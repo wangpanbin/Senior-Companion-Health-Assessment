@@ -51,6 +51,9 @@ public final class MessageTemplateUtil {
             case MEDICATION_REMIND -> "用药提醒";
             case COMPLAINT_SUBMITTED -> "新投诉待处理";
             case COMPLAINT_HANDLED -> "投诉处理结果";
+            case REVIEW_REPLIED -> "评价被回复";
+            case REVIEW_APPEAL_SUBMITTED -> "收到评价申诉";
+            case REVIEW_INVALIDATED -> "评价被裁定无效";
             case SYSTEM_NOTICE -> "系统公告";
         };
     }
@@ -91,6 +94,25 @@ public final class MessageTemplateUtil {
                     value(p, "submitterName"), value(p, "orderNo"), value(p, "typeLabel"));
             case COMPLAINT_HANDLED -> "您提交的投诉（%s）已处理完成：%s".formatted(
                     value(p, "orderNo"), value(p, "handleResult"));
+            case REVIEW_REPLIED -> {
+                // replyDigest 由调用方预先截断到 30 字以内（含省略号），
+                // 这里不再二次截断：模板只负责拼接，避免重复逻辑散在两处
+                String orderNo = value(p, "orderNo");
+                String digest = emptyIfMissing(p, "replyDigest");
+                yield digest.isEmpty()
+                        ? "陪诊员回复了您对订单 %s 的评价，点击查看。".formatted(orderNo)
+                        : "陪诊员回复了您对订单 %s 的评价（%s），点击查看完整回复。".formatted(orderNo, digest);
+            }
+            case REVIEW_APPEAL_SUBMITTED -> "陪诊员 %s 就订单 %s 发起评价申诉（%s），请及时处理。".formatted(
+                    value(p, "submitterName"), value(p, "orderNo"), value(p, "typeLabel"));
+            case REVIEW_INVALIDATED -> {
+                // reasonDigest 由 AdminService.reviewValidity 截到 30 字以内（含省略号）
+                String orderNo = value(p, "orderNo");
+                String reason = emptyIfMissing(p, "reasonDigest");
+                yield reason.isEmpty()
+                        ? "平台裁定订单 %s 中的一条评价为无效，评分已重算。".formatted(orderNo)
+                        : "平台裁定订单 %s 中的一条评价为无效（%s），评分已重算。".formatted(orderNo, reason);
+            }
             case SYSTEM_NOTICE -> value(p, "content");
         };
     }
@@ -109,11 +131,12 @@ public final class MessageTemplateUtil {
             return null;
         }
         return switch (type) {
-            case ORDER_CREATED, ORDER_ACCEPTED, ORDER_PROGRESS, ORDER_COMPLETED, ORDER_CANCELLED ->
+            case ORDER_CREATED, ORDER_ACCEPTED, ORDER_PROGRESS, ORDER_COMPLETED, ORDER_CANCELLED,
+                    REVIEW_REPLIED, REVIEW_INVALIDATED ->
                     "/family?orderId=" + bizId;
             case AUDIT_RESULT -> "/profile/companion";
             case MEDICATION_REMIND -> "/family?elderId=" + bizId;
-            case COMPLAINT_SUBMITTED -> "/admin?complaintId=" + bizId;
+            case COMPLAINT_SUBMITTED, REVIEW_APPEAL_SUBMITTED -> "/admin?complaintId=" + bizId;
             case COMPLAINT_HANDLED -> "/complaint/" + bizId;
             case SYSTEM_NOTICE -> null;
         };
