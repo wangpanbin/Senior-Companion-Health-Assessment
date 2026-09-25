@@ -9,6 +9,7 @@ import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.Complaint;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.ComplaintMapper;
+import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.impl.ComplaintServiceImpl;
@@ -89,13 +90,16 @@ class ComplaintServiceTest {
     @Mock
     private UserNameResolver userNameResolver;
 
+    @Mock
+    private OrderReviewMapper orderReviewMapper;
+
     private ComplaintServiceImpl service;
 
     @BeforeEach
     void setUp() {
         MybatisLambdaCache.warmUp();
         service = new ComplaintServiceImpl(complaintMapper, sysUserMapper, orderService,
-                messageService, userNameResolver, new ObjectMapper());
+                messageService, userNameResolver, new ObjectMapper(), orderReviewMapper);
         loginAs(RoleConstants.FAMILY, FAMILY_ID);
     }
 

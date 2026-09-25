@@ -88,13 +88,16 @@ class ReviewServiceTest {
     @Mock
     private StringRedisTemplate redisTemplate;
 
+    @Mock
+    private MessageService messageService;
+
     private ReviewServiceImpl service;
 
     @BeforeEach
     void setUp() {
         MybatisLambdaCache.warmUp();
         service = new ReviewServiceImpl(reviewMapper, reviewReadMapper, companionProfileMapper,
-                orderService, userNameResolver, redisTemplate, new ObjectMapper());
+                orderService, userNameResolver, redisTemplate, new ObjectMapper(), messageService);
         loginAs(RoleConstants.FAMILY, FAMILY_ID);
     }
 

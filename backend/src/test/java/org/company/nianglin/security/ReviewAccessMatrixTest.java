@@ -72,6 +72,20 @@ class ReviewAccessMatrixTest {
     /** 与 101 / 201 / 301 都无关的他人投诉 */
     private static final long OTHERS_COMPLAINT = 31002L;
 
+    /* ================================================================== */
+    /*  E4 评价公信力闭环 · 回复评价与裁定靶子                                  */
+    /* ================================================================== */
+
+    /** 评价 30003：陪诊员 309、家属 103、未回复（companion_reply NULL）—— 用于回复正/反向用例 */
+    private static final long REPLYABLE_REVIEW = 30003L;
+    /** 评价 30001：陪诊员 307、家属 101、已回复 —— 用于「已回复」用例 */
+    private static final long ALREADY_REPLIED_REVIEW = 30001L;
+    /** 评价 30010：陪诊员 316、家属 110、is_valid=0（已被裁定） —— 用于裁定越权用例 */
+    private static final long INVALIDATED_REVIEW = 30010L;
+    /** 评价 30001 的陪诊员 = 307，与 COMPANION_301/302 区分开 —— 用于「陪诊员 A→B」归属错用例 */
+    private static final long COMPANION_OF_REPLYABLE = 309L;
+    private static final long COMPANION_OF_INVALIDATED = 316L;
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -324,6 +338,223 @@ class ReviewAccessMatrixTest {
     }
 
     /* ================================================================== */
+    /* 5 · 回复评价（E4 评价公信力闭环）                                        */
+    /*   必须带合法 payload，否则 @Valid 会先于鉴权把请求打回 400，            */
+    /*   那就拿不到 403 —— 「假绿」陷阱（PRD §11.2 / RK-05）                  */
+    /* ================================================================== */
+
+    @ParameterizedTest(name = "回复评价 · {0} → 403（带合法 payload）")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.ADMIN})
+    @DisplayName("回复评价 · 老人 / 家属 / 管理员提交回复 → 403（@PreAuthorize + 拦截器兜底）")
+    void nonCompanionShouldNotReplyReview(String role) throws Exception {
+        long userId = switch (role) {
+            case RoleConstants.ELDER -> ELDER_OF_101;
+            case RoleConstants.FAMILY -> FAMILY_OWNER;
+            default -> ADMIN_ID;
+        };
+        mockMvc.perform(post("/api/review/{id}/reply", REPLYABLE_REVIEW)
+                        .header(AUTH_HEADER, bearer(userId, role))
+                        .contentType(JSON)
+                        .content(replyBody()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("回复评价 · 老人提交被「只读模式」拦下 → 403 且提示解释原因")
+    void elderReplyShouldBeBlockedByReadOnlyRule() throws Exception {
+        mockMvc.perform(post("/api/review/{id}/reply", REPLYABLE_REVIEW)
+                        .header(AUTH_HEADER, elder(ELDER_OF_101))
+                        .contentType(JSON)
+                        .content(replyBody()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.message").value(containsString("只读")));
+    }
+
+    @Test
+    @DisplayName("回复评价 · 陪诊员 A 回复陪诊员 B 的评价 → 3004（Service 层归属校验）")
+    void otherCompanionShouldNotReplyOthersReview() throws Exception {
+        // 评价 30003 的陪诊员是 309；用 301 去回 → 归属不匹配
+        mockMvc.perform(post("/api/review/{id}/reply", REPLYABLE_REVIEW)
+                        .header(AUTH_HEADER, companion(COMPANION_301))
+                        .contentType(JSON)
+                        .content(replyBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.ORDER_NO_PERMISSION.getCode()));
+    }
+
+    @Test
+    @DisplayName("回复评价 · 该评价已回复 → 6006（一评一回复）")
+    void reviewAlreadyRepliedShouldReturn6006() throws Exception {
+        // 评价 30001 已有 companion_reply（"感谢认可..."）
+        mockMvc.perform(post("/api/review/{id}/reply", ALREADY_REPLIED_REVIEW)
+                        .header(AUTH_HEADER, bearer(307L, RoleConstants.COMPANION))
+                        .contentType(JSON)
+                        .content(replyBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.REVIEW_ALREADY_REPLIED.getCode()));
+    }
+
+    @Test
+    @DisplayName("回复评价 · 评价不存在 → 6005")
+    void missingReviewShouldReturn6005() throws Exception {
+        mockMvc.perform(post("/api/review/{id}/reply", 999999L)
+                        .header(AUTH_HEADER, bearer(COMPANION_OF_REPLYABLE, RoleConstants.COMPANION))
+                        .contentType(JSON)
+                        .content(replyBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.REVIEW_NOT_FOUND.getCode()));
+    }
+
+    @Test
+    @DisplayName("回复评价 · 未登录 → 401")
+    void anonymousShouldGet401OnReplyReview() throws Exception {
+        mockMvc.perform(post("/api/review/{id}/reply", REPLYABLE_REVIEW)
+                        .contentType(JSON)
+                        .content(replyBody()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("回复评价 · 缺合法 payload（缺 content）→ 400，先于鉴权之外的业务判断")
+    void invalidReplyBodyShouldReturn400() throws Exception {
+        mockMvc.perform(post("/api/review/{id}/reply", REPLYABLE_REVIEW)
+                        .header(AUTH_HEADER, bearer(COMPANION_OF_REPLYABLE, RoleConstants.COMPANION))
+                        .contentType(JSON)
+                        .content("{}"))
+                .andExpect(jsonPath("$.code").value(ResultCode.PARAM_ERROR.getCode()));
+    }
+
+    /* ================================================================== */
+    /* 6 · 评价申诉（E4）：复用 POST /api/complaint 通道                            */
+    /*   reviewId=30003 → 陪诊员 309、家属 103、订单 1033、可申诉                  */
+    /*   注意：合法 payload = orderId + type + content + reviewId                  */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("评价申诉 · 老人提交 → 403（只读拦截器兜底）")
+    void elderShouldNotAppealReview() throws Exception {
+        mockMvc.perform(post("/api/complaint")
+                        .header(AUTH_HEADER, elder(ELDER_OF_101))
+                        .contentType(JSON)
+                        .content(appealBody(REPLYABLE_REVIEW)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.message").value(containsString("只读")));
+    }
+
+    @Test
+    @DisplayName("评价申诉 · 无关家属提交 → 3004（订单不属于本人）")
+    void unrelatedFamilyShouldNotAppealReview() throws Exception {
+        mockMvc.perform(post("/api/complaint")
+                        .header(AUTH_HEADER, family(FAMILY_OTHER))
+                        .contentType(JSON)
+                        .content(appealBody(REPLYABLE_REVIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.ORDER_NO_PERMISSION.getCode()));
+    }
+
+    @Test
+    @DisplayName("评价申诉 · 管理员提交 → 3004（管理员不当当事人，PRD §5.1 推导拒绝）")
+    void adminShouldNotAppealReview() throws Exception {
+        mockMvc.perform(post("/api/complaint")
+                        .header(AUTH_HEADER, admin())
+                        .contentType(JSON)
+                        .content(appealBody(REPLYABLE_REVIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.ORDER_NO_PERMISSION.getCode()));
+    }
+
+    @Test
+    @DisplayName("评价申诉 · 陪诊员 A 申诉陪诊员 B 的评价 → 3004（review.companionId 不匹配）")
+    void otherCompanionShouldNotAppealOthersReview() throws Exception {
+        mockMvc.perform(post("/api/complaint")
+                        .header(AUTH_HEADER, companion(COMPANION_301))
+                        .contentType(JSON)
+                        .content(appealBody(REPLYABLE_REVIEW)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.ORDER_NO_PERMISSION.getCode()));
+    }
+
+    @Test
+    @DisplayName("评价申诉 · 未登录 → 401")
+    void anonymousShouldGet401OnAppeal() throws Exception {
+        mockMvc.perform(post("/api/complaint")
+                        .contentType(JSON)
+                        .content(appealBody(REPLYABLE_REVIEW)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("评价申诉 · 缺合法 payload（缺 reviewId）→ 400")
+    void appealMissingReviewIdShouldReturn400() throws Exception {
+        mockMvc.perform(post("/api/complaint")
+                        .header(AUTH_HEADER, bearer(COMPANION_OF_REPLYABLE, RoleConstants.COMPANION))
+                        .contentType(JSON)
+                        .content("{\"orderId\":1033,\"type\":\"REVIEW_APPEAL\","
+                                + "\"content\":\"评价不实，我有打卡证据。\"}"))
+                .andExpect(jsonPath("$.code").value(ResultCode.PARAM_ERROR.getCode()));
+    }
+
+    /* ================================================================== */
+    /* 7 · 管理员裁定评价（E4）：/api/admin/review/{id}/validity                  */
+    /*   三个业务角色一律 403（@PreAuthorize 类级 + 过滤链预检）                  */
+    /*   重复裁定 → 409（同一评价不能二次裁定）                                     */
+    /* ================================================================== */
+
+    @ParameterizedTest(name = "管理员裁定 · {0} → 403（带合法 payload）")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("管理员裁定 · 老人 / 家属 / 陪诊员 → 403，过滤链预检早于参数解析")
+    void nonAdminShouldNotRulingReview(String role) throws Exception {
+        long userId = switch (role) {
+            case RoleConstants.ELDER -> ELDER_OF_101;
+            case RoleConstants.FAMILY -> FAMILY_OWNER;
+            default -> COMPANION_301;
+        };
+        mockMvc.perform(post("/api/admin/review/{id}/validity", INVALIDATED_REVIEW)
+                        .header(AUTH_HEADER, bearer(userId, role))
+                        .contentType(JSON)
+                        .content(rulingBody()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("管理员裁定 · 未登录 → 401")
+    void anonymousShouldGet401OnRulingReview() throws Exception {
+        mockMvc.perform(post("/api/admin/review/{id}/validity", INVALIDATED_REVIEW)
+                        .contentType(JSON)
+                        .content(rulingBody()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("管理员裁定 · 已裁定过 → 409（INVALIDATED_REVIEW 已是 is_valid=0）")
+    void alreadyInvalidatedReviewShouldReturn409() throws Exception {
+        // 评价 30010 在 V2 种子数据里 is_valid=0
+        mockMvc.perform(post("/api/admin/review/{id}/validity", INVALIDATED_REVIEW)
+                        .header(AUTH_HEADER, admin())
+                        .contentType(JSON)
+                        .content(rulingBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.CONFLICT.getCode()));
+    }
+
+    @Test
+    @DisplayName("管理员裁定 · 缺合法 payload（缺 reason）→ 400，先于鉴权之外的业务判断")
+    void invalidRulingBodyShouldReturn400() throws Exception {
+        mockMvc.perform(post("/api/admin/review/{id}/validity", REPLYABLE_REVIEW)
+                        .header(AUTH_HEADER, admin())
+                        .contentType(JSON)
+                        .content("{\"isValid\":false}"))
+                .andExpect(jsonPath("$.code").value(ResultCode.PARAM_ERROR.getCode()));
+    }
+
+    /* ================================================================== */
 
     /** 一份格式合法的评价请求体（越权用例中它永远到不了写库那一步） */
     private static String reviewBody() {
@@ -334,6 +565,39 @@ class ReviewAccessMatrixTest {
     private static String complaintBody() {
         return "{\"orderId\":1001,\"type\":\"LATE\","
                 + "\"content\":\"陪诊员比约定时间晚了 40 分钟到达，导致老人错过取号。\"}";
+    }
+
+    /**
+     * 一份格式合法的回复请求体（5–200 字符）。
+     *
+     * <p>所有 403 / 3004 用例必须带这份 body —— 否则 {@code @Valid} 会先于
+     * Spring Security 注解拦下请求返回 400，测试看起来「通过了 400 校验」，
+     * 实际是「死在参数解析」，拿不到真正想验证的 403。RK-05 假绿陷阱。</p>
+     */
+    private static String replyBody() {
+        return "{\"content\":\"当日 08:20 已到院打卡（可查证），迟到或因老人下楼较慢。\"}";
+    }
+
+    /**
+     * 一份格式合法的评价申诉请求体（orderId + type + 10–1000 字 content + reviewId）。
+     *
+     * <p>所有 403 / 3004 用例必须带这份 body，与 replyBody 同款「假绿」防御。</p>
+     */
+    private static String appealBody(long reviewId) {
+        return "{\"orderId\":1033,\"type\":\"REVIEW_APPEAL\","
+                + "\"content\":\"评价与事实不符，当日 08:20 已到院打卡。\","
+                + "\"reviewId\":" + reviewId + "}";
+    }
+
+    /**
+     * 一份格式合法的裁定请求体（isValid=false + 10–200 字 reason）。
+     *
+     * <p>「带合法 payload」是 ADMIN 以外角色越权测试的硬性要求（RK-05 假绿陷阱）。
+     * ADMIN 端 400 用例另用缺字段 body。</p>
+     */
+    private static String rulingBody() {
+        return "{\"isValid\":false,"
+                + "\"reason\":\"家属描述与打卡记录明显不符，证据充分，裁定为无效评价。\"}";
     }
 
     private long userIdOf(String role) {
