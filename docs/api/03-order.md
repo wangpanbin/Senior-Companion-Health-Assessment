@@ -160,6 +160,36 @@ M4 和 M3 一样，权限不是一个注解就能说完的，而是**三段式**
 
 ---
 
+## 二·补、费用明细（ADR-0009）
+
+订单完成时随状态变更同事务生成服务费明细；服务中/完成后陪诊员可补记代垫。
+`fee` / `actual_fee` 降级为明细 SUM 的汇总缓存，**读取时与明细不一致以明细为准**。
+历史订单允许明细为空且仅 `actual_fee` 有值（兜底提示，不静默伪造明细）。
+
+### 录入明细
+
+`POST /api/order/{id}/fee-items`　权限：COMPANION（须为本单陪诊员；订单须 IN_SERVICE / COMPLETED）
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| itemType | string | 是 | `ADVANCE`-代垫 / `SERVICE`-服务费 |
+| itemName | string | 是 | ≤64 字，如「心内科挂号费」 |
+| amount | string | 是 | 两位小数字符串，如 `"35.50"` |
+| occurredAt | string | 是 | `yyyy-MM-dd HH:mm:ss` |
+
+成功：`data` 为 `OrderFeeItemVO`（含 `itemTypeLabel` 中文）。完成态订单录入会同步重算 `actual_fee`。
+错误：3001 订单不存在 · 3002 状态不允许 · 4003 非本单陪诊员 · 400 参数不合法
+
+### 查询明细
+
+`GET /api/order/{id}/fee-items`　权限：相关方（下单家属 / 就诊老人 / 本单陪诊员 / ADMIN）
+
+`data`：`{ items[], advanceTotal, serviceTotal, total, hasItems, fallbackNotice }`，
+金额均为字符串两位小数；`items` 为空且该单已有申报 `actual_fee` 时 `fallbackNotice = "该订单无明细记录"`。
+错误：3001 订单不存在 · 3004 无权操作该订单
+
+---
+
 ## 三、接口列表
 
 | # | 方法 | 路径 | 权限 | 说明 |
@@ -174,6 +204,8 @@ M4 和 M3 一样，权限不是一个注解就能说完的，而是**三段式**
 | 8 | POST | `/api/order/{id}/start` | COMPANION（本单陪诊员） | 开始服务 |
 | 9 | POST | `/api/order/{id}/complete` | COMPANION（本单陪诊员） | 完成服务（含合规校验） |
 | 10 | GET | `/api/order/{id}/timeline` | 已登录（须为相关方） | 状态流转时间线 |
+| 11 | POST | `/api/order/{id}/fee-items` | COMPANION（本单陪诊员） | 录入费用明细（ADR-0009） |
+| 12 | GET | `/api/order/{id}/fee-items` | 已登录（须为相关方） | 费用明细与分组合计（ADR-0009） |
 
 > **路径顺序**：`/hall` 必须注册在 `/{id}` 之前，否则 `hall` 会被当成订单 ID 解析。
 
@@ -761,3 +793,4 @@ WHERE id = ?
 |---|---|---|---|
 | v0.1.0 | 2026-09-15 | 骨架阶段初版：接口与状态机设计 | — |
 | v1.0.0 | 2026-09-15 | 按 M4 实测口径重写：三套 VO 口径表、安全边界三段式、判断顺序说明、两种并发写入策略、`version` 不对外返回、拒单单列一节、已知限制汇总、验收打勾与实测记录 | — |
+| v1.1.0 | 2026-09-28 | 新增「费用明细」（ADR-0009）：`POST/GET /api/order/{id}/fee-items`，`actual_fee` 降级为明细 SUM 的汇总缓存 | — |

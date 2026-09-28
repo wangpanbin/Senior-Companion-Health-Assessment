@@ -44,6 +44,7 @@ import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.ElderService;
 import org.company.nianglin.service.MessageService;
+import org.company.nianglin.service.OrderFeeItemService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MaskUtil;
@@ -148,6 +149,7 @@ public class OrderServiceImpl implements OrderService {
     private final ObjectMapper objectMapper;
     /** 订单状态流转唯一入口（ADR-0010）——本类所有改状态的路径都必须经由它 */
     private final OrderTransitionService orderTransitionService;
+    private final OrderFeeItemService orderFeeItemService;
 
     /* ================================================================== */
     /* 1. 创建订单                                                         */
@@ -473,7 +475,6 @@ public class OrderServiceImpl implements OrderService {
             }
         }
         String photosJson = writePhotoList(dto.getPhotos());
-        BigDecimal actualFee = dto.getFee() == null ? null : dto.getFee().setScale(2, RoundingMode.HALF_UP);
 
         LocalDateTime now = LocalDateTime.now();
         order.setFinishTime(now);
@@ -483,17 +484,17 @@ public class OrderServiceImpl implements OrderService {
         if (photosJson != null) {
             order.setServicePhotos(photosJson);
         }
-        if (actualFee != null) {
-            order.setActualFee(actualFee);
-        }
         orderTransitionService.transition(order, OrderStatus.COMPLETED,
                 OrderTransitionService.Operator.of(me.userId(), me.role(), false), "服务已完成");
+
+        // ADR-0009：完成时随状态变更同事务生成服务费明细并重算 actual_fee
+        orderFeeItemService.applyOnComplete(orderId, dto.getFee());
 
         notifyOrderCompleted(order);
 
         // 结算状态读库里的真实值返回，不写死 UNPAID ——
         // 一期虽然恒为 UNPAID，但 M9 支持线下回填之后写死就是一句谎话
-        log.info("订单已完成 | orderId={} | companionId={} | actualFee={}", orderId, me.userId(), actualFee);
+        log.info("订单已完成 | orderId={} | companionId={} | declaredFee={}", orderId, me.userId(), dto.getFee());
         return OrderFlowResultVO.ofCompleted(now, order.getPaymentStatus());
     }
 

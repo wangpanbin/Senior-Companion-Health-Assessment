@@ -15,9 +15,13 @@ import org.company.nianglin.dto.OrderCreateDTO;
 import org.company.nianglin.dto.OrderHallQuery;
 import org.company.nianglin.dto.OrderQuery;
 import org.company.nianglin.dto.OrderRejectDTO;
+import org.company.nianglin.dto.FeeItemCreateDTO;
+import org.company.nianglin.service.OrderFeeItemService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
+import org.company.nianglin.vo.OrderFeeItemSummaryVO;
+import org.company.nianglin.vo.OrderFeeItemVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
@@ -62,6 +66,7 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService orderService;
+    private final OrderFeeItemService orderFeeItemService;
 
     /* ==================== 查询 ==================== */
 
@@ -166,5 +171,25 @@ public class OrderController {
             @Parameter(description = "订单 ID", example = "1001") @PathVariable("id") Long id,
             @Valid @RequestBody OrderCompleteDTO dto) {
         return Result.success("服务已完成", orderService.complete(id, dto));
+    }
+
+    @Operation(summary = "录入费用明细",
+            description = "本单陪诊员为订单记录一条费用明细（代垫/服务费，ADR-0009）。"
+                    + "订单须处于 IN_SERVICE 或 COMPLETED；完成态录入会同步重算 actual_fee")
+    @PreAuthorize("hasRole('" + RoleConstants.COMPANION + "')")
+    @PostMapping("/{id}/fee-items")
+    public Result<OrderFeeItemVO> createFeeItem(
+            @Parameter(description = "订单 ID", example = "1025") @PathVariable("id") Long id,
+            @Valid @RequestBody FeeItemCreateDTO dto) {
+        return Result.success("已记录", orderFeeItemService.create(id, dto));
+    }
+
+    @Operation(summary = "查询费用明细",
+            description = "相关方（下单家属 / 就诊老人 / 本单陪诊员 / 管理员）可查。"
+                    + "返回明细与代垫/服务费分组合计；无明细且已有申报金额时返回 fallbackNotice 兜底提示")
+    @GetMapping("/{id}/fee-items")
+    public Result<OrderFeeItemSummaryVO> feeItems(
+            @Parameter(description = "订单 ID", example = "1025") @PathVariable("id") Long id) {
+        return Result.success(orderFeeItemService.listByOrder(id));
     }
 }

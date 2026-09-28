@@ -12,6 +12,7 @@
 
 完整流程见同目录 README.md。
 """
+import glob
 import os
 import re
 import sys
@@ -19,7 +20,9 @@ import tempfile
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                      "..", "..", ".."))
+# 表结构来自全部 V*.sql（V1 是主 DDL；V4 起的增量迁移也可能建表，如 order_fee_item）
 DDL = os.path.join(ROOT, "backend", "sql", "V1__init_schema.sql")
+SQL_GLOB = os.path.join(ROOT, "backend", "sql", "V*.sql")
 # 中间产物（counts.sql / counts.tsv）落到系统临时目录，避免污染仓库
 TMP = tempfile.gettempdir()
 COUNTS_TSV = os.path.join(TMP, "nianglin_counts.tsv")
@@ -33,7 +36,7 @@ DOMAINS = [
     ("二、老人档案与陪诊员资质域", ["elder_profile", "family_elder_relation",
                                     "companion_audit_record", "companion_profile"]),
     ("三、陪诊订单与执行域（系统核心）", ["companion_order", "order_status_log", "order_reject_log",
-                                          "order_checkin", "companion_track"]),
+                                          "order_checkin", "companion_track", "order_fee_item"]),
     ("四、用药管理域", ["medicine_dict", "medication_plan", "medication_task"]),
     ("五、评价、投诉与消息域", ["order_review", "complaint", "internal_message"]),
 ]
@@ -43,6 +46,7 @@ MODULE_OF = {
     "admin_oper_log": "M9", "elder_profile": "M3", "family_elder_relation": "M3",
     "companion_audit_record": "M9", "companion_profile": "M3/M9",
     "companion_order": "M4", "order_status_log": "M4", "order_reject_log": "M4",
+    "order_fee_item": "M4",
     "order_checkin": "M5", "companion_track": "M5", "medicine_dict": "M6",
     "medication_plan": "M6", "medication_task": "M6", "order_review": "M7",
     "complaint": "M7", "internal_message": "M8",
@@ -54,6 +58,7 @@ TABLE_CN = {
     "elder_profile": "老人档案表", "family_elder_relation": "家属-老人绑定关系表",
     "companion_audit_record": "陪诊员资质申请记录表", "companion_profile": "陪诊员业务资料表",
     "companion_order": "陪诊订单主表", "order_status_log": "订单状态流转日志表（只增不改）",
+    "order_fee_item": "订单费用明细表（代垫/服务费分账，ADR-0009）",
     "order_reject_log": "陪诊员拒单记录表", "order_checkin": "陪诊打卡记录表",
     "companion_track": "陪诊轨迹点表", "medicine_dict": "药品字典表",
     "medication_plan": "用药计划表", "medication_task": "每日服药任务表",
@@ -70,6 +75,7 @@ RELATIONS = [
     ("sys_user", "family_elder_relation", "||--o{", "family_id", "家属绑定关系"),
     ("elder_profile", "family_elder_relation", "||--o{", "elder_id", "老人被绑定"),
     ("companion_order", "order_status_log", "||--o{", "order_id", "状态流转留痕"),
+    ("companion_order", "order_fee_item", "||--o{", "order_id", "费用明细（代垫/服务费分账）"),
     ("companion_order", "order_checkin", "||--o{", "order_id", "打卡记录"),
     ("companion_order", "companion_track", "||--o{", "order_id", "轨迹点"),
     ("companion_order", "order_review", "||--o|", "order_id", "一单一评"),
@@ -693,8 +699,13 @@ def doc_seed(tables, counts):
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "render"
-    with open(DDL, "r", encoding="utf-8") as f:
-        text = f.read()
+    sql_files = sorted(glob.glob(SQL_GLOB))
+    if not sql_files:
+        sql_files = [DDL]
+    text = ""
+    for path in sql_files:
+        with open(path, "r", encoding="utf-8") as f:
+            text += f.read() + "\n"
     tables = parse_ddl(text)
 
     if mode == "counts":

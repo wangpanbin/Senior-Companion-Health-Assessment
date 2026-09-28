@@ -56,6 +56,8 @@
 | `order_checkin` | `idx_companion_id` | 普通 | `companion_id` | 查某陪诊员的全部相关记录 |
 | `companion_track` | `idx_order_time` | 普通 | `order_id`, `record_time` | 订单时间线按时间正序 |
 | `companion_track` | `idx_companion_id` | 普通 | `companion_id` | 查某陪诊员的全部相关记录 |
+| `order_fee_item` | `idx_order_type` | 普通 | `order_id`, `item_type` | 按订单取明细 + 按类型分账（家属看代垫、平台看服务费） |
+| `order_fee_item` | `idx_occurred_at` | 普通 | `occurred_at` | 支撑业务查询条件 |
 | `medicine_dict` | `idx_name` | 普通 | `name` | 档案按姓名检索 |
 | `medicine_dict` | `idx_trade_name` | 普通 | `trade_name` | 支撑业务查询条件 |
 | `medicine_dict` | `idx_dosage_form` | 普通 | `dosage_form` | 支撑业务查询条件 |

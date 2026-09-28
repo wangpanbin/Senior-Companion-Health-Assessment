@@ -2,7 +2,9 @@
 
 - **模块**：M4（主路径 B）
 - **评审时间**：2026-09-16（依落地代码反向补齐，原开工前评审未存档）
+- **修订**：2026-09-28 收口迭代同步 ADR-0009 / 0010（见 §3 · §4 · §5）
 - **关联**：`docs/api/03-order.md`、`docs/agents/PLAN_BACKEND.md §8 M4`
+- **ADR**：[0009 费用明细模型](../../adr/0009-order-fee-item-model.md) · [0010 状态流转单一入口](../../adr/0010-order-state-transition-single-entry.md)
 - **代码**：`controller/order/OrderController`、`service/impl/OrderServiceImpl`、`constant/OrderStatus`、`util/ComplianceCheckUtil`
 
 ---
@@ -91,6 +93,29 @@ ADMIN 专属 forceTerminal（M9 纠纷仲裁，绕过正向流转规则）：
 - 接单走 `@Version` 乐观锁；其余流转走 `UPDATE ... WHERE status = 期望值` 条件更新，`affectedRows=0` 即抛 3002。
 - 每次流转写 `order_status_log`，`operatorName` 取快照（不随用户改名而变）。
 
+> ### ✅ 2026-09-28 修订：状态机已收口（ADR-0010 落地）
+>
+> `OrderStatus.TRANSITIONS` + `canTransitTo()` 被 `AGENTS.md` §4.1 定义为**唯一权威判断**，但收口前实测**生产代码零调用**——判定规则被复制成 4 处硬编码守卫，各自漂移：
+>
+> | 位置 | 守卫 | 拦截的非法流转 |
+> |---|---|---|
+> | `OrderServiceImpl:316` | `from != PENDING` | 已接单后家属单方取消 |
+> | `OrderServiceImpl:359` | `from != PENDING` | 非待接单状态接单 |
+> | `OrderServiceImpl:442` | `from != ACCEPTED` | 非已接单状态进入服务中 |
+> | `OrderServiceImpl:480` | `from != IN_SERVICE` | 非服务中状态完成订单 |
+>
+> 另有终态守卫 `L599`–`L607`、评价前置校验 `L563`，同样不走 `TRANSITIONS`。`AdminServiceImpl` 强制终态只用 `isTerminal()` / `isAdminForceable()`。
+>
+> **当时的后果不是"现在有 bug"，而是"规则可被静默破坏"**：改 `TRANSITIONS` 转移表不会有任何测试失败，因为 `OrderStatusTest`（86 行）测的是一个没人调用的方法，而业务路径走的是上面那 4 份副本。`mvn test` 全绿 ≠ 状态机受保护。
+>
+> **收口决策**：见 [ADR-0010](../../adr/0010-order-state-transition-single-entry.md)——把流转收敛到 `OrderTransitionService.transition()` 单一入口，让合法判定、角色门禁、乐观锁、流转日志双写四项**结构性绑定**。落地 ticket：收口迭代 T2.1。
+>
+> **收口结果（commit `7171ecd`）**：4 处硬编码守卫与终态守卫已清零，
+> 6 处流转 + `forceTerminal` 全部改经 `OrderTransitionService.transition()`；
+> `canTransitTo` 在 service 包内恰好 1 处调用点。反向验证已实测：
+> 删 `TRANSITIONS` 一条边 → `OrderStatusTest` 与 `OrderTransitionServiceTest` 双双变红。
+> 本块保留行号表仅作迁移前存档。
+
 ---
 
 ## 4 · 验收清单
@@ -100,7 +125,7 @@ ADMIN 专属 forceTerminal（M9 纠纷仲裁，绕过正向流转规则）：
 | 1 | `OrderServiceTest` 全绿（含 50 并发抢单） | ✅ |
 | 2 | `OrderAccessMatrixTest` 全绿（4 角色 × 关键接口） | ✅ |
 | 3 | `e2e_order.py` 跑通：注册→登录→下单→接单→服务中→完成→评价 | ✅ |
-| 4 | 状态机 5 状态 + 1 终态，禁止跳级/回退 | ✅ 条件更新保证 |
+| 4 | 状态机 5 状态 + 1 终态，禁止跳级/回退 | ✅ 已收口：全部流转经 `OrderTransitionService`（ADR-0010 / commit `7171ecd`） |
 | 5 | 合规红线：服务小结拦截诊断/处方/用药建议 | ✅ `ComplianceCheckUtil` 命中即拒并回显命中词 |
 | 6 | 归属校验：家属 A 不能读家属 B 的订单 | ✅ `requireInvolved` 在 Service 层 |
 | 7 | 订单号并发不重复 | ✅ Redis INCR + 2 天 TTL |
@@ -111,3 +136,5 @@ ADMIN 专属 forceTerminal（M9 纠纷仲裁，绕过正向流转规则）：
 ## 5 · 遗留与风险
 
 - `e2e_order.py` 会残留数据（站内信 907 行 vs 种子 72），需在 M12 统一清理策略。
+- ~~**状态机权威未接线**~~ ✅ 已解决（T2.1，commit `7171ecd`）：全部流转经 `OrderTransitionService.transition()`，反向验证已实测（删 `TRANSITIONS` 一条边即测试红，详见 §3 修订块）。
+- ~~**费用明细缺失**~~ ✅ 已落地（T2.5，本 PR）：`order_fee_item` 表（V4 迁移）+ `POST/GET /api/order/{id}/fee-items`（`docs/api/03-order.md`「费用明细」节）+ 完成订单时同事务生成服务费明细并重算 `actual_fee`。方案依据 [ADR-0009](../../adr/0009-order-fee-item-model.md)；页面接入见 T4.1。

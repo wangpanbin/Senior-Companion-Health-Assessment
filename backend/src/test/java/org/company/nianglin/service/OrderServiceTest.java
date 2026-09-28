@@ -133,6 +133,10 @@ class OrderServiceTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
 
+    /** ADR-0009 明细写入路径对 complete() 而言是协作对象，这里 mock 掉，由 OrderFeeItemTest 集成覆盖 */
+    @Mock
+    private OrderFeeItemService orderFeeItemService;
+
     private OrderServiceImpl orderService;
 
     @BeforeEach
@@ -149,7 +153,7 @@ class OrderServiceTest {
         orderService = new OrderServiceImpl(orderMapper, statusLogMapper, rejectLogMapper,
                 elderProfileMapper, companionProfileMapper, sysUserMapper, orderReadMapper,
                 elderService, messageService, redisTemplate, new ObjectMapper(),
-                transitionService);
+                transitionService, orderFeeItemService);
     }
 
     @AfterEach
