@@ -409,16 +409,21 @@ PENDING ──► ACCEPTED ──► IN_SERVICE ──► COMPLETED ──► RE
 4. 仅 ADMIN 可强制改变终态，且必须写 `admin_oper_log` 并通知双方。
 5. 每次状态变更写入状态流转日志，异常时整体回滚。
 
-状态判断**必须**走 `OrderStatus` 枚举，**禁止**硬编码状态字符串：
+**状态流转的唯一入口是 `OrderTransitionService.transition(order, target, operator, remark)`**（`docs/adr/0010`），业务 Service **不得**自行 `order.setStatus(...)` 或用 `orderMapper.updateById` 改状态：
 
-- **正向流转的唯一权威判断**是 `OrderStatus.canTransitTo(target)`（`TRANSITIONS` 只承载正向流转，不含 `→CANCELLED`）；
+- 该入口**独占四项配套逻辑**：合法流转判定、角色门禁、乐观锁落库、流转日志双写。漏一项即测试红；
+- **正向流转的唯一权威判断**是 `OrderStatus.canTransitTo(target)`，它在 service 包内**只有这一个调用点**；
 - **管理员强制终态是明确豁免的独立路径**，由 `forceTerminal()` + `isAdminForceable()` + `isTerminal()` 承担，
   并被 `docs/api/08-admin.md` 记为"绕过状态机的正向流转规则"；
-- 因此 `PENDING → CANCELLED`（家属取消）**必须**以 `canTransitTo` 表达，管理员强制边**不得**塞进 `TRANSITIONS`。
+- `PENDING → CANCELLED`（家属取消）**不塞进 `TRANSITIONS`**，而由入口显式放行 —— 否则会丢掉
+  "仅家属单方取消 / 仅管理员可强制进入 `CANCELLED`" 这层语义；
+- 需要"先判状态再判归属"的场景（如待接单订单应回 3002 而非 4003），用
+  `requireTransitionAllowed(from, target, operator)` **只判定不落库**，它与落库共用同一份规则。
 
-> ⚠️ **现状（2026-09-17 复核）**：`canTransitTo` 在 `OrderServiceImpl` 中**尚未被调用**，
-> 6 处流转（`cancel` / `accept` / `reject` / `start` / `complete` / `markReviewed`）仍为硬编码等值判断。
-> 修复方案与影响面见 `docs/review/2026-09-17-m2-auth.md`「口径 A」。
+> ✅ **现状（2026-09-28 落地，commit `7171ecd`）**：原 4 处硬编码 `from != X` 守卫与
+> 终态守卫已清零，`canTransitTo` 有了真实调用点，6 处流转 + `forceTerminal` 全部改经该入口。
+> **反向验证已实测**：删 `TRANSITIONS` 一条边 → `OrderStatusTest` 与 `OrderTransitionServiceTest`
+> 双双变红；改回即恢复全绿。改转移表现在会让测试失败，这是收口前做不到的。
 
 ### 4.2 打卡节点（M5）
 
