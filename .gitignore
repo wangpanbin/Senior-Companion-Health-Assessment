@@ -115,4 +115,6 @@ __pycache__/
 playwright-report/
 test-results/
 frontend/coverage/
-
+# Eclipse / Spring Tool Suite 本地工程文件（机器相关，不入库）
+.factorypath
+.factorypathentry
