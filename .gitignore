@@ -78,6 +78,11 @@ backend/sql/tools/jmeter_fixture_snapshot.json
 # ============================ 本地工具 / 探测产物（不提交） ============================
 # Claude 本地 skills / 工作目录
 .claude/
+# ZCode 自动生成的忽略清单：它把上面的 .gitignore **整段镜像**一份（到
+# "# ===== ↑ 以上同步自 .gitignore =====" 行为止），再追加 ZCode 自己的默认规则。
+# 属于工具产物而非项目配置 —— .gitignore 一改它就过期，入库只会制造需要同步的
+# 第二份真相，评审者还会误以为是另一套生效规则。真源永远只有上面的 .gitignore。
+.zcodeignore
 # 本地 ticket 草稿 / scratch 笔记（如 .scratch/desktop-adapt-v2/issues/ 的拆卡草稿）
 /.scratch/
 # E2E 探测产物（含真实 JWT —— 与 backend/sql/tools/jmeter_token.txt 同级红线）
