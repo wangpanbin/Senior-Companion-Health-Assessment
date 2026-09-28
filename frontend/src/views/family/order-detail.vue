@@ -470,7 +470,7 @@ onBeforeUnmount(() => {
       flex-shrink: 0;
       width: 96px;
       font-size: var(--nl-font-caption);
-      color: var(--nl-text-3);
+      color: var(--nl-text-2);
     }
 
     > span:last-child {
@@ -520,7 +520,7 @@ onBeforeUnmount(() => {
   }
 
   &__time {
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     font-size: 12px;
   }
 
@@ -559,7 +559,7 @@ onBeforeUnmount(() => {
 
   &__reply-label {
     font-size: 12px;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     margin-bottom: $nl-space-1;
   }
 
@@ -588,7 +588,7 @@ onBeforeUnmount(() => {
 
   &__time {
     font-size: var(--nl-font-caption);
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     white-space: nowrap;
   }
 

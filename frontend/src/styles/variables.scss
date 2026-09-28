@@ -50,6 +50,22 @@ $nl-purple: #7a5af8;
 $nl-purple-bg: #f0edfe;
 $nl-neutral-chip: #f1f4f9;
 
+// -------------------- 语义色·文字版 --------------------
+// 为什么需要这一组：上面的语义色是给**边框 / 图标 / 渐变 / 填充**挑的，
+// 亮度偏高；一旦直接当「文字色 + 同色系浅底」用，全部达不到 WCAG AA：
+//   warning #f79009 on #fef3e2 = 2.14:1   success #17b26a on #e7f8f0 = 2.51:1
+//   danger  #f04438 on #feeceb = 3.29:1   info/primary #1d6ff2 on #e8f1fe = 4.00:1
+//   purple  #7a5af8 on #f0edfe = 3.93:1   neutral #5b6b84 on #f1f4f9 = 4.91:1（唯一达标）
+// 所以「当文字用」一律走下面这组，原色保持不变继续供装饰性场景使用。
+// 每个值都同时满足：放在自身浅底上 ≥4.5:1（正文 AA），放在白底上也 ≥4.5:1
+// （很多 chip 并不在自己的浅色底上，而是浮在白色卡片里）。
+$nl-primary-text: #1557c8; // on #f4f8ff = 6.11:1 | on #fff = 6.50:1
+$nl-success-text: #0a7a46; // on #e7f8f0 = 4.91:1 | on #fff = 5.41:1
+$nl-warning-text: #9a5300; // on #fef3e2 = 5.30:1 | on #fff = 5.82:1
+$nl-danger-text:  #c23227; // on #feeceb = 4.87:1 | on #fff = 5.56:1
+$nl-info-text:    #1557c8; // on #e8f1fe = 5.71:1 | on #fff = 6.50:1
+$nl-purple-text:  #5b32d6; // on #f0edfe = 6.35:1 | on #fff = 7.31:1
+
 // -------------------- 间距（4 的倍数） --------------------
 $nl-space-1: 4px;
 $nl-space-2: 8px;

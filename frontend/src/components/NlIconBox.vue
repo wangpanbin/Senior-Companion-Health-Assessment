@@ -36,10 +36,12 @@ defineProps({
     height: 24px;
   }
 
-  &.is-primary { background: var(--nl-primary-light); color: var(--nl-primary); }
-  &.is-success { background: var(--nl-success-bg);   color: var(--nl-success); }
-  &.is-warning { background: var(--nl-warning-bg);   color: var(--nl-warning); }
-  &.is-danger  { background: var(--nl-danger-bg);    color: var(--nl-danger); }
+  // success / warning 原色在本组件浅底上只有 2.5:1 / 2.1:1，
+  // 连非文字对比度的 3:1 都够不着，故一并走 *-text 令牌
+  &.is-primary { background: var(--nl-primary-light); color: var(--nl-primary-text); }
+  &.is-success { background: var(--nl-success-bg);   color: var(--nl-success-text); }
+  &.is-warning { background: var(--nl-warning-bg);   color: var(--nl-warning-text); }
+  &.is-danger  { background: var(--nl-danger-bg);    color: var(--nl-danger-text); }
   &.is-purple  { background: var(--nl-purple-bg);    color: var(--nl-purple); }
   &.is-info    { background: var(--nl-info-bg);      color: var(--nl-info); }
   &.is-neutral { background: var(--nl-neutral-chip); color: var(--nl-text-2); }

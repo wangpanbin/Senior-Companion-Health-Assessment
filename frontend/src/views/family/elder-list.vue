@@ -309,7 +309,7 @@ onMounted(loadElders)
     span {
       flex-shrink: 0;
       width: 76px;
-      color: var(--nl-text-3);
+      color: var(--nl-text-2);
     }
 
     b {

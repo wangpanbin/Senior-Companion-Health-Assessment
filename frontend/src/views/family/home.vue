@@ -596,7 +596,7 @@ onBeforeUnmount(() => {
 
   &__age {
     font-size: 12px;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 
   &__guide {
@@ -665,7 +665,7 @@ onBeforeUnmount(() => {
 
   &__desc {
     font-size: 11px;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 }
 

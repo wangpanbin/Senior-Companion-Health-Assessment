@@ -36,10 +36,11 @@ defineProps({
   font-size: var(--nl-font-caption);
   border-radius: var(--nl-radius-card);
 
-  &.is-primary { color: var(--nl-primary);  background: var(--nl-primary-ghost); }
-  &.is-warning { color: var(--nl-warning); background: var(--nl-warning-bg); }
-  &.is-success { color: var(--nl-success); background: var(--nl-success-bg); }
-  &.is-danger  { color: var(--nl-danger);  background: var(--nl-danger-bg); }
+  // 文字色走 *-text 令牌：原色在自身浅底上只有 2.1-4.3:1，全部达不到 AA
+  &.is-primary { color: var(--nl-primary-text);  background: var(--nl-primary-ghost); }
+  &.is-warning { color: var(--nl-warning-text); background: var(--nl-warning-bg); }
+  &.is-success { color: var(--nl-success-text); background: var(--nl-success-bg); }
+  &.is-danger  { color: var(--nl-danger-text);  background: var(--nl-danger-bg); }
 
   &__text {
     flex: 1;

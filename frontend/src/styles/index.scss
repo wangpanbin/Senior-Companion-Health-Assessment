@@ -45,6 +45,15 @@
   --nl-purple-bg: #{$nl-purple-bg};
   --nl-neutral-chip: #{$nl-neutral-chip};
 
+// 语义色·文字版：WCAG AA 达标，专供「色当文字用」的场景。
+// 原色留给边框/图标/渐变，理由与取值见 variables.scss 对应注释。
+--nl-primary-text: #{$nl-primary-text};
+--nl-success-text: #{$nl-success-text};
+--nl-warning-text: #{$nl-warning-text};
+--nl-danger-text: #{$nl-danger-text};
+--nl-info-text: #{$nl-info-text};
+--nl-purple-text: #{$nl-purple-text};
+
   /* ----------- 间距 ----------- */
   --nl-space-1: #{$nl-space-1};
   --nl-space-2: #{$nl-space-2};
@@ -107,17 +116,22 @@
   --nl-border-width: 1px;
 
   /* ----------- 与 Element Plus 主题打通 ----------- */
-  --el-color-primary: var(--nl-primary);
+  /* 这里刻意指向 *-text 而不是原始语义色：Element Plus 把 --el-color-X 同时用作
+     「描边/文字按钮的文字色」和「实心按钮的底色」。原始语义色两头都不达标：
+       文字色 on 自身浅底 = 2.1~4.0:1（不达 AA）
+       白字 on 语义色底   = success 2.76 / warning 2.35 / danger 3.76（实心按钮更糟）
+     切到加深版后两头同时改善：描边文字 ≥4.87:1，白字底色 ≥5.41:1。 */
+  --el-color-primary: var(--nl-primary-text);
   --el-color-primary-light-3: #{$nl-primary-light};
   --el-color-primary-light-5: #{$nl-primary-ghost};
   --el-color-primary-light-7: #{$nl-primary-light};
   --el-color-primary-light-9: #{$nl-primary-ghost};
   --el-color-primary-dark-2: #{$nl-primary-dark};
-  --el-color-danger: var(--nl-danger);
+  --el-color-danger: var(--nl-danger-text);
   --el-color-danger-light-3: #{$nl-danger-bg};
-  --el-color-warning: var(--nl-warning);
+  --el-color-warning: var(--nl-warning-text);
   --el-color-warning-light-3: #{$nl-warning-bg};
-  --el-color-success: var(--nl-success);
+  --el-color-success: var(--nl-success-text);
   --el-color-success-light-3: #{$nl-success-bg};
 
   --el-font-size-base: var(--nl-font-body);
@@ -236,8 +250,14 @@ button {
   color: var(--nl-text-2);
 }
 
+// 弱化文字统一走 --nl-text-2 而不是 --nl-text-3。
+// 原因：--nl-text-3(#93a1b5) 在白底上只有 2.62:1、在卡片浅底 #f4f7fb 上 2.44:1，
+// 而本类当前**全部**用于有意义内容（订单号、地址、条数、空态文案、提示），
+// 没有一处是纯装饰，按 WCAG AA 属于必须达标的那一类。
+// 若后续确需「装饰性弱灰」（分割线装饰、纯占位符），请直接用 --nl-text-3，
+// 不要挂到这个工具类上 —— 那类内容才有豁免空间。
 .nl-text-weak {
-  color: var(--nl-text-3);
+  color: var(--nl-text-2);
 }
 
 /* 主行动按钮（页面底部 fill_container 安全区 16） */

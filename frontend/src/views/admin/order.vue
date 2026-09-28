@@ -230,7 +230,7 @@ onMounted(loadList)
   .ov-label {
     flex-shrink: 0;
     width: 72px;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 }
 </style>

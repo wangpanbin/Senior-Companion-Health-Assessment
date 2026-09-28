@@ -474,7 +474,7 @@ function next() {
   }
 
   &.is-full {
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     background: var(--nl-bg-sunken);
     border-color: var(--nl-divider);
     cursor: not-allowed;

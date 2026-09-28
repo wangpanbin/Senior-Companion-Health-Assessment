@@ -59,7 +59,7 @@ const meta = computed(() => {
   justify-content: center;
   gap: var(--nl-space-3);
   padding: var(--nl-space-8) var(--nl-space-4);
-  color: var(--nl-text-3);
+  color: var(--nl-text-2);
 
   &__svg {
     width: 80px;

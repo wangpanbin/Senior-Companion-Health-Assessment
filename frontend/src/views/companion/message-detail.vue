@@ -186,7 +186,7 @@ onMounted(loadMessage)
       margin: 0;
       font-family: var(--nl-font-num);
       font-size: var(--nl-font-caption);
-      color: var(--nl-text-3);
+      color: var(--nl-text-2);
     }
   }
 
@@ -216,7 +216,7 @@ onMounted(loadMessage)
     margin: 0;
     font-size: var(--nl-font-caption);
     text-align: center;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 }
 </style>

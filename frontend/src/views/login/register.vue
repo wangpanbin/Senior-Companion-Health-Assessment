@@ -254,7 +254,7 @@ loadCaptcha()
 
   &__hint {
     font-size: 11px;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     text-align: center;
   }
 }
@@ -272,7 +272,7 @@ loadCaptcha()
   }
 
   &__label {
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 
   &__agreed {

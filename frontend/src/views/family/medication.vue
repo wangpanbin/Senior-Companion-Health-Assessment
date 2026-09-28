@@ -762,7 +762,7 @@ onMounted(loadElders)
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   font-size: 11px;
-  color: var(--nl-text-3);
+  color: var(--nl-text-2);
   text-align: center;
 
   &__cell {
@@ -833,7 +833,7 @@ onMounted(loadElders)
   gap: var(--nl-space-3);
   padding: var(--nl-space-2) 0 0;
   font-size: 11px;
-  color: var(--nl-text-3);
+  color: var(--nl-text-2);
 
   .dot {
     display: inline-block;
@@ -933,14 +933,14 @@ onMounted(loadElders)
 
     dt {
       font-weight: 500;
-      color: var(--nl-text-3);
+      color: var(--nl-text-2);
     }
 
     dd {
       margin: 0;
 
       small {
-        color: var(--nl-text-3);
+        color: var(--nl-text-2);
       }
     }
   }

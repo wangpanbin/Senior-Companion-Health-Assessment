@@ -73,7 +73,7 @@ function pick(key) {
     gap: 4px;
     align-items: center;
     justify-content: center;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     background: transparent;
     border: none;
     border-radius: 32px;

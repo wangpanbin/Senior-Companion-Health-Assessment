@@ -130,11 +130,12 @@ const resolved = computed(() => {
     background: currentColor;
   }
 
-  &--success { color: var(--nl-success); background: var(--nl-success-bg); }
-  &--warning { color: var(--nl-warning); background: var(--nl-warning-bg); }
-  &--danger  { color: var(--nl-danger);  background: var(--nl-danger-bg); }
-  &--info    { color: var(--nl-info);    background: var(--nl-info-bg); }
-  &--purple  { color: var(--nl-purple);  background: var(--nl-purple-bg); }
+  // chip 里渲染的是文字，故用 *-text 令牌；原色只有 2.1-4.0:1
+  &--success { color: var(--nl-success-text); background: var(--nl-success-bg); }
+  &--warning { color: var(--nl-warning-text); background: var(--nl-warning-bg); }
+  &--danger  { color: var(--nl-danger-text);  background: var(--nl-danger-bg); }
+  &--info    { color: var(--nl-info-text);    background: var(--nl-info-bg); }
+  &--purple  { color: var(--nl-purple-text);  background: var(--nl-purple-bg); }
   &--neutral { color: var(--nl-text-2);  background: var(--nl-neutral-chip); }
 }
 </style>

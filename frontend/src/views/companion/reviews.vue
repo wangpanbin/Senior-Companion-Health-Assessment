@@ -161,7 +161,7 @@ onMounted(load)
   }
 
   &__time {
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     font-size: 13px;
   }
 
@@ -203,7 +203,7 @@ onMounted(load)
 
   &__reply-label {
     font-size: 12px;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     margin-bottom: $nl-space-1;
   }
 
@@ -239,7 +239,7 @@ onMounted(load)
 
   &__count {
     font-size: 12px;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 }
 </style>

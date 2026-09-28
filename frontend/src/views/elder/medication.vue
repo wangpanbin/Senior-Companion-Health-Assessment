@@ -320,7 +320,7 @@ const calSummary = computed(() => calData.value?.summary || null)
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   font-size: 11px;
-  color: var(--nl-text-3);
+  color: var(--nl-text-2);
   text-align: center;
 
   &__cell {
@@ -408,7 +408,7 @@ const calSummary = computed(() => calData.value?.summary || null)
 
   &__spec {
     font-size: var(--nl-font-caption);
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 }
 

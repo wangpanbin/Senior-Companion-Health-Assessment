@@ -254,7 +254,7 @@ function back() {
     flex-shrink: 0;
     width: 80px;
     font-size: var(--nl-font-caption);
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     padding-top: 2px;
   }
 

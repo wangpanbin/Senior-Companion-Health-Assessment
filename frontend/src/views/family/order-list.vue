@@ -223,7 +223,8 @@ onMounted(loadOrders)
   }
 
   &__id {
-    color: var(--nl-text-3);
+    // 订单号是用户报障时要念的凭据，属有意义内容，不能用 2.62:1 的弱化灰
+    color: var(--nl-text-2);
     font-size: 11px;
   }
 }

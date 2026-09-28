@@ -104,7 +104,7 @@ M11（横切全部前端）─────────────────�
 - [x] 访问 `http://localhost:8080/doc.html` 返回 200 且能看到 Knife4j 界面。（证据：本轮 curl `http://localhost:8080/doc.html` → 200（Knife4j 界面））
 - [x] 故意抛异常，前端收到 `Content-Type: application/json` 且 body 符合 `Result` 结构。（证据：`ResultTest` + `e2e_auth.py` 40 项断言（docs/api/01-auth-user.md 实测记录））
 - [x] ESLint / Prettier / Alibaba 规范检查在 `git commit` 前执行，违规可拦截。（证据：本轮 `pnpm lint`（--max-warnings 0）EXIT=0；Java 按 AGENTS.md §6.3 自查）
-- [ ] `git branch -a` 可见 `main / develop`，`main` 已设为保护分支。
+- [x] `git branch -a` 可见 `main / develop`，`main` 已设为保护分支。（证据：2026-09-28 实测 `git branch -a` 含 main/develop；经 `gh api PUT /branches/main/protection` 设为保护分支，回读 `allow_force_pushes.enabled=false`、`allow_deletions.enabled=false`，禁强推与删分支）
 
 ---
 
@@ -282,7 +282,7 @@ M11（横切全部前端）─────────────────�
 - [x] 手动触发定时任务两次，`medication_task` 不出现重复行（唯一索引 + 分布式锁双重保障）。（证据：`medication_task` 唯一索引（V1）+ `MedicationServiceTest` 幂等用例）
 - [x] 把某条任务时间设置为过去时间，下一次扫描后状态自动变为「漏服」且推送到位。（证据：漏服扫描 + was_missed 机制（V3 边界种子：MISSED 120 条；e2e 06））
 - [x] 日历页显示结果与 `SELECT * FROM medication_task WHERE user_id=? AND date=?` 逐条一致。（证据：e2e 06 月历接口与任务表一致性用例）
-- [ ] 并发启动 2 个后端实例，定时任务仅 1 个实例实际执行（日志可证）。
+- [x] 并发启动 2 个后端实例，定时任务仅 1 个实例实际执行（日志可证）。（证据：2026-09-28 双实例对撞实测 —— A(:8080) / B(:8081) 同进程启动、`missed-scan` 与 `daily-generate` 同 cron；日志对称取证：A 于 20:19:15.008 打「未取到分布式锁，跳过本次执行 | key=nianglin:lock:medication:daily」，同时刻 B 于 20:19:15.323 打「每日服药任务生成任务结束 | date=2026-09-28 | 新增=76」；后 3 轮同样只有 B 执行；且首轮新增 76 → 次轮 0，幂等与互斥同时得证。造数按 `id>20638` 精确回滚，库内 `medication_task` 复原至 588 行）
 - [x] 全站搜索「建议服用」「推荐剂量」等词，结果为空；药品详情页存在免责声明。（证据：`ComplianceCheckUtil` 全局命中即拒 + V2 药品种子 disclaimer（e2e 06））
 - [x] 服药确认按钮的记录中包含操作人与操作时间。（证据：服药确认落操作人/操作时间（`medication_task` confirm 字段；e2e 06））
 
@@ -384,7 +384,7 @@ M11（横切全部前端）─────────────────�
 - [x] 「完成率」= 已完成订单数 / 总订单数，与 SQL 计算值一致（保留 2 位小数）。（证据：本轮实测：completedRate 67.50% 与 SQL `ROUND(100*27/40,2)`=67.50% 一致）
 - [x] 切换时间区间后图表数据随之变化，且区间外数据不混入。（证据：`StatisticsServiceTest` 区间收口/默认窗口/9002 用例 + e2e 09）
 - [x] 导出的 `.xlsx` 文件可正常打开，行数 = 当前筛选条件下的记录数，无乱码。（证据：e2e 09「导出返回可下载文件（非 JSON）」+ UI 触发下载事件（本轮绿））
-- [ ] 统计接口在 1 万条订单数据下响应时间 < 2s。
+- [x] 统计接口在 1 万条订单数据下响应时间 < 2s。（证据：2026-09-28 实测 `backend/sql/tools/perf_statistics.py`，灌 10000 条订单（总数 10068）后每端点取 5 次中位 —— overview 59.6ms / order-trend 38.7ms / order-status 32.3ms / companion-rank 45.1ms / medication-missed 7.6ms，全部远低于 2000ms；同页记录灌数前基线（68 条）作对照；造数按 `order_no LIKE 'PERF%'` 精确回滚，复核残留 0 条）
 - [x] 无数据时图表显示空状态而非报错或空白。（证据：`StatisticsServiceTest`「无数据时各计数为 0，不抛异常」用例）
 
 ---
@@ -407,9 +407,9 @@ M11（横切全部前端）─────────────────�
 #### 验收标准
 - [x] 点击「老人模式」开关，全局字号与配色立即变化，浏览器控制台无报错。（证据：e2e 03-elder 老人模式切换 + 10-form-factor elderly-mode class 断言（本轮绿））
 - [x] 老人模式下正文计算字号 ≥ 18px（DevTools 实测）。（证据：`variables.scss` $elderly-font-min:18px → `elderly.scss` --nl-font-body（代码级实测））
-- [ ] 用对比度检测工具抽查 5 处主要文字，对比度均 ≥ 4.5:1。
-- [ ] 1366×768 与 1920×1080 两种分辨率下，无横向滚动条、无元素重叠。
-- [ ] 老人端核心流程点击次数 ≤ 3 次。
+- [x] 用对比度检测工具抽查 5 处主要文字，对比度均 ≥ 4.5:1。（证据：2026-09-28 DevTools 实测 —— 逐元素取 computed 前景色 + 逐层向上解析的有效背景色，按 WCAG 公式算比值。**首轮为红：warning 提示条 2.14:1、success 2.51:1、danger 3.29:1、info/primary 4.00:1、weak 灰 2.62:1，均不达标**，已定位到根因「语义色被当文字色 + 同色系浅底」并修复：新增 6 个 AA 文字色令牌（`--nl-*-text`），`NlNoticeBar`/`NlStatusChip`/`NlIconBox`/`NlListRow` 与 `--el-color-*` 主题打通改用之，有意义内容由 `nl-text-weak`/`--nl-text-3` 提到 `--nl-text-2`（41 处 scoped 规则），装饰位（chevron/QR/step dot/caret/线穿/disabled）保留弱化灰。复验：家属工作台 / 订单列表 / 我的老人 三个页面 42+11+11 个文字元素**失败 0 个**，最差 5 处 4.56:1；老人模式 30 个元素失败 0 个、最差 6.22:1）
+- [x] 1366×768 与 1920×1080 两种分辨率下，无横向滚动条、无元素重叠。（证据：2026-09-28 DevTools 设备指标覆盖实测（`resize_page` 受物理屏限制，1920 档改用 CDP `Emulation.setDeviceMetricsOverride`）。家属工作台与订单列表两页在两档下均为：`documentElement.scrollWidth == clientWidth`（无横向滚动条）、横向溢出元素 0、同级块级元素重叠 0、ellipsis 截断 0；订单页表格容器无内层横向滚动）
+- [x] 老人端核心流程点击次数 ≤ 3 次。（证据：2026-09-28 实测 —— 老人模式开启后（`<html class="elderly-mode">`、正文 18px、可点击元素最小高度 48px 且低于阈值者 0 个），以 elder001 在 390×844 移动视口逐条走查：① 首页→今日服药 1 次（底部「用药」直达，默认即「今日」页签）；② 首页→消息 1 次；③ 首页→我的（老人模式开关）1 次。三条流程均 1 次，远低于 3 次上限。**已知边界**：老人账号为只读角色（AGENTS.md §4.3），首页订单卡片为只读展示、不可点，且 ELDER 无订单详情路由，故「查看打卡进度详情」在老人端无入口 —— 属设计如此，非点击次数超标）
 - [x] 切换模式后刷新页面，模式偏好被记住（localStorage / Pinia 持久化）。（证据：e2e 10-form-factor 持久化断言 + `appStore` localStorage 读写（ELDERLY_MODE_KEY））
 
 ---

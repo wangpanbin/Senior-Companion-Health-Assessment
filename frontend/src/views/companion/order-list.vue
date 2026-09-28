@@ -181,7 +181,7 @@ onMounted(loadOrders)
 
   &__id {
     margin-top: var(--nl-space-2);
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     font-size: 11px;
   }
 }

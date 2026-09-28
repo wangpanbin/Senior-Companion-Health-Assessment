@@ -355,7 +355,7 @@ onMounted(loadApplication)
   }
 
   &.is-loading {
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     border-color: var(--nl-border);
     cursor: default;
   }
@@ -378,7 +378,7 @@ onMounted(loadApplication)
   display: block;
   margin-bottom: var(--nl-space-2);
   font-size: var(--nl-font-caption);
-  color: var(--nl-text-3);
+  color: var(--nl-text-2);
 }
 
 .chips {

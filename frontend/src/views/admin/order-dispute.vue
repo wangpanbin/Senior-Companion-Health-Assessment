@@ -248,7 +248,7 @@ onMounted(loadList)
 
   &__label {
     font-size: $nl-font-caption;
-    color: $nl-text-3;
+    color: $nl-text-2;
   }
 
   &__name {

@@ -184,7 +184,7 @@ onMounted(loadElders)
 
   &__age {
     font-size: var(--nl-font-caption);
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 
   &__radio {

@@ -371,7 +371,7 @@ applyDemoAccount(activeRole.value)
   &__rolecard-hint {
     font-size: 11px;
     line-height: 1.3;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
     text-align: center;
     display: none; /* 卡片太小时隐藏，避免拥挤 */
   }
@@ -381,7 +381,7 @@ applyDemoAccount(activeRole.value)
 
     :deep(.el-divider__text) {
       font-size: $nl-font-caption;
-      color: var(--nl-text-3);
+      color: var(--nl-text-2);
     }
   }
 
@@ -413,7 +413,7 @@ applyDemoAccount(activeRole.value)
 
   &__captcha-empty {
     font-size: 12px;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 
   &__row {
@@ -444,13 +444,13 @@ applyDemoAccount(activeRole.value)
     p {
       margin: 4px 0;
       font-size: 12px;
-      color: var(--nl-text-3);
+      color: var(--nl-text-2);
     }
   }
 
   &__footer-tip {
     max-width: 360px;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 }
 

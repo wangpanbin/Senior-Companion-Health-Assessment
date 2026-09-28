@@ -161,7 +161,7 @@ const document = computed(() => DOCUMENTS[props.type] || DOCUMENTS.service)
       display: inline-block;
       margin-top: var(--nl-space-2);
       font-size: var(--nl-font-caption);
-      color: var(--nl-text-3);
+      color: var(--nl-text-2);
     }
   }
 
@@ -178,7 +178,7 @@ const document = computed(() => DOCUMENTS[props.type] || DOCUMENTS.service)
     font-size: var(--nl-font-caption);
     line-height: var(--nl-lh-caption);
     text-align: center;
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 }
 

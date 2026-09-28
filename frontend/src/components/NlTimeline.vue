@@ -113,7 +113,7 @@ defineEmits(['click'])
   }
 
   &__time {
-    color: var(--nl-text-3);
+    color: var(--nl-text-2);
   }
 
   &__desc {
