@@ -39,6 +39,7 @@ import org.company.nianglin.mapper.OrderReadMapper;
 import org.company.nianglin.mapper.OrderRejectLogMapper;
 import org.company.nianglin.mapper.OrderStatusLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
+import org.company.nianglin.service.support.OrderTransitionService;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.ElderService;
@@ -145,6 +146,8 @@ public class OrderServiceImpl implements OrderService {
     private final MessageService messageService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    /** 订单状态流转唯一入口（ADR-0010）——本类所有改状态的路径都必须经由它 */
+    private final OrderTransitionService orderTransitionService;
 
     /* ================================================================== */
     /* 1. 创建订单                                                         */
@@ -313,27 +316,17 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(ResultCode.ORDER_NO_PERMISSION);
         }
         OrderStatus from = OrderStatus.of(order.getStatus());
-        if (from != OrderStatus.PENDING) {
-            // 已接单之后不能再由家属单方面取消 —— 陪诊员可能已经在路上，
-            // 这种情况要走 M9 的纠纷处理
-            throw new BusinessException(ResultCode.ORDER_CANNOT_CANCEL);
-        }
 
         LocalDateTime now = LocalDateTime.now();
-        // 条件更新：`WHERE id=? AND status='PENDING'` 由数据库保证原子性，
-        // 并发重复取消时只有一条能成功，另一条 affectedRows=0 → 3006
-        int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
-                .eq(CompanionOrder::getId, orderId)
-                .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name())
-                .set(CompanionOrder::getStatus, OrderStatus.CANCELLED.name())
-                .set(CompanionOrder::getCancelTime, now)
-                .set(CompanionOrder::getCancelReason, dto.getReason().trim())
-                .set(CompanionOrder::getCancelBy, me.userId()));
-        if (rows == 0) {
-            throw new BusinessException(ResultCode.ORDER_CANNOT_CANCEL);
-        }
+        order.setCancelTime(now);
+        order.setCancelReason(dto.getReason().trim());
+        order.setCancelBy(me.userId());
+        // 状态流转统一走 OrderTransitionService（ADR-0010）：
+        // 合法流转判定 / 乐观锁 / 流转日志双写都在入口内完成。
+        orderTransitionService.transition(order, OrderStatus.CANCELLED,
+                OrderTransitionService.Operator.of(me.userId(), me.role(), false),
+                dto.getReason().trim());
 
-        writeStatusLog(orderId, from, OrderStatus.CANCELLED, me, dto.getReason().trim());
         // 这里刻意不发 ORDER_CANCELLED：能走到这一行说明订单还是 PENDING，
         // 也就是还没有陪诊员，收件人为 null。给「还不存在的接单人」发取消通知
         // 是纯粹的死代码。已接单后的取消只能走 M9 纠纷处理，
@@ -355,28 +348,19 @@ public class OrderServiceImpl implements OrderService {
         if (order == null) {
             throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
         }
-        OrderStatus from = OrderStatus.of(order.getStatus());
-        if (from != OrderStatus.PENDING) {
-            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
-        }
-
         LocalDateTime now = LocalDateTime.now();
-        order.setStatus(OrderStatus.ACCEPTED.name());
         order.setCompanionId(me.userId());
         order.setAcceptTime(now);
 
-        // updateById 带着 @Version：MyBatis-Plus 生成
+        // 状态流转统一走 OrderTransitionService（ADR-0010）。
+        // 乐观锁在这里落地：updateById 带着 @Version，MyBatis-Plus 生成
         //   UPDATE companion_order SET ..., version = version + 1
         //   WHERE id = ? AND version = ?
         // 50 个并发请求里只有第 1 个 affectedRows = 1，其余全是 0 → 3003。
         // 这就是验收项「50 并发同时接同一订单，只有 1 条成功、version 仅 +1」的实现。
-        int rows = orderMapper.updateById(order);
-        if (rows == 0) {
-            log.info("接单乐观锁未命中（已被抢先） | orderId={} | companionId={}", orderId, me.userId());
-            throw new BusinessException(ResultCode.ORDER_ALREADY_TAKEN);
-        }
+        orderTransitionService.transition(order, OrderStatus.ACCEPTED,
+                OrderTransitionService.Operator.of(me.userId(), me.role(), false), "已接单");
 
-        writeStatusLog(orderId, from, OrderStatus.ACCEPTED, me, "已接单");
         notifyOrderAccepted(order, profile);
         log.info("接单成功 | orderId={} | companionId={} | version={}", orderId, me.userId(), order.getVersion());
         return OrderAcceptResultVO.of(order, now);
@@ -437,27 +421,21 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
         }
 
-        OrderStatus from = OrderStatus.of(order.getStatus());
-        // 先状态后身份，理由见类注释第 1 条
-        if (from != OrderStatus.ACCEPTED) {
-            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
-        }
+        // 先状态后身份，理由见类注释第 1 条：待接单的订单没有陪诊员，
+        // 先判归属会回 4003「你不是本单陪诊员」，而 3002 才是用户该知道的。
+        // 预检与落库共用同一份判定，不会出现两套状态规则。
+        orderTransitionService.requireTransitionAllowed(OrderStatus.of(order.getStatus()),
+                OrderStatus.IN_SERVICE,
+                OrderTransitionService.Operator.of(me.userId(), me.role(), false));
         if (!me.userId().equals(order.getCompanionId())) {
             throw new BusinessException(ResultCode.NOT_ORDER_COMPANION);
         }
 
         LocalDateTime now = LocalDateTime.now();
-        int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
-                .eq(CompanionOrder::getId, orderId)
-                .eq(CompanionOrder::getStatus, OrderStatus.ACCEPTED.name())
-                .eq(CompanionOrder::getCompanionId, me.userId())
-                .set(CompanionOrder::getStatus, OrderStatus.IN_SERVICE.name())
-                .set(CompanionOrder::getStartTime, now));
-        if (rows == 0) {
-            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
-        }
+        order.setStartTime(now);
+        orderTransitionService.transition(order, OrderStatus.IN_SERVICE,
+                OrderTransitionService.Operator.of(me.userId(), me.role(), false), "已开始服务");
 
-        writeStatusLog(orderId, from, OrderStatus.IN_SERVICE, me, "已开始服务");
         return OrderFlowResultVO.ofStarted(now);
     }
 
@@ -476,10 +454,10 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
         }
 
-        OrderStatus from = OrderStatus.of(order.getStatus());
-        if (from != OrderStatus.IN_SERVICE) {
-            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
-        }
+        // 同样先判状态后判归属，与 start 保持一致的错误码优先级
+        orderTransitionService.requireTransitionAllowed(OrderStatus.of(order.getStatus()),
+                OrderStatus.COMPLETED,
+                OrderTransitionService.Operator.of(me.userId(), me.role(), false));
         if (!me.userId().equals(order.getCompanionId())) {
             throw new BusinessException(ResultCode.NOT_ORDER_COMPANION);
         }
@@ -498,28 +476,19 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal actualFee = dto.getFee() == null ? null : dto.getFee().setScale(2, RoundingMode.HALF_UP);
 
         LocalDateTime now = LocalDateTime.now();
-        LambdaUpdateWrapper<CompanionOrder> update = Wrappers.<CompanionOrder>lambdaUpdate()
-                .eq(CompanionOrder::getId, orderId)
-                .eq(CompanionOrder::getStatus, OrderStatus.IN_SERVICE.name())
-                .eq(CompanionOrder::getCompanionId, me.userId())
-                .set(CompanionOrder::getStatus, OrderStatus.COMPLETED.name())
-                .set(CompanionOrder::getFinishTime, now);
+        order.setFinishTime(now);
         if (summary != null) {
-            update.set(CompanionOrder::getServiceSummary, summary);
+            order.setServiceSummary(summary);
         }
         if (photosJson != null) {
-            update.set(CompanionOrder::getServicePhotos, photosJson);
+            order.setServicePhotos(photosJson);
         }
         if (actualFee != null) {
-            update.set(CompanionOrder::getActualFee, actualFee);
+            order.setActualFee(actualFee);
         }
+        orderTransitionService.transition(order, OrderStatus.COMPLETED,
+                OrderTransitionService.Operator.of(me.userId(), me.role(), false), "服务已完成");
 
-        int rows = orderMapper.update(null, update);
-        if (rows == 0) {
-            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
-        }
-
-        writeStatusLog(orderId, from, OrderStatus.COMPLETED, me, "服务已完成");
         notifyOrderCompleted(order);
 
         // 结算状态读库里的真实值返回，不写死 UNPAID ——
@@ -557,23 +526,22 @@ public class OrderServiceImpl implements OrderService {
             // 幂等：评价接口在并发重试下可能调用两次，第二次不该报错
             return;
         }
-        if (!OrderStatus.COMPLETED.name().equals(order.getStatus())) {
-            // 走到这里说明调用方漏了状态校验。抛 3002 而不是静默返回，
-            // 是为了让「评价接口传了未完成的订单」这类 bug 在第一次出现时就暴露
-            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
-        }
 
-        int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
-                .eq(CompanionOrder::getId, orderId)
-                .eq(CompanionOrder::getStatus, OrderStatus.COMPLETED.name())
-                .set(CompanionOrder::getStatus, OrderStatus.REVIEWED.name()));
-        if (rows == 0) {
+        LoginUser me = SecurityUtils.currentUser();
+        // 状态流转交给 OrderTransitionService 判定（ADR-0010）：
+        // 「评价接口传了未完成的订单」会被转移表拦成 3002，
+        // 而不是在这里另写一份状态校验（收口前这里是第 5 份重复判定）。
+        try {
+            orderTransitionService.transition(order, OrderStatus.REVIEWED,
+                    OrderTransitionService.Operator.of(me.userId(), me.role(), false), "家属提交评价");
+        } catch (BusinessException e) {
             // 并发下另一个请求已经推进过了，日志也已由它写入，这里直接返回
-            log.info("订单状态已被其他请求推进到已评价，跳过 | orderId={}", orderId);
-            return;
+            if (OrderStatus.REVIEWED.name().equals(order.getStatus())) {
+                log.info("订单状态已被其他请求推进到已评价，跳过 | orderId={}", orderId);
+                return;
+            }
+            throw e;
         }
-        writeStatusLog(orderId, OrderStatus.COMPLETED, OrderStatus.REVIEWED,
-                SecurityUtils.currentUser(), "家属提交评价");
         log.info("订单状态已推进 | orderId={} | {} → {}", orderId,
                 OrderStatus.COMPLETED.name(), OrderStatus.REVIEWED.name());
     }
@@ -596,36 +564,23 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
         }
         OrderStatus current = OrderStatus.of(order.getStatus());
-        if (current == null) {
-            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
-        }
-        if (current.isTerminal()) {
-            // 已是终态（含已被强制处理过的）不再处理，避免同一笔纠纷被反复改结论
-            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL, "订单已处于终态，不可再处理");
-        }
-        if (current == target) {
-            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
-        }
 
         LocalDateTime now = LocalDateTime.now();
-        int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
-                .eq(CompanionOrder::getId, orderId)
-                // 条件更新把「读到的状态」钉在 SQL 里：并发下另一个管理员已改过状态时，
-                // 这一次更新影响 0 行，而不是覆盖掉对方的结果
-                .eq(CompanionOrder::getStatus, order.getStatus())
-                .set(CompanionOrder::getStatus, target.name())
-                .set(target == OrderStatus.CANCELLED, CompanionOrder::getCancelTime, now)
-                .set(target == OrderStatus.CANCELLED, CompanionOrder::getCancelReason, remark)
-                .set(target == OrderStatus.COMPLETED, CompanionOrder::getFinishTime, now));
-        if (rows == 0) {
-            log.info("强制终态失败：订单状态已被其他请求改变 | orderId={} | expect={}", orderId, order.getStatus());
-            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
+        if (target == OrderStatus.CANCELLED) {
+            order.setCancelTime(now);
+            order.setCancelReason(remark);
         }
-
-        writeStatusLog(orderId, current, target, SecurityUtils.currentUser(), "管理员强制变更：" + remark);
+        if (target == OrderStatus.COMPLETED) {
+            order.setFinishTime(now);
+        }
+        // 管理员强制终态是状态机的**明确豁免路径**：判定由 isAdminForceable / isTerminal
+        // 承担，不经 TRANSITIONS（ADR-0010 明确要求），但流转日志仍然双写。
+        orderTransitionService.forceTerminal(order, target,
+                SecurityUtils.currentUser().userId(), "管理员强制变更：" + remark);
 
         log.info("管理员强制变更订单终态 | orderId={} | {} → {} | operator={}",
-                orderId, current.name(), target.name(), SecurityUtils.currentUser().userId());
+                orderId, current == null ? null : current.name(), target.name(),
+                SecurityUtils.currentUser().userId());
         return orderMapper.selectById(orderId);
     }
 

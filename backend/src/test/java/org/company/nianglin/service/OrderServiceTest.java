@@ -22,6 +22,8 @@ import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.OrderRejectLog;
 import org.company.nianglin.entity.OrderStatusLog;
 import org.company.nianglin.exception.BusinessException;
+import org.company.nianglin.service.support.OrderTransitionService;
+import org.company.nianglin.service.support.OrderTransitionServiceImpl;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.mapper.ElderProfileMapper;
@@ -139,9 +141,15 @@ class OrderServiceTest {
         // wrapper.set(...) 会直接抛 "can not find lambda cache"。详见 MybatisLambdaCache。
         MybatisLambdaCache.warmUp();
 
+        // 状态流转入口（ADR-0010）用**真实实现**而非 mock：
+        // 状态机判定本身就是这些用例要验的行为，mock 掉等于把被测对象掏空。
+        OrderTransitionService transitionService = new OrderTransitionServiceImpl(
+                orderMapper, statusLogMapper, companionProfileMapper, sysUserMapper);
+
         orderService = new OrderServiceImpl(orderMapper, statusLogMapper, rejectLogMapper,
                 elderProfileMapper, companionProfileMapper, sysUserMapper, orderReadMapper,
-                elderService, messageService, redisTemplate, new ObjectMapper());
+                elderService, messageService, redisTemplate, new ObjectMapper(),
+                transitionService);
     }
 
     @AfterEach
@@ -595,7 +603,7 @@ class OrderServiceTest {
     void cancelShouldReturn3006WhenConditionalUpdateMisses() {
         loginAs(RoleConstants.FAMILY, FAMILY_ID);
         given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
-        given(orderMapper.update(any(), any())).willReturn(0);
+        given(orderMapper.updateById(any(CompanionOrder.class))).willReturn(0);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> orderService.cancel(ORDER_ID, cancelDto()));
@@ -605,19 +613,24 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("取消：成功时把状态条件写进 WHERE，并记录取消原因")
+    @DisplayName("取消：成功时经唯一入口落库，取消人与原因都取到原值")
     void cancelShouldSucceed() {
         loginAs(RoleConstants.FAMILY, FAMILY_ID);
         given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
-        given(orderMapper.update(any(), any())).willReturn(1);
+        given(orderMapper.updateById(any(CompanionOrder.class))).willReturn(1);
 
         orderService.cancel(ORDER_ID, cancelDto());
 
-        LambdaUpdateWrapper<CompanionOrder> update = captureUpdateWrapper();
-        String sql = update.getSqlSegment();
-        assertTrue(sql.contains("status"), "WHERE 里必须带 status 条件，否则并发下会覆盖别人的状态：" + sql);
-        assertTrue(update.getSqlSet().contains("cancel_reason"), update.getSqlSet());
-        assertTrue(update.getSqlSet().contains("cancel_by"), update.getSqlSet());
+        // 收口后不再用「条件 UPDATE + LambdaUpdateWrapper」，改由 OrderTransitionService
+        // 走 updateById + @Version（ADR-0010）。并发保护从「SQL WHERE 钉状态」
+        // 升级为「version 比对」，同样只允许一方成功，且与状态判定绑在同一个入口。
+        ArgumentCaptor<CompanionOrder> captor = ArgumentCaptor.forClass(CompanionOrder.class);
+        verify(orderMapper).updateById(captor.capture());
+        CompanionOrder updated = captor.getValue();
+        assertEquals(OrderStatus.CANCELLED.name(), updated.getStatus());
+        assertEquals(FAMILY_ID, updated.getCancelBy());
+        assertNotNull(updated.getCancelReason());
+        assertNotNull(updated.getCancelTime());
 
         ArgumentCaptor<OrderStatusLog> logCaptor = ArgumentCaptor.forClass(OrderStatusLog.class);
         verify(statusLogMapper).insert(logCaptor.capture());
@@ -666,13 +679,16 @@ class OrderServiceTest {
         given(companionProfileMapper.selectList(any()))
                 .willReturn(List.of(companionProfile(AuditStatus.APPROVED)));
         given(orderMapper.selectById(ORDER_ID)).willReturn(acceptedOrder());
-        given(orderMapper.update(any(), any())).willReturn(1);
+        given(orderMapper.updateById(any(CompanionOrder.class))).willReturn(1);
 
         OrderFlowResultVO result = orderService.start(ORDER_ID);
 
-        LambdaUpdateWrapper<CompanionOrder> update = captureUpdateWrapper();
-        assertTrue(update.getSqlSet().contains("start_time"), update.getSqlSet());
-        assertTrue(update.getSqlSegment().contains("status"), update.getSqlSegment());
+        // 收口后由 OrderTransitionService 走 updateById + @Version（ADR-0010），
+        // 不再拼 LambdaUpdateWrapper：状态判定与乐观锁落库绑在同一个入口。
+        ArgumentCaptor<CompanionOrder> captor = ArgumentCaptor.forClass(CompanionOrder.class);
+        verify(orderMapper).updateById(captor.capture());
+        assertEquals(OrderStatus.IN_SERVICE.name(), captor.getValue().getStatus());
+        assertNotNull(captor.getValue().getStartTime());
 
         assertEquals(OrderStatus.IN_SERVICE.name(), result.getStatus());
         assertEquals("服务中", result.getStatusLabel());
@@ -719,7 +735,7 @@ class OrderServiceTest {
         given(companionProfileMapper.selectList(any()))
                 .willReturn(List.of(companionProfile(AuditStatus.APPROVED)));
         given(orderMapper.selectById(ORDER_ID)).willReturn(inServiceOrder());
-        given(orderMapper.update(any(), any())).willReturn(1);
+        given(orderMapper.updateById(any(CompanionOrder.class))).willReturn(1);
 
         OrderCompleteDTO dto = new OrderCompleteDTO();
         dto.setSummary("09:10 到达医院，全程陪同完成就诊，已协助取药，11:50 送老人回家");
@@ -727,9 +743,11 @@ class OrderServiceTest {
 
         OrderFlowResultVO result = orderService.complete(ORDER_ID, dto);
 
-        LambdaUpdateWrapper<CompanionOrder> update = captureUpdateWrapper();
-        assertTrue(update.getSqlSet().contains("service_summary"), update.getSqlSet());
-        assertTrue(update.getSqlSet().contains("service_photos"), update.getSqlSet());
+        ArgumentCaptor<CompanionOrder> captor = ArgumentCaptor.forClass(CompanionOrder.class);
+        verify(orderMapper).updateById(captor.capture());
+        assertEquals(OrderStatus.COMPLETED.name(), captor.getValue().getStatus());
+        assertNotNull(captor.getValue().getServiceSummary());
+        assertNotNull(captor.getValue().getServicePhotos());
         assertEquals(OrderStatus.COMPLETED.name(), result.getStatus());
         assertEquals(PaymentStatus.UNPAID.name(), result.getPaymentStatus(),
                 "一期线下结算，完成时结算状态仍是未结算");
@@ -742,21 +760,21 @@ class OrderServiceTest {
         given(companionProfileMapper.selectList(any()))
                 .willReturn(List.of(companionProfile(AuditStatus.APPROVED)));
         given(orderMapper.selectById(ORDER_ID)).willReturn(inServiceOrder());
-        given(orderMapper.update(any(), any())).willReturn(1);
+        given(orderMapper.updateById(any(CompanionOrder.class))).willReturn(1);
 
         OrderCompleteDTO dto = new OrderCompleteDTO();
         dto.setPhotos(List.of("/uploads/202609/a.jpg", "/uploads/202609/b.jpg"));
 
         orderService.complete(ORDER_ID, dto);
 
-        LambdaUpdateWrapper<CompanionOrder> update = captureUpdateWrapper();
-        Object json = update.getParamNameValuePairs().values().stream()
-                .filter(v -> v instanceof String s && s.startsWith("["))
-                .findFirst()
-                .orElse(null);
-        assertNotNull(json, "照片必须以 JSON 数组写入");
+        // 收口后照片等字段随实体一起 updateById（ADR-0010），
+        // 因此直接断言实体上的值，而不是 SQL wrapper 的参数
+        ArgumentCaptor<CompanionOrder> captor = ArgumentCaptor.forClass(CompanionOrder.class);
+        verify(orderMapper).updateById(captor.capture());
+        String photos = captor.getValue().getServicePhotos();
+        assertNotNull(photos, "照片必须以 JSON 数组写入");
         assertEquals(List.of("/uploads/202609/a.jpg", "/uploads/202609/b.jpg"),
-                new ObjectMapper().readValue((String) json, List.class));
+                new ObjectMapper().readValue(photos, List.class));
     }
 
     @Test
