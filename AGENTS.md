@@ -265,7 +265,7 @@ public class OrderServiceImpl implements OrderService {
 - 配置三层：`application.yml`（共享） / `application-dev.yml`（开发） / `application-prod.yml`（生产）。
 - **所有敏感配置（MySQL 密码、Redis 密码、JWT secret）必须走环境变量**；配置默认值只能是 `CHANGE_ME` 这类占位串，禁止写真实密码。
 - 业务配置统一挂在 `nianglin.*` 命名空间下（如 `nianglin.order.auto-cancel-minutes`、`nianglin.security.login-fail-threshold`），**不要**散落到 `spring.*` 之下。
-- CORS：开发期允许 `http://localhost:5173` / `http://127.0.0.1:5173`；生产由 `nianglin.cors.allowed-origins` 收紧为真实域名。
+- CORS：开发期允许 `http://localhost:5141` / `http://127.0.0.1:5141`（前端 dev server 真实端口是 **5141**，由 `vite.config.js` 的 `VITE_PORT` 默认值与 `playwright.config.js` 的 `BASE_URL` 一致确定；`application-dev.yml` 用 `[*]` 通配放行）；生产由 `nianglin.cors.allowed-origins` 收紧为真实域名。
 
 ---
 

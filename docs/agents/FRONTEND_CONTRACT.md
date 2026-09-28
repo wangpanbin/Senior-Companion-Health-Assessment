@@ -23,7 +23,7 @@
 3. **不许留假数据。** 交付标准是「页面上的每个数字都能在数据库里找到出处」。
    删掉 `mockXxx` / `const list = [{...}]` 之类的硬编码数组；确实没有后端来源的字段，
    **整个 UI 块删掉**，不要编一个数字糊上去。
-4. **不要跑 `npm run build` / `npm run dev` / `mvn`。** dev server 已在跑（5173），Vite 会热更新；
+4. **不要跑 `npm run build` / `npm run dev` / `mvn`。** dev server 已在跑（**5141**），Vite 会热更新；
    你的改动是否语法正确，由 `node --check` 无法验证 `.vue`，所以**写完后必须自己 Read 一遍确认括号闭合、模板标签成对**。
    真有编译错误，负责人会统一收口。
 5. **不要执行 git 命令**，不要 commit。负责人统一提交。
@@ -630,7 +630,7 @@ $sql = "SHOW COLUMNS FROM medication_task;"
   账号隔离靠 12.1 的清空来做。
 - 导航用 `waitUntil:'commit'` + 单独 `waitForLoadState('domcontentloaded')`；
   直接 `goto(..., 'domcontentloaded')` 实测偶发 30s 超时。
-- ⚠️ **5173 可能起不来，且报错与前端代码毫无关系**：Windows 上 Hyper-V/WSL 会动态保留
+- ⚠️ **端口可能起不来，且报错与前端代码毫无关系**：本项目 dev server 用 **5141**（`vite.config.js` 的 `VITE_PORT` 默认值，与 `playwright.config.js` 的 `BASE_URL` 一致；早前文档写的 5173 已废弃）。Windows 上 Hyper-V/WSL 会动态保留
   一批 TCP 端口（自查 `netsh int ipv4 show excludedportrange protocol=tcp`，本机曾把
   `5152–5251` 整段占掉），落在保留段里的端口绑定直接 `EACCES: permission denied`
   → vite 起不来 → 巡检报「浏览器 session 预热失败」，很容易被误判成前端改坏了。

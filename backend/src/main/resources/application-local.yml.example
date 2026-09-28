@@ -1,0 +1,56 @@
+# ==========================================================================
+# 本地私有配置模板 —— 复制为 application-local.yml 后按本机实际情况修改
+#
+# 为什么需要这个文件：
+#   application-dev.yml 用 `${MYSQL_PASSWORD:CHANGE_ME}` 兜底，但 `CHANGE_ME`
+#   不是合法口令。照 README 直接启动会得到：
+#       Access denied for user 'root'@'localhost'
+#   本文件是那个没有出口的 `${MYSQL_PASSWORD}` 出口。
+#
+# 三种生效方式（任选其一，推荐第 1 种）：
+#
+#   1) 环境变量（PowerShell，当前窗口有效，最干净）
+#        $env:MYSQL_USERNAME = 'root'
+#        $env:MYSQL_PASSWORD = '你的口令'
+#      缺点：换个终端窗口就失效，需要重设。
+#
+#   2) 本文件（跨窗口有效）
+#        Copy-Item application-local.yml.example application-local.yml
+#        然后改里面的值。
+#      `application-local.yml` 已被 .gitignore 排除，不会误提交。
+#      优先级高于 application-dev.yml（Spring Boot profile 加载顺序：
+#      application.yml < application-{profile}.yml < application-{profile}-local.yml）。
+#
+#   3) IDEA 运行配置
+#        Run/Debug Configurations → Environment variables:
+#        MYSQL_USERNAME=root;MYSQL_PASSWORD=你的口令
+#
+# ⚠️ 绝对不要把真实口令写进 application-dev.yml / application-prod.yml /
+#    .env / README —— 那是仓库内文件，会被提交。
+# ==========================================================================
+
+spring:
+  datasource:
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:CHANGE_ME}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # 本机 Redis 无密码时留空；有密码则填，且同样不要提交
+      password: ${REDIS_PASSWORD:}
+
+# --------------------------------------------------------------------------
+# 密钥类配置（JWT / AES）
+#
+# 生产环境从环境变量注入；开发环境默认值仅用于本机，禁止带入生产。
+# 生产留空 = 用 CHANGE_ME 占位，启动时会被安全校验拦下（见 SecurityConfig）。
+# --------------------------------------------------------------------------
+nianglin:
+  jwt:
+    # key 名必须与 application.yml 完全一致，否则不生效（key 拼错不会报错，
+    # 只会静默沿用 application.yml 的默认值 —— 这是最坑的一类配置 bug）
+    secret: ${JWT_SECRET:nianglin-dev-secret-key-please-change-in-production-0123456789}
+    expire-minutes: 120
+    refresh-expire-days: 7

@@ -82,6 +82,47 @@ Senior Companion Health Assessment/
 
 > 首次使用请先确认 `C:\Users\wang\.m2\settings.xml` 已配置阿里云镜像，否则依赖下载极慢。
 
+### 数据库准备
+
+```bash
+# 建库（utf8mb4 是硬约束，见 AGENTS.md §2.5）
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS nianglin DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+```
+
+表结构与种子数据由 Flyway 自动执行（`backend/sql/` 是唯一真源，启动时迁移到
+`classpath:db/migration`），无需手动导入 SQL。
+
+### 配置数据库口令（必做，否则启动即 `Access denied`）
+
+`application-dev.yml` 里写的是 `password: ${MYSQL_PASSWORD:CHANGE_ME}` —— `CHANGE_ME`
+只是占位串，**不是合法口令**。不配置直接启动会挂在 datasource 初始化。三选一：
+
+**方式 1 · 环境变量（PowerShell，仅当前窗口有效）**
+
+```powershell
+$env:MYSQL_USERNAME = 'root'
+$env:MYSQL_PASSWORD = '你的口令'
+```
+
+**方式 2 · 本地私有配置文件（跨窗口有效，推荐日常开发）**
+
+```powershell
+cd backend/src/main/resources
+Copy-Item application-local.yml.example application-local.yml
+# 然后编辑 application-local.yml 填入真实口令
+```
+
+`application-local.yml` 已被 `.gitignore` 排除（`.gitignore:14` 的 `**/application-local.yml`），
+不会误提交；`.example` 是模板，可以放心入库。
+
+**方式 3 · IDEA**
+
+Run/Debug Configurations → Environment variables：
+`MYSQL_USERNAME=root;MYSQL_PASSWORD=你的口令`
+
+> ⚠️ 真实口令只放环境变量或 `application-local.yml`。
+> **不要**写进 `application-dev.yml` / `application-prod.yml` / README —— 那些是仓库内文件，会被提交。
+
 ### 后端
 
 ```bash
@@ -98,7 +139,7 @@ mvn spring-boot:run               # 启动，默认 8080
 ```bash
 cd frontend
 pnpm install                      # 包管理器：pnpm（lockfile 为 pnpm-lock.yaml）
-pnpm dev                          # 启动，默认 5173，/api 自动代理到 8080
+pnpm dev                          # 启动，默认 5141，/api 自动代理到 8080
 pnpm build                        # 生产构建，产物在 dist/
 pnpm lint                         # ESLint 检查并自动修复
 pnpm format                       # Prettier 格式化
@@ -118,7 +159,7 @@ pnpm exec playwright test         # E2E（前置：MySQL/Redis + 后端 8080 + t
 | MySQL | 3306 |
 | Redis | 6379 |
 | 后端 Spring Boot | 8080 |
-| 前端 Vite Dev | 5173 |
+| 前端 Vite Dev | 5141 |
 
 ---
 

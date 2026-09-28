@@ -150,8 +150,8 @@ onMounted(load)
   margin: $nl-space-4;
   padding: $nl-space-4;
   background: var(--nl-bg-card);
-  border-radius: $nl-radius-md;
-  box-shadow: $nl-shadow-1;
+  border-radius: $nl-radius-card;
+  box-shadow: $nl-shadow-card;
 
   &__head {
     display: flex;
@@ -197,7 +197,7 @@ onMounted(load)
     margin-top: $nl-space-3;
     padding: $nl-space-3;
     background: var(--nl-bg);
-    border-radius: $nl-radius-sm;
+    border-radius: $nl-radius-chip;
     border-left: 3px solid var(--nl-primary);
   }
 
@@ -222,7 +222,7 @@ onMounted(load)
     width: 100%;
     padding: $nl-space-3;
     border: 1px solid var(--nl-divider);
-    border-radius: $nl-radius-sm;
+    border-radius: $nl-radius-chip;
     font-size: 14px;
     font-family: inherit;
     color: var(--nl-text-1);

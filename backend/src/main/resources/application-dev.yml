@@ -79,8 +79,8 @@ logging:
 # ------------------------------------------------------------------
 # CORS（仅开发环境放宽）
 #
-# 为什么不能写死前端端口：`WebMvcConfig` 的默认白名单只有 5173，
-# 而开发机上 5173 可能因 Windows 保留端口段（Hyper-V/WSL）根本绑不上
+# 为什么不能写死前端端口：`WebMvcConfig` 的默认白名单只有 5141，
+# 而开发机上端口可能因 Windows 保留端口段（Hyper-V/WSL）根本绑不上
 # （`netsh int ipv4 show excludedportrange protocol=tcp` 自查），
 # 一旦换端口，**只有 WebSocket 会 403**：浏览器对 ws:// 升级必带 Origin，
 # 跨源会被 CORS 拦掉（发生在鉴权拦截器之前，后端零日志）；

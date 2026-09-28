@@ -547,7 +547,7 @@ onBeforeUnmount(() => {
     margin-top: $nl-space-3;
     padding: $nl-space-3;
     background: var(--nl-bg);
-    border-radius: $nl-radius-sm;
+    border-radius: $nl-radius-chip;
     border-left: 3px solid var(--nl-primary);
   }
 
