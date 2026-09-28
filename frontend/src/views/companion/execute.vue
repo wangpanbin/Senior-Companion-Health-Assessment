@@ -18,7 +18,7 @@
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElNotification } from 'element-plus'
 import {
   NlPhoneShell, NlMobileOnlyPage, NlTimeline, NlCard, NlStatusChip, NlSkeleton, NlEmpty
 } from '@/components'
@@ -184,6 +184,13 @@ async function doCheckin() {
       photos: photoUrls.value.length ? [...photoUrls.value] : undefined
     })
     ElMessage.success(`「${NODE_LABELS[node]}」打卡成功`)
+    // M5 验收：打卡后 3 秒内必须有显性提醒（老人对静默反馈无感知）
+    ElNotification({
+      title: '打卡成功',
+      message: `「${NODE_LABELS[node]}」已记录`,
+      type: 'success',
+      duration: 3000
+    })
     await reloadProgress()
   } catch {
     // 拦截器已弹错（距离超限 4001 / 重复 4002 / 状态 3002 等）；刷新同步状态

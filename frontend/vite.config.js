@@ -59,10 +59,8 @@ export default defineConfig(({ mode }) => {
           ws: true
         },
         // ⚠️ 站内信实时推送走 SSE，端点是 /sse/message，**不带 /api 前缀**。
-        //    注意：后端该端点的鉴权读的是 Authorization 头，而浏览器原生 EventSource
-        //    无法自定义请求头，因此前端实际走「轮询 /api/message/unread-count」这条
-        //    后端明确保留的兜底通道（见 MessageSseController 类注释）。此代理为将来
-        //    补齐 SSE 客户端预留，当前不影响功能。
+        //    收口迭代 E4 起：后端已支持 ?token= query 令牌，前端 api/message.js
+        //    用 EventSource 订阅本通道（轮询 /api/message/unread-count 仅作断连兜底）。
         '/sse': {
           target: backendTarget,
           changeOrigin: true,

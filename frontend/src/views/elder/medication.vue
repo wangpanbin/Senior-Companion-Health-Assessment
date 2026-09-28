@@ -19,6 +19,7 @@ import { NlPageShell, NlAppTabBar, NlCard, NlStatusChip, NlNoticeBar, NlComplian
 import { getProfile } from '@/api/user'
 import { getTodayTasks, getMedicationCalendar, listMedicationPlans } from '@/api/medication'
 import { formatTime, today } from '@/utils/format'
+import { useMonthCalendar } from '@/composables/useMonthCalendar'
 
 const pad2 = (n) => String(n).padStart(2, '0')
 const toDateStr = (y, m, d) => `${y}-${pad2(m)}-${pad2(d)}`
@@ -59,20 +60,15 @@ const calMap = computed(() => {
   return map
 })
 
+// 月历骨架（offset 补位 + 7 列对齐）上提到 useMonthCalendar（收口迭代 E2）
+const { cells: monthDays } = useMonthCalendar(curYear, curMonth)
+
 const calendarCells = computed(() => {
-  const y = curYear.value
-  const m = curMonth.value
-  const first = new Date(y, m - 1, 1)
-  const offset = (first.getDay() + 6) % 7 // 周一为一周开始
-  const daysInMonth = new Date(y, m, 0).getDate()
-  const cells = []
-  for (let i = 0; i < offset; i++) cells.push(null)
-  for (let d = 1; d <= daysInMonth; d++) {
-    const ds = toDateStr(y, m, d)
-    cells.push({ d, dateStr: ds, isToday: ds === today(), info: calMap.value[ds] || null })
-  }
-  while (cells.length % 7 !== 0) cells.push(null)
-  return cells
+  return monthDays.value.map((d) => {
+    if (d == null) return null
+    const ds = toDateStr(curYear.value, curMonth.value, d)
+    return { d, dateStr: ds, isToday: ds === today(), info: calMap.value[ds] || null }
+  })
 })
 
 const weeks = ['一', '二', '三', '四', '五', '六', '日']

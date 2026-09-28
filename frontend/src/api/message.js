@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { getToken } from '@/utils/auth'
 
 /**
  * 站内信接口
@@ -35,32 +36,31 @@ export function removeMessage(messageId) {
 }
 
 /**
- * 站内信实时推送（M8）。
+ * 站内信未读数订阅（M8）。
  *
- * ⚠️ 真实情况与最初的骨架注释不同，这里必须说清楚：
+ * 收口迭代 E4：轮询升级为 SSE 推送（后端 `/sse/message` 已支持 `?token=`，
+ * 与 /ws/progress 同一套做法），本函数**不再使用 setInterval**。
+ * 保留原函数名与 `onChange(count, byType)` 回调签名，调用方（companion/message.vue）零改动。
+ * SSE 断开时浏览器 EventSource 会自动重连；`refresh()` 仍暴露给手动刷新场景。
  *
- *   后端通道是 **SSE**（`GET /sse/message`），不是 WebSocket —— 见
- *   `MessageSseController` / `MessageSseHub`。而该端点的鉴权读的是
- *   `Authorization: Bearer` 请求头，**浏览器原生 `EventSource` 无法自定义请求头**，
- *   因此当前**无法从浏览器直接订阅**。
+ * 后端推送的是**命名事件** NEW_MESSAGE（EventSource 的 onmessage 只收无名事件，
+ * 必须用 addEventListener），负载 JSON 含 unreadCount（服务端实时算出的总数）。
  *
- *   后端在设计上已经预留了兜底路径：`MessageSseController` 的类注释明确写了
- *   「保留双通道 —— SSE 负责 3 秒内看到红点变化，`/api/message/unread-count`
- *   每 60 秒的轮询负责在代理层掐长连接等环境问题下仍然可用」，
- *   并强调两条通道**读的是同一份数据库状态**，不会出现两个数字打架。
- *
- *   所以前端当前走轮询（见下方 `startUnreadPolling`），功能完整。
- *   若要拿到「秒级红点」，需后端把 `/sse/message` 的令牌改为支持 query 参数
- *   （与 `/ws/progress` 同一套做法），前端再把下面这个函数换成 EventSource 即可。
- *
- * @param {number} [intervalMs] 轮询间隔，默认 60 秒（与后端注释约定一致）
- * @param {(count: number) => void} [onChange] 未读数变化时回调
+ * @param {number} [_intervalMs] 兼容旧签名的占位参数（SSE 模式下无意义）
+ * @param {(count: number, byType?: Record<string, number>) => void} [onChange] 未读数变化回调
  * @returns {{ stop: () => void, refresh: () => Promise<void> }}
  */
-export function startUnreadPolling(intervalMs = 60000, onChange) {
-  let timer = null
+export function startUnreadPolling(_intervalMs = 60000, onChange) {
+  let source = null
   let stopped = false
   let last = -1
+
+  function apply(count, byType) {
+    if (count !== last) {
+      last = count
+      onChange?.(count, byType || {})
+    }
+  }
 
   async function refresh() {
     try {
@@ -70,30 +70,39 @@ export function startUnreadPolling(intervalMs = 60000, onChange) {
       //    红点永远不亮，而且不报错，是最难被发现的一类缺陷。
       //    这里同时兼容两种口径，避免后端将来改动时又静默失效。
       const count = Number(data?.total ?? data?.unreadCount ?? 0)
-      if (count !== last) {
-        last = count
-        onChange?.(count, data?.byType || {})
-      }
+      apply(count, data?.byType)
     } catch {
-      // 轮询失败不弹提示：网络抖动时每 60 秒弹一次「网络异常」会把用户逼疯，
-      // 真正的失败由用户主动操作时的请求暴露出来
+      // 与旧轮询同一取舍：静默失败，不弹提示
+    }
+  }
+
+  function connect() {
+    if (stopped) return
+    // EventSource 不能带自定义头，令牌走 query（后端 MessageSseController 校验）
+    source = new EventSource(`/sse/message?token=${encodeURIComponent(getToken())}`)
+    source.addEventListener('NEW_MESSAGE', (event) => {
+      try {
+        const payload = JSON.parse(event.data)
+        // 推送帧里的 unreadCount 是服务端实时算出的真值
+        apply(Number(payload.unreadCount ?? payload.total ?? 0))
+      } catch {
+        // 心跳/注释帧解析失败忽略，等下一帧
+      }
+    })
+    source.onerror = () => {
+      // EventSource 自动重连；断连期间给一次主动拉取兜底，红点不至于停在旧值
+      refresh()
     }
   }
 
   refresh()
-  timer = setInterval(() => {
-    if (!stopped && !document.hidden) {
-      // 页面在后台时不轮询。老人机前台挂着一整天是常态，
-      // 后台空转的轮询既费电也白白压服务端
-      refresh()
-    }
-  }, intervalMs)
+  connect()
 
   return {
     stop() {
       stopped = true
-      clearInterval(timer)
-      timer = null
+      source?.close()
+      source = null
     },
     refresh
   }

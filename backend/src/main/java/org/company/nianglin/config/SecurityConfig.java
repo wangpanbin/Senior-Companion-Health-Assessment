@@ -94,6 +94,10 @@ public class SecurityConfig {
             // 放行到 Security 之外是必须的 —— 否则过滤器链会因为「没有 Authorization 头」
             // 直接把升级请求判成未认证，握手永远到不了拦截器
             "/ws/**",
+            // SSE 订阅：浏览器原生 EventSource 不能自定义 Authorization 头，
+            // 令牌走 query 参数（与 /ws/progress 同一套做法），
+            // 由 MessageSseController 在订阅时校验 JWT，无效令牌直接关闭通道
+            "/sse/**",
             // 上传文件的静态访问（打卡照片、投诉证据）
             "/uploads/**",
             // 接口文档相关（dev 环境；prod 由 knife4j.enable=false 关闭）

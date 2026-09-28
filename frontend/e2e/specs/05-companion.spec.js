@@ -191,3 +191,36 @@ test.describe('M5 推送验证（fam001 下单 + comp007 接单 + 打卡 → 推
     }
   })
 })
+// ============================================================
+// M5 打卡显性提醒（收口迭代 E3）
+// 验收原文：打卡后 3 秒内必须有显性提醒（老人对静默反馈无感知）。
+// 用 seedAcceptedOrder 自建一次性订单跑真实 UI 打卡（断言 DOM，不靠肉眼）；
+// 打卡数据落在临时订单上，与 API 层用例共享的种子订单互不影响。
+// ============================================================
+test.describe('M5 打卡显性提醒（UI 层 · ElNotification）', () => {
+  test.use({ storageState: authFile('comp007'), viewport: { width: 390, height: 844 } })
+
+  test('打卡成功后 3 秒内弹出 ElNotification', async ({ page, context }) => {
+    const { ctx: famCtx, dispose: famDispose } = await apiAsAccount('fam001')
+    const { ctx: compCtx, dispose: compDispose } = await apiAsAccount('comp007')
+    try {
+      // 自建 ACCEPTED 订单（新单无任何节点，nextNode=DEPART）
+      const { orderId, longitude, latitude } = await seedAcceptedOrder({
+        famCtx, compCtx, remark: 'e2e M5 打卡通知'
+      })
+      // 授权定位并注入与订单一致的坐标（服务端 2000m 阈值校验，坐标错会 4001）
+      await context.grantPermissions(['geolocation'])
+      await context.setGeolocation({ latitude: Number(latitude), longitude: Number(longitude) })
+      await page.goto(ROUTES.companionExecute(orderId))
+      const btn = page.locator('.check-btn')
+      await expect(btn).toBeVisible({ timeout: 10000 })
+      await btn.click()
+      // M5 验收：打卡后 3 秒内弹出 ElNotification（断言 DOM，不靠肉眼）
+      await expect(page.locator('.el-notification').filter({ hasText: '打卡成功' }))
+        .toBeVisible({ timeout: 3000 })
+    } finally {
+      await famDispose()
+      await compDispose()
+    }
+  })
+})

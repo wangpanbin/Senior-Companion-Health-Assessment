@@ -32,6 +32,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlPageShell, NlCard, NlStatusChip, NlTimeline, NlAvatar, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
+import OrderFeeItems from '@/components/OrderFeeItems.vue'
 import { getOrder, getOrderTimeline, cancelOrder } from '@/api/order'
 import { listCheckins, connectProgressSocket } from '@/api/execution'
 import { getReviewByOrder } from '@/api/review'
@@ -335,6 +336,11 @@ onBeforeUnmount(() => {
             <span class="info__addr">{{ order.cancelReason }}</span>
           </li>
         </ul>
+      </NlCard>
+
+      <!-- 费用明细（ADR-0009：代垫/服务费分账，明细是真源、actual_fee 是汇总缓存） -->
+      <NlCard title="费用明细" plain>
+        <OrderFeeItems :order-id="orderId" />
       </NlCard>
 
       <!-- 我的评价（E4 评价公信力闭环） -->

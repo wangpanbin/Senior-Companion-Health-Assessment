@@ -58,3 +58,13 @@ export function completeService(orderId, data) {
 export function getOrderTimeline(orderId) {
   return request({ url: `/order/${orderId}/timeline`, method: 'get' })
 }
+
+/** 费用明细汇总（ADR-0009）：{ items, advanceTotal, serviceTotal, total, hasItems, fallbackNotice } */
+export function listFeeItems(orderId) {
+  return request({ url: `/order/${orderId}/fee-items`, method: 'get' })
+}
+
+/** 录入费用明细（陪诊员记账）；amount 为字符串两位小数 */
+export function createFeeItem(orderId, data) {
+  return request({ url: `/order/${orderId}/fee-items`, method: 'post', data })
+}

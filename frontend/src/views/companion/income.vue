@@ -11,11 +11,14 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { NlPageShell, NlAppTabBar, NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlNoticeBar } from '@/components'
+import OrderFeeItems from '@/components/OrderFeeItems.vue'
 import { listMyOrders } from '@/api/order'
 import { formatMoney, formatDate } from '@/utils/format'
 
 const loading = ref(true)
 const bills = ref([])
+/** 当前展开记账面板的订单 ID（ADR-0009：陪诊员在收入页直接补记代垫/服务费） */
+const expandedId = ref(null)
 
 /**
  * 单笔有效金额：优先 actualFee（结算金额，NON_NULL 未结算时可能缺失），
@@ -118,6 +121,18 @@ onMounted(loadIncome)
               </div>
             </div>
             <div class="bill__fee is-num">{{ formatMoney(b.actualFee != null ? b.actualFee : b.fee) }}</div>
+            <el-button
+              link
+              type="primary"
+              class="bill__toggle"
+              @click="expandedId = expandedId === b.id ? null : b.id"
+            >
+              {{ expandedId === b.id ? '收起' : '记账' }}
+            </el-button>
+          </li>
+          <!-- 记账面板（ADR-0009）：完成后可补记代垫/服务费，保存后刷新收入金额 -->
+          <li v-if="expandedId" class="bill bill--expanded">
+            <OrderFeeItems :order-id="expandedId" editable @changed="loadIncome" />
           </li>
         </ul>
       </NlCard>
@@ -180,11 +195,19 @@ onMounted(loadIncome)
 
 .bill {
   display: grid;
-  grid-template-columns: 56px 1fr auto;
+  grid-template-columns: 56px 1fr auto auto;
   gap: var(--nl-space-3);
   align-items: center;
   padding: var(--nl-space-3) 0;
   border-bottom: 1px dashed var(--nl-divider);
+
+  &--expanded {
+    display: block;
+    padding: var(--nl-space-3);
+    background: var(--nl-bg-card);
+    border-radius: var(--nl-radius-card);
+    border-bottom: none;
+  }
 
   &:last-child {
     border-bottom: none;

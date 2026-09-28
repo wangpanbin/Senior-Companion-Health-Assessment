@@ -29,6 +29,7 @@ import {
   NlPageShell, NlAppTabBar, NlCard, NlStatusChip, NlComplianceBar, NlNoticeBar, NlEmpty, NlSkeleton
 } from '@/components'
 import { useResponsive } from '@/composables/useResponsive'
+import { useMonthCalendar } from '@/composables/useMonthCalendar'
 import { listElder } from '@/api/user'
 import {
   getTodayTasks, getMedicationCalendar, listMedicationPlans,
@@ -76,16 +77,12 @@ const calendarLoading = ref(false)
 
 const weeks = ['一', '二', '三', '四', '五', '六', '日']
 
-const calendar = computed(() => {
-  const first = new Date(curYear.value, curMonth.value - 1, 1)
-  const firstDay = first.getDay() // 0-6, 日=0
-  const last = new Date(curYear.value, curMonth.value, 0)
-  const days = last.getDate()
-  const offset = (firstDay + 6) % 7 // 周一 0, 周日 6
+// 月历骨架（offset 补位 + 7 列对齐）上提到 useMonthCalendar（收口迭代 E2）
+const { cells: monthDays } = useMonthCalendar(curYear, curMonth)
 
-  const list = []
-  for (let i = 0; i < offset; i++) list.push(null)
-  for (let d = 1; d <= days; d++) {
+const calendar = computed(() => {
+  return monthDays.value.map((d) => {
+    if (d == null) return null
     const isToday =
       d === Number(tm) && curMonth.value === Number(tm) && curYear.value === Number(ty)
     const key = dateKey(curYear.value, curMonth.value, d)
@@ -97,10 +94,8 @@ const calendar = computed(() => {
           info.hasMissed && 'missed'
         ].filter(Boolean)
       : []
-    list.push({ d, isToday, dots })
-  }
-  while (list.length % 7 !== 0) list.push(null)
-  return list
+    return { d, isToday, dots }
+  })
 })
 
 /* ====== tab ====== */

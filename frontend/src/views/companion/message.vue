@@ -5,8 +5,9 @@
  * 数据来源（@/api/message）：
  *   - listMessages({page,size,type}) → 站内信列表
  *   - markRead(id) / markAllRead() / removeMessage(id)
- *   - startUnreadPolling(60000, onChange) → 轮询未读数（SSE 端点需 Authorization 头，浏览器
- *     EventSource 设不了头，故走轮询；详见契约 §3）
+ *   - startUnreadPolling(60000, onChange) → 未读数订阅（收口迭代 E4 起
+ *     为 SSE 推送：后端 /sse/message 支持 ?token=，内部不再 setInterval；
+ *     函数名与回调签名保持兼容）
  *
  * 关键点：
  *   - 接口按当前登录 token 返回该角色的消息，天然按角色工作（读 useUserStore().role 仅用于展示）。
