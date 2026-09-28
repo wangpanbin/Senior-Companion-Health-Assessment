@@ -43,6 +43,20 @@ public class SecurityProperties {
     private long captchaExpireSeconds = 300L;
 
     /**
+     * 管理员重置用户密码后的默认口令。
+     *
+     * <p>固定值而不是随机生成：现实中是「老人家属来电说密码忘了」，
+     * 管理员要把这串字念给对方，随机的 16 位串在电话里必然念错。
+     * 安全性由「首次登录强制修改」（{@code need_change_password = 1}）保证，
+     * 而不是由口令本身的复杂度。</p>
+     *
+     * <p><b>投产前必须用环境变量 {@code DEFAULT_RESET_PASSWORD} 覆盖</b> ——
+     * 留默认值等于把一个「所有用户初始口令相同」的值带到生产。
+     * 这里的默认值只是开发期的合规占位串（AGENTS.md §0.1）。</p>
+     */
+    private String defaultPassword = "Nl@123456";
+
+    /**
      * 身份证号等 PII 字段的 AES 加密密钥。
      *
      * <p>⚠️ 生产环境必须用环境变量 {@code ID_CARD_AES_KEY} 覆盖。

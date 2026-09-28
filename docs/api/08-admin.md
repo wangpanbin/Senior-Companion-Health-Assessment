@@ -303,7 +303,7 @@
 {
   "code": 200,
   "message": "密码已重置为默认密码，请提醒用户首次登录后修改",
-  "data": { "defaultPassword": "Nl@123456" }
+  "data": { "defaultPassword": "********" }
 }
 ```
 

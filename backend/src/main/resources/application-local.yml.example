@@ -54,3 +54,16 @@ nianglin:
     secret: ${JWT_SECRET:nianglin-dev-secret-key-please-change-in-production-0123456789}
     expire-minutes: 120
     refresh-expire-days: 7
+
+  security:
+    # 管理员「重置密码」后发给用户的默认口令。
+    # 固定值而非随机生成：现实中是电话里念给对方听，随机串必然念错；
+    # 安全性靠「首次登录强制修改」保证。
+    # ⚠️ 投产前必须覆盖 —— 留默认值等于把「所有用户初始口令相同」带到生产。
+    default-password: ${DEFAULT_RESET_PASSWORD:Nl@123456}
+    # 身份证号等 PII 的 AES 加密密钥，生产必须由 ID_CARD_AES_KEY 注入
+    id-card-key: ${ID_CARD_AES_KEY:CHANGE_ME}
+
+  # 种子/夹具账号的明文口令（本地调试用，与 V2__seed_data.sql 的 BCrypt 对应）
+  # 取值见 backend/sql/tools/fixture_credentials.py
+  seed-password: ${NIANGLIN_SEED_PASSWORD:Nl@123456}

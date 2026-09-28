@@ -19,7 +19,7 @@
 | 机制 | 应用层 `SELECT` 存 JSON → `UPDATE` 回写（`:87-94` / `:115-129`）|
 | 覆盖 | **1 张表 1 行**（`medication_task.id=20002` 的 7 列）|
 | 令牌 | 走 API + Redis 旁路（`:60-83`）|
-| 口令 | 硬编码 API 密码 `Nl@123456`（`:39`，非 DB 口令，合规无碍）|
+| 口令 | API 口令取自 `fixture_credentials.PASSWORD`（`:39` 一带），可由 `NIANGLIN_SEED_PASSWORD` 覆盖；非 DB 口令，合规无碍 |
 
 四个硬伤：
 

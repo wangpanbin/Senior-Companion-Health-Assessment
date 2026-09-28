@@ -26,7 +26,10 @@ REDIS_CLI = r"D:\develop\Redis-8.8.0\redis-cli.exe"
 # 临时测试用陪诊员 id 段（不与种子 301-330 冲突，不与 e2e 9001-9003 冲突）
 COMP_START = 5001
 COMP_END = 5030   # 共 30 个陪诊员；与种子 301-330 凑出 60 个 token，足以 50 并发
-PASSWORD = "Nl@123456"
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+PASSWORD = SEED_PASSWORD
 HOSPITAL = "海南省人民医院"
 ADDRESS = "海口市秀英区白路 1 号"
 LONGITUDE = "110.316123"

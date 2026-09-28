@@ -100,14 +100,12 @@ import java.util.Set;
 public class AdminServiceImpl implements AdminService {
 
     /**
-     * 管理员重置密码后的默认密码。
+     * 管理员重置密码后的默认口令，见 {@code SecurityProperties#getDefaultPassword()}。
      *
-     * <p>固定值而不是随机生成：这个密码要走电话念给用户（实际场景就是
-     * 「老人家属来电说密码忘了」），随机的 16 位串在电话里必然念错。
-     * 安全性由「首次登录强制修改」来保证（{@code need_change_password = 1}），
-     * 而不是由密码本身的复杂度。</p>
+     * <p>配置放在 {@code SecurityProperties} 而不是这里用 {@code @Value}，
+     * 与本类既有的 {@code idCardKey} 注入方式保持一致，也让纯 Mockito 单测
+     * 能直接构造本类（{@code @Value} 字段在不起容器时拿不到值）。</p>
      */
-    private static final String DEFAULT_PASSWORD = "Nl@123456";
 
     /** 驳回原因的最小长度（文档 §3：5–200 字符） */
     private static final int MIN_REJECT_REASON_LENGTH = 5;
@@ -367,7 +365,7 @@ public class AdminServiceImpl implements AdminService {
 
         sysUserMapper.update(null, Wrappers.<SysUser>lambdaUpdate()
                 .eq(SysUser::getId, id)
-                .set(SysUser::getPassword, passwordEncoder.encode(DEFAULT_PASSWORD))
+                .set(SysUser::getPassword, passwordEncoder.encode(securityProperties.getDefaultPassword()))
                 .set(SysUser::getNeedChangePassword, 1));
 
         // 重置密码等于「凭据已换人掌握」，旧令牌必须立即失效，
@@ -382,7 +380,7 @@ public class AdminServiceImpl implements AdminService {
                 null, null, dto.getRemark().trim());
 
         log.info("用户密码已重置 | userId={} | adminId={}", id, SecurityUtils.currentUserId());
-        return ResetPasswordResultVO.of(id, DEFAULT_PASSWORD);
+        return ResetPasswordResultVO.of(id, securityProperties.getDefaultPassword());
     }
 
     /* ================================================================== */

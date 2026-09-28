@@ -37,7 +37,10 @@ MYSQL = r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe"
 DB = "nianglin"
 UPLOAD_ROOT = r"F:\test\Senior Companion Health Assessment\backend\uploads"
 
-PASSWORD = "Nl@123456"
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+PASSWORD = SEED_PASSWORD
 
 # 种子数据的最大订单 ID。本脚本只操作「自己造」的订单，跑前先扫一遍
 # ID 大于它的残留（上一次跑到一半崩掉、或清理段被中断时留下的），

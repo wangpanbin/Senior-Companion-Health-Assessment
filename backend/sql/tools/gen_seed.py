@@ -19,7 +19,13 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 OUT = os.path.normpath(OUT)
 
 # ---------------------------------------------------------------- 固定密钥
-BCRYPT = "$2a$10$dTfTIBtoETZnreDYKJ6Re.rgpuLth.58Y0hgjohfzPE.xBaCZZCHi"  # 明文 Nl@123456
+# BCrypt 哈希由 GenSeedSecrets.java 生成，明文口令不写在这里（见
+# fixture_credentials.py 与 NIANGLIN_SEED_PASSWORD 环境变量）。
+# 改口令需先用新口令重算哈希，再更新本行 —— 两者不一致会导致登录失败。
+BCRYPT = os.environ.get(
+    "NIANGLIN_SEED_PASSWORD_BCRYPT",
+    "$2a$10$dTfTIBtoETZnreDYKJ6Re.rgpuLth.58Y0hgjohfzPE.xBaCZZCHi",
+)
 ID_CARDS = [
     "70L8PuD5Vc1WgFJTZr9morREqE8KiNVxokziwb/I1b9yXYCh1VT5CXK8E2XwHw==",
     "jCbhDtDDdkjprbt7B4UMvB4vQstl21/bomlVFN8rxCtJIxZwBIXLN+2yziIaRA==",
@@ -198,7 +204,8 @@ w("--   5. 长期用药      —— end_date 为 NULL 表示长期服药")
 w("--   6. 漏服补记      —— 服药任务含 MISSED 与 was_missed = 1（补记）两种")
 w("--   7. 资质非通过态  —— 陪诊员含 PENDING / REJECTED / 健康证过期")
 w("--")
-w("-- 种子账号统一密码：Nl@123456（BCrypt 已入库，可直接登录）")
+w("-- 种子账号统一密码：见 docs/agents/reports/BASELINE_2026-09-28.md §6.1")
+w("--   （BCrypt 已入库；明文口令由 NIANGLIN_SEED_PASSWORD 提供，不随代码分发）")
 w("-- =============================================================================")
 w()
 w("SET NAMES utf8mb4;")

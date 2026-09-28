@@ -17,8 +17,15 @@ public class GenSeedSecrets {
     /** 与 application.yml 中 nianglin.security.id-card-key 的 dev 默认值保持一致 */
     private static final String AES_KEY = "nianglin-dev-id-card-key-please-change-in-production";
 
-    /** 所有种子账号统一密码 */
-    private static final String PLAIN_PASSWORD = "Nl@123456";
+    /**
+     * 所有种子账号统一密码。
+     *
+     * <p>优先从环境变量 {@code NIANGLIN_SEED_PASSWORD} 读；未设置时回落到
+     * 合规占位串。这个工具用来生成写进 {@code V2__seed_data.sql} 的 BCrypt 哈希，
+     * 如果明文口令写死在源码里，仓库就等于对外公布了「所有种子账号的口令」。</p>
+     */
+    private static final String PLAIN_PASSWORD =
+            System.getenv().getOrDefault("NIANGLIN_SEED_PASSWORD", "Nl@123456");
 
     private static final String[] ID_CARDS = {
             "460106194801154321",

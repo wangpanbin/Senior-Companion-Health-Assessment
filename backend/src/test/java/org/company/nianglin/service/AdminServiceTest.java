@@ -341,6 +341,9 @@ class AdminServiceTest {
     void resetPasswordShouldStoreHashAndForceChange() {
         given(sysUserMapper.selectById(TARGET_USER_ID))
                 .willReturn(user(TARGET_USER_ID, RoleConstants.FAMILY, "NORMAL"));
+        // 默认重置口令来自 SecurityProperties（投产由 DEFAULT_RESET_PASSWORD 覆盖），
+        // mock 默认返回 null 会让 passwordEncoder.encode(null) 抛错，这里给确定值
+        given(securityProperties.getDefaultPassword()).willReturn("Nl@123456");
         given(passwordEncoder.encode(anyString())).willReturn("$2a$10$0123456789abcdefghijklmnopqrstuv");
 
         service.resetPassword(TARGET_USER_ID, resetDto("家属电话申请"));

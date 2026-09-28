@@ -27,7 +27,10 @@ SSE_URL = "http://127.0.0.1:8080/sse/message"
 REDIS_CLI = r"D:\develop\Redis-8.8.0\redis-cli.exe"
 MYSQL = r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe"
 DB = "nianglin"
-PASSWORD = "Nl@123456"
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+PASSWORD = SEED_PASSWORD
 SEED_ORDER_MAX_ID = 1064
 
 ACC_FAMILY = "fam001"          # 家属 101

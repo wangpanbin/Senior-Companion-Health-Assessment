@@ -21,7 +21,7 @@ public class LoginDTO {
     @Size(max = 50, message = "账号长度不能超过 50 位")
     private String username;
 
-    @Schema(description = "密码", example = "Nl@123456", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "密码", example = "********", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank(message = "请输入密码")
     @Size(min = 6, max = 32, message = "密码长度为 6-32 位")
     private String password;

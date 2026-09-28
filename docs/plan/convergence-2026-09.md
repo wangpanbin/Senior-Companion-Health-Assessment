@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| 状态 | 执行中 |
+| 状态 | 执行中（PR-0 ✅ · PR-1 ✅ 闸门 1 达成，2026-09-28） |
 | 立项日期 | 2026-09-28 |
 | 关联 | `plan.md` 迭代四/五/六 · `AGENTS.md` · `docs/adr/0007` `0009` `0010` |
 | 产出定位 | 一次性补齐 plan.md 迭代四/五/六的交付缺口，让「代码做完了」变成「可验收、可展示」 |
+| 验收基线 | **`docs/agents/reports/BASELINE_2026-09-28.md`**（每个数字带复现命令） |
 
 ---
 
@@ -135,6 +136,35 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 
 **🚧 总闸门 1**：baseline 文件存在且每个数字可复现。**没有它，阶段 2 不启动。**
 
+#### ✅ 阶段 1 实测结果（2026-09-28，commit `70e2d65`）
+
+| ticket | 判定 | 实测 |
+|---|---|---|
+| 1.1 | ✅ | 575 tests / 0 failures / 0 errors / 0 skipped |
+| 1.2 | ✅ | package EXIT=0（84.5MB jar）· `/api/health` HTTP 200 body `"code":200` · Flyway 1/2/3 全 success |
+| 1.3 | ✅ | lint 0 警告 · build EXIT=0 · dev server 5141 返回 200 |
+| 1.4 | ✅ | 首跑 163 passed/**1 failed** → 定位修复 → **164 passed** |
+| 1.5 | ✅ | `docs/agents/reports/BASELINE_2026-09-28.md`（347 行） |
+
+**闸门 1 达成，阶段 2 可启动。** 本阶段暴露 3 个此前无人知晓的阻断项（均已修复）：
+
+1. **🔴 `pnpm build` 失败** —— `reviews.vue` / `order-detail.vue` 引用了 `variables.scss` 中不存在的
+   `$nl-radius-md` / `$nl-radius-sm` / `$nl-shadow-1`（共 5 处）。**lint 不编译 SCSS、E2E 不截图，
+   所以此前完全不可见** —— 这是「代码完成度 95%」口径的盲区。
+2. **🔴 E2E 首跑即红** —— 根因是 `comp025` 夹具在 **2026-09-19** 被某次管理端运行审批通过，
+   脏数据残留（种子脚本声明 `PENDING`，Flyway 已执行不重播）。**恢复夹具而非改已执行的 `V2` 脚本**。
+   与 `FIXTURE_ROLLBACK_PLAN.md` 记载的「L1 不可重跑」同源。
+3. **🟡 端口文档漂移 5173→5141** —— 代码是 5141，5 处文档写 5173；
+   **额外发现真实代码缺陷**：`WebMvcConfig:30` 的 `@Value` 兜底默认值也是 5173。
+
+**覆盖率基线（T3.1 前置）**：行 **65.9%** / 分支 **49.6%**，M12 硬指标 60% 达标。
+但 `AdminServiceImpl` 25.8%（450 行最大类）、`UserServiceImpl` 28.0%、`CaptchaServiceImpl` 5.3%
+是三个明显空洞 —— T3.1 应如实列出，**不要用总量 65.9% 掩盖**。
+
+> **⚠️ 遗留卡点（需人工）**：远端 `master` 删不掉 —— GitHub 拒绝删除默认分支。
+> 需在 Settings → Branches 把默认分支 `master` 改为 `main`，之后
+> `git push origin --delete master` 即可生效。本地与 `origin/HEAD` 均已指向 `main`。
+
 ---
 
 ### 阶段 2 · 硬约束收口（1 天）— 让代码兑现 AGENTS.md
@@ -144,8 +174,41 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 | 2.1 | **订单状态流转收口**（依 `docs/adr/0010`） | ① `grep -rn "setStatus" backend/src/main/java/.../service` 命中**全部**落在 `OrderTransitionService` 内<br>② `grep -rn "from != \|from == " backend/src/main/java/.../service` 返回空（硬编码守卫清零）<br>③ `canTransitTo` 在 `service` 包内**恰好 1 处**调用点（即 `OrderTransitionService.transition`）<br>④ **反向验证**：删 `OrderStatus.TRANSITIONS` 一条边，`mvn test -Dtest=OrderStatusTest` **必须失败** → 改回 |
 | 2.2 | 老人模式文档对齐 | ✅ **已完成**（见 §四） |
 | 2.3 | 越权面补齐 + 探针退场 | ① 陪诊员入驻 4 端点有 `@PreAuthorize`；越权测试类 3 → ≥4，`mvn test` 绿<br>② `grep -rn "PermissionProbeController\|TODO(W16)" backend/src` 返回空<br>③ **12 条越权用例（4 角色 × 3 类）在正式测试类里可定位到** —— 这是删探针的前置条件 |
-| 2.4 | 仓库卫生 + 明文口令 | ① `grep -rn "Nl@123456"`（排除 `.git`）返回空，改为环境变量 / `.env.example`<br>② `git status --porcelain` 返回空<br>③ `docs/db/` 中文文件名：**先确认磁盘实际编码再动**；改文件名必须同步改 `gen_db_docs.py`，否则下次重跑又变回去 |
+| 2.4 | 仓库卫生 + 明文口令 | ① `python backend/sql/tools/check_seed_password.py` 退出码 0（白名单外无扩散）<br>② `git status --porcelain` 返回空<br>③ `docs/db/` 中文文件名：**先确认磁盘实际编码再动**；改文件名必须同步改 `gen_db_docs.py`，否则下次重跑又变回去 |
 | 2.5 | 费用明细模型落地（依 `docs/adr/0009`） | `V4__*.sql` + entity + mapper + 端点齐备；`validate-on-migrate` 通过 |
+
+#### ✅ 阶段 2 实测结果（进行中）
+
+| ticket | 判定 | 说明 |
+|---|---|---|
+| 2.1 | ✅ | 新增 `OrderTransitionService` 单一入口，6 处流转 + `forceTerminal` 全部改经此入口；**反向验证实测通过**（删 `TRANSITIONS` 一条边 → 两个测试类双双变红）；`mvn test` **585 tests / 0 failures**。ADR-0010 置 Accepted。 |
+| 2.2 | ✅ | 见 §四 |
+| 2.3 | ⏳ | 探针退场的前置条件是 12 条正式越权用例，未开始 |
+| 2.4 | ✅ | 见下方处理结论 |
+| 2.5 | ⏳ | 未开始 |
+
+##### T2.4 明文口令处理结论（32 处 → 白名单 13 处）
+
+实测 32 处比原计划设想广得多。按「**是否参与生产**」重新分类，而不是无差别替换：
+
+| 类别 | 处数 | 处理 |
+|---|---|---|
+| 夹具脚本（`e2e_*.py` / `bench_setup` / `jmeter_fixture`） | 11 | **收敛到单一真源** `fixture_credentials.py`，可用 `NIANGLIN_SEED_PASSWORD` 覆盖。改口令从「动 11 个文件」变成「动 1 个」 |
+| 生产代码 `AdminServiceImpl` | 1 | 改读 `SecurityProperties#getDefaultPassword()`（投产由 `DEFAULT_RESET_PASSWORD` 覆盖）。**保留固定值是有意设计**：现实中是电话里念给用户听，随机串必然念错，安全性靠「首次登录强制修改」 |
+| 生成器（`GenSeedSecrets.java` / `gen_seed.py`） | 2 | 改读环境变量，明文不落源码 |
+| 前端演示预填 | 1 | 改读 `.env.development` 的 `VITE_DEMO_PASSWORD`（仅 DEV 生效，不进生产构建） |
+| Swagger `@Schema` 示例 | 2 | 改为 `********`，避免接口文档直接教人用默认口令 |
+| 单测固定输入 | 2 | 保留（不进生产） |
+| `V2__seed_data.sql` | 1 | ⚠️ **已执行的 Flyway 脚本，不得修改**（checksum 校验）。改口令需新开 `V5__*.sql` 走 UPDATE |
+| 文档 | 4 | 改为指向 `fixture_credentials.py` / 环境变量 |
+
+**新增防扩散门禁** `backend/sql/tools/check_seed_password.py`：把「允许出现在哪里」写成显式白名单
+（含每条的原因），白名单外出现即退出码 1。**已做反向验证** —— 故意造一处扩散，脚本确实报 `BAD` 并 EXIT=1；
+删除后恢复 `PASS` / EXIT=0。没有这个脚本，手工清理只能管到当次。
+
+> 途中踩过一个真实的坑：曾误改 `V2__seed_data.sql` 的注释（想加说明），
+> 立刻意识到这会触发 Flyway checksum 校验失败，已 `git checkout` 回滚。
+> **已执行脚本连注释都不能动** —— 这是 AGENTS.md §5 的硬约束。
 
 ---
 

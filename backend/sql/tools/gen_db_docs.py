@@ -632,7 +632,9 @@ def doc_seed(tables, counts):
     L.append("")
     L.append("## 三、内置演示账号")
     L.append("")
-    L.append("**统一初始密码：`Nl@123456`**（库中为 BCrypt 哈希，`$2a$10$` 开头）")
+    L.append("**统一初始密码**：库中为 BCrypt 哈希（`$2a$10$` 开头）。"
+             "明文口令不随文档分发，本地调试时由 `NIANGLIN_SEED_PASSWORD` 环境变量提供"
+             "（默认值见 `backend/sql/tools/fixture_credentials.py`）")
     L.append("")
     L.append("| 角色 | 用户名 | 数量 | 说明 |")
     L.append("|---|---|---|---|")

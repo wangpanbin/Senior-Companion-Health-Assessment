@@ -65,7 +65,10 @@ function applyDemoAccount(role) {
   const card = ROLE_CARDS.find((c) => c.role === role)
   if (import.meta.env.DEV && card) {
     form.username = card.account
-    form.password = 'Nl@123456'
+    // 口令来自 .env.development 的 VITE_DEMO_PASSWORD，不写死在源码里：
+    // 演示账号只对本地种子数据有意义，但明文进版本库仍会成为「默认口令」的
+    // 事实来源。生产构建里 import.meta.env.DEV 为 false，这段不会执行。
+    form.password = import.meta.env.VITE_DEMO_PASSWORD || ''
   }
 }
 

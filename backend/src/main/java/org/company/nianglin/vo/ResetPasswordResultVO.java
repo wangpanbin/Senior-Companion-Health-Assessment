@@ -24,7 +24,9 @@ public class ResetPasswordResultVO {
     @Schema(description = "用户 ID", example = "10099")
     private Long userId;
 
-    @Schema(description = "重置后的默认密码，需提醒用户首次登录后立即修改", example = "Nl@123456")
+    @Schema(description = "重置后的默认密码，需提醒用户首次登录后立即修改。"
+            + "实际值由 nianglin.security.default-password 配置决定，"
+            + "生产环境通过环境变量注入，不随代码分发", example = "********")
     private String defaultPassword;
 
     @Schema(description = "是否已置为需强制改密", example = "true")

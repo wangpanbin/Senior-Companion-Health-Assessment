@@ -8,8 +8,15 @@
  * 由 fixtures/auth.setup.js 自动旁路，无需人工识别。
  */
 
-/** 所有种子账号口令统一为此值 */
-export const PASSWORD = 'Nl@123456'
+/**
+ * 所有种子账号口令统一为此值。
+ *
+ * 与 `backend/sql/tools/fixture_credentials.py` 同源：E2E 直连后端登录时
+ * 用的就是这个口令。可用环境变量 `NIANGLIN_SEED_PASSWORD` 覆盖，
+ * 避免把默认值当成真口令（改口令时两处保持一致）。
+ * 登录页的演示预填读 `.env.development` 的 `VITE_DEMO_PASSWORD`。
+ */
+export const PASSWORD = process.env.NIANGLIN_SEED_PASSWORD || 'Nl@123456'
 
 /** 4 角色主页（与 frontend/src/router/index.js 的 ROLE_HOME 保持一致） */
 export const ROLE_HOME = {

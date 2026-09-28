@@ -515,7 +515,9 @@ onBeforeUnmount(() => polling?.stop())
 | ELDER | `elder001` … `elder030` | 201 起 | `elder030`(230) 是 **`DISABLED` 封禁账号**，用于越权反向用例 |
 | COMPANION | `comp001` … | 301 起 | — |
 
-口令统一 **`Nl@123456`**（所有种子用户的 bcrypt 哈希相同）。
+口令统一（所有种子用户的 bcrypt 哈希相同）。明文口令由环境变量
+`NIANGLIN_SEED_PASSWORD` 提供，默认值见 `backend/sql/tools/fixture_credentials.py`；
+前端登录页的演示预填读 `frontend/.env.development` 的 `VITE_DEMO_PASSWORD`。
 
 **登录必须带图形验证码**：`GET /api/auth/captcha` → 拿到 `captchaKey` 后，
 验证码明文存在 Redis 键 **`captcha:<captchaKey>`**（大写，TTL 300 秒，校验时 `getAndDelete` 一次性消费）。
