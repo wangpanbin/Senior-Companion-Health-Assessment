@@ -79,7 +79,7 @@ M8 → M6 → M10(预写骨架)
 | 5 | docs/api 同步（路径 / 参数 / 错误码 / 示例） | `docs/api/NN-<module>.md` | 主/旁各自 |
 
 - **JaCoCo 覆盖率门禁**：W11 加 Maven `jacoco-maven-plugin` + `verify` 阶段硬卡 ≥ 60%
-- **跨模块越权矩阵**：每模块完成后扩展 `PermissionMatrixTest`，保持 4 角色 × 3 类接口 ≥ 12 条用例
+- **跨模块越权矩阵**：每模块完成后扩展该模块的 `XxxAccessMatrixTest`（探针矩阵 `PermissionMatrixTest` 已于 T2.3 退场），保持 4 角色 × 3 类接口 ≥ 12 条用例
 - **JMeter 压测**：M4 收尾时跑 50 并发抢单（验收硬指标），M12 扩展到 M5/M6/M9
 
 ---

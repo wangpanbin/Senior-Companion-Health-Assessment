@@ -6,39 +6,36 @@
  * 判据必须在**接口层**成立 —— 前端隐藏按钮不算安全边界（PRD §2.3）。
  * 所以本 spec 全部绕过浏览器直连后端。
  *
- * 借助后端专门提供的探针：PermissionProbeController `/api/common/perm-probe/**`
- *   每个角色只应能通过自己的那一格；其余格必须 403。
+ * 权限探针 `/api/common/perm-probe/**` 已于收敛迭代 T2.3 退场，
+ * 角色门槛改用真实业务接口表达：已认证读自己的资料 + 管理端门禁；
+ * 细粒度的角色 × 资源矩阵由后端 8 个 `*AccessMatrixTest` 承接。
  */
 import { test, expect } from '@playwright/test'
 import { apiAsAccount, API } from '../helpers/api'
 import { SEED } from '../helpers/constants'
 
-/** 角色 → 探针名 */
-const PROBES = ['elder', 'family', 'companion', 'admin']
-
 const MATRIX = [
-  { account: 'elder001', role: 'ELDER', allow: 'elder' },
-  { account: 'fam001', role: 'FAMILY', allow: 'family' },
-  { account: 'comp001', role: 'COMPANION', allow: 'companion' },
-  { account: 'admin', role: 'ADMIN', allow: 'admin' }
+  { account: 'elder001', role: 'ELDER' },
+  { account: 'fam001', role: 'FAMILY' },
+  { account: 'comp001', role: 'COMPANION' },
+  { account: 'admin', role: 'ADMIN' }
 ]
 
-test.describe('探针矩阵：4 角色 × 4 探针', () => {
+test.describe('角色门槛：4 角色 × 已认证端点 + 管理端门禁', () => {
   for (const row of MATRIX) {
-    test(`${row.account}(${row.role}) 只通过自己的探针`, async () => {
+    test(`${row.account}(${row.role}) 能读自己资料；管理端仅 ADMIN 可进`, async () => {
       const { ctx, dispose } = await apiAsAccount(row.account)
       try {
         // 3 类接口之一：通用已认证接口 —— 4 角色都应 200
-        const auth = await ctx.get(`${API}/common/perm-probe/authenticated`)
-        expect(auth.status(), `${row.account} 应能访问 authenticated 探针`).toBe(200)
+        const profile = await ctx.get(`${API}/user/profile`)
+        expect(profile.status(), `${row.account} 应能访问已认证端点`).toBe(200)
 
-        for (const p of PROBES) {
-          const res = await ctx.get(`${API}/common/perm-probe/${p}`)
-          if (p === row.allow) {
-            expect(res.status(), `${row.account} 应通过 /${p}`).toBe(200)
-          } else {
-            expect(res.status(), `${row.account} 访问 /${p} 必须 403`).toBe(403)
-          }
+        // 角色门禁：管理端只有 ADMIN 能进，其余角色必须 403
+        const admin = await ctx.get(`${API}/admin/user`)
+        if (row.role === 'ADMIN') {
+          expect(admin.status(), `${row.account} 是管理员，应通过管理端`).toBe(200)
+        } else {
+          expect(admin.status(), `${row.role} 访问管理端必须 403`).toBe(403)
         }
       } finally {
         await dispose()

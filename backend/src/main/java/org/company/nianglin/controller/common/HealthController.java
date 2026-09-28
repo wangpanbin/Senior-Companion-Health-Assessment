@@ -5,8 +5,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.Result;
-import org.company.nianglin.common.ResultCode;
-import org.company.nianglin.exception.BusinessException;
 import org.springframework.core.env.Environment;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,7 +20,6 @@ import java.util.Map;
  * <p>用途：</p>
  * <ol>
  *   <li>验证后端已启动、统一响应结构生效</li>
- *   <li>验证全局异常处理器生效（{@code /api/health/demo-error}）</li>
  *   <li>给前端与部署脚本提供一个探活地址</li>
  * </ol>
  *
@@ -56,12 +53,5 @@ public class HealthController {
         data.put("message", "统一响应结构工作正常");
         data.put("hint", "前端拿到的结构应为 { code, message, data }");
         return Result.success(data);
-    }
-
-    @Operation(summary = "全局异常处理自检", description = "故意抛出业务异常，用于验证 GlobalExceptionHandler 是否把异常转成了标准 Result 结构。")
-    @GetMapping("/demo-error")
-    public Result<Void> demoError() {
-        // TODO(W16)：交付前删除该自检接口
-        throw new BusinessException(ResultCode.NOT_IMPLEMENTED, "这是一个演示异常，用于验证全局异常处理器");
     }
 }

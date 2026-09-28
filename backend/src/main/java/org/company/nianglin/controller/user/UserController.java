@@ -15,6 +15,7 @@ import org.company.nianglin.vo.CompanionApplicationVO;
 import org.company.nianglin.vo.CompanionApplyResultVO;
 import org.company.nianglin.vo.CompanionProfileVO;
 import org.company.nianglin.vo.UserInfoVO;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,6 +61,7 @@ public class UserController {
 
     @Operation(summary = "获取当前用户资料",
             description = "返回登录用户的昵称、角色、脱敏手机号等；手机号与密码不在返回范围内")
+    @PreAuthorize("isAuthenticated()")
     @GetMapping("/profile")
     public Result<UserInfoVO> getProfile() {
         return Result.success(userService.getProfile());
@@ -68,6 +70,7 @@ public class UserController {
     @Operation(summary = "更新当前用户资料",
             description = "只支持昵称与头像。手机号走绑定流程、密码走 /api/auth/password，均不在此接口。"
                     + "老人账号（ELDER）调用会被只读规则拦截（403）")
+    @PreAuthorize("isAuthenticated()")
     @PutMapping("/profile")
     public Result<Void> updateProfile(@Valid @RequestBody ProfileUpdateDTO dto) {
         userService.updateProfile(dto);
@@ -80,6 +83,7 @@ public class UserController {
             description = "任何已登录账号都可申请（老人账号除外）。身份证号服务端 AES 加密存储。"
                     + "提交后角色不变，只有管理员审核通过才升级为 COMPANION。"
                     + "已有待审核申请或已通过审核时会拒绝")
+    @PreAuthorize("isAuthenticated()")
     @PostMapping("/companion/apply")
     public Result<CompanionApplyResultVO> applyCompanion(
             @Valid @RequestBody CompanionApplyDTO dto) {
@@ -88,6 +92,7 @@ public class UserController {
 
     @Operation(summary = "查询自己的资质申请状态",
             description = "返回最近一次申请的状态与驳回原因；从未申请过时 data 为 null")
+    @PreAuthorize("isAuthenticated()")
     @GetMapping("/companion/application")
     public Result<CompanionApplicationVO> myCompanionApplication() {
         return Result.success(companionService.myApplication());
@@ -95,6 +100,7 @@ public class UserController {
 
     @Operation(summary = "查询陪诊员公开资料",
             description = "仅返回已通过审核的陪诊员。不返回身份证号、联系电话、证件图片与驳回原因")
+    @PreAuthorize("isAuthenticated()")
     @GetMapping("/companion/{id}")
     public Result<CompanionProfileVO> companionProfile(
             @Parameter(description = "陪诊员**用户 ID**（不是 companion_profile 主键）", example = "301")

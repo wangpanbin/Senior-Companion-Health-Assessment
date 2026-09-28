@@ -363,7 +363,7 @@
 | 层面 | 手段 | 结果 |
 |---|---|---|
 | 单元测试 | `AuthServiceTest`（Mockito，16 例） | 16/16 通过 |
-| 权限矩阵 | `PermissionMatrixTest`（SpringBootTest + 真实 JWT，16 例） | 16/16 通过 |
+| 权限矩阵 | `UserAccessMatrixTest`（SpringBootTest + 真实 JWT，12 例；原探针矩阵 `PermissionMatrixTest` 已于 T2.3 退场，由本类与各模块 `*AccessMatrixTest` 承接） | 12/12 通过 |
 | 老人只读 | `ElderReadOnlyInterceptorTest`（7 例） | 7/7 通过 |
 | 端到端 | `backend/sql/tools/e2e_auth.py` 真实 HTTP 打 8080，40 项断言 | 40/40 通过 |
 
