@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| 状态 | 提议 (Proposed) |
-| 日期 | 2026-09-18 |
+| 状态 | 已接受 (Accepted) |
+| 日期 | 2026-09-18 决策 · 2026-09-28 落地验证通过 |
 | 关联 | `AGENTS.md` §3.5 · `CONTEXT.md` |
 
 ## 背景
@@ -93,3 +93,20 @@ URL 区分手机 / 桌面产品。
 
 - 旧 `PhoneLayout.vue` 文件保留一个迭代周期,新代码 import 切到 `MobileLayout.vue` 后再删。
 - `AdminLayout.vue` 不动,继续仅供 ADMIN 角色使用。
+
+### 落地验证（2026-09-28）
+
+Q4 = II（桌面端禁用老人模式）已实装,三重防御均可在代码中定位:
+
+| 防线 | 位置 |
+|---|---|
+| ① action 直接 return,不写 localStorage | `frontend/src/store/modules/app.js` `setElderlyMode()` |
+| ② 摘掉 `<html>` class(localStorage 残留也不生效) | 同文件 `applyElderlyClass()` |
+| ③ ≥768px `!important` 兜底 | `frontend/src/styles/elderly.scss` |
+
+同时已同步:
+
+- `CONTEXT.md` §模式开关 —— 「仅 Mobile 形态生效」;
+- `AGENTS.md` §3.5 —— 补「生效范围」行与「桌面端豁免」小节。
+
+> **收口迭代中发现的历史问题**：本 ADR 于 2026-09-18 拍板后,`AGENTS.md` §3.5 一直未同步,导致「代码与项目宪法冲突」长达 10 天。**ADR 与宪法不一致时,以 ADR 为决策源,宪法需在同一个 PR 内同步** —— 见 `docs/plan/convergence-2026-09.md` §四。

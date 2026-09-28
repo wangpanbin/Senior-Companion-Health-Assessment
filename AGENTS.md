@@ -321,8 +321,24 @@ public class OrderServiceImpl implements OrderService {
 | 老人模式触发方式 | `<html>` 上加 class `elderly-mode`（由 `appStore.applyElderlyClass()` 维护，**不要**靠刷新页面） |
 | 老人模式菜单 | 路由 `meta.elderlyHidden: true` 的项在老人模式下隐藏（`BasicLayout.vue` 已实现过滤） |
 | 核心流程点击次数 | ≤ 3 次 |
+| 老人模式生效范围 | **仅 Mobile 形态（视口 < 768px）**；Desktop 形态下开关禁用并隐藏 —— 见下方「桌面端豁免」与 `docs/adr/0007` |
 
 新增样式时**必须考虑**老人模式下的可读性 / 可点击性。涉及字号、按钮、表格、菜单时，**先看** `elderly.scss` 是怎么改 CSS 变量的，跟着改而非重复写硬编码。
+
+**桌面端豁免（`docs/adr/0007` Q4 = II，2026-09-18 决策）**
+
+上表的 ≥18px 字号与 ≥48px 触控区是**按 390 宽手机屏定制的基线**，不是全站通用值。老人模式**只在 Mobile 形态生效**：
+
+- 18px 正文 + 56px 按钮套进 Desktop 的 720px 居中列会破坏信息密度，而 Desktop 形态本身不是老人主场景；
+- 因此视口 ≥ 768px 时**禁用并隐藏**开关，Desktop 形态不需要满足上表数值。
+
+三重防御，任何新增老人模式代码都**不得绕过**：
+
+1. `appStore.setElderlyMode()` 在 `isElderlyModeDisabled()` 为真时**直接 return**，且**不写 localStorage**——避免「宽屏误点 → 手机端打开变成大字」的串味；
+2. `appStore.applyElderlyClass()` 在桌面形态下摘掉 `<html>` 上的 class（localStorage 残留 `true` 也不生效）；
+3. `styles/elderly.scss` 在 ≥ 768px 用 `!important` 兜底。
+
+不要在 Desktop 形态下「顺手支持」老人模式，也不要为了绕过豁免而在 `elderly.scss` 里写媒体查询。
 
 ### 3.6 Axios 封装与接口调用
 
