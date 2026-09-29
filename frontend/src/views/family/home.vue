@@ -248,7 +248,7 @@ onBeforeUnmount(() => {
       <template #title>
         <div class="block-head">
           <span class="nl-h2">今日用药提醒</span>
-          <el-link type="primary" :underline="false" @click="router.push('/family/medication')">管理</el-link>
+          <el-link type="primary" underline="never" @click="router.push('/family/medication')">管理</el-link>
         </div>
       </template>
 
@@ -296,7 +296,7 @@ onBeforeUnmount(() => {
       <template #title>
         <div class="block-head">
           <span class="nl-h2">最近订单</span>
-          <el-link type="primary" :underline="false" @click="router.push('/family/order')">查看全部</el-link>
+          <el-link type="primary" underline="never" @click="router.push('/family/order')">查看全部</el-link>
         </div>
       </template>
 
@@ -366,7 +366,7 @@ onBeforeUnmount(() => {
       <template #title>
         <div class="block-head">
           <span class="nl-h2">当前就诊人</span>
-          <el-link type="primary" :underline="false" @click="router.push('/family/elder')">
+          <el-link type="primary" underline="never" @click="router.push('/family/elder')">
             管理老人
           </el-link>
         </div>
@@ -426,7 +426,7 @@ onBeforeUnmount(() => {
       <template #title>
         <div class="block-head">
           <span class="nl-h2">今日用药提醒</span>
-          <el-link type="primary" :underline="false" @click="router.push('/family/medication')">管理</el-link>
+          <el-link type="primary" underline="never" @click="router.push('/family/medication')">管理</el-link>
         </div>
       </template>
 
@@ -470,7 +470,7 @@ onBeforeUnmount(() => {
       <template #title>
         <div class="block-head">
           <span class="nl-h2">最近订单</span>
-          <el-link type="primary" :underline="false" @click="router.push('/family/order')">查看全部</el-link>
+          <el-link type="primary" underline="never" @click="router.push('/family/order')">查看全部</el-link>
         </div>
       </template>
 

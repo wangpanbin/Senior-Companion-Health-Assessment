@@ -194,8 +194,8 @@ loadCaptcha()
       </div>
 
       <el-checkbox v-model="form.agreed" class="form__agreed">
-        我已阅读并同意 <el-link type="primary" :underline="false">《用户服务协议》</el-link>
-        与 <el-link type="primary" :underline="false">《隐私政策》</el-link>
+        我已阅读并同意 <el-link type="primary" underline="never">《用户服务协议》</el-link>
+        与 <el-link type="primary" underline="never">《隐私政策》</el-link>
       </el-checkbox>
 
       <el-button
@@ -211,7 +211,7 @@ loadCaptcha()
 
       <p class="form__login">
         已有账号？
-        <el-link type="primary" :underline="false" @click="router.push('/login')">立即登录</el-link>
+        <el-link type="primary" underline="never" @click="router.push('/login')">立即登录</el-link>
       </p>
     </div>
   </NlPageShell>

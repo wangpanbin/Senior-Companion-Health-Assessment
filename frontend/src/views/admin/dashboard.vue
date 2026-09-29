@@ -317,10 +317,10 @@ watch(range, loadDashboard)
     <!-- 筛选 -->
     <section class="dash__filter">
       <el-radio-group v-model="range" size="default">
-        <el-radio-button label="1d">今日</el-radio-button>
-        <el-radio-button label="7d">近 7 天</el-radio-button>
-        <el-radio-button label="30d">近 30 天</el-radio-button>
-        <el-radio-button label="90d">近 90 天</el-radio-button>
+        <el-radio-button value="1d">今日</el-radio-button>
+        <el-radio-button value="7d">近 7 天</el-radio-button>
+        <el-radio-button value="30d">近 30 天</el-radio-button>
+        <el-radio-button value="90d">近 90 天</el-radio-button>
       </el-radio-group>
       <span class="nl-caption nl-text-muted">范围 · {{ rangeMap[range] }}</span>
     </section>

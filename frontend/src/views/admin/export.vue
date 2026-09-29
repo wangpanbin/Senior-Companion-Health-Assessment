@@ -109,8 +109,8 @@ async function exportFile() {
       <div class="form__row">
         <label class="form__label">数据类型</label>
         <el-radio-group v-model="form.scope">
-          <el-radio-button label="ORDER">订单</el-radio-button>
-          <el-radio-button label="USER">用户</el-radio-button>
+          <el-radio-button value="ORDER">订单</el-radio-button>
+          <el-radio-button value="USER">用户</el-radio-button>
         </el-radio-group>
       </div>
 

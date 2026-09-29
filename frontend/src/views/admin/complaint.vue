@@ -203,9 +203,9 @@ onMounted(loadList)
       <section class="complaint-handle__block">
         <h4 class="nl-h3">处理决定</h4>
         <el-radio-group v-model="handleStatus">
-          <el-radio-button label="PROCESSING">处理中</el-radio-button>
-          <el-radio-button label="RESOLVED">已结案</el-radio-button>
-          <el-radio-button label="REJECTED">已驳回</el-radio-button>
+          <el-radio-button value="PROCESSING">处理中</el-radio-button>
+          <el-radio-button value="RESOLVED">已结案</el-radio-button>
+          <el-radio-button value="REJECTED">已驳回</el-radio-button>
         </el-radio-group>
         <el-input
           v-model="handleResult"

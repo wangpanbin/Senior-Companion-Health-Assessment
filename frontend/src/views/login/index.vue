@@ -236,7 +236,7 @@ applyDemoAccount(activeRole.value)
 
         <div class="login__row">
           <el-checkbox v-model="form.remember" size="default">7 天内自动登录</el-checkbox>
-          <el-link type="primary" :underline="false" @click="goForget">忘记密码？</el-link>
+          <el-link type="primary" underline="never" @click="goForget">忘记密码？</el-link>
         </div>
 
         <el-button
@@ -252,7 +252,7 @@ applyDemoAccount(activeRole.value)
 
         <div class="login__hint">
           还没有账号？
-          <el-link type="primary" :underline="false" @click="goRegister">立即注册</el-link>
+          <el-link type="primary" underline="never" @click="goRegister">立即注册</el-link>
         </div>
       </el-form>
     </div>

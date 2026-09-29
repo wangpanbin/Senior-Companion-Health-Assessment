@@ -355,6 +355,17 @@ def verify():
     for s in state["shadows"]:
         t, shadow = s["table"], s["shadow"]
         try:
+            exists = int(scalar(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = DATABASE() AND table_name = '%s';" % shadow, "0"))
+            if not exists:
+                # restore 改名状态文件（DONE）说明回滚已跑过；影子表此前被某轮 verify
+                # 比对后清理是正常流程，再跑 verify 不该报 FATAL（E2E 审计 P3-2）
+                if src == DONE:
+                    print("  [OK] %-24s 影子表已随上轮 verify 清理（restore 已回写）" % t)
+                    continue
+                problems.append("%s 影子表缺失（尚未 restore 却没有影子表）" % t)
+                continue
             cols = [r[0] for r in q("SHOW COLUMNS FROM %s;" % t)]
             cols = [c for c in cols if c.lower() != "id"]
             where = " OR ".join("NOT (b.`%s` <=> o.`%s`)" % (c, c) for c in cols)

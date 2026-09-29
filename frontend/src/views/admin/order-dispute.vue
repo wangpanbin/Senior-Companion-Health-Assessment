@@ -175,8 +175,8 @@ onMounted(loadList)
       <section class="dispute__decision">
         <h4 class="nl-h3">仲裁决定</h4>
         <el-radio-group v-model="decision" class="dispute__decision-radio">
-          <el-radio-button label="COMPLETED">强制完成</el-radio-button>
-          <el-radio-button label="CANCELLED">强制取消</el-radio-button>
+          <el-radio-button value="COMPLETED">强制完成</el-radio-button>
+          <el-radio-button value="CANCELLED">强制取消</el-radio-button>
         </el-radio-group>
         <el-input
           v-model="decisionNote"
