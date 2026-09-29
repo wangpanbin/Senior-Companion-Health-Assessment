@@ -97,6 +97,12 @@ public class OrderFeeItemServiceImpl implements OrderFeeItemService {
         vo.setItems(items.stream().map(OrderFeeItemVO::of).toList());
         BigDecimal advance = sumOf(orderId, TYPE_ADVANCE);
         BigDecimal service = sumOf(orderId, TYPE_SERVICE);
+        if (service.compareTo(BigDecimal.ZERO) == 0 && order.getFee() != null) {
+            // 明细里还没有 SERVICE 项时，服务费合计回落到订单申报服务费：
+            // 汇总区与「订单信息」卡的服务费保持同一口径（E2E 审计 P2-1）。
+            // 与 ADR-0009 的 actual_fee 兜底同源 —— 有 SERVICE 明细时明细是真源，不回落
+            service = order.getFee();
+        }
         vo.setAdvanceTotal(money(advance));
         vo.setServiceTotal(money(service));
         vo.setTotal(money(advance.add(service)));

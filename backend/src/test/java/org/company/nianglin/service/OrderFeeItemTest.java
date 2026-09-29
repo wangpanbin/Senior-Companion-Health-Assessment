@@ -193,6 +193,45 @@ class OrderFeeItemTest {
     }
 
     @Test
+    @Transactional
+    @DisplayName("兜底 · 无 SERVICE 明细时服务费合计回落到订单申报服务费（与订单信息卡口径一致）")
+    void serviceTotalShouldFallBackToDeclaredFeeWhenNoServiceItem() throws Exception {
+        // 构造确定前置：1025 申报服务费 128.00，只录一笔代垫 35.50（测试事务内固定，结束回滚）
+        assertTrue(orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .eq(CompanionOrder::getId, COMPLETED_ORDER)
+                .set(CompanionOrder::getFee, new java.math.BigDecimal("128.00"))) > 0);
+        mockMvc.perform(post("/api/order/{id}/fee-items", COMPLETED_ORDER)
+                        .header(AUTH_HEADER, token(COMPANION_OF_1025, RoleConstants.COMPANION))
+                        .contentType(JSON).content(body("ADVANCE", "挂号费", "35.50")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/order/{id}/fee-items", COMPLETED_ORDER)
+                        .header(AUTH_HEADER, token(FAMILY_OF_1025, RoleConstants.FAMILY)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.advanceTotal").value("35.50"))
+                .andExpect(jsonPath("$.data.serviceTotal").value("128.00"))
+                .andExpect(jsonPath("$.data.total").value("163.50"));
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("兜底 · 已有 SERVICE 明细时不回落（明细是真源，汇总只认明细）")
+    void serviceTotalShouldPreferItemsWhenPresent() throws Exception {
+        assertTrue(orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .eq(CompanionOrder::getId, COMPLETED_ORDER)
+                .set(CompanionOrder::getFee, new java.math.BigDecimal("128.00"))) > 0);
+        mockMvc.perform(post("/api/order/{id}/fee-items", COMPLETED_ORDER)
+                        .header(AUTH_HEADER, token(COMPANION_OF_1025, RoleConstants.COMPANION))
+                        .contentType(JSON).content(body("SERVICE", "陪诊服务费", "99.00")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/order/{id}/fee-items", COMPLETED_ORDER)
+                        .header(AUTH_HEADER, token(FAMILY_OF_1025, RoleConstants.FAMILY)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.serviceTotal").value("99.00"));
+    }
+
+    @Test
     @DisplayName("查询 · 订单不存在 → 3001")
     void missingOrderShouldReturn3001() throws Exception {
         mockMvc.perform(get("/api/order/{id}/fee-items", 999999L)
