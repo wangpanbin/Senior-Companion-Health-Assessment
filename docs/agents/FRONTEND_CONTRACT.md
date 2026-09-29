@@ -661,7 +661,7 @@ $sql = "SHOW COLUMNS FROM medication_task;"
 
 | 层 | 脚本 | 证明什么 |
 |---|---|---|
-| 1 | `pnpm exec playwright test`（11 个 spec） | 页面能渲染、无 JS 错、无 ≥400、**落地路径正确**；`helpers/pageAudit.js` 等价于旧的"页面健康"判定 |
+| 1 | `pnpm exec playwright test`（13 个 spec / 166 条用例，2026-09-29 口径） | 页面能渲染、无 JS 错、无 ≥400、**落地路径正确**；`helpers/pageAudit.js` 等价于旧的"页面健康"判定 |
 | 2 | `probe_api.py` | 页面依赖的接口**确实返回了种子数据**（不是「暂无数据」也能判绿） |
 | 3 | `probe_backend_gaps.py` | **写接口**真的能写（通用上传成功 / CHECKIN 被拒 / ELDER 403 / 魔数非法被拒）|
 
@@ -696,6 +696,17 @@ ms-playwright 缓存里的 ffmpeg 二进制，缺失时**所有用例在 `newPag
 失败取证改用 `trace: 'on-first-retry'` + `screenshot: 'only-on-failure'`，两者都不需要 ffmpeg。
 只读巡检跳过数据回滚：`$env:E2E_FIXTURE="0"`。
 
+> ⚠️ **后端不在默认 8080 时，环境变量要设全三个**（2026-09-29 实测，8080 被别的进程占用改 8081 的场景）：
+> `$env:VITE_API_TARGET="http://localhost:8081"`（vite 代理）+
+> `$env:NIANGLIN_API="http://127.0.0.1:8081/api"`（`global-setup.js` 探活）+
+> `$env:NIANGLIN_API_ORIGIN="http://127.0.0.1:8081"`（`helpers/api.js` 接口直连）。
+> 只设其中一个的后果是 setup 探活失败或用例打到错误端口，而 **teardown 仍会跑 restore + verify**，
+> 拿陈旧基线比对出「假漂移」，极难排查。
+>
+> 另注意：后端**全量单测**（`FileUploadEndpointTest` 等）会在共享开发库留下不回滚的
+> `sys_file` 行——先跑单测再跑 E2E 时，verify 会报 `sys_file` 水位 +1，
+> 删掉该行再跑即可，这不是 E2E 回滚的锅。
+
 > ✅ **`tools/e2e/` 的 11 个脚本已随仓库分发**（此前被 `.gitignore` 整体忽略，现已入库）。
 > 干净 clone 上直接 `pnpm exec playwright test` 的三项前置：
 > 1. `MYSQL_PASSWORD` —— 脚本**不内置默认口令**，未设置会直接报错退出；
@@ -716,7 +727,7 @@ ms-playwright 缓存里的 ffmpeg 二进制，缺失时**所有用例在 `newPag
 
 - `e2e/fixtures/`：`auth.setup.js`（7 账号真实 UI 登录 → `storageState`）、`login.js`、`captcha.js`（Redis 取验证码明文）。
 - `e2e/helpers/`：`constants.js`（路由 / 种子 id / 阈值）、`api.js`（接口层直连）、`pageAudit.js`（**落地路径**断言 + console/接口收集）。
-- `e2e/specs/`：`01`…`11` 按模块分文件。
+- `e2e/specs/`：`01`…`13` 按模块分文件（`12-admin-responsive` / `13-client-mobile` 为响应式与移动形态补充）。
 - `tools/e2e/fixture.py`：`snapshot / restore / verify` 三子命令（17 张被写表水位 + 6 张表白名单影子表 + Redis `order:seq`/`pwd:version` + 上传文件）。
 - 产物全落 `reports/playwright/`（`/reports/` 已 gitignore —— `storageState` 含真实 JWT，**严禁入库**）。
 
