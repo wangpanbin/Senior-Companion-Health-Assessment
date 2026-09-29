@@ -2,15 +2,16 @@
 /**
  * 站内信详情（M8）
  *
- * 消息列表没有单条详情接口。列表页跳转时通过 query.snapshot（base64 编码 JSON）
- * 传入已脱敏的消息体；用户刷新或直接访问 URL 时仍能即时渲染。
- * query.snapshot 缺失或解码失败时，再从本人消息列表中查找该 ID；
- * 仍然找不到时只提示消息已删除，不展示任何其他用户的信息。
+ * 数据来源：GET /api/message/{id}（v1.1.0 新增的单条详情接口）。
+ * URL 只带消息 id —— 旧版靠列表页把整条消息 base64 编码塞进 query.snapshot，
+ * URL 超长易触发长度限制、复制链接即泄露消息内容，已废弃。
+ * 接口按收件人归属校验（7002）且已删除的消息查不到（7001），
+ * 失败时只提示消息不可查看，不展示任何其他用户的信息。
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NlCard, NlEmpty, NlIconBox, NlPageShell, NlSkeleton } from '@/components'
-import { listMessages } from '@/api/message'
+import { getMessage } from '@/api/message'
 import { formatDateTime } from '@/utils/format'
 import { useUserStore } from '@/store/modules/user'
 
@@ -25,23 +26,6 @@ function toneOf(type = '') {
   if (type.startsWith('AUDIT')) return 'success'
   if (type.startsWith('MEDICATION') || type.startsWith('MISSED')) return 'danger'
   return 'info'
-}
-
-function isCurrentMessage(item) {
-  return String(item?.id) === String(route.params.id)
-}
-
-function readSnapshotMessage() {
-  const raw = route.query.snapshot
-  if (!raw || typeof raw !== 'string') return null
-  try {
-    const json = decodeURIComponent(atob(raw))
-    const parsed = JSON.parse(json)
-    return isCurrentMessage(parsed) ? parsed : null
-  } catch {
-    // snapshot 损坏（被改写、长度超限等）时降级为从列表查
-    return null
-  }
 }
 
 const relatedTarget = computed(() => {
@@ -80,19 +64,10 @@ const relatedTarget = computed(() => {
 })
 
 async function loadMessage() {
-  const cached = readSnapshotMessage()
-  if (cached) {
-    message.value = cached
-    loading.value = false
-    return
-  }
-
   try {
-    // 详情接口尚未提供（M8 欠账）；先查最近 200 条兜底，超出范围的旧消息
-    // 会落到「消息已不可查看」空态，由后续消息中心单条接口替换。
-    const data = await listMessages({ page: 1, size: 200 })
-    message.value = (data?.records || []).find(isCurrentMessage) || null
+    message.value = await getMessage(route.params.id)
   } catch {
+    // 7001 / 7002 / 网络失败：拦截器已提示（或静默），落「消息已不可查看」空态
     message.value = null
   } finally {
     loading.value = false

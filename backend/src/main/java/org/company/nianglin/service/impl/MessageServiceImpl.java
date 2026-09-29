@@ -109,6 +109,22 @@ public class MessageServiceImpl implements MessageService {
     }
 
     /* ================================================================== */
+    /* 1.5 单条详情                                                        */
+    /* ================================================================== */
+
+    @Override
+    @Transactional(readOnly = true)
+    public MessageVO getDetail(Long messageId) {
+        LoginUser me = SecurityUtils.currentUser();
+        InternalMessage message = requireMine(messageId, me);
+        if (message.getReceiverDeleted() != null && message.getReceiverDeleted() == 1) {
+            // 列表查不到的消息详情也不该查得到，否则「删除」只是从列表里藏起来
+            throw new BusinessException(ResultCode.MESSAGE_NOT_FOUND);
+        }
+        return MessageVO.of(message);
+    }
+
+    /* ================================================================== */
     /* 2. 未读数                                                           */
     /* ================================================================== */
 

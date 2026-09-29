@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * 站内信服务。
  *
- * <p>对应 {@code docs/api/07-message.md} §1 ~ §6。</p>
+ * <p>对应 {@code docs/api/07-message.md} §1 ~ §7。</p>
  *
  * <h3>两类职责，别混在一起看</h3>
  *
@@ -37,6 +37,16 @@ public interface MessageService {
 
     /** 我的消息列表（分页 + 类型 + 已读状态 + 时间区间） */
     PageResult<MessageVO> list(MessageQuery query);
+
+    /**
+     * 单条消息详情。
+     *
+     * <p>归属规则与 {@link #markRead} / {@link #delete} 完全一致：
+     * 不存在返回 7001、不是自己的返回 7002、已被接收人删除的按不存在处理
+     * （与列表口径一致）。供前端消息详情页按 id 拉取，替代列表页
+     * 把整条消息塞进 URL 的旧做法。</p>
+     */
+    MessageVO getDetail(Long messageId);
 
     /** 我的未读数（总数 + 按类型） */
     UnreadCountVO unreadCount();

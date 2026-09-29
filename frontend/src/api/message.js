@@ -15,6 +15,11 @@ export function listMessages(params) {
   return request({ url: '/message', method: 'get', params })
 }
 
+/** 消息详情（v1.1.0 新增）：详情页按 id 拉取，不再由列表页向 URL 塞整条消息 */
+export function getMessage(messageId) {
+  return request({ url: `/message/${messageId}`, method: 'get' })
+}
+
 /** 未读数（顶栏红点）→ `{ total, byType }`（后端 UnreadCountVO，**不是** unreadCount） */
 export function getUnreadCount() {
   return request({ url: '/message/unread-count', method: 'get' })

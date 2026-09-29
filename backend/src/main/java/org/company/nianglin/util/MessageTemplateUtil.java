@@ -83,7 +83,16 @@ public final class MessageTemplateUtil {
                         ? "陪诊员已完成「%s」打卡（订单 %s）。".formatted(nodeLabel, orderNo)
                         : "陪诊员已完成「%s」打卡：%s（订单 %s）。".formatted(nodeLabel, remark, orderNo);
             }
-            case ORDER_COMPLETED -> "订单 %s 已完成，感谢您的信任，欢迎评价。".formatted(value(p, "orderNo"));
+            case ORDER_COMPLETED -> {
+                // reason 是可选占位符：只有 M9 仲裁强制完成的路径会传（仲裁说明），
+                // 正常完成不带 —— 与 ORDER_PROGRESS 同一套「可选句式」规则，
+                // 缺失时不渲染「仲裁说明：—」这种破折号正文
+                String orderNo = value(p, "orderNo");
+                String reason = emptyIfMissing(p, "reason");
+                yield reason.isEmpty()
+                        ? "订单 %s 已完成，感谢您的信任，欢迎评价。".formatted(orderNo)
+                        : "订单 %s 已由平台仲裁完成（仲裁说明：%s）。感谢您的信任，欢迎评价。".formatted(orderNo, reason);
+            }
             case ORDER_CANCELLED -> "订单 %s 已取消，原因：%s。".formatted(
                     value(p, "orderNo"), value(p, "reason"));
             case AUDIT_RESULT -> "您的陪诊员资质申请%s。%s".formatted(

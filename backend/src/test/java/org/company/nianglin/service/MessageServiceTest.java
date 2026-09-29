@@ -207,6 +207,55 @@ class MessageServiceTest {
     }
 
     /* ================================================================== */
+    /* 3.5 · 单条详情：归属规则与 markRead / delete 完全一致                  */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("消息详情 · 本人消息 → 返回脱敏后的 MessageVO，且不做任何写入")
+    void getDetailShouldReturnOwnMessage() {
+        InternalMessage mine = message(MESSAGE_ID, ME_ID, 1);
+
+        given(messageMapper.selectById(MESSAGE_ID)).willReturn(mine);
+
+        assertEquals(mine.getTitle(), service.getDetail(MESSAGE_ID).getTitle());
+        verify(messageMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("消息详情 · 消息不存在 → 7001")
+    void getDetailShouldReport7001WhenMissing() {
+        given(messageMapper.selectById(MESSAGE_ID)).willReturn(null);
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.getDetail(MESSAGE_ID));
+
+        assertEquals(ResultCode.MESSAGE_NOT_FOUND.getCode(), ex.getCode());
+    }
+
+    @Test
+    @DisplayName("消息详情 · 是别人的消息 → 7002（详情页是消息泄露的最短路径，必须挡住）")
+    void getDetailShouldReport7002ForOthersMessage() {
+        given(messageMapper.selectById(OTHERS_MESSAGE_ID))
+                .willReturn(message(OTHERS_MESSAGE_ID, ME_ID + 1, 0));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.getDetail(OTHERS_MESSAGE_ID));
+
+        assertEquals(ResultCode.MESSAGE_NO_PERMISSION.getCode(), ex.getCode());
+    }
+
+    @Test
+    @DisplayName("消息详情 · 已被接收人删除的消息 → 7001（与列表口径一致，删了就该查不到）")
+    void getDetailShouldHideReceiverDeletedMessage() {
+        InternalMessage deleted = message(MESSAGE_ID, ME_ID, 0);
+        deleted.setReceiverDeleted(1);
+        given(messageMapper.selectById(MESSAGE_ID)).willReturn(deleted);
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.getDetail(MESSAGE_ID));
+
+        assertEquals(ResultCode.MESSAGE_NOT_FOUND.getCode(), ex.getCode());
+    }
+
+    /* ================================================================== */
     /* 4 · 未读数：数据库是唯一真源                                           */
     /* ================================================================== */
 

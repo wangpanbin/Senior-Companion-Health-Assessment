@@ -38,6 +38,29 @@ test.describe('站内信接口契约', () => {
       await dispose()
     }
   })
+
+  test('消息详情（v1.1.0）：本人 200，别人的消息 7002（越权走服务端拦截）', async () => {
+    const fam = await apiAsAccount('fam001')
+    try {
+      const list = await (await fam.ctx.get(`${API}/message?page=1&size=1`)).json()
+      const first = list.data.records?.[0]
+      if (!first) return
+      const own = await (await fam.ctx.get(`${API}/message/${first.id}`)).json()
+      expect(own.code).toBe(200)
+      expect(String(own.data.id)).toBe(String(first.id))
+      expect(own.data.content, '详情正文应与列表一致').toBe(first.content)
+
+      const other = await apiAsAccount('comp001')
+      try {
+        const forbidden = await (await other.ctx.get(`${API}/message/${first.id}`)).json()
+        expect(forbidden.code).toBe(7002)
+      } finally {
+        await other.dispose()
+      }
+    } finally {
+      await fam.dispose()
+    }
+  })
 })
 
 test.describe('消息页（3 角色共用）', () => {

@@ -51,10 +51,11 @@
 |---|---|---|---|---|
 | 1 | GET | `/api/message` | 已登录 | 消息列表（分页 + 按类型） |
 | 2 | GET | `/api/message/unread-count` | 已登录 | 未读数 |
-| 3 | PUT | `/api/message/{id}/read` | 已登录 | 标记单条已读 |
-| 4 | PUT | `/api/message/read-all` | 已登录 | 全部已读 |
-| 5 | DELETE | `/api/message/{id}` | 已登录 | 删除消息 |
-| 6 | GET | `/sse/message` | 已登录 | 未读数实时推送（**SSE 长连接**，事件名 `NEW_MESSAGE`；**不带 `/api` 前缀**，鉴权走 `Authorization` 头） |
+| 3 | GET | `/api/message/{id}` | 已登录 | 消息详情（**须为接收人**） |
+| 4 | PUT | `/api/message/{id}/read` | 已登录 | 标记单条已读 |
+| 5 | PUT | `/api/message/read-all` | 已登录 | 全部已读 |
+| 6 | DELETE | `/api/message/{id}` | 已登录 | 删除消息 |
+| 7 | GET | `/sse/message` | 已登录 | 未读数实时推送（**SSE 长连接**，事件名 `NEW_MESSAGE`；**不带 `/api` 前缀**，鉴权走 `Authorization` 头） |
 
 ---
 
@@ -107,7 +108,32 @@
 
 ---
 
-## 2. 未读数
+## 2. 消息详情
+
+`GET /api/message/{id}`　权限：已登录（须为接收人）
+
+> **v1.1.0 新增**：前端消息详情页按 id 拉取本接口，取代旧版「列表页把整条消息
+> base64 编码塞进 URL query」的做法（URL 超长易触发长度限制、复制链接即泄露消息内容）。
+
+### 响应
+
+`data` 为单条 MessageVO（结构同消息列表的 `records` 项）。
+
+### 错误场景
+
+| code | 场景 |
+|---|---|
+| `7001` | 消息不存在，或**已被接收人删除**（与列表口径一致：删了就查不到） |
+| `7002` | 无权查看该消息（不是自己的消息） |
+
+### 实现要点
+
+- 复用 `markRead` / `delete` 的同一套归属校验（selectById 后比 `receiver_id`）。
+- 只读接口，**不改变** `is_read`；标记已读仍走 `PUT /{id}/read`。
+
+---
+
+## 3. 未读数
 
 `GET /api/message/unread-count`　权限：已登录
 
@@ -135,7 +161,7 @@
 
 ---
 
-## 3. 标记单条已读
+## 4. 标记单条已读
 
 `PUT /api/message/{id}/read`　权限：已登录（须为接收人）
 
@@ -158,7 +184,7 @@
 
 ---
 
-## 4. 全部已读
+## 5. 全部已读
 
 `PUT /api/message/read-all`　权限：已登录
 
@@ -176,7 +202,7 @@
 
 ---
 
-## 5. 删除消息
+## 6. 删除消息
 
 `DELETE /api/message/{id}`　权限：已登录（须为接收人）
 
@@ -192,7 +218,7 @@
 
 ---
 
-## 6. 未读数实时推送（SSE）
+## 7. 未读数实时推送（SSE）
 
 `GET /sse/message`　权限：已登录（鉴权走 **`Authorization: Bearer <accessToken>` 请求头**）
 
@@ -235,7 +261,7 @@
 | `ORDER_CREATED` | 新陪诊订单 | 有一笔新订单 {orderNo}（{visitTime} {hospital}），请及时接单。 |
 | `ORDER_ACCEPTED` | 订单已接单 | 陪诊员 {companionName} 已接下订单 {orderNo}。 |
 | `ORDER_PROGRESS` | 陪诊进度更新 | 备注为空：陪诊员已完成「{nodeLabel}」打卡（订单 {orderNo}）。<br>备注非空：陪诊员已完成「{nodeLabel}」打卡：{remark}（订单 {orderNo}）。 |
-| `ORDER_COMPLETED` | 服务已完成 | 订单 {orderNo} 已完成，感谢您的信任，欢迎评价。 |
+| `ORDER_COMPLETED` | 服务已完成 | 备注为空：订单 {orderNo} 已完成，感谢您的信任，欢迎评价。<br>**仲裁路径**（M9 强制完成，`reason` 非空）：订单 {orderNo} 已由平台仲裁完成（仲裁说明：{reason}）。感谢您的信任，欢迎评价。 |
 | `ORDER_CANCELLED` | 订单已取消 | 订单 {orderNo} 已取消，原因：{reason}。 |
 | `AUDIT_RESULT` | 资质审核结果 | 您的陪诊员资质申请{result}。{rejectReason} |
 | `MEDICATION_REMIND` | 用药提醒 | {elderName} 的「{medicineName}」在 {planTime} 未确认服用，请及时关注。 |
@@ -249,6 +275,7 @@
 > （6 个节点里通常只有一两个会填）。若按其他模板的规则把缺失值渲染成 `—`，
 > 家属收到的就是「出发：—（订单 NL2026…）」——一个破折号当正文。
 > 因此该类型单独判定：**备注为空时改用不带冒号的句式**，而不是套用缺省占位符。
+> `ORDER_COMPLETED` 的 `{reason}` 同为可选占位符，仅 M9 仲裁强制完成的路径传入。
 
 ---
 
@@ -262,3 +289,12 @@
 - [ ] 非本人消息调用「标记已读」→ 返回 `7002`
 - [ ] 同一消息重复标记已读 → 幂等，不重复扣减未读数
 - [ ] 四类核心消息（订单事件、审核结果、漏服提醒、系统公告）均能正常下发
+
+---
+
+## 五、变更记录
+
+| 版本 | 日期 | 变更内容 | 变更人 |
+|---|---|---|---|
+| v1.0.0 | — | M8 初版 | — |
+| v1.1.0 | 2026-09-29 | 新增 `GET /api/message/{id}` 消息详情（前端详情页按 id 拉取，废弃 base64 snapshot 传参）；`ORDER_COMPLETED` 模板增加可选 `{reason}`（M9 仲裁说明） | — |

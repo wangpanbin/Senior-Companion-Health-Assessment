@@ -72,6 +72,28 @@ class MessageTemplateUtilTest {
     }
 
     @Test
+    @DisplayName("仲裁完成：正文必须携带仲裁说明（M9 纠纷处理承诺「写明仲裁决定与依据」）")
+    void orderCompletedWithArbitrateReasonShouldContainIt() {
+        String content = MessageTemplateUtil.content(MessageType.ORDER_COMPLETED,
+                params("orderNo", "NL20260916000001", "reason", "双方各执一词，平台裁定服务已实际完成"));
+
+        assertTrue(content.contains("仲裁说明：双方各执一词，平台裁定服务已实际完成"),
+                "被强制完成的一方看不到仲裁依据： " + content);
+        assertTrue(content.contains("NL20260916000001"));
+    }
+
+    @Test
+    @DisplayName("正常完成：不带 reason 时保持原通用文案（欢迎评价）")
+    void orderCompletedWithoutReasonShouldKeepOriginalWording() {
+        String content = MessageTemplateUtil.content(MessageType.ORDER_COMPLETED,
+                params("orderNo", "NL20260916000001"));
+
+        assertEquals("订单 NL20260916000001 已完成，感谢您的信任，欢迎评价。", content);
+        assertFalse(content.contains("仲裁"),
+                "正常完成的通知不该出现「仲裁」字样： " + content);
+    }
+
+    @Test
     @DisplayName("标题按类型固定，不带占位符")
     void titleShouldBeFixedPerType() {
         assertEquals("陪诊进度更新", MessageTemplateUtil.title(MessageType.ORDER_PROGRESS));

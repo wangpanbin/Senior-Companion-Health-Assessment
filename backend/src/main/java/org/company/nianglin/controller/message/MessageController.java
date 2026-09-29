@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 站内信接口。
  *
- * <p>对应 {@code docs/api/07-message.md} §1 ~ §5。实时推送端点见
+ * <p>对应 {@code docs/api/07-message.md} §1 ~ §7。实时推送端点见
  * {@link MessageSseController}（{@code /sse/message}）。</p>
  *
  * <h3>为什么全部接口都没有 {@code @PreAuthorize}</h3>
@@ -63,6 +63,16 @@ public class MessageController {
     @GetMapping
     public Result<PageResult<MessageVO>> list(@Valid MessageQuery query) {
         return Result.success(messageService.list(query));
+    }
+
+    @Operation(summary = "消息详情",
+            description = "只允许收件人本人查看：不是自己的消息返回 7002，不存在或已被"
+                    + "接收人删除返回 7001。前端消息详情页按 id 拉取本接口，"
+                    + "不再通过列表页向 URL 塞整条消息")
+    @GetMapping("/{id}")
+    public Result<MessageVO> detail(
+            @Parameter(description = "消息 ID", example = "50001") @PathVariable("id") Long id) {
+        return Result.success(messageService.getDetail(id));
     }
 
     @Operation(summary = "未读数",
