@@ -79,7 +79,7 @@ public class SecurityConfig {
      * 以前这个值被硬编码在这里，改 {@code WebMvcConfig} 或改配置文件都看不出效果，
      * 排查时极易被带偏（曾据此误判成「vite 代理没转发 WebSocket」）。</p>
      */
-    @Value("${nianglin.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}")
+    @Value("${nianglin.cors.allowed-origins:http://localhost:5141,http://127.0.0.1:5141}")
     private String[] allowedOrigins;
 
     /** 无需登录即可访问的白名单 */

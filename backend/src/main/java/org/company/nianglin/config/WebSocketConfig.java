@@ -45,7 +45,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
         registry.addHandler(orderProgressHandler, "/ws/progress")
                 // allowedOriginPatterns 而不是 setAllowedOrigins("*")：
                 // 后者在 Spring 5.3+ 与 allowCredentials 同时出现时会被拒绝。
-                // 生产环境由 Nginx 同源转发，这里放宽只是为了让 5173 的前端联调方便
+                // 生产环境由 Nginx 同源转发，这里放宽只是为了让 5141 的前端联调方便
                 .addInterceptors(jwtHandshakeInterceptor)
                 .setAllowedOriginPatterns("*");
     }
