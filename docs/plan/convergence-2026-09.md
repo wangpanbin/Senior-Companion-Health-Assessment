@@ -2,11 +2,12 @@
 
 | | |
 |---|---|
-| 状态 | 执行中（PR-0 ✅ · PR-1 ✅ 闸门 1 达成，2026-09-28） |
+| 状态 | **已收尾**（阶段 1–5 全部落地；2026-09-29 收尾验证复核，报告见 `docs/agents/reports/CLOSEOUT_2026-09-29.md`） |
 | 立项日期 | 2026-09-28 |
 | 关联 | `plan.md` 迭代四/五/六 · `AGENTS.md` · `docs/adr/0007` `0009` `0010` |
 | 产出定位 | 一次性补齐 plan.md 迭代四/五/六的交付缺口，让「代码做完了」变成「可验收、可展示」 |
 | 验收基线 | **`docs/agents/reports/BASELINE_2026-09-28.md`**（每个数字带复现命令） |
+| 收尾复核 | **`docs/agents/reports/CLOSEOUT_2026-09-29.md`**（五阶段收敛后的复核 + 本轮修复清单） |
 
 ---
 
@@ -17,10 +18,13 @@
 | 口径 | 数值 | 事实源 |
 |---|---|---|
 | 代码完成度 | M0–M12 约 95% | 后端 13 模块全落地；前端 38 个 view 零静态壳、零漏 import；`src/api/` 80 个函数 0 mock；`docs/api/` 抽样 74 端点与代码 100% 命中 |
-| 验收清单完成度 | **0 / 78** | `plan.md` 的 78 个 `- [ ]` 一个都没勾 |
+| 验收清单完成度 | **0 / 78**（**2026-09-28 起点**；现已 **79 / 79 全勾**） | `plan.md` 的 78 个 `- [ ]` 当时一个都没勾；2026-09-29 实测 `Select-String plan.md '^- \[ \]'` → **0 个未勾、79 个已勾** |
 | 交付物完成度 | 测试报告 3/4，用例图 0，架构图 0，原型图 0 | 无任何 `.drawio` / `.puml`；`reports/` 被 gitignore，E2E 截图无法入库 |
 
 **「完成度」有三个互不相干的口径，本文一律显式标注用哪个**，不再混用。
+
+> ⚠️ **本节是 2026-09-28 的起点快照，数字反映的是「立项当时」，不是当前状态。**
+> 当前实测见 §五 各阶段「实测结果」小节与 `docs/agents/reports/CLOSEOUT_2026-09-29.md`。
 
 **触发原因（真实缺口，不是臆想）：**
 
@@ -177,15 +181,15 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 | 2.4 | 仓库卫生 + 明文口令 | ① `python backend/sql/tools/check_seed_password.py` 退出码 0（白名单外无扩散）<br>② `git status --porcelain` 返回空<br>③ `docs/db/` 中文文件名：**先确认磁盘实际编码再动**；改文件名必须同步改 `gen_db_docs.py`，否则下次重跑又变回去 |
 | 2.5 | 费用明细模型落地（依 `docs/adr/0009`） | `V4__*.sql` + entity + mapper + 端点齐备；`validate-on-migrate` 通过 |
 
-#### ✅ 阶段 2 实测结果（进行中）
+#### ✅ 阶段 2 实测结果（已完成）
 
 | ticket | 判定 | 说明 |
 |---|---|---|
 | 2.1 | ✅ | 新增 `OrderTransitionService` 单一入口，6 处流转 + `forceTerminal` 全部改经此入口；**反向验证实测通过**（删 `TRANSITIONS` 一条边 → 两个测试类双双变红）；`mvn test` **585 tests / 0 failures**。ADR-0010 置 Accepted。 |
 | 2.2 | ✅ | 见 §四 |
-| 2.3 | ⏳ | 探针退场的前置条件是 12 条正式越权用例，未开始 |
+| 2.3 | ✅ | commit `038723a`「用户模块越权矩阵 12 条落地，权限探针整体退场」。新建 `UserAccessMatrixTest`（12 条 = 4 角色 × 3 类），`PermissionProbeController` + `PermissionMatrixTest` + `HealthController#demoError` 全部删除；**2026-09-29 复核：`backend/src` 中 `PermissionProbeController` / `TODO(W16)` 0 命中** |
 | 2.4 | ✅ | 见下方处理结论 |
-| 2.5 | ⏳ | 未开始 |
+| 2.5 | ✅ | commit `397df7a`「费用明细模型落地（ADR-0009）」。`V4__order_fee_item.sql` + 8 个类（`OrderFeeItem` / `Mapper` / `Service(Impl)` / `FeeItemCreateDTO` / 2 个 VO / `OrderFeeItemTest`）齐备；**2026-09-29 实测 Flyway 1/2/3/4 全部 success，无 checksum 冲突** |
 
 ##### T2.4 明文口令处理结论（32 处 → 白名单 13 处）
 
@@ -223,6 +227,15 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 
 **🚧 总闸门 3**：`iteration-5-test-report.md` 存在 + P0/P1 清零 + 3 组图齐全 + 截图 ≥ 10 张。
 
+#### ✅ 阶段 3 实测结果（已完成，commit `3d1de7f`）
+
+| ticket | 判定 | 实测 |
+|---|---|---|
+| 3.1 | ✅ | `docs/agents/reports/iteration-5-test-report.md` 已落盘；**592 tests / 0 fail / 0 error / 0 skipped**，每个数字后跟复现命令；P0 = 0、P1 = 0，P2 如实列出（覆盖率空洞 + `internal_message` 污染） |
+| 3.2 | ✅ | 50 并发抢单压测报告已出（`reports/integration/2026-09-16/`）；判据用**双条件**（EXIT=0 且 JTL 行数 > 1），未被 0 假阳性骗过 |
+| 3.3 | ✅ | `docs/reports/screenshots/` **15 张已入库**（`git ls-files` 实测，要求 ≥10） |
+| 3.4 | ⚠️→✅ | 3 组 `.md` 齐全（`architecture` / `usecase` / `prototype`）；`prototype.md` 用 **15 张真实页面截图**而非手绘，符合「原型图用真实截图」的要求 —— 但渲染产物 `prototype.png` **曾缺失**，已在本轮 2026-09-29 补齐 |
+
 ---
 
 ### 阶段 4 · 功能残项（1 天）— 优先级最低，最后做
@@ -235,6 +248,14 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 
 **🚧 总闸门 4**：`mvn test` + 13 spec 全绿。
 
+#### ✅ 阶段 4 实测结果（已完成，commit `4c00fb0`）
+
+| ticket | 判定 | 说明 |
+|---|---|---|
+| 4.1 | ✅ | M4 费用明细页面落地：陪诊员记账页 + 家属订单详情页均展示明细行并区分代垫 / 服务费 |
+| 4.2 | ✅ | M6 月历 offset 算法上提为 composable，`elder/medication.vue` 与 `family/medication.vue` 两处均已复用；周视图 7 列 |
+| 4.3 | ✅ | M5 打卡后 `ElNotification` 通知 + M8 未读数改 SSE，`api/message.js` 不再轮询 |
+
 ---
 
 ### 阶段 5 · 收口（0.5 天）
@@ -245,23 +266,31 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 | 5.2 | 补 `v1.0/v2.0/v3.0` tag + origin 同步 | `git tag -l` 3 个；`origin/main..main` → 0 |
 | 5.3 | **最终总闸门脚本** | `tools/verify_all.ps1` 一条命令串联 lint / test / build / playwright / coverage / 压测，输出 PASS/FAIL 汇总 |
 
+#### ✅ 阶段 5 实测结果（已完成，commit `520985f` + `db10898`）
+
+| ticket | 判定 | 实测 |
+|---|---|---|
+| 5.1 | ✅ | `plan.md` **79 个 checkbox 全勾、0 个未勾**（`db10898` a11y 语义色修复后回填至 79/79） |
+| 5.2 | ✅ | `git tag -l` → `v1.0` `v2.0` `v3.0`；`git rev-list --count origin/main..main` → **0** |
+| 5.3 | ✅ | `tools/verify_all.ps1` 已入库，8 段闸门串联；2026-09-29 收尾验证实跑通过 |
+
 ---
 
 ## 六、排期与 PR 切分
 
 | PR | 内容 | 预估 | 依赖 |
 |---|---|---|---|
-| PR-0 | `chore/git-master-to-main` | 10 min | — |
-| PR-1 | `chore/verification-baseline`（阶段 1） | 0.5–1 d | PR-0 |
-| PR-2 | `fix/hard-constraint-convergence`（阶段 2） | 1 d | 闸门 1 |
-| PR-3 | `docs/competition-deliverables`（阶段 3） | 1–1.5 d | 闸门 2 |
-| PR-4 | `feat/residual-features`（阶段 4） | 1 d | 闸门 3 |
-| PR-5 | `chore/convergence-closeout`（阶段 5） | 0.5 d | 闸门 4 |
+| PR-0 | `chore/git-master-to-main` | 10 min | — | ✅ 已合入 |
+| PR-1 | `chore/verification-baseline`（阶段 1） | 0.5–1 d | PR-0 | ✅ 已合入 |
+| PR-2 | `fix/hard-constraint-convergence`（阶段 2） | 1 d | 闸门 1 | ✅ 已合入（`7171ecd`~`038723a`） |
+| PR-3 | `docs/competition-deliverables`（阶段 3） | 1–1.5 d | 闸门 2 | ✅ 已合入（`397df7a` `3d1de7f`） |
+| PR-4 | `feat/residual-features`（阶段 4） | 1 d | 闸门 3 | ✅ 已合入（`4c00fb0`） |
+| PR-5 | `chore/convergence-closeout`（阶段 5） | 0.5 d | 闸门 4 | ✅ 已合入（`520985f` `db10898`） |
 
-**合计约 4–5 个工作日。** 最大变量：
+**合计约 4–5 个工作日**（实际收敛至 2026-09-29 完成）。**立项时的两个最大变量都已解除**：
 
-- **T1.4 E2E 从未在本轮跑过，红了要翻倍**；
-- **T3.2 JMeter 安装**（用户自装，未就位则阻塞）。
+- **T1.4 E2E** —— 首跑确实红了 1 条（夹具漂移，见 BASELINE §4），已修复；**2026-09-29 收尾验证复跑 165 passed / 2.9m 全绿**；
+- **T3.2 JMeter** —— `F:\software\apache-jmeter-5.6.3` 就位，**`JMETER_HOME` 已于 2026-09-29 实测存在**，历史阻塞解除。
 
 ---
 
@@ -278,6 +307,8 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 
 ## 八、遗留未决项
 
-- [x] T3.2 的 JMeter 安装确认 —— ✅ 2026-09-28 实测：`F:\software\apache-jmeter-5.6.3` 非 GUI 端到端跑通、Java 21 兼容。**剩 `JMETER_HOME` 需人工 `setx` 一次**（详见 §二之二）
-- [ ] `docs/db/` 中文文件名的磁盘实际编码待确认（影响 T2.4 的第 ③ 项）
+- [x] T3.2 的 JMeter 安装确认 —— ✅ 2026-09-28 实测：`F:\software\apache-jmeter-5.6.3` 非 GUI 端到端跑通、Java 21 兼容；**2026-09-29 实测 `JMETER_HOME` 环境变量已存在**，人工 `setx` 已完成，阻塞解除（详见 §二之二）
+- [x] `docs/db/` 中文文件名的磁盘实际编码待确认 —— ✅ **2026-09-29 澄清：文件名本身就是正确的 UTF-8**（Python 按 UTF-8 读目录得 `01-ER图.md` / `02-数据字典.md` / `03-索引设计与EXPLAIN.md` / `04-种子数据说明.md`）。此前 PowerShell 控制台显示乱码是**控制台代码页问题，不是磁盘编码问题**，因此 T2.4 的第 ③ 项**无需任何文件操作**即告完成
 - [x] `docs/agents/designs/M4-order.md` 同步引用 ADR-0009 / 0010 —— ✅ 2026-09-28 已落盘：§3 加「状态机权威未接线」修订块（含 4 处守卫行号表）、§4 验收项 4 由 ✅ 修正为 ⚠️、§5 补两条遗留（状态机未接线 + 费用明细缺失）
+- [x] GitHub 默认分支导致 `master` 删不掉 —— ✅ **2026-09-29 实测 `gh api ... --jq '.default_branch'` = `main`**，BASELINE §8 的历史遗留卡点已解除，远端只剩 `main`
+- [x] `develop` 分支未建（PR-0 ticket 0.3 遗留）—— ✅ 2026-09-29 收尾验证补建并推送
