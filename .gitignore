@@ -78,6 +78,8 @@ backend/sql/tools/jmeter_fixture_snapshot.json
 # ============================ 本地工具 / 探测产物（不提交） ============================
 # Claude 本地 skills / 工作目录
 .claude/
+# ZCode 本地工作目录（会话计划草稿等工具产物，与 .claude/ 同级不提交）
+.zcode/
 # ZCode 自动生成的忽略清单：它把上面的 .gitignore **整段镜像**一份（到
 # "# ===== ↑ 以上同步自 .gitignore =====" 行为止），再追加 ZCode 自己的默认规则。
 # 属于工具产物而非项目配置 —— .gitignore 一改它就过期，入库只会制造需要同步的
