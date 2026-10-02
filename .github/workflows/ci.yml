@@ -61,21 +61,23 @@ jobs:
           MYSQL_DATABASE: nianglin
         ports:
           - 3306:3306
-        # ⚠️ 三个坑全踩过（2026-10-02 连修三轮）：
+        # options 原样透传给 docker create，参数名必须是 docker 自己的：
+        #   --health-cmd / --health-interval / --health-timeout / --health-retries
+        #   / --health-start-period
+        # ⚠️ 这里踩过三个坑（2026-10-02 连修三轮才对）：
         #  a) 用 `>` 折叠标量时**不能写行内注释** —— YAML 不把 `#` 当注释，
         #     中文说明会被拼进 docker 命令行 → exit 125。
-        #  b) `--health-cmd` 的值含空格时，**必须用转义引号 \"…\"**。
-        #     写成 `'…'` 或裸值时，Actions 拆 argv 时引号被剥掉，
-        #     docker 把 `mysqladmin ping` 当成两个位置参数 → `Usage:` + exit 125。
-        #  c) options 写成**列表**（GitHub 官方文档的写法），每个元素自带引号，
-        #     不依赖 YAML 折叠，是这三种写法里最稳的。
-        #     health-cmd 不带 -p：靠 10s × 10 次重试兜住 MySQL 初始化期。
+        #  b) --health-cmd 的值含空格要用转义引号 \"…\"，否则引号被剥掉后
+        #     `mysqladmin ping` 被拆成两个 argv，`ping` 变成位置参数 → Usage。
+        #  c) **参数名写错一个就整条 Usage**：我先前写的是 `--start-period`，
+        #     docker 根本没有这个 flag（正确的是 --health-start-period），
+        #     于是无论前两处怎么修都照样 exit 125。
         options: >-
           --health-cmd="mysqladmin ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
-          --start-period=30s
+          --health-start-period=30s
       redis:
         image: redis:7-alpine
         ports:
