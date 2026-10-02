@@ -159,7 +159,7 @@ jobs:
       #    报成 `[vitest-pool]: Failed to start forks worker`。
       #    本机 Node 24 所以一直复现不出来 —— 这也是「CI 与本地版本必须对齐」的典型。
       - name: 装 Node 24
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: pnpm
