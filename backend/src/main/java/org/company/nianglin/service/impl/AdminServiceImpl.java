@@ -414,6 +414,19 @@ public class AdminServiceImpl implements AdminService {
             throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
         }
 
+        // ⚠️ 变更前的状态与单号必须**在此刻**快照成局部变量，不能等到写日志时再读 before。
+        //    arbitrate 与 forceTerminal 在同一个 @Transactional 里，forceTerminal 会用同一个
+        //    SqlSession 再查一次同一 id —— MyBatis 一级缓存（localCacheScope=SESSION，默认开）
+        //    对「相同语句 + 相同参数」返回的是**同一个对象实例**，forceTerminal 随后把这个实例的
+        //    status 改成了目标状态。于是 arbitrate 里再读 before.getStatus() 拿到的已经是新值，
+        //    admin_oper_log.before_status 会被记成「变更后」的状态：
+        //    管理员把 IN_SERVICE 强制改成 CANCELLED，日志里却成了 CANCELLED → CANCELLED，
+        //    纠纷取证最关键的那一环（管理员覆盖了哪个状态）就此丢失。
+        //    种子数据里那两条 ARBITRATE_ORDER 记录是正确的，因为它们是 SQL 直接 INSERT 的，
+        //    没走这条代码路径 —— 所以这个缺陷在种子数据里完全看不出来。
+        OrderStatus beforeStatus = OrderStatus.of(before.getStatus());
+        String beforeOrderNo = before.getOrderNo();
+
         String result = dto.getResult().trim();
         StringBuilder remark = new StringBuilder("管理员纠纷处理：").append(result);
         if (Boolean.TRUE.equals(dto.getRefundToFamily())) {
@@ -439,11 +452,11 @@ public class AdminServiceImpl implements AdminService {
         messageService.send(before.getFamilyId(), messageType, id, params);
         messageService.send(before.getCompanionId(), messageType, id, params);
 
-        operLogRecorder.record(OperType.ARBITRATE_ORDER, OperTargetType.ORDER, id, before.getOrderNo(),
-                before.getStatus(), after.getStatus(), remark.toString());
+        operLogRecorder.record(OperType.ARBITRATE_ORDER, OperTargetType.ORDER, id, beforeOrderNo,
+                beforeStatus.name(), after.getStatus(), remark.toString());
 
         log.info("纠纷处理完成 | orderId={} | {} → {} | adminId={}",
-                id, before.getStatus(), after.getStatus(), SecurityUtils.currentUserId());
+                id, beforeStatus, after.getStatus(), SecurityUtils.currentUserId());
         return ArbitrateResultVO.of(id, target, handleTime);
     }
 
