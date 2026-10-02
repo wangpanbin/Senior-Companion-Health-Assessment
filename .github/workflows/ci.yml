@@ -79,7 +79,7 @@ jobs:
           --health-retries=5
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: 装 JDK 21
         uses: actions/setup-java@v5
@@ -129,7 +129,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # ⚠️ 顺序不能颠倒：actions/setup-node 的 cache: 'pnpm' 需要 pnpm 已在 PATH 上
       #    才能算 store 指纹。少了这一步，本 job 会在「装依赖」报
@@ -176,7 +176,7 @@ jobs:
     name: 密钥体检
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # 需要历史才能扫「曾经提交过」
 
