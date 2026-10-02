@@ -1,4 +1,19 @@
+# ⚠️ 本文件曾导致 CI 报 `ERROR packages field missing or empty`
+#
+# 成因：`pnpm approve-builds` 会生成一个**只含 onlyBuiltDependencies / allowBuilds
+# 而没有 packages 段**的 pnpm-workspace.yaml（pnpm issue #9361）。pnpm 12 容忍这种写法，
+# 但 pnpm ≤10.4.1 读到就直接报 packages field missing or empty —— 本地跑 12 没事，
+# CI 里按 lockfile 猜到 pnpm 9 就整条 frontend job 崩掉。
+#
+# `packages: ['.']` 是官方给单仓库（非 monorepo）的写法，不是 monorepo 配置。
+packages:
+  - '.'
+
+# 三个包都要跑 install/postinstall 才能正常工作：esbuild 缺了 vite 转译不动，
+# @parcel/watcher 是 vite dev 的文件监听，vue-demi 要在装完时切 Vue 2/3 分支。
+# ⚠️ 这三行原本是 pnpm 生成的占位文本 `set this to true or false`，
+#    意味着**从未有人真正决定过**，pnpm 会把三个包全当未批准而跳过构建脚本。
 allowBuilds:
-  '@parcel/watcher': set this to true or false
-  esbuild: set this to true or false
-  vue-demi: set this to true or false
+  '@parcel/watcher': true
+  esbuild: true
+  vue-demi: true

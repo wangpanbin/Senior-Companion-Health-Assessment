@@ -1,0 +1,35 @@
+# Dependabot：自动提 action 升级 PR
+#
+# 2026-09-23 GitHub 从 runner 移除了 Node 20，声明 node20 的 action 会直接启动失败。
+# 本仓库当时还钉在 checkout@v4 / setup-node@v4 / upload-artifact@v4（v4、v5 都仍是
+# node20，upload-artifact 要到 v6），靠人肉记着升级迟早再踩一次。
+# 每周自动扫一次，把 action 大版本升级变成 PR 而不是事故。
+
+version: 2
+updates:
+  # GitHub Actions 自身（含第一方 checkout / setup-node / setup-java / upload-artifact）
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "ci"
+    # action 大版本常带行为变更（如 checkout v5 把凭据移出 .git/config），不自动合
+    open-pull-requests-limit: 5
+
+  # pnpm：package.json 的 packageManager 字段与 workflow 都依赖它，漂移会直接让 CI 红
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "ci"
+    # 只提 PR，**不要**自动合：pnpm 大版本可能改 lockfile 格式（v9 锁文件即是一例）
+    open-pull-requests-limit: 3
+    versioning-strategy: increase-if-necessary
