@@ -61,12 +61,15 @@ jobs:
           MYSQL_DATABASE: nianglin
         ports:
           - 3306:3306
+        # ⚠️ options 里**不能写行内注释**：YAML 的 `>` 折叠标量会把 `# …` 原样
+        #    当成值的一部分传下去，docker create 收到一个不认识的参数直接 exit 1。
+        #    要写说明就放在本行外面。
+        # MySQL 8 首次初始化约 20-30s，wait-for-services 不会看 health 参数
         options: >-
           --health-cmd="mysqladmin ping -h 127.0.0.1 -uci_only_password"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
-          # MySQL 8 首次初始化约 20-30s，wait-for-services 不会看上面的 health 参数
           --start-period=30s
       redis:
         image: redis:7-alpine
@@ -158,8 +161,16 @@ jobs:
       - name: ESLint
         run: pnpm run lint:check
 
+      # ⚠️ 必须限制 worker：vitest 5 默认 pool=forks，maxWorkers 取「可用 CPU 数」，
+      #    每个 worker 都是独立 node 进程、各带一份 jsdom 与完整模块图。
+      #    标准 runner 只有 2 vCPU / 7GB，4 个 fork 同时起来会 OOM，
+      #    报 `[vitest-pool]: Failed to start forks worker`。
+      #    本地 Windows 机器核多内存大，所以只在本地跑永远复现不出来。
+      #    注：vitest 5 CLI 只有 --maxWorkers / --no-file-parallelism，没有 --minWorkers
       - name: Vitest
-        run: pnpm run test
+        run: pnpm exec vitest run --maxWorkers=2
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
 
       - name: 生产构建
         run: pnpm run build
