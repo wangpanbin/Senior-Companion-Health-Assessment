@@ -140,7 +140,7 @@ jobs:
       #    workflow 根目录找的，找不到就报 `No pnpm version is specified`。
       #    9.15.9 与 pnpm-lock.yaml 的 lockfileVersion 9.0 匹配。
       - name: 装 pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9.15.9
 
