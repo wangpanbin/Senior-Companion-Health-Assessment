@@ -247,7 +247,7 @@ Running 166 tests using 1 worker
 | # | 项 | 级别 | 建议 |
 |---|---|---|---|
 | 1 | ~~A-02 订单详情姓名未脱敏~~ | ✅ 已关闭 | 经核实为**刻意设计**（访问受 `requireInvolved` 把守 + 契约明写「此处姓名返回全名」）。已在 **AGENTS.md §0.1.2 补写该场景豁免**，代码不动 |
-| 2 | ~~`restore_clean_baseline.ps1` 三处缺陷~~ | ✅ 已修 | 已用 **Python 重写**为 `tools/e2e/restore_clean_baseline.py` 并删除 `.ps1`。三处缺陷逐条修掉：① 兜底 SQL 改为**从种子 SQL 解析真实基线**，解析不出就跳过不猜；② 运行时查 `information_schema` 与候选表取交集，3 张不存在的表自动剔除；③ stderr 原样打印、**失败即 exit 非 0**。另加阈值守卫（单表待删超 30% 或 500 行需 `--force`）与 `MYSQL_PWD`（口令不进 argv）。⚠️ `.sh` 版仍存在且**共享 ② ③ 与相同的危害性语义**（在 bash 侧算 `MAX(id)-100`，SQL 语法合法但仍会删真实种子数据），未处理 |
+| 2 | ~~`restore_clean_baseline.ps1` 三处缺陷~~ | ✅ 已修 | 已用 **Python 重写**为 `tools/e2e/restore_clean_baseline.py` 并删除 `.ps1`。三处缺陷逐条修掉：① 兜底 SQL 改为**从种子 SQL 解析真实基线**，解析不出就跳过不猜；② 运行时查 `information_schema` 与候选表取交集，3 张不存在的表自动剔除；③ stderr 原样打印、**失败即 exit 非 0**。另加阈值守卫（单表待删超 30% 或 500 行需 `--force`）与 `MYSQL_PWD`（口令不进 argv）。`.sh` 版**已删除**（2026-10-02）：与 Python 版功能重复，且经实测其 `MAX(id)-100` 兜底会误删 **629 行种子数据**（`companion_order` 64 行种子订单、`order_review` 31 条、`complaint` 32 条、`admin_oper_log` 37 条等整表清空），保留它唯一的价值就是被误执行 |
 | 3 | `start-services.ps1` 不校验端口身份 | 🟠 | 这是 2026-09-29 那 45 条假红的根因。建议把本次的 5 项身份断言固化进去 |
 | 4 | `probe_backend_gaps.py` 缺 `BASE` 常量 | 🟡 | 一行修复，即可解锁上传/CHECKIN/魔数等全部写路径探针 |
 | 5 | `e2e_medication.py` `cleanup()` 缺 `b5_order_id` 初始化 | 🟡 | 模块级补 `b5_order_id = None`；当前会导致 `--scan-phase` 清理中断、数据泄漏 |
