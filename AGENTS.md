@@ -44,6 +44,7 @@
 - **不要执行破坏性命令**：`rm -rf`、强制 `git push --force` 到 `main` / `develop`、直接 drop database、`mvn clean install -DskipTests` 之外的危险 Maven 目标。对 `git commit`、`git push`、`git reset`、`git clean`、重启服务、删容器等动作必须**先确认**。
 - **不要在仓库中留下明文密码 / 真实手机号 / 真实身份证号**。所有示例数据用合规占位串（如 `13800000000`、`110101199001010001`）。
 - **不要"自创"技术栈**：不得引入 README / pom.xml / package.json 之外的依赖。需要新增依赖时，在回复中明确说明理由，由人工确认后再写。
+- **提交前跑该跑的检查**。仓库已有 CI（`.github/workflows/ci.yml`，push / PR 到 `main` 时触发），覆盖后端 `mvn verify`、前端 `lint:check` + `vitest` + `build`、密钥体检四类。**改后端就跑 `mvn -B verify`，改 `frontend/` 就跑 `pnpm run lint:check` 与 `pnpm run test`** —— 与 CI 同命令，自己先红总比推送后红好。新增检查项时同步改 workflow。
 - 不确定就问，不要瞎猜；宁可少写，不要乱写。
 
 ---
@@ -126,7 +127,7 @@ Senior Companion Health Assessment/
         │   ├── elder / family / companion / admin / profile / error
         └── components/
             └── ModulePlaceholder.vue   骨架阶段占位组件
-└── tools/e2e/                      E2E 夹具 / 服务脚本 / 探针（11 个脚本，随仓库入库，见 FRONTEND_CONTRACT §12–§13）
+└── tools/e2e/                      E2E 夹具 / 服务脚本 / 探针（9 个脚本，随仓库入库；**每个脚本的作用、是否写库、是否要口令见 `tools/e2e/README.md`**，见 FRONTEND_CONTRACT §12–§13）
 ```
 
 **AI 写代码时**：先按上面这个目录找到归属位置，再决定用什么模板。**不要**在 `controller/` 下塞 Service、**不要**把 Entity 当 VO 返回、**不要**在前端 `views/` 下直接 `import request from '@/utils/request'` 之外的封装方式。
