@@ -61,12 +61,17 @@ jobs:
           MYSQL_DATABASE: nianglin
         ports:
           - 3306:3306
-        # ⚠️ options 里**不能写行内注释**：YAML 的 `>` 折叠标量会把 `# …` 原样
-        #    当成值的一部分传下去，docker create 收到一个不认识的参数直接 exit 1。
-        #    要写说明就放在本行外面。
-        # MySQL 8 首次初始化约 20-30s，wait-for-services 不会看 health 参数
+        # ⚠️ 三个坑全踩过（2026-10-02 连修三轮）：
+        #  a) 用 `>` 折叠标量时**不能写行内注释** —— YAML 不把 `#` 当注释，
+        #     中文说明会被拼进 docker 命令行 → exit 125。
+        #  b) `--health-cmd` 的值含空格时，**必须用转义引号 \"…\"**。
+        #     写成 `'…'` 或裸值时，Actions 拆 argv 时引号被剥掉，
+        #     docker 把 `mysqladmin ping` 当成两个位置参数 → `Usage:` + exit 125。
+        #  c) options 写成**列表**（GitHub 官方文档的写法），每个元素自带引号，
+        #     不依赖 YAML 折叠，是这三种写法里最稳的。
+        #     health-cmd 不带 -p：靠 10s × 10 次重试兜住 MySQL 初始化期。
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uci_only_password"
+          --health-cmd="mysqladmin ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -147,10 +152,16 @@ jobs:
         with:
           version: 9.15.9
 
-      - name: 装 Node 20
+      # ⚠️ Node 必须是 **24**，不能是 20：
+      #    jsdom 30 → undici 的 CacheStorage 会调 `webidl.util.markAsUncloneable`，
+      #    该 API 自 Node v22.10.0 起才有（node:worker_threads）。Node 20 上没有，
+      #    每个 forks worker 启动即抛 `markAsUncloneable is not a function`，
+      #    报成 `[vitest-pool]: Failed to start forks worker`。
+      #    本机 Node 24 所以一直复现不出来 —— 这也是「CI 与本地版本必须对齐」的典型。
+      - name: 装 Node 24
         uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
