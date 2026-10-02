@@ -32,8 +32,18 @@ concurrency:
 
 jobs:
   # ------------------------------------------------------------------ #
-  # 后端：编译 + 610 条单测 + JaCoCo 覆盖率报告
+  # 后端：编译 + 610 条测试 + JaCoCo 覆盖率报告
   # 跑 mvn verify 而非 mvn test：verify 才会触发 jacoco:report
+  #
+  # ⚠️ 这 610 条里**有 191 条是 @SpringBootTest**（12 个类：各 *AccessMatrixTest /
+  #    ElderOwnershipMatrixTest / OrderFeeItemTest / FileUploadEndpointTest /
+  #    JacksonDateTimeFormatTest），它们会拉起完整 Spring 上下文 → Flyway 连库
+  #    建表灌种子。剩下 419 条是纯 Mockito 单测。
+  #    本机全绿是因为有常驻 MySQL/Redis；GitHub runner 上没有，所以必须起 service 容器。
+  #
+  # 不需要改任何 yml：application-dev.yml 的连接串全走环境变量
+  # （MYSQL_USERNAME / MYSQL_PASSWORD / REDIS_HOST / REDIS_PORT），
+  # 测试也没声明 @ActiveProfiles —— 靠下面这些 env 注入即可。
   # ------------------------------------------------------------------ #
   backend:
     name: 后端 · mvn verify
@@ -41,6 +51,33 @@ jobs:
     defaults:
       run:
         working-directory: backend
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          # 占位库口令，只存在于 runner 的临时容器里（AGENTS.md §0.2：明文口令不入库）
+          MYSQL_ROOT_PASSWORD: ci_only_password
+          MYSQL_DATABASE: nianglin
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uci_only_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          # MySQL 8 首次初始化约 20-30s，wait-for-services 不会看上面的 health 参数
+          --start-period=30s
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
       - uses: actions/checkout@v5
 
@@ -51,8 +88,27 @@ jobs:
           java-version: '21'
           cache: maven
 
+      # 等 MySQL 真正能连上 —— health-cmd 通过不等于 JDBC 可用
+      - name: 等数据库就绪
+        run: |
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/3306) 2>/dev/null; then
+              echo "MySQL 端口已就绪（第 $i 次探测）"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::MySQL 60s 内未就绪"
+          exit 1
+
+      # 连接信息只从 service 容器取，不写进任何入库文件（AGENTS.md §0.2）
       - name: 编译 + 测试 + 覆盖率
         run: mvn -B verify
+        env:
+          MYSQL_USERNAME: root
+          MYSQL_PASSWORD: ci_only_password
+          REDIS_HOST: localhost
+          REDIS_PORT: '6379'
 
       - name: 上传覆盖率报告
         if: always()
@@ -77,10 +133,16 @@ jobs:
 
       # ⚠️ 顺序不能颠倒：actions/setup-node 的 cache: 'pnpm' 需要 pnpm 已在 PATH 上
       #    才能算 store 指纹。少了这一步，本 job 会在「装依赖」报
-      #    `Unable to locate executable file: pnpm`（2026-10-02 首跑就踩了这个）。
-      #    不写 version 时它读 package.json 的 packageManager 字段（见下方「版本一致性」）
+      #    `Unable to locate executable file: pnpm`（2026-10-02 首跑踩过）。
+      #
+      # ⚠️ version 必须**显式写**：本 job 设了 defaults.working-directory: frontend，
+      #    而 pnpm/action-setup 读 package.json 的 packageManager 字段时是从
+      #    workflow 根目录找的，找不到就报 `No pnpm version is specified`。
+      #    9.15.9 与 pnpm-lock.yaml 的 lockfileVersion 9.0 匹配。
       - name: 装 pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
 
       - name: 装 Node 20
         uses: actions/setup-node@v5
