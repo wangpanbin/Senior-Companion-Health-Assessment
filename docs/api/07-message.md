@@ -289,6 +289,8 @@
 - [ ] 非本人消息调用「标记已读」→ 返回 `7002`
 - [ ] 同一消息重复标记已读 → 幂等，不重复扣减未读数
 - [ ] 四类核心消息（订单事件、审核结果、漏服提醒、系统公告）均能正常下发
+- [ ] 消息详情（v1.1.0）：本人调用 `GET /api/message/{id}` 返回 200 且正文与列表一致，非本人 → `7002`（`MessageServiceTest#getDetailShouldReturnOwnMessage` / `#getDetailShouldReport7002ForOthersMessage`、`frontend/e2e/specs/07-message.spec.js`「消息详情（v1.1.0）：本人 200，别人的消息 7002（越权走服务端拦截）」）
+- [ ] 消息不存在或已被接收人删除 → 详情接口返回 `7001`，且详情为只读（不写 `is_read`）（`MessageServiceTest#getDetailShouldReport7001WhenMissing` / `#getDetailShouldHideReceiverDeletedMessage`）
 
 ---
 
