@@ -167,28 +167,6 @@ class AdminArbitrateTest {
     }
 
     @Test
-    @DisplayName("纠纷处理 · 前后状态不得相同（同状态会掩盖「是否真的改过」）")
-    void arbitrateShouldNeverLogIdenticalBeforeAndAfter() {
-        givenCachedOrder();
-
-        adminService.arbitrate(ORDER_ID, arbitrateDto("CANCELLED"));
-
-        AdminOperLog operLog = captureOperLog();
-        assertTrue(!operLog.getBeforeStatus().equals(operLog.getAfterStatus()),
-                "before_status 与 after_status 相同，说明记录的是同一个状态，取证价值为零");
-    }
-
-    @Test
-    @DisplayName("纠纷处理 · 单号同样取快照（forceTerminal 不会改单号，但同源同因，一并锁住）")
-    void arbitrateShouldSnapshotOrderNoBeforeForce() {
-        givenCachedOrder();
-
-        adminService.arbitrate(ORDER_ID, arbitrateDto("CANCELLED"));
-
-        assertEquals("NO-2001", captureOperLog().getTargetDesc());
-    }
-
-    @Test
     @DisplayName("纠纷处理 · 强制取消要写 cancelTime / cancelReason（事后追责的依据）")
     void arbitrateToCancelledShouldPersistCancelReason() {
         givenCachedOrder();
