@@ -101,6 +101,40 @@
 
 ### 后续待办
 
-- [ ] `V4__order_fee_item.sql` 落地（ticket T2.5）
-- [ ] 明细写入与标量更新同事务的单测
+- [x] `V4__order_fee_item.sql` 落地（ticket T2.5）—— `backend/sql/V4__order_fee_item.sql`
+- [x] 明细写入与标量更新同事务的单测 —— `OrderFeeItemTest#completeShouldWriteServiceItemAndSum`
 - [ ] 历史订单是否补明细的决策（见上）
+
+---
+
+## 修订（2026-10-15 · 代码评审 P2 收口）
+
+> 上文正文不回溯改写，改动记录在此节。两处修订都来自同一份评审：原实现把
+> 「没有 SERVICE 明细」误写成「SERVICE 求和为 0」，并且只把回落值用在了读路径上。
+
+### ① 服务费的回落判据是「存在性」，不是「求和」
+
+上文「口径约定」只写了「兜底：允许明细为空」。实现却把回落条件写成 `SUM(SERVICE) == 0`，
+这与「服务费明细为空」并不等价 ——`amount = 0.00` 的 SERVICE 明细是合法输入
+（`OrderCompleteDTO.fee` 是 `@DecimalMin("0.00")`，对应「公益陪诊、不收服务费」这一真实场景），
+按求和判会把这条已录入的 0 元明细当成「还没录」，转而报订单申报 `fee`，汇总区与明细行自相矛盾。
+
+**修订后**：判据改为**是否存在** `SERVICE` 明细。存在 → 取明细求和（`0.00` 也算数）；
+不存在 → 才回落订单申报 `fee`。录入接口的金额校验仍是 `> 0`，所以 `0.00` 明细只能从完成接口进来。
+
+### ② `actual_fee` 与 `total` 必须同源
+
+原实现只在读路径（`listByOrder`）回落，写路径（`recalcActualFee` / `applyOnComplete`）
+仍按 `actual_fee = SUM(明细)` 落库。于是「有代垫明细、无 SERVICE 明细」的订单一单两价：
+`companion/income.vue` 的账单行取 `actual_fee`（只含代垫），展开面板取 `total`（含回落的服务费），
+同一屏出现 35.50 与 163.50 两个总价；而且 `recalcActualFee` 会把完成时申报的服务费从
+`actual_fee` 里直接抹掉。
+
+**修订后**：代垫 / 服务费 / 总合计由 `OrderFeeItemServiceImpl#totalsOf` **一处**算出，
+读路径与 `actual_fee` 重算共用它，`actual_fee == total` 恒成立。
+完全无明细时仍然不写 `actual_fee`（沿用上文的历史兜底口径）。
+
+### ③ 未变的部分
+
+明细仍是唯一真源；`fee` / `actual_fee` 仍只是汇总缓存；「不静默伪造明细」仍然成立
+（完全无明细时给 `fallbackNotice`，且不写 0）。

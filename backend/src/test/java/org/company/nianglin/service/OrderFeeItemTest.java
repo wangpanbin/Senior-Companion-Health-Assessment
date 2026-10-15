@@ -90,16 +90,25 @@ class OrderFeeItemTest {
 
     @Test
     @Transactional
-    @DisplayName("录入 · 完成态订单录入后 actual_fee 重算为明细求和（35.50）")
+    @DisplayName("录入 · 完成态订单录入后 actual_fee = 代垫 + 服务费（不是只算代垫），与汇总 total 同一个数")
     void createShouldRecalcActualFeeOnCompletedOrder() throws Exception {
+        // 构造确定前置：1025 申报服务费 98.00，只录一笔代垫 35.50（测试事务内固定，结束回滚）
+        assertTrue(orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .eq(CompanionOrder::getId, COMPLETED_ORDER)
+                .set(CompanionOrder::getFee, new java.math.BigDecimal("98.00"))) > 0);
         mockMvc.perform(post("/api/order/{id}/fee-items", COMPLETED_ORDER)
                         .header(AUTH_HEADER, token(COMPANION_OF_1025, RoleConstants.COMPANION))
                         .contentType(JSON).content(body("ADVANCE", "挂号费", "35.50")))
                 .andExpect(status().isOk());
 
+        // 133.50 = 代垫 35.50 + 未录 SERVICE 明细时回落的申报服务费 98.00
         mockMvc.perform(get("/api/order/{id}", COMPLETED_ORDER)
                         .header(AUTH_HEADER, token(FAMILY_OF_1025, RoleConstants.FAMILY)))
-                .andExpect(jsonPath("$.data.actualFee").value(35.50));
+                .andExpect(jsonPath("$.data.actualFee").value(133.50));
+        // 收入页账单行取 actual_fee、展开面板取 total —— 两者必须是同一个数
+        mockMvc.perform(get("/api/order/{id}/fee-items", COMPLETED_ORDER)
+                        .header(AUTH_HEADER, token(FAMILY_OF_1025, RoleConstants.FAMILY)))
+                .andExpect(jsonPath("$.data.total").value("133.50"));
     }
 
     @Test
@@ -211,6 +220,11 @@ class OrderFeeItemTest {
                 .andExpect(jsonPath("$.data.advanceTotal").value("35.50"))
                 .andExpect(jsonPath("$.data.serviceTotal").value("128.00"))
                 .andExpect(jsonPath("$.data.total").value("163.50"));
+        // 回落值必须一并落到 actual_fee —— 否则收入页账单行（actual_fee）与展开面板（total）
+        // 会在同一屏给出 35.50 / 163.50 两个数（2026-10-15 评审 P2）
+        mockMvc.perform(get("/api/order/{id}", COMPLETED_ORDER)
+                        .header(AUTH_HEADER, token(FAMILY_OF_1025, RoleConstants.FAMILY)))
+                .andExpect(jsonPath("$.data.actualFee").value(163.50));
     }
 
     @Test
@@ -229,6 +243,30 @@ class OrderFeeItemTest {
                         .header(AUTH_HEADER, token(FAMILY_OF_1025, RoleConstants.FAMILY)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.serviceTotal").value("99.00"));
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("兜底 · SERVICE 明细为 0.00 时按明细算（0 元也是已录入，不回落申报服务费）")
+    void zeroAmountServiceItemShouldNotFallBackToDeclaredFee() throws Exception {
+        // 0.00 的服务费明细只能从完成接口进来：录入接口的金额校验是 > 0，
+        // 而 OrderCompleteDTO.fee 是 @DecimalMin("0.00")（真实场景：公益陪诊，不收服务费）
+        mockMvc.perform(post("/api/order/{id}/start", ACCEPTED_ORDER)
+                        .header(AUTH_HEADER, token(COMPANION_OF_1007, RoleConstants.COMPANION)))
+                .andExpect(jsonPath("$.code").value(200));
+        mockMvc.perform(post("/api/order/{id}/complete", ACCEPTED_ORDER)
+                        .header(AUTH_HEADER, token(COMPANION_OF_1007, RoleConstants.COMPANION))
+                        .contentType(JSON)
+                        .content("{\"summary\":\"陪同就诊完成，本次不收取服务费\",\"fee\":\"0.00\"}"))
+                .andExpect(jsonPath("$.code").value(200));
+
+        // 判据是「有没有 SERVICE 明细」：1007 的申报服务费 98.00 不得覆盖这条 0.00 明细
+        mockMvc.perform(get("/api/order/{id}/fee-items", ACCEPTED_ORDER)
+                        .header(AUTH_HEADER, token(107L, RoleConstants.FAMILY)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items", hasSize(1)))
+                .andExpect(jsonPath("$.data.serviceTotal").value("0.00"))
+                .andExpect(jsonPath("$.data.total").value("0.00"));
     }
 
     @Test

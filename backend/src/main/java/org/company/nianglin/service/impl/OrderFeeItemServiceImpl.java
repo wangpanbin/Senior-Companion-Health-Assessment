@@ -30,7 +30,9 @@ import java.util.Objects;
 /**
  * 费用明细实现（ADR-0009）。
  *
- * <p>三条硬口径：① 明细是真源，actual_fee 只由明细 SUM 派生（无明细时保留历史申报值兜底）；
+ * <p>三条硬口径：① 明细是真源，代垫 / 服务费合计与 {@code actual_fee} 都由
+ * {@link #totalsOf} 一处算出 —— 有 SERVICE 明细时服务费取明细求和，没有时回落订单申报
+ * {@code fee}，完全无明细时保留历史申报值兜底（ADR-0009 修订）；
  * ② 录入限本单陪诊员，且订单须 IN_SERVICE / COMPLETED；③ 查询限相关方
  * （下单家属 / 就诊老人 / 本单陪诊员 / ADMIN）。</p>
  *
@@ -77,7 +79,7 @@ public class OrderFeeItemServiceImpl implements OrderFeeItemService {
                 amount.setScale(2, RoundingMode.HALF_UP).toPlainString());
 
         if (OrderStatus.COMPLETED.name().equals(status)) {
-            recalcActualFee(orderId);
+            recalcActualFee(order);
         }
         return OrderFeeItemVO.of(item);
     }
@@ -88,24 +90,14 @@ public class OrderFeeItemServiceImpl implements OrderFeeItemService {
         CompanionOrder order = requireOrder(orderId);
         checkReadPermission(order);
 
-        List<OrderFeeItem> items = feeItemMapper.selectList(Wrappers.<OrderFeeItem>lambdaQuery()
-                .eq(OrderFeeItem::getOrderId, orderId)
-                .orderByAsc(OrderFeeItem::getOccurredAt)
-                .orderByAsc(OrderFeeItem::getId));
+        List<OrderFeeItem> items = itemsOf(orderId);
 
+        Totals totals = totalsOf(order, items);
         OrderFeeItemSummaryVO vo = new OrderFeeItemSummaryVO();
         vo.setItems(items.stream().map(OrderFeeItemVO::of).toList());
-        BigDecimal advance = sumOf(orderId, TYPE_ADVANCE);
-        BigDecimal service = sumOf(orderId, TYPE_SERVICE);
-        if (service.compareTo(BigDecimal.ZERO) == 0 && order.getFee() != null) {
-            // 明细里还没有 SERVICE 项时，服务费合计回落到订单申报服务费：
-            // 汇总区与「订单信息」卡的服务费保持同一口径（E2E 审计 P2-1）。
-            // 与 ADR-0009 的 actual_fee 兜底同源 —— 有 SERVICE 明细时明细是真源，不回落
-            service = order.getFee();
-        }
-        vo.setAdvanceTotal(money(advance));
-        vo.setServiceTotal(money(service));
-        vo.setTotal(money(advance.add(service)));
+        vo.setAdvanceTotal(money(totals.advance()));
+        vo.setServiceTotal(money(totals.service()));
+        vo.setTotal(money(totals.total()));
         vo.setHasItems(!items.isEmpty());
         // ADR-0009 兜底：历史订单允许明细为空且仅 actual_fee 有值 —— 显式提示，不伪造明细
         if (items.isEmpty() && order.getActualFee() != null) {
@@ -117,8 +109,12 @@ public class OrderFeeItemServiceImpl implements OrderFeeItemService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void applyOnComplete(Long orderId, BigDecimal declaredFee) {
-        // dto.fee 申报的是服务费；服务中已记过 SERVICE 明细则不重复生成
-        if (declaredFee != null && sumOf(orderId, TYPE_SERVICE).compareTo(BigDecimal.ZERO) == 0) {
+        CompanionOrder order = requireOrder(orderId);
+        List<OrderFeeItem> items = itemsOf(orderId);
+        // dto.fee 申报的是服务费；已有 SERVICE 明细则不重复生成。
+        // 判据是「是否存在 SERVICE 明细」而非「SERVICE 求和是否为 0」：
+        // 0.00 的服务费明细合法，按求和判会重复插入第二行
+        if (declaredFee != null && !hasType(items, TYPE_SERVICE)) {
             OrderFeeItem service = new OrderFeeItem();
             service.setOrderId(orderId);
             service.setItemType(TYPE_SERVICE);
@@ -126,15 +122,17 @@ public class OrderFeeItemServiceImpl implements OrderFeeItemService {
             service.setAmount(declaredFee);
             service.setOccurredAt(LocalDateTime.now());
             feeItemMapper.insert(service);
+            items.add(service);
         }
-        BigDecimal sum = sumOf(orderId, null);
-        BigDecimal actualFee = sum.compareTo(BigDecimal.ZERO) > 0 ? sum : declaredFee;
-        if (actualFee != null) {
-            CompanionOrder patch = new CompanionOrder();
-            patch.setId(orderId);
-            patch.setActualFee(actualFee);
-            orderMapper.updateById(patch);
+        if (items.isEmpty()) {
+            // 未申报服务费且一条明细都没有：不写 0，保留历史值（ADR-0009 兜底口径）
+            return;
         }
+        // actual_fee 与读路径共用 totalsOf，否则收入页「账单行」与「展开面板」会给出两个总价
+        CompanionOrder patch = new CompanionOrder();
+        patch.setId(orderId);
+        patch.setActualFee(totalsOf(order, items).total());
+        orderMapper.updateById(patch);
     }
 
     /* ==================== 内部工具 ==================== */
@@ -164,22 +162,69 @@ public class OrderFeeItemServiceImpl implements OrderFeeItemService {
         }
     }
 
-    /** 重算汇总缓存：actual_fee = SUM(明细)。无明细不动（历史兜底口径） */
-    private void recalcActualFee(Long orderId) {
-        BigDecimal sum = sumOf(orderId, null);
-        if (sum.compareTo(BigDecimal.ZERO) > 0) {
-            CompanionOrder patch = new CompanionOrder();
-            patch.setId(orderId);
-            patch.setActualFee(sum);
-            orderMapper.updateById(patch);
+    /**
+     * 重算汇总缓存：{@code actual_fee} = 代垫 + 服务费，与读路径共用 {@link #totalsOf}。
+     * 完全无明细时不动 —— 历史订单的申报值兜底口径（ADR-0009）。
+     */
+    private void recalcActualFee(CompanionOrder order) {
+        List<OrderFeeItem> items = itemsOf(order.getId());
+        if (items.isEmpty()) {
+            return;
         }
+        CompanionOrder patch = new CompanionOrder();
+        patch.setId(order.getId());
+        patch.setActualFee(totalsOf(order, items).total());
+        orderMapper.updateById(patch);
     }
 
-    private BigDecimal sumOf(Long orderId, String itemType) {
-        List<OrderFeeItem> items = feeItemMapper.selectList(Wrappers.<OrderFeeItem>lambdaQuery()
+    /** 本单全部明细，按发生时间升序 —— 读路径与重算共用，保证两处面对同一份数据 */
+    private List<OrderFeeItem> itemsOf(Long orderId) {
+        return feeItemMapper.selectList(Wrappers.<OrderFeeItem>lambdaQuery()
                 .eq(OrderFeeItem::getOrderId, orderId)
-                .eq(itemType != null, OrderFeeItem::getItemType, itemType));
-        return items.stream().map(OrderFeeItem::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                .orderByAsc(OrderFeeItem::getOccurredAt)
+                .orderByAsc(OrderFeeItem::getId));
+    }
+
+    private static boolean hasType(List<OrderFeeItem> items, String itemType) {
+        return items.stream().anyMatch(item -> itemType.equals(item.getItemType()));
+    }
+
+    /**
+     * 费用汇总口径的**唯一实现** —— 读路径（{@link #listByOrder}）与 {@code actual_fee}
+     * 重算（{@link #recalcActualFee} / {@link #applyOnComplete}）必须共用它，否则同一张单
+     * 在收入页会给出两个总价（账单行取 {@code actual_fee}，展开面板取 {@code total}）。
+     *
+     * <p>服务费判据是「**是否存在** SERVICE 明细」而不是「SERVICE 求和是否为 0」：
+     * {@code amount = "0.00"} 的 SERVICE 明细合法（{@code FeeItemCreateDTO} 的金额正则允许），
+     * 按求和判会把已录入的 0 元明细当成没录，转而报订单申报值。</p>
+     */
+    private static Totals totalsOf(CompanionOrder order, List<OrderFeeItem> items) {
+        BigDecimal advance = BigDecimal.ZERO;
+        BigDecimal service = BigDecimal.ZERO;
+        boolean hasServiceItem = false;
+        for (OrderFeeItem item : items) {
+            if (TYPE_ADVANCE.equals(item.getItemType())) {
+                advance = advance.add(item.getAmount());
+            } else if (TYPE_SERVICE.equals(item.getItemType())) {
+                hasServiceItem = true;
+                service = service.add(item.getAmount());
+            }
+        }
+        // v1.1.0 口径：还没有 SERVICE 明细时服务费回落订单申报服务费，
+        // 保证汇总区与订单详情「服务费」展示一致
+        if (!hasServiceItem && order.getFee() != null) {
+            service = order.getFee();
+        }
+        return new Totals(advance, service);
+    }
+
+    /** 费用分组合计（代垫 / 服务费）与总合计 */
+    private record Totals(BigDecimal advance, BigDecimal service) {
+
+        /** 总合计 —— {@code actual_fee} 与汇总响应里的 {@code total} 取的就是这个值 */
+        BigDecimal total() {
+            return advance.add(service);
+        }
     }
 
     private String money(BigDecimal value) {
