@@ -11,7 +11,9 @@
 | 后端单测 | 592 tests / 0 fail / 0 error / 0 skipped | `cd backend && mvn.cmd test` | ✅ |
 | 行覆盖总量 | 67.6%（基线 65.9%） | `Import-Csv backend\target\site\jacoco\jacoco.csv`（mvn test 后） | ✅（≥60%，较基线 +1.7pp） |
 | 分支覆盖 | 50.9% | 同上（BRANCH_COVERED / BRANCH_MISSED） | 记录值 |
-| E2E | **165 passed**（全量，0 失败，2026-09-28 总闸门实测） | `pnpm exec playwright test` | ✅ |
+| E2E | **165 passed**（全量，0 失败，**2026-09-29** 总闸门实测 —— 09-28 基线是 164，165 是 09-29 阶段 4 加了 `05-companion.spec.js` 用例之后的数字，出处见 `CLOSEOUT_2026-09-29.md`） | `pnpm exec playwright test` | ✅ |
+
+> **口径提醒**：上表 165 是 2026-09-29 的历史数字。此后又新增 1 条消息详情用例，2026-10-15 `pnpm exec playwright test --list` 实测为 **166** 条 —— 现在复跑本表命令得到的应是 166，不是 165。
 
 测试数从基线 585 → 592：+12（用户模块越权矩阵 `UserAccessMatrixTest`）−16（探针矩阵 `PermissionMatrixTest` 退场）+11（费用明细 `OrderFeeItemTest`）+2（OrderServiceTest 构造适配后原有用例数不变）。
 

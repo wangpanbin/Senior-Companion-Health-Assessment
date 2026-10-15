@@ -255,7 +255,7 @@ Running 166 tests using 1 worker
 | 7 | 库中 30 个 JMeter 压测账号 | 🟡 | `bench5001`~`bench5030` 会出现在管理后台用户列表与家属消息里（如 `陪****1`）。属数据卫生问题，非脱敏缺陷（`MaskUtil.name("陪诊员5001")` 行为正确） |
 | 8 | `elder030` 库漂移为 `NORMAL` | 🟡 | 种子定义为 `DISABLED`。产品校验已自证正常，但 `e2e_auth.py` B5 会持续失败，直到库与种子对齐 |
 | 9 | `MOBILE_ONLY_ROUTES` 常量残缺 | 🟢 | `e2e/helpers/constants.js:89` 只列 2 条，`routes.js` 实际 6 条，且该常量**无任何消费方**。当前不影响产品（读的是 `meta.mobileOnly`），但日后谁拿它驱动断言会静默漏 4 条 |
-| 10 | 文档口径待更新 | 🟢 | `FRONTEND_CONTRACT` §12.3 写「166 条」，本轮实测确认为 166 条（静态 `test()` 计数 155，差值来自循环生成）—— 口径正确，可补一句说明 |
+| 10 | 文档口径待更新 | 🟢 | `FRONTEND_CONTRACT` §12.3 写「166 条」，本轮实测确认为 166 条（`pnpm exec playwright test --list` → `Total: 166 tests in 14 files`）。静态 `test()` 计数是 **98**（`frontend/e2e/specs/*.spec.js` 共 13 个文件，另有 `fixtures/auth.setup.js` 的 7 条登录用例由 `for` 循环生成、不含字面 `test(`），参数化展开后多出 68 条 —— 166 = 98 静态块 + 68 循环放大。口径正确，建议 §12.3 把「静态 98 → 展开 166」这句一并写上，避免后人拿静态数当总数 |
 
 ---
 

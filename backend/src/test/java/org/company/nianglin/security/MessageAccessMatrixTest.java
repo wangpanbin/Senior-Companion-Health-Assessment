@@ -20,7 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * M8 站内信越权矩阵：4 角色 × 3 类接口（列表 / 未读数 / 已读与删除）。
+ * M8 站内信越权矩阵：4 角色 × 4 类接口（列表 / 详情 / 未读数 / 已读与删除）。
  *
  * <h3>本模块的特殊之处：一个 {@code @PreAuthorize} 都没有</h3>
  *
@@ -44,26 +44,29 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>{@code internal_message} <b>40001</b>：收件人 301（陪诊员）、<b>已读</b>；
  * <b>40002</b>：收件人 102（家属）、未读。两者都不属于家属 101，也不属于老人 201。</p>
  *
- * <p>本类只发「必然被拒」的写请求，以及一条<b>本就已读、因而不会产生写入</b>的
- * 幂等请求，不改动任何数据，可随时重跑。</p>
+ * <p>本类只发「必然被拒」的写请求，以及若干<b>纯读</b>的正向用例（详情走 readOnly
+ * 事务，标记已读那条命中的是本就已读的消息），不改动任何数据，可随时重跑。</p>
  *
  * @author 银龄伴诊团队
  * @since M8
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@DisplayName("M8 站内信越权矩阵：4 角色 × 3 类接口")
+@DisplayName("M8 站内信越权矩阵：4 角色 × 4 类接口")
 class MessageAccessMatrixTest {
 
     private static final String AUTH_HEADER = "Authorization";
 
     private static final long FAMILY_101 = 101L;
+    /** 40002 的收件人 —— 详情正向用例要「本人读本人的信」 */
+    private static final long FAMILY_102 = 102L;
     private static final long ELDER_201 = 201L;
     private static final long COMPANION_301 = 301L;
     private static final long ADMIN_ID = 1L;
     private static final long UNKNOWN_USER = 999L;
 
-    /** 收件人是 102 的消息 —— 对 101 / 201 / 301 都是「别人的消息」 */
+    /** 收件人是 102 的消息 —— 对 101 / 201 / 301 都是「别人的消息」；
+     *  同时它也是详情正向用例里「本人读本人」的那一条 */
     private static final long MESSAGE_OF_102 = 40002L;
     /** 收件人是 301 且状态已读的消息 —— 用来验证标记已读的幂等性 */
     private static final long READ_MESSAGE_OF_301 = 40001L;
@@ -111,6 +114,66 @@ class MessageAccessMatrixTest {
     @DisplayName("未读数 · 未登录 → 401")
     void anonymousShouldGet401OnUnreadCount() throws Exception {
         mockMvc.perform(get("/api/message/unread-count"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    /* ================================================================== */
+    /* 1.5 详情：唯一一条「拿用户可控 id 直取」的读路径，越权面比列表更直接     */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("消息详情 · 收件人 102 读自己的 40002 → 200，且拿到的就是那一条")
+    void ownerShouldReadOwnMessageDetail() throws Exception {
+        // 正向锚点：没有它，下面那条 7002 可能只是「接口恒定拒绝一切」的假绿。
+        // getDetail 是 readOnly 事务，本用例不产生任何写入，可反复重跑。
+        mockMvc.perform(get("/api/message/{id}", MESSAGE_OF_102)
+                        .header(AUTH_HEADER, family(FAMILY_102)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.id").value(MESSAGE_OF_102));
+    }
+
+    @ParameterizedTest(name = "消息详情 · {0} 读 40002（收件人是 102）→ 7002")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION, RoleConstants.ADMIN})
+    @DisplayName("消息详情 · 四个角色读别人的消息 → 7002（详情是越权面最大的一条读路径）")
+    void detailOfOthersMessageShouldReturn7002(String role) throws Exception {
+        // 与「标记已读 / 删除」同源（requireMine），但走的是完全另一个 Controller 入口：
+        // 列表按 receiver_id 过滤天然收窄，详情却是拿用户可控的 id 直取。
+        // 一旦归属判定在这条路径上漏掉，这里就是站内信最严重的越权缺陷。
+        mockMvc.perform(get("/api/message/{id}", MESSAGE_OF_102)
+                        .header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.MESSAGE_NO_PERMISSION.getCode()));
+    }
+
+    @Test
+    @DisplayName("消息详情 · 陪诊员读自己的已读消息 40001 → 200（isRead 不影响详情可见性）")
+    void alreadyReadMessageShouldStillBeDetailAccessible() throws Exception {
+        // 40001 在种子里就是 is_read=1。「已读」只是状态，不等于「被删掉了」，
+        // 详情必须照常可读 —— 否则前端消息中心会把历史消息点成一片 7001。
+        mockMvc.perform(get("/api/message/{id}", READ_MESSAGE_OF_301)
+                        .header(AUTH_HEADER, companion(COMPANION_301)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.id").value(READ_MESSAGE_OF_301));
+    }
+
+    @Test
+    @DisplayName("消息详情 · 消息不存在 → 7001（先判存在再判归属，顺序不能反）")
+    void detailOfMissingMessageShouldReturn7001() throws Exception {
+        // 7001 与 7002 的区分完全由 requireMine 里的顺序决定：先 selectById 判 null，
+        // 再比对 receiverId。哪天把这两步调换，这条会红。
+        mockMvc.perform(get("/api/message/{id}", 999999L)
+                        .header(AUTH_HEADER, family(FAMILY_101)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.MESSAGE_NOT_FOUND.getCode()));
+    }
+
+    @Test
+    @DisplayName("消息详情 · 未登录 → 401")
+    void anonymousShouldGet401OnDetail() throws Exception {
+        mockMvc.perform(get("/api/message/{id}", READ_MESSAGE_OF_301))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(401));
     }
