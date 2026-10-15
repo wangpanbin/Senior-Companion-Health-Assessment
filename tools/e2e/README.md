@@ -38,9 +38,12 @@
   CI 上跑等于破坏共享环境
 - **有副作用但无判据** —— `start/stop-services.ps1` 只管进程生命周期，没有退出码语义可判
 
-`.github/workflows/ci.yml` 目前只接了 `check_api_imports.py` 的等价检查
-（走 `pnpm run lint:check` 覆盖 eslint，未单独调此脚本）。**新增能进 CI 的脚本时，
-在 workflow 里补上对应 step，并在这里改「能进 CI」列。**
+⚠️ `.github/workflows/ci.yml` 目前**没有**接 `check_api_imports.py`（全仓 grep 该脚本名只在本
+README 命中）：CI 的三个 job 是后端 `mvn verify`（带 MySQL / Redis service 容器）、
+前端 `pnpm run lint:check` + `vitest run` + `build`、以及 JWT / 明文口令 / 手机号密钥扫描 ——
+**没有一步等价于本脚本的 `@/api` 引用完整性检查**。它也不在 `tools/verify_all.ps1` 的段内，
+是**本机手动门禁**（按下面的命令自己跑）。**新增能进 CI 的脚本时，在 workflow 里补上对应
+step，并在这里改「能进 CI」列。**
 
 ## 单脚本细节
 

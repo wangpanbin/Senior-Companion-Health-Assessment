@@ -1,5 +1,11 @@
 # 收敛迭代收尾（阶段 2 后半 + 阶段 3/4/5）实施计划
 
+> **状态：已执行完毕（存档）** —— 2026-10-15 补记。本文件是 2026-09-28 收敛迭代的**实施计划存档**：
+> 该迭代已于 2026-09-29 收官，执行结果与实测证据见 `docs/agents/reports/CLOSEOUT_2026-09-29.md`，
+> 验收回填见 `plan.md`（79/79）。文件内的 `- [ ]` 保持计划书写时的原始形态，**不再逐条回填** ——
+> 想知道某一步到底跑没跑，以 CLOSEOUT 报告与 `plan.md` 的 checkbox 为准，
+> **不要拿本文件的 checkbox 状态当执行记录**。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把交接文档（handoff-nianglin-convergence-2026-09-28.md）里的 T2.3 / T2.5 与阶段 3 / 4 / 5 的 6 组 ticket，落成每步带验证命令与预期输出的小步任务，全部跑完后 `plan.md` 78 个 checkbox 可回填、`tools/verify_all.ps1` 总闸门可用。

@@ -661,7 +661,7 @@ $sql = "SHOW COLUMNS FROM medication_task;"
 
 | 层 | 脚本 | 证明什么 |
 |---|---|---|
-| 1 | `pnpm exec playwright test`（13 个 spec / 166 条用例，2026-09-29 口径） | 页面能渲染、无 JS 错、无 ≥400、**落地路径正确**；`helpers/pageAudit.js` 等价于旧的"页面健康"判定 |
+| 1 | `pnpm exec playwright test`（13 个 spec / 166 条用例，2026-10-15 口径：`pnpm exec playwright test --list` → `Total: 166 tests in 14 files`，多出的 1 个文件是 setup 项目的 `fixtures/auth.setup.js`） | 页面能渲染、无 JS 错、无 ≥400、**落地路径正确**；`helpers/pageAudit.js` 等价于旧的"页面健康"判定 |
 | 2 | `probe_api.py` | 页面依赖的接口**确实返回了种子数据**（不是「暂无数据」也能判绿） |
 | 3 | `probe_backend_gaps.py` | **写接口**真的能写（通用上传成功 / CHECKIN 被拒 / ELDER 403 / 魔数非法被拒）|
 
@@ -707,7 +707,7 @@ ms-playwright 缓存里的 ffmpeg 二进制，缺失时**所有用例在 `newPag
 > `sys_file` 行——先跑单测再跑 E2E 时，verify 会报 `sys_file` 水位 +1，
 > 删掉该行再跑即可，这不是 E2E 回滚的锅。
 
-> ✅ **`tools/e2e/` 的 11 个脚本已随仓库分发**（此前被 `.gitignore` 整体忽略，现已入库）。
+> ✅ **`tools/e2e/` 的 9 个脚本已随仓库分发**（此前被 `.gitignore` 整体忽略，现已入库）。
 > 干净 clone 上直接 `pnpm exec playwright test` 的三项前置：
 > 1. `MYSQL_PASSWORD` —— 脚本**不内置默认口令**，未设置会直接报错退出；
 > 2. `mysql` / `redis-cli` 可用 —— 两者都按「`MYSQL_BIN` / `REDIS_CLI` 环境变量 >
