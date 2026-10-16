@@ -8,6 +8,9 @@
 
 ## 背景
 
+> **2026-10-16 变更**：本 ADR 原定「桌面形态内容居中限宽 720px」单档；
+> 现修订为 768–1279 单列 720 / ≥1280 双栏 1120 两档，详见文末「2026-10 变更」小节。
+
 ### 旧现状(问题陈述)
 
 `frontend/src/layouts/` 当前只有两个 layout 文件:
@@ -110,3 +113,43 @@ Q4 = II（桌面端禁用老人模式）已实装,三重防御均可在代码中
 - `AGENTS.md` §3.5 —— 补「生效范围」行与「桌面端豁免」小节。
 
 > **收口迭代中发现的历史问题**：本 ADR 于 2026-09-18 拍板后,`AGENTS.md` §3.5 一直未同步,导致「代码与项目宪法冲突」长达 10 天。**ADR 与宪法不一致时,以 ADR 为决策源,宪法需在同一个 PR 内同步** —— 见 `docs/plan/convergence-2026-09.md` §四。
+
+## 2026-10 变更：≥1280 双栏（修订 Q2 的「单档 720」）
+
+| | |
+|---|---|
+| 日期 | 2026-10-16 决策并落地 |
+| 修订对象 | 「决策」第 1 条的内容宽度口径（Q2 = ① 居中限宽） |
+| 关联 | `design.md` v1.2 · `plans/ui-rework.md` R6 |
+
+### 变更内容
+
+桌面形态内容区由**单档 720px 单列**改为**两档**：
+
+| 视口 | 布局 |
+|---|---|
+| 768–1279px | 单列居中，max-width **720px**（与原决策一致，不变） |
+| ≥1280px | max-width **1120px**；相邻 `.nl-card` 两两并排成两列，其余子元素（筛选条 / 列表 / 骨架 / 空态 / 免责条 / CTA）保持通栏 |
+
+### 实现口径（`components/NlDesktopShell.vue`）
+
+- 新增 token `$nl-desktop-content-wide: 1120px`（`styles/variables.scss`，与 `$nl-desktop-content-width: 720px` 并列）。
+- 双栏规则用 **flex-wrap 配对**而非 grid：所有直接子元素 `flex-basis: 100%`（通栏），
+  `.nl-card` 用 `calc(50% - 10px)` 基宽并排；**同一行内剩余空间按 flex-grow 均分，孤卡自动撑满整行**，
+  不会出现「半宽卡片 + 右侧空洞」；并排宽度不足 `min-width: 420px` 时自动换行回通栏。
+- 规则所在 style 块**刻意不加 scoped**：插槽子元素携带的是 view 的 scope id，本组件 scoped 选择器匹配不到；
+  选择器统一 `.nl-desktop-shell .xxx` 双类名抬特异性，保证胜过 scoped 块。
+- **宽度唯一真源不变**：仍是 `NlDesktopShell.__content`（Q11），view 内仍禁止写 max-width。
+
+### 为什么不推翻 Q2 而是修订
+
+Q2 当时要解决的是「1920 屏手机壳无限拉宽」，720 单列是手段不是目的；
+≥1280 下双栏仍满足「内容居中、宽度受控」的原始意图，且信息密度更接近 VISUAL_DENSITY=6 的定位。
+形态判定（`useDevice`）与「形态/角色正交」的骨架**完全不动**，仅内容区排版分档。
+
+### 同步清单
+
+- `styles/variables.scss`：新增 `$nl-desktop-content-wide` / `$nl-desktop-col-min`
+- `components/NlDesktopShell.vue`：≥1280 媒体查询 + 注释里 720 → 两档口径
+- `components/NlPageShell.vue` / `views/family/home.vue`：注释同步
+- `frontend/e2e/specs/10-form-factor.spec.js`：补「≥1280 相邻卡片同行」防回归断言
