@@ -13,6 +13,7 @@ import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.impl.ChatServiceImpl;
 import org.company.nianglin.support.MybatisLambdaCache;
+import org.company.nianglin.vo.ChatMessageVO;
 import org.company.nianglin.websocket.ChatMessageHub;
 import org.company.nianglin.websocket.MessageSseHub;
 import org.junit.jupiter.api.AfterEach;
@@ -122,7 +123,7 @@ class ChatServiceTest {
         verifyNoInteractions(hub, sse);
         TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
         verify(hub).publishToChat(eq(101L), eq(11L), eq("CHAT_MESSAGE"), argThat(data ->
-                data instanceof java.util.Map<?, ?> map && Long.valueOf(900).equals(map.get("messageId"))));
+                data instanceof ChatMessageVO message && Long.valueOf(900L).equals(message.getMessageId())));
         verify(sse).push(eq(22L), eq("CHAT_MESSAGE"), any());
     }
 

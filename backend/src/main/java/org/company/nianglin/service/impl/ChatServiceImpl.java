@@ -45,7 +45,6 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
-import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -59,7 +58,6 @@ public class ChatServiceImpl implements ChatService {
     private static final int DEFAULT_HISTORY_SIZE = 20;
     private static final int MAX_HISTORY_SIZE = 100;
     private static final int CONTENT_MAX_LEN = 1000;
-    private static final DateTimeFormatter WS_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final OrderService orderService;
     private final ChatMessageMapper chatMessageMapper;
@@ -157,7 +155,7 @@ public class ChatServiceImpl implements ChatService {
 
     private void notifyPeer(CompanionOrder order, LoginUser me, ChatMessageVO vo) {
         try {
-            chatMessageHub.publishToChat(order.getId(), me.userId(), ChatMessageHub.TYPE_CHAT_MESSAGE, wsPayloadOf(vo));
+            chatMessageHub.publishToChat(order.getId(), me.userId(), ChatMessageHub.TYPE_CHAT_MESSAGE, vo);
         } catch (RuntimeException ex) {
             log.warn("聊天 WS 推送失败 | orderId={} | messageId={}", order.getId(), vo.getMessageId(), ex);
         }
@@ -170,22 +168,6 @@ public class ChatServiceImpl implements ChatService {
         } catch (RuntimeException ex) {
             log.warn("聊天 SSE 提醒失败 | orderId={} | messageId={}", order.getId(), vo.getMessageId(), ex);
         }
-    }
-
-    private static Map<String, Object> wsPayloadOf(ChatMessageVO vo) {
-        Map<String, Object> payload = new HashMap<>(16);
-        payload.put("messageId", vo.getMessageId());
-        payload.put("orderId", vo.getOrderId());
-        payload.put("senderId", vo.getSenderId());
-        payload.put("senderRole", vo.getSenderRole());
-        payload.put("msgType", vo.getMsgType());
-        payload.put("msgTypeLabel", vo.getMsgTypeLabel());
-        payload.put("content", vo.getContent());
-        payload.put("fileId", vo.getFileId());
-        payload.put("fileUrl", vo.getFileUrl());
-        payload.put("fileSize", vo.getFileSize());
-        payload.put("createTime", vo.getCreateTime() == null ? null : vo.getCreateTime().format(WS_TIME_FORMAT));
-        return payload;
     }
 
     @Override
