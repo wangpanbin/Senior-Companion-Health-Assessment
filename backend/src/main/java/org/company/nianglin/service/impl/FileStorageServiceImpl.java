@@ -134,10 +134,13 @@ public class FileStorageServiceImpl implements FileStorageService {
      * 一律按默认 10MB 收紧。</p>
      */
     private static void checkSizeLimit(long size, String bizType) {
-        long max = FileBizType.of(bizType) == FileBizType.CHAT ? CHAT_MAX_BYTES : DEFAULT_MAX_BYTES;
+        boolean chat = FileBizType.of(bizType) == FileBizType.CHAT;
+        long max = chat ? CHAT_MAX_BYTES : DEFAULT_MAX_BYTES;
         if (size > max) {
-            throw new BusinessException(ResultCode.CHAT_FILE_TOO_LARGE,
-                    "文件超过大小上限（聊天 50MB，其余 10MB）");
+            // 段位纪律（AGENTS.md §2.7）：7xxx 属站内信与订单聊天，非聊天业务超限
+            // 不得借用 CHAT_FILE_TOO_LARGE，否则头像 / 证件路径的错误码会带出聊天语义。
+            throw new BusinessException(chat ? ResultCode.CHAT_FILE_TOO_LARGE : ResultCode.PARAM_ERROR,
+                    chat ? "聊天附件超过 50MB 上限" : "文件超过大小上限（非聊天业务 10MB）");
         }
     }
 

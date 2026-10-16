@@ -76,6 +76,26 @@ class ChatServiceTest {
     }
 
     @Test
+    @DisplayName("旁观视角（ELDER）读历史不虚构对端，peer 三字段一律留空")
+    void historyShouldLeavePeerBlankForBystanderViewer() {
+        login("ELDER", 33L);
+        involved();
+        when(messages.selectList(any())).thenReturn(java.util.List.of());
+        org.company.nianglin.entity.SysUser family = new org.company.nianglin.entity.SysUser();
+        family.setId(11L);
+        family.setUsername("family01");
+        lenient().when(users.selectBatchIds(any())).thenReturn(java.util.List.of(family));
+        lenient().when(profiles.selectList(any())).thenReturn(java.util.List.of());
+
+        org.company.nianglin.vo.ChatHistoryVO vo = service.history(101L, 0L, 20);
+
+        assertNull(vo.getPeerUserId());
+        assertNull(vo.getPeerRole());
+        assertNull(vo.getPeerName());
+        assertEquals("ELDER", vo.getMyRole());
+    }
+
+    @Test
     @DisplayName("管理员无论消息内容如何都没有写权限")
     void sendShouldCheckWriterBeforeContent() {
         login("ADMIN", 1L);

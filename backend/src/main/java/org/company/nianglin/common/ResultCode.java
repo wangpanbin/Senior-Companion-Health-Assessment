@@ -143,7 +143,12 @@ public enum ResultCode {
      * ADMIN 仲裁只读是刻意设计（ADR-0011），不是遗漏。
      */
     CHAT_READ_ONLY(7008, "您在当前会话中只有查看权限"),
-    CHAT_FILE_TOO_LARGE(7009, "文件超过该业务类型的上限（聊天 50MB，其余 10MB）"),
+    /**
+     * 聊天附件超过 50MB 上限。
+     * 仅限 {@code bizType=CHAT}；非聊天业务超限走通用 {@code PARAM_ERROR(400)}，
+     * 不得借用本码（7xxx 段位纪律，AGENTS.md §2.7）。
+     */
+    CHAT_FILE_TOO_LARGE(7009, "聊天附件超过 50MB 上限"),
 
     /* ==================== 8xxx 管理后台 ==================== */
     AUDIT_STATUS_ILLEGAL(8001, "资质审核状态不合法"),
