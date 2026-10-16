@@ -45,7 +45,6 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
-import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -59,7 +58,6 @@ public class ChatServiceImpl implements ChatService {
     private static final int DEFAULT_HISTORY_SIZE = 20;
     private static final int MAX_HISTORY_SIZE = 100;
     private static final int CONTENT_MAX_LEN = 1000;
-    private static final DateTimeFormatter WS_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final OrderService orderService;
     private final ChatMessageMapper chatMessageMapper;
@@ -157,39 +155,19 @@ public class ChatServiceImpl implements ChatService {
 
     private void notifyPeer(CompanionOrder order, LoginUser me, ChatMessageVO vo) {
         try {
-            chatMessageHub.publishToChat(order.getId(), me.userId(), ChatMessageHub.TYPE_CHAT_MESSAGE, wsPayloadOf(vo));
+            chatMessageHub.publishToChat(order.getId(), me.userId(), ChatMessageHub.TYPE_CHAT_MESSAGE, vo);
         } catch (RuntimeException ex) {
-            log.warn("聊天 WS 推送失败 | orderId={} | messageId={}", order.getId(), vo.getMessageId());
+            log.warn("聊天 WS 推送失败 | orderId={} | messageId={}", order.getId(), vo.getMessageId(), ex);
         }
         Map<String, Object> payload = new HashMap<>(4);
         payload.put("orderId", order.getId());
         payload.put("msgType", vo.getMsgType());
-        payload.put("preview", switch (ChatMsgType.of(vo.getMsgType())) {
-            case IMAGE -> "[图片]";
-            case VIDEO -> "[视频]";
-            case TEXT -> ChatConversationVO.previewOf(vo.getContent());
-        });
+        payload.put("preview", ChatMsgType.previewOf(vo.getMsgType(), vo.getContent()));
         try {
             messageSseHub.push(resolvePeerUserId(order, me.userId()), MessageSseHub.EVENT_CHAT_MESSAGE, payload);
         } catch (RuntimeException ex) {
-            log.warn("聊天 SSE 提醒失败 | orderId={} | messageId={}", order.getId(), vo.getMessageId());
+            log.warn("聊天 SSE 提醒失败 | orderId={} | messageId={}", order.getId(), vo.getMessageId(), ex);
         }
-    }
-
-    private static Map<String, Object> wsPayloadOf(ChatMessageVO vo) {
-        Map<String, Object> payload = new HashMap<>(16);
-        payload.put("messageId", vo.getMessageId());
-        payload.put("orderId", vo.getOrderId());
-        payload.put("senderId", vo.getSenderId());
-        payload.put("senderRole", vo.getSenderRole());
-        payload.put("msgType", vo.getMsgType());
-        payload.put("msgTypeLabel", vo.getMsgTypeLabel());
-        payload.put("content", vo.getContent());
-        payload.put("fileId", vo.getFileId());
-        payload.put("fileUrl", vo.getFileUrl());
-        payload.put("fileSize", vo.getFileSize());
-        payload.put("createTime", vo.getCreateTime() == null ? null : vo.getCreateTime().format(WS_TIME_FORMAT));
-        return payload;
     }
 
     @Override
@@ -205,11 +183,15 @@ public class ChatServiceImpl implements ChatService {
         boolean hasMore = rows.size() > limit;
         List<ChatMessage> pageRows = hasMore ? rows.subList(0, limit) : rows;
         Long peerId = resolvePeerUserId(order, me.userId());
-        return new ChatHistoryVO()
+        ChatHistoryVO vo = new ChatHistoryVO()
                 .setRecords(pageRows.stream().map(ChatMessageVO::of).toList())
                 .setNextCursor(pageRows.isEmpty() ? null : pageRows.get(pageRows.size() - 1).getId())
                 .setHasMore(hasMore).setPeerUserId(peerId).setPeerRole(resolvePeerRole(order, peerId))
-                .setPeerName(MaskUtil.name(displayNames(List.of(peerId)).get(peerId))).setMyRole(me.role());
+                .setMyRole(me.role());
+        if (peerId != null) {
+            vo.setPeerName(MaskUtil.name(displayNames(List.of(peerId)).get(peerId)));
+        }
+        return vo;
     }
 
     @Override
@@ -292,11 +274,25 @@ public class ChatServiceImpl implements ChatService {
         return row == null ? 0L : ((Number) row.get(field)).longValue();
     }
 
+    /**
+     * 会话「对端」只在双方之间成立：家属↔陪诊员互为对端。
+     * ELDER / ADMIN 是只读旁观者（ADR-0011），他们面前同时站着两方，
+     * 硬指一方会把家属显示成陪诊员 —— 故返回 null，由上层留空、前端回落到「订单沟通」。
+     */
     private static Long resolvePeerUserId(CompanionOrder order, Long myUserId) {
-        return myUserId.equals(order.getFamilyId()) ? order.getCompanionId() : order.getFamilyId();
+        if (myUserId.equals(order.getFamilyId())) {
+            return order.getCompanionId();
+        }
+        if (myUserId.equals(order.getCompanionId())) {
+            return order.getFamilyId();
+        }
+        return null;
     }
 
     private static String resolvePeerRole(CompanionOrder order, Long peerUserId) {
+        if (peerUserId == null) {
+            return null;
+        }
         return peerUserId.equals(order.getCompanionId()) ? RoleConstants.COMPANION : RoleConstants.FAMILY;
     }
 

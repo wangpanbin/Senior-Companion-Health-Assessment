@@ -1,6 +1,7 @@
 package org.company.nianglin.config;
 
 import lombok.RequiredArgsConstructor;
+import org.company.nianglin.constant.WsPathConstants;
 import org.company.nianglin.websocket.JwtHandshakeInterceptor;
 import org.company.nianglin.websocket.OrderProgressHandler;
 import org.springframework.context.annotation.Configuration;
@@ -43,13 +44,13 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(orderProgressHandler, "/ws/progress")
+        registry.addHandler(orderProgressHandler, WsPathConstants.PROGRESS)
                 // allowedOriginPatterns 而不是 setAllowedOrigins("*")：
                 // 后者在 Spring 5.3+ 与 allowCredentials 同时出现时会被拒绝。
                 // 生产环境由 Nginx 同源转发，这里放宽只是为了让 5141 的前端联调方便
                 .addInterceptors(jwtHandshakeInterceptor)
                 .setAllowedOriginPatterns("*");
-        registry.addHandler(chatWebSocketHandler, "/ws/chat")
+        registry.addHandler(chatWebSocketHandler, WsPathConstants.CHAT)
                 .addInterceptors(jwtHandshakeInterceptor)
                 .setAllowedOriginPatterns("*");
     }

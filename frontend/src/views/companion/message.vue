@@ -42,7 +42,7 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const roleLabel = computed(() => userStore.roleLabel || '用户')
-const chatWriter = computed(() => ['FAMILY', 'COMPANION'].includes(userStore.role))
+const chatWriter = computed(() => userStore.isFamily || userStore.isCompanion)
 const { total: chatUnread, error: chatUnreadError, handleMessage: onChatMessage } = useChatUnread({
   enabled: chatWriter, subscribe: false
 })
@@ -148,11 +148,27 @@ onBeforeUnmount(() => {
   <!-- mobile-only 守卫只对 /elder/message 生效（见脚本里 mobileOnlyHere 的注释） -->
   <NlMobileOnlyPage :enabled="mobileOnlyHere">
     <NlPageShell :title="`消息（${unreadCount} 条未读）`" :has-tabs="true" :back="false">
-      <NlCard v-if="chatWriter" title="订单沟通">
-        <div class="msg-bar">
-          <span class="nl-body">{{ chatUnreadError ? '未读数暂不可用' : `${chatUnread} 条未读` }} · 与本单对方沟通陪诊安排</span>
-          <el-button type="primary" plain @click="router.push('/chat')">进入订单沟通</el-button>
-        </div>
+      <!--
+        M13 订单沟通入口。站内信是「系统→用户」单向通知，订单聊天才是
+        「家属↔陪诊员」双向对话，两者语义不同，故独立成卡放在列表上方。
+        家属端此前只能从订单详情进入，工作台 / 订单列表均无入口（M13 交付遗漏）。
+      -->
+      <NlCard v-if="chatWriter" class="msg-chat-entry">
+        <button type="button" class="msg-chat-entry__btn" @click="router.push('/chat')">
+          <span class="msg-chat-entry__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-4-.8L3 21l1.9-4.6A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z" />
+            </svg>
+          </span>
+          <span class="msg-chat-entry__body">
+            <span class="msg-chat-entry__title">订单沟通</span>
+            <span class="nl-caption nl-text-muted">
+              {{ chatUnreadError ? '未读数暂不可用' : `${chatUnread} 条未读` }} · 与陪诊员沟通本次陪诊安排
+            </span>
+          </span>
+          <el-badge :value="chatUnread" :hidden="chatUnread === 0" :max="99" />
+          <span class="msg-chat-entry__chev" aria-hidden="true">›</span>
+        </button>
       </NlCard>
       <!-- 顶部操作条 -->
       <section class="msg-bar">
@@ -245,6 +261,61 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--nl-gutter);
+}
+
+/* M13 订单沟通入口：整行可点，触控区不低于 --nl-touch-min。
+   老人模式下字号由 elderly.scss 统一切换，这里不写死 px。 */
+.msg-chat-entry {
+  &__btn {
+    display: flex;
+    gap: var(--nl-space-3);
+    align-items: center;
+    width: 100%;
+    min-height: var(--nl-touch-min);
+    padding: 0;
+    text-align: left;
+    color: var(--nl-text-1);
+    font: inherit;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid var(--nl-primary);
+      outline-offset: 2px;
+      border-radius: var(--nl-radius-chip);
+    }
+  }
+
+  &__icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    color: var(--nl-primary-text);
+    background: var(--nl-primary-ghost);
+    border-radius: 50%;
+  }
+
+  &__body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__title {
+    font-size: var(--nl-font-h3);
+    font-weight: 600;
+  }
+
+  &__chev {
+    flex-shrink: 0;
+    font-size: var(--nl-font-h2);
+    color: var(--nl-text-2);
+  }
 }
 
 .msg-list {

@@ -13,7 +13,7 @@ const user = useUserStore()
 const { isLg } = useResponsive()
 const list = ref(null)
 const orderId = computed(() => String(route.params.orderId || ''))
-const writer = computed(() => ['FAMILY', 'COMPANION'].includes(user.role))
+const writer = computed(() => user.isFamily || user.isCompanion)
 </script>
 
 <template>

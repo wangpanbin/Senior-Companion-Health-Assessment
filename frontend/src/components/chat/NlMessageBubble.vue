@@ -3,13 +3,14 @@
 import { computed } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { chatMediaUrl } from '@/utils/chat'
+import { ROLE_LABELS } from '@/store/modules/user'
 import NlChatVideo from './NlChatVideo.vue'
 const props = defineProps({
   message: { type: Object, required: true },
   mine: { type: Boolean, default: false }
 })
 const mediaUrl = computed(() => chatMediaUrl(props.message.fileUrl))
-const roleLabel = computed(() => (props.message.senderRole === 'FAMILY' ? '家属' : '陪诊员'))
+const roleLabel = computed(() => ROLE_LABELS[props.message.senderRole] ?? ROLE_LABELS.COMPANION)
 </script>
 
 <template>

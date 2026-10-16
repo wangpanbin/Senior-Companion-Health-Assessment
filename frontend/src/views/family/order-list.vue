@@ -126,6 +126,22 @@ onMounted(loadOrders)
           <span v-else class="nl-caption nl-text-weak">尚无陪诊员</span>
           <span class="order__id is-num">{{ o.orderNo }}</span>
         </div>
+        <!--
+          M13：有陪诊员才可聊。
+          ⚠️ 判据用 companionName 而不是 companionId —— 列表 VO（OrderVO.ofList）
+          **不返回 companionId**（实测 JSON 里没有该字段），用 id 判会恒为假、
+          按钮永远不渲染。companionName 有值 ⇔ 已接单。
+        -->
+        <el-button
+          v-if="o.companionName"
+          class="order__chat"
+          type="primary"
+          plain
+          @keydown.stop
+          @click.stop="router.push(`/chat/${o.id}`)"
+        >
+          联系对方
+        </el-button>
       </li>
     </ul>
 
@@ -238,6 +254,14 @@ onMounted(loadOrders)
     // 订单号是用户报障时要念的凭据，属有意义内容，不能用 2.62:1 的弱化灰
     color: var(--nl-text-2);
     font-size: var(--nl-font-caption);
+  }
+
+  // 整卡可点进详情，按钮单独跳聊天：必须 @click.stop，否则被父级 li 的
+  // view(o) 截胡（companion/order-list.vue 同一处也是这个写法）。
+  &__chat {
+    width: 100%;
+    min-height: var(--nl-touch-min);
+    margin-top: var(--nl-space-3);
   }
 }
 </style>

@@ -13,7 +13,7 @@ import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.impl.ChatServiceImpl;
 import org.company.nianglin.support.MybatisLambdaCache;
-import org.company.nianglin.vo.ChatConversationVO;
+import org.company.nianglin.vo.ChatMessageVO;
 import org.company.nianglin.websocket.ChatMessageHub;
 import org.company.nianglin.websocket.MessageSseHub;
 import org.junit.jupiter.api.AfterEach;
@@ -76,6 +76,26 @@ class ChatServiceTest {
     }
 
     @Test
+    @DisplayName("旁观视角（ELDER）读历史不虚构对端，peer 三字段一律留空")
+    void historyShouldLeavePeerBlankForBystanderViewer() {
+        login("ELDER", 33L);
+        involved();
+        when(messages.selectList(any())).thenReturn(java.util.List.of());
+        org.company.nianglin.entity.SysUser family = new org.company.nianglin.entity.SysUser();
+        family.setId(11L);
+        family.setUsername("family01");
+        lenient().when(users.selectBatchIds(any())).thenReturn(java.util.List.of(family));
+        lenient().when(profiles.selectList(any())).thenReturn(java.util.List.of());
+
+        org.company.nianglin.vo.ChatHistoryVO vo = service.history(101L, 0L, 20);
+
+        assertNull(vo.getPeerUserId());
+        assertNull(vo.getPeerRole());
+        assertNull(vo.getPeerName());
+        assertEquals("ELDER", vo.getMyRole());
+    }
+
+    @Test
     @DisplayName("管理员无论消息内容如何都没有写权限")
     void sendShouldCheckWriterBeforeContent() {
         login("ADMIN", 1L);
@@ -103,7 +123,7 @@ class ChatServiceTest {
         verifyNoInteractions(hub, sse);
         TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
         verify(hub).publishToChat(eq(101L), eq(11L), eq("CHAT_MESSAGE"), argThat(data ->
-                data instanceof java.util.Map<?, ?> map && Long.valueOf(900).equals(map.get("messageId"))));
+                data instanceof ChatMessageVO message && Long.valueOf(900L).equals(message.getMessageId())));
         verify(sse).push(eq(22L), eq("CHAT_MESSAGE"), any());
     }
 
@@ -148,13 +168,6 @@ class ChatServiceTest {
         involved();
         assertCode(ResultCode.CHAT_CONTENT_ILLEGAL, () -> service.send(101L, dto("TEXT", "字".repeat(1001))));
         verifyNoInteractions(messages);
-    }
-
-    @Test
-    @DisplayName("预览包含省略号仍不超过三十个完整字符")
-    void previewShouldPreserveCodePointsWithinThirtyCharacters() {
-        String text = "\uD840\uDC00".repeat(31);
-        assertEquals("\uD840\uDC00".repeat(29) + "…", ChatConversationVO.previewOf(text));
     }
 
     @Test

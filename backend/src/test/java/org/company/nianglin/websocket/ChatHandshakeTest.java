@@ -1,6 +1,7 @@
 package org.company.nianglin.websocket;
 
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.WsPathConstants;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.security.JwtTokenProvider;
@@ -34,7 +35,7 @@ class ChatHandshakeTest {
         token();
         when(orders.requireInvolved(eq(101L), any(LoginUser.class)))
                 .thenThrow(new BusinessException(ResultCode.ORDER_NO_PERMISSION));
-        assertFalse(handshake("/ws/chat?token=test&orderId=101"));
+        assertFalse(handshake(WsPathConstants.CHAT + "?token=test&orderId=101"));
         verify(response).setStatusCode(HttpStatus.FORBIDDEN);
     }
 
@@ -44,7 +45,7 @@ class ChatHandshakeTest {
         CompanionOrder order = new CompanionOrder();
         order.setId(101L);
         when(orders.requireInvolved(eq(101L), any(LoginUser.class))).thenReturn(order);
-        assertFalse(handshake("/ws/chat?token=test&orderId=101"));
+        assertFalse(handshake(WsPathConstants.CHAT + "?token=test&orderId=101"));
         verify(response).setStatusCode(HttpStatus.FORBIDDEN);
     }
 
@@ -52,16 +53,16 @@ class ChatHandshakeTest {
     void handshakeShouldKeepProgressAvailableBeforeAcceptance() {
         token();
         when(orders.requireInvolved(eq(101L), any(LoginUser.class))).thenReturn(new CompanionOrder());
-        assertTrue(handshake("/ws/progress?token=test&orderId=101"));
+        assertTrue(handshake(WsPathConstants.PROGRESS + "?token=test&orderId=101"));
     }
 
     @Test
     void handshakeShouldRejectMissingOrRefreshToken() {
-        assertFalse(handshake("/ws/chat?orderId=101"));
+        assertFalse(handshake(WsPathConstants.CHAT + "?orderId=101"));
         verify(response).setStatusCode(HttpStatus.UNAUTHORIZED);
         reset(response);
         when(provider.parse("test")).thenReturn(new TokenPayload(11L, "test", "FAMILY", "refresh", "jti", 0, 0, Long.MAX_VALUE));
-        assertFalse(handshake("/ws/chat?token=test&orderId=101"));
+        assertFalse(handshake(WsPathConstants.CHAT + "?token=test&orderId=101"));
         verify(response).setStatusCode(HttpStatus.UNAUTHORIZED);
         verifyNoInteractions(orders);
     }

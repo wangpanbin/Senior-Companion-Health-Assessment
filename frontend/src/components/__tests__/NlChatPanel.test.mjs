@@ -4,8 +4,20 @@ import NlChatPanel from '@/components/chat/NlChatPanel.vue'
 import { connectChatSocket, getHistory, markRead, sendMessage } from '@/api/chat'
 import { uploadFile } from '@/api/file'
 
-const user = vi.hoisted(() => ({ role: 'FAMILY', userInfo: { id: 101 } }))
-vi.mock('@/store/modules/user', () => ({ useUserStore: () => user }))
+const user = vi.hoisted(() => {
+  const store = { role: 'FAMILY', userInfo: { id: 101 } }
+  return Object.defineProperties(store, {
+    isFamily: { get: () => store.role === 'FAMILY' },
+    isCompanion: { get: () => store.role === 'COMPANION' },
+    isAdmin: { get: () => store.role === 'ADMIN' },
+    isElder: { get: () => store.role === 'ELDER' }
+  })
+})
+// 只替掉 useUserStore，保留 ROLES / ROLE_LABELS 等真实导出：气泡子组件要读 ROLE_LABELS。
+vi.mock('@/store/modules/user', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useUserStore: () => user
+}))
 vi.mock('@/api/chat', () => ({
   getHistory: vi.fn(),
   markRead: vi.fn(),

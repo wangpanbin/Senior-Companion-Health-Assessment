@@ -101,22 +101,22 @@ class FileStorageChatTest {
     }
 
     @Test
-    @DisplayName("限额 · 非聊天业务（COMPLAINT）10MB+1 字节 → 7009（10MB 防线未被提额冲垮）")
-    void nonChatUploadOverTenMbShouldReport7009() {
+    @DisplayName("限额 · 非聊天业务（COMPLAINT）10MB+1 字节 → 400（10MB 防线未被提额冲垮，且不占 7xxx 段位）")
+    void nonChatUploadOverTenMbShouldReportParamError() {
         MultipartFile file = fileOf(DEFAULT_LIMIT + 1);
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.store(file, "COMPLAINT", null, 101L));
-        assertEquals(ResultCode.CHAT_FILE_TOO_LARGE.getCode(), ex.getCode());
+        assertEquals(ResultCode.PARAM_ERROR.getCode(), ex.getCode());
         verify(sysFileMapper, never()).insert(any(SysFile.class));
     }
 
     @Test
-    @DisplayName("限额 · 白名单外裸串（CHECKIN）超 10MB → 7009（解析不出按默认收紧）")
-    void unknownBizTypeOverTenMbShouldReport7009() {
+    @DisplayName("限额 · 白名单外裸串（CHECKIN）超 10MB → 400（解析不出按默认收紧）")
+    void unknownBizTypeOverTenMbShouldReportParamError() {
         MultipartFile file = fileOf(DEFAULT_LIMIT + 1);
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.store(file, "CHECKIN", 1001L, 301L));
-        assertEquals(ResultCode.CHAT_FILE_TOO_LARGE.getCode(), ex.getCode());
+        assertEquals(ResultCode.PARAM_ERROR.getCode(), ex.getCode());
     }
 
     // ---------- 流式落盘 ----------

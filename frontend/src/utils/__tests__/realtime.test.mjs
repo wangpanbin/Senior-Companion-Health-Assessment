@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createProgressSocket } from '../realtime'
+import { createRealtimeSocket } from '../realtime'
 
 vi.mock('@/utils/auth', () => ({ getToken: () => 'test-token' }))
 
@@ -32,7 +32,7 @@ describe('订单实时通道', () => {
     [undefined, '/ws/progress'],
     ['/ws/chat', '/ws/chat']
   ])('retains default progress and supports %s', (path, expected) => {
-    const connection = createProgressSocket(42, {}, path)
+    const connection = createRealtimeSocket(42, {}, path)
     const url = new URL(sockets[0].url)
     expect(url.pathname).toBe(expected)
     expect(url.searchParams.get('orderId')).toBe('42')
@@ -41,7 +41,7 @@ describe('订单实时通道', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
   it('heartbeats, reconnects to same path and stops on close', () => {
-    const connection = createProgressSocket(42, {}, '/ws/chat')
+    const connection = createRealtimeSocket(42, {}, '/ws/chat')
     sockets[0].readyState = 1
     sockets[0].onopen()
     vi.advanceTimersByTime(30000)

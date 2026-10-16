@@ -2,6 +2,7 @@ package org.company.nianglin.websocket;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.company.nianglin.constant.WsPathConstants;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.security.JwtTokenProvider;
 import org.company.nianglin.security.LoginUser;
@@ -20,7 +21,12 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.util.Map;
 
 /**
- * WebSocket 握手鉴权（{@code /ws/progress?token=xxx&orderId=1001}）。
+ * WebSocket 握手鉴权（M5 {@code /ws/progress}、M13 {@code /ws/chat} 共用一套）。
+ *
+ * <p>两条通道都要求 {@code ?token=<accessToken>&orderId=<orderId>}，
+ * 差异只在门禁：{@code /ws/chat} 额外要求订单已指派陪诊员（未接单回 7003），
+ * 路径常量取自 {@link org.company.nianglin.constant.WsPathConstants}，
+ * 与 {@code WebSocketConfig} 的注册端共用一份，避免改路径时门禁静默失效。</p>
  *
  * <p>对应 {@code docs/adr/0001-m5-websocket-auth.md} 的决策：
  * <b>不动 {@code JwtAuthenticationFilter}，把「校验 JWT + 判订单归属」放在握手阶段完成。</b></p>
@@ -77,7 +83,7 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         String token = params.get(PARAM_TOKEN);
         Long orderId = parseOrderId(params.get(PARAM_ORDER_ID));
         if (token == null || token.isBlank() || orderId == null) {
-            log.warn("进度订阅握手被拒：缺少 token 或 orderId | path={}", request.getURI().getPath());
+            log.warn("WebSocket 握手被拒：缺少 token 或 orderId | path={}", request.getURI().getPath());
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return false;
         }
@@ -100,14 +106,14 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
 
             // 归属校验：非相关方在这里就出不去，不会进到会话注册表
             org.company.nianglin.entity.CompanionOrder order = orderService.requireInvolved(orderId, loginUser);
-            if ("/ws/chat".equals(request.getURI().getPath()) && order.getCompanionId() == null) {
+            if (WsPathConstants.CHAT.equals(request.getURI().getPath()) && order.getCompanionId() == null) {
                 throw new BusinessException(org.company.nianglin.common.ResultCode.CHAT_NOT_AVAILABLE);
             }
 
             attributes.put(WsAttributes.ORDER_ID, orderId);
             attributes.put(WsAttributes.USER_ID, payload.userId());
             attributes.put(WsAttributes.ROLE, payload.role());
-            log.info("进度订阅握手通过 | orderId={} | userId={} | role={}",
+            log.info("WebSocket 握手通过 | orderId={} | userId={} | role={}",
                     orderId, payload.userId(), payload.role());
             return true;
         } catch (BusinessException e) {
@@ -116,11 +122,11 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             boolean forbidden = org.company.nianglin.common.ResultCode.FORBIDDEN.getCode().equals(e.getCode())
                     || org.company.nianglin.common.ResultCode.ORDER_NO_PERMISSION.getCode().equals(e.getCode())
                     || org.company.nianglin.common.ResultCode.CHAT_NOT_AVAILABLE.getCode().equals(e.getCode());
-            log.warn("进度订阅握手被拒 | orderId={} | code={} | message={}", orderId, e.getCode(), e.getMessage());
+            log.warn("WebSocket 握手被拒 | orderId={} | code={} | message={}", orderId, e.getCode(), e.getMessage());
             response.setStatusCode(forbidden ? HttpStatus.FORBIDDEN : HttpStatus.UNAUTHORIZED);
             return false;
         } catch (Exception e) {
-            log.warn("进度订阅握手异常 | orderId={} | {}", orderId, e.getMessage());
+            log.warn("WebSocket 握手异常 | orderId={} | {}", orderId, e.getMessage());
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return false;
         }
@@ -132,7 +138,7 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
                                @NonNull WebSocketHandler wsHandler,
                                Exception exception) {
         if (exception != null) {
-            log.warn("进度订阅握手完成后出现异常 | {}", exception.getMessage());
+            log.warn("WebSocket 握手完成后出现异常 | {}", exception.getMessage());
         }
     }
 
