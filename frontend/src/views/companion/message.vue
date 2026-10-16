@@ -42,7 +42,7 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const roleLabel = computed(() => userStore.roleLabel || '用户')
-const chatWriter = computed(() => ['FAMILY', 'COMPANION'].includes(userStore.role))
+const chatWriter = computed(() => userStore.isFamily || userStore.isCompanion)
 const { total: chatUnread, error: chatUnreadError, handleMessage: onChatMessage } = useChatUnread({
   enabled: chatWriter, subscribe: false
 })

@@ -17,7 +17,7 @@ const props = defineProps({
 const emit = defineEmits(['read', 'sent'])
 const user = useUserStore()
 const scroller = ref(null)
-const canWrite = computed(() => !props.readOnly && ['FAMILY', 'COMPANION'].includes(user.role))
+const canWrite = computed(() => !props.readOnly && (user.isFamily || user.isCompanion))
 const {
   messages,
   metadata,
@@ -160,7 +160,7 @@ onBeforeUnmount(() => {
     <NlNoticeBar tone="warning">不做诊断、不开药方，紧急情况请拨打 120。</NlNoticeBar>
     <NlNoticeBar v-if="!canWrite" class="chat-panel__readonly">
       {{
-        user.role === 'ADMIN'
+        user.isAdmin
           ? '仲裁只读：仅查看沟通记录，不可发送消息。'
           : '只读：您可查看本单沟通记录，发送消息请由家属操作。'
       }}
