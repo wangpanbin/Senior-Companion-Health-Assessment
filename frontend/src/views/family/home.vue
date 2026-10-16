@@ -20,7 +20,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Bell,
-  Calendar, FirstAidKit as Med, Clock, Plus
+  Calendar, ChatDotRound, FirstAidKit as Med, Clock, Plus
 } from '@element-plus/icons-vue'
 import {
   NlPhoneShell, NlDesktopShell, NlAppTabBar, NlCard, NlAvatar, NlStatusChip,
@@ -28,6 +28,7 @@ import {
 } from '@/components'
 import { useAppStore } from '@/store/modules/app'
 import { useDevice } from '@/composables/useDevice'
+import { useChatUnread } from '@/composables/useChatUnread'
 import { listElder } from '@/api/user'
 import { listMyOrders } from '@/api/order'
 import { getUnreadCount } from '@/api/message'
@@ -133,10 +134,17 @@ async function refreshUnread() {
 
 /* ---------------- 导航 ---------------- */
 const quickEntries = [
-  { key: 'order',   icon: Calendar, label: '预约挂号', tone: 'primary', path: '/family/order/step1' },
-  { key: 'med',     icon: Med,      label: '用药计划', tone: 'success', path: '/family/medication' },
-  { key: 'track',   icon: Clock,    label: '进度查看', tone: 'warning', path: '/family/order' }
+  { key: 'order',   icon: Calendar,     label: '预约挂号', tone: 'primary', path: '/family/order/step1' },
+  { key: 'chat',    icon: ChatDotRound, label: '订单沟通', tone: 'info',    path: '/chat' },
+  { key: 'med',     icon: Med,          label: '用药计划', tone: 'success', path: '/family/medication' },
+  { key: 'track',   icon: Clock,        label: '进度查看', tone: 'warning', path: '/family/order' }
 ]
+
+/**
+ * M13 未读数（仅家属 / 陪诊员可写，故 ELDER 不订阅）。
+ * 与站内信未读（unread）是两套数据：前者是订单聊天，后者是系统通知。
+ */
+const { total: chatUnread } = useChatUnread()
 
 /* 底部 Tab 由 NlAppTabBar 统一管理（角色感知 + 路由感知） */
 
@@ -250,13 +258,15 @@ v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
       </ul>
     </section>
 
-    <!-- ==================== 三宫格 ==================== -->
+    <!-- ==================== 快捷入口 ==================== -->
     <NlCard plain>
       <ul role="list" class="quickgrid">
         <li v-for="q in quickEntries" :key="q.key" role="button" tabindex="0" class="quickgrid__item" @keydown.enter.prevent="quickEnter(q)" @keydown.space.prevent="quickEnter(q)" @click="quickEnter(q)">
-          <NlIconBox :tone="q.tone" :size="48">
-            <component :is="q.icon" />
-          </NlIconBox>
+          <el-badge :value="chatUnread" :hidden="q.key !== 'chat' || chatUnread === 0" :max="99">
+            <NlIconBox :tone="q.tone" :size="48">
+              <component :is="q.icon" />
+            </NlIconBox>
+          </el-badge>
           <div class="quickgrid__label">{{ q.label }}</div>
         </li>
       </ul>
@@ -452,9 +462,11 @@ v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
       <template #title><span class="nl-h2">快捷入口</span></template>
       <ul role="list" class="desktop-quick">
         <li v-for="q in quickEntries" :key="q.key" role="button" tabindex="0" class="desktop-quick__item" @keydown.enter.prevent="quickEnter(q)" @keydown.space.prevent="quickEnter(q)" @click="quickEnter(q)">
-          <NlIconBox :tone="q.tone" :size="40">
-            <component :is="q.icon" />
-          </NlIconBox>
+          <el-badge :value="chatUnread" :hidden="q.key !== 'chat' || chatUnread === 0" :max="99">
+            <NlIconBox :tone="q.tone" :size="40">
+              <component :is="q.icon" />
+            </NlIconBox>
+          </el-badge>
           <div class="desktop-quick__text">
             <div class="desktop-quick__label">{{ q.label }}</div>
           </div>
@@ -698,9 +710,11 @@ v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
   gap: var(--nl-space-2);
 }
 
+/* 4 个入口排 2×2：4 列在 390 宽屏上每格仅 ~83px，
+   老人模式下 4 字标签（18px）会顶到格边，2×2 触控区也更大。 */
 .quickgrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--nl-space-2);
   padding: 0;
   margin: 0;
@@ -884,7 +898,7 @@ v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
 
 .desktop-quick {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--nl-space-3);
   padding: 0;
   margin: 0;
