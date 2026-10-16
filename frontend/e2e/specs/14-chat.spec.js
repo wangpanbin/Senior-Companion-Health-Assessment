@@ -169,3 +169,59 @@ test.describe('订单聊天只读矩阵（绕过前端直连后端）', () => {
     }
   })
 })
+
+/**
+ * 导航层可达性回归。
+ *
+ * 为什么单独一组：M13 首轮交付（ad2552a）里，家属端**只有订单详情页**有
+ * 「联系对方」，工作台 / 订单列表 / 消息页全无入口 —— 后端、WebSocket、组件、
+ * 路由都是好的，但功能等于不可达（用户原话：「开发了却没有 UI 展示」）。
+ *
+ * 为什么原有用例拦不住：本文件此前的每条用例都用 `page.goto(ROUTES.chatRoom(id))`
+ * **直接输 URL** 进入聊天室，跳过了导航层。入口在不在，跟它们一律无关。
+ * 所以这组用例的核心纪律是：**不许 goto 聊天室，只许从界面点进去**。
+ */
+test.describe('订单沟通导航层可达性（入口回归）', () => {
+  test.use({ storageState: authFile('fam001'), viewport: { width: 1280, height: 800 } })
+
+  test('工作台点「订单沟通」进入会话列表', async ({ page }) => {
+    await page.goto(ROUTES.familyHome)
+    const entry = page.getByText('订单沟通', { exact: true }).first()
+    await expect(entry, '家属工作台应暴露订单沟通入口').toBeVisible()
+
+    // 靠点击进入 —— 这一条正是原缺陷所在
+    await entry.click()
+    await page.waitForURL(`**${ROUTES.chatSessions}`)
+    await expect(page.locator('.chat-conversations').first()).toBeVisible()
+  })
+
+  test('消息页顶部沟通卡片可点入会话列表', async ({ page }) => {
+    await page.goto(ROUTES.familyMessage)
+    const card = page.locator('.msg-chat-entry__btn')
+    await expect(card, '消息页应有订单沟通入口卡片').toBeVisible()
+
+    await card.click()
+    await page.waitForURL(`**${ROUTES.chatSessions}`)
+    await expect(page.locator('.chat-conversations').first()).toBeVisible()
+  })
+
+  test('订单列表点「联系对方」进聊天室，不被整卡点击截胡', async ({ page }) => {
+    await page.goto(ROUTES.familyOrder)
+
+    // ⚠️ 必须 exact: true。getByRole 的 name 默认**子串**匹配，而整张卡
+    //   `<li class="order" role="button">` 的可访问名包含卡内全部文本（含
+    //   「联系对方」）。不加 exact，.first() 取到的是 li 而不是里面的按钮，
+    //   点下去走 li 的 @click="view(o)" 落到订单详情 —— 症状与「按钮失效」一样。
+    const btn = page.getByRole('button', { name: '联系对方', exact: true }).first()
+    await expect(btn, '已接单的订单应出现「联系对方」').toBeVisible()
+    await btn.click()
+
+    // ⚠️ 关键断言：必须落在 /chat/{id}。
+    //   整张卡是 <li role="button" @click="view(o)">，一旦按钮的 @click.stop
+    //   失效或被截胡，这里会看到 /family/order/{id}（订单详情）而不是聊天室。
+    await page.waitForURL(/\/chat\/\d+$/, { timeout: 15000 })
+    await expect(page.locator('.chat-panel').first()).toBeVisible()
+    // 家属是写侧，应能拿到输入框
+    await expect(page.getByLabel('消息内容')).toBeEnabled()
+  })
+})
