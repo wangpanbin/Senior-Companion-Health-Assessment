@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import { createProgressSocket } from '@/utils/realtime'
+import { createRealtimeSocket } from '@/utils/realtime'
 
 /**
  * 陪诊执行与打卡接口
@@ -51,12 +51,12 @@ export function uploadExecutionPhoto(orderId, formData) {
  *    这是后端 `ProgressVO` 类注释里明确的约定。
  *
  * @param {number|string} orderId 订单 ID
- * @param {object} [handlers] 见 `@/utils/realtime` 的 createProgressSocket
+ * @param {object} [handlers] 见 `@/utils/realtime` 的 createRealtimeSocket
  * @returns {{ close: () => void, isOpen: () => boolean }} 页面卸载时务必调用 close()
  */
 export function connectProgressSocket(orderId, handlers) {
   if (!orderId) {
     throw new Error('connectProgressSocket 需要 orderId')
   }
-  return createProgressSocket(orderId, handlers)
+  return createRealtimeSocket(orderId, handlers)
 }

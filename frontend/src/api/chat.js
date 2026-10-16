@@ -4,7 +4,7 @@
  * 负责模块：M13 订单聊天（家属 / 陪诊员发言，老人 / 管理员只读）
  */
 import request from '@/utils/request'
-import { createProgressSocket } from '@/utils/realtime'
+import { createRealtimeSocket } from '@/utils/realtime'
 
 export function sendMessage(orderId, data) {
   return request({ url: `/chat/${orderId}/messages`, method: 'post', data })
@@ -31,5 +31,5 @@ export function listAdminChatOrders(params) {
 }
 
 export function connectChatSocket(orderId, handlers) {
-  return createProgressSocket(orderId, handlers, '/ws/chat')
+  return createRealtimeSocket(orderId, handlers, '/ws/chat')
 }

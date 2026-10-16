@@ -1,9 +1,10 @@
 /**
- * 陪诊进度实时通道（M5 · WebSocket）。
+ * 订单实时通道（M5 陪诊进度与 M13 订单聊天共用同一套连接、心跳与退避重连）。
  *
  * 端点：`/ws/progress?token=<accessToken>&orderId=<orderId>`
+ *       `/ws/chat?token=<accessToken>&orderId=<orderId>`
  *
- * ⚠️ 三个必须做对的地方（对应后端 `JwtHandshakeInterceptor` / `OrderProgressHandler`）：
+ * ⚠️ 三个必须做对的地方（对应后端 `JwtHandshakeInterceptor` / `OrderProgressHandler` / `ChatWebSocketHandler`）：
  *
  *   1. **令牌走 query，不走请求头。** 浏览器原生 `WebSocket` 构造函数不允许自定义
  *      请求头，后端因此专门在握手阶段从 query 取 token。写成 header 会得到一个
@@ -16,8 +17,8 @@
  *   3. **心跳是客户端驱动的。** 后端约定客户端每 30 秒发一次 `ping`，服务端回 `pong`。
  *      不发的话，中间的代理层会在几分钟后静默掐掉空闲连接，前端却以为还连着。
  *
- * 服务端下行报文形状（`OrderProgressHub#buildPayload`）：
- *   { type: 'CONNECTED' | 'PONG' | 'ORDER_PROGRESS', orderId, data: { ... , pushTime } }
+ * 服务端下行报文形状（`OrderProgressHub#buildPayload` / `ChatMessageHub#buildPayload`）：
+ *   { type: 'CONNECTED' | 'PONG' | 'ORDER_PROGRESS' | 'CHAT_MESSAGE', orderId, data: { ... , pushTime } }
  */
 
 import { getToken } from '@/utils/auth'
@@ -43,19 +44,19 @@ function buildUrl(orderId, path) {
 }
 
 /**
- * 建立某订单的进度订阅。
+ * 建立某订单的实时通道订阅。
  *
  * @param {number|string} orderId 订单 ID
  * @param {object} handlers
  * @param {(payload: {type: string, orderId?: number, data?: object}) => void} [handlers.onEvent]
- *        收到服务端事件时回调（PONG 也会回调，调用方一般只关心 ORDER_PROGRESS）
+ *        收到服务端事件时回调（PONG 也会回调，调用方一般只关心业务事件）
  * @param {(status: 'connecting'|'open'|'closed', detail?: string) => void} [handlers.onStatus]
  *        连接状态变化，用于页面显示「实时/已断开」
  * @param {() => void} [handlers.onGiveUp] 重连次数用尽（令牌已失效等），调用方应停止等待
- * @param {string} [path='/ws/progress'] 通道路径；M13 复用时传 /ws/chat
+ * @param {string} [path='/ws/progress'] 订阅通道：进度用默认值，聊天传 `/ws/chat`
  * @returns {{ close: () => void, isOpen: () => boolean }}
  */
-export function createProgressSocket(orderId, handlers = {}, path = '/ws/progress') {
+export function createRealtimeSocket(orderId, handlers = {}, path = '/ws/progress') {
   const { onEvent, onStatus, onGiveUp } = handlers
 
   let ws = null
