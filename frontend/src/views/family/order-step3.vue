@@ -220,7 +220,7 @@ function back() {
   padding: var(--nl-space-3);
   font-size: var(--nl-font-caption);
   line-height: 1.6;
-  color: var(--nl-warning);
+  color: var(--nl-warning-text);
   background: var(--nl-warning-bg);
   border-radius: var(--nl-radius-card);
 
@@ -278,9 +278,9 @@ function back() {
   color: var(--nl-text-2);
 
   &__val {
-    font-size: 18px;
+    font-size: var(--nl-font-h2);
     font-weight: 700;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
   }
 }
 
@@ -302,7 +302,7 @@ function back() {
 
   &__primary {
     flex: 2;
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 500;
   }
 }

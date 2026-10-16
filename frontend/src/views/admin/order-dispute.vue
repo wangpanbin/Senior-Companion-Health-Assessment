@@ -21,6 +21,8 @@ import { formatDateTime, formatMoney } from '@/utils/format'
 const list = ref([])
 const loading = ref(false)
 const total = ref(0)
+/** R4：列表加载失败（与「当前筛选下没有数据」区分） */
+const loadError = ref(false)
 const page = ref(1)
 const size = ref(10)
 
@@ -30,9 +32,11 @@ async function loadList() {
     const data = await listAllOrders({ page: page.value, size: size.value })
     list.value = data?.records || []
     total.value = data?.total || 0
+    loadError.value = false
   } catch {
     list.value = []
     total.value = 0
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -109,6 +113,14 @@ onMounted(loadList)
 <template>
   <NlCard title="订单纠纷仲裁" plain>
     <NlSkeleton v-if="loading" :count="5" />
+
+    <NlEmpty
+      v-else-if="loadError"
+      type="network"
+      title="订单纠纷加载失败"
+      action-text="重试"
+      @action="loadList"
+    />
 
     <NlEmpty
       v-else-if="isEmpty"
@@ -247,12 +259,12 @@ onMounted(loadList)
   border-radius: $nl-radius-card;
 
   &__label {
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
     color: $nl-text-2;
   }
 
   &__name {
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 600;
     color: var(--nl-text-1);
   }

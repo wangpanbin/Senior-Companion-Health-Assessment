@@ -83,7 +83,7 @@ defineProps({
   }
 
   &__name {
-    font-size: $nl-font-h2;
+    font-size: var(--nl-font-h2);
     font-weight: 600;
     color: var(--nl-text-1);
   }

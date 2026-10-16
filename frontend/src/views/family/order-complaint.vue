@@ -31,6 +31,8 @@ const orderId = route.params.id
 
 const order = ref(null)
 const orderLoading = ref(false)
+/** R4：订单头加载失败（不能展示成「订单不存在」） */
+const orderError = ref(false)
 
 /** 投诉类型枚举（来源：后端 ComplaintType，label 与后端保持一致） */
 const COMPLAINT_TYPES = [
@@ -56,6 +58,7 @@ const uploadingEvidence = ref(false)
 /* 历史投诉 */
 const history = ref([])
 const historyLoading = ref(false)
+const historyError = ref(false)
 const historyTotal = ref(0)
 
 async function loadOrder() {
@@ -63,8 +66,10 @@ async function loadOrder() {
   try {
     const data = await getOrder(orderId)
     order.value = data || null
+    orderError.value = false
   } catch {
     order.value = null
+    orderError.value = true
   } finally {
     orderLoading.value = false
   }
@@ -76,9 +81,11 @@ async function loadHistory() {
     const data = await listMyComplaints({ page: 1, size: 20 })
     history.value = data?.records || []
     historyTotal.value = data?.total || 0
+    historyError.value = false
   } catch {
     history.value = []
     historyTotal.value = 0
+    historyError.value = true
   } finally {
     historyLoading.value = false
   }
@@ -165,6 +172,14 @@ onMounted(() => {
   <NlPageShell title="我要投诉">
     <NlSkeleton v-if="orderLoading" :count="2" />
 
+    <NlEmpty
+      v-else-if="orderError"
+      type="network"
+      title="订单信息加载失败"
+      action-text="重试"
+      @action="loadOrder"
+    />
+
     <template v-else-if="order">
       <NlNoticeBar tone="warning">
         投诉将由管理员仲裁处理，提交后不可修改；请如实陈述并附事实，避免过激用语。
@@ -191,11 +206,12 @@ onMounted(() => {
 
       <!-- 类型选择 -->
       <NlCard title="投诉类型">
-        <ul class="types">
+        <ul role="list" class="types">
           <li
-            v-for="t in COMPLAINT_TYPES"
-            :key="t.value"
+v-for="t in COMPLAINT_TYPES" :key="t.value" role="button" tabindex="0"
             :class="['types__item', { 'is-active': form.type === t.value }]"
+            @keydown.enter.prevent="form.type = t.value"
+            @keydown.space.prevent="form.type = t.value"
             @click="form.type = t.value"
           >
             {{ t.label }}
@@ -247,6 +263,13 @@ onMounted(() => {
       <!-- 历史 -->
       <NlCard title="我的投诉记录" plain>
         <NlSkeleton v-if="historyLoading" :count="2" />
+        <NlEmpty
+          v-else-if="historyError"
+          type="network"
+          title="投诉记录加载失败"
+          action-text="重试"
+          @action="loadHistory"
+        />
         <p v-else-if="!history.length" class="nl-caption nl-text-muted">暂无历史投诉</p>
         <ul v-else class="hist">
           <li v-for="h in history" :key="h.id" class="hist__item">
@@ -303,7 +326,7 @@ onMounted(() => {
 
   &__item {
     padding: 6px 14px;
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     background: var(--nl-bg-card);
     border: 1.5px solid var(--nl-border);
@@ -311,7 +334,7 @@ onMounted(() => {
     cursor: pointer;
 
     &.is-active {
-      color: var(--nl-primary);
+      color: var(--nl-primary-text);
       background: var(--nl-primary-light);
       border-color: var(--nl-primary);
     }
@@ -355,8 +378,8 @@ onMounted(() => {
   justify-content: center;
   padding: 0 14px;
   height: 40px;
-  font-size: 13px;
-  color: var(--nl-primary);
+  font-size: var(--nl-font-caption);
+  color: var(--nl-primary-text);
   background: var(--nl-bg-card);
   border: 1.5px solid var(--nl-primary);
   border-radius: 10px;

@@ -68,7 +68,7 @@ defineProps({
     font-family: var(--nl-font-num);
     font-size: var(--nl-font-caption);
     font-weight: 600;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     background: var(--nl-primary-light);
     border-radius: var(--nl-radius-chip);
   }

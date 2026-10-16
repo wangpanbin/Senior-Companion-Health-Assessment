@@ -50,6 +50,8 @@ const mobileOnlyHere = computed(() => route.name === 'ElderMessage')
 
 const messages = ref([])
 const loading = ref(true)
+/** R4：站内信加载失败（与「一条消息都没有」区分） */
+const loadError = ref(false)
 const total = ref(0)
 const unreadCount = computed(() => messages.value.filter((m) => !m.isRead).length)
 
@@ -69,9 +71,11 @@ async function load() {
     const data = await listMessages({ page: 1, size: 50 })
     messages.value = data?.records || []
     total.value = data?.total || 0
+    loadError.value = false
   } catch {
     messages.value = []
     total.value = 0
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -152,6 +156,14 @@ onBeforeUnmount(() => {
       <NlSkeleton v-if="loading" :count="3" class="pad" />
 
       <NlEmpty
+        v-else-if="loadError"
+        type="network"
+        title="消息加载失败"
+        action-text="重试"
+        @action="load"
+      />
+
+      <NlEmpty
         v-else-if="!hasAny"
         type="empty"
         title="暂无新消息"
@@ -159,8 +171,8 @@ onBeforeUnmount(() => {
       />
 
       <NlCard v-else title="站内信" plain>
-        <ul class="msg-list">
-          <li v-for="item in messages" :key="item.id" class="msg-item" @click="openItem(item)">
+        <ul role="list" class="msg-list">
+          <li v-for="item in messages" :key="item.id" role="button" tabindex="0" class="msg-item" @keydown.enter.prevent="openItem(item)" @keydown.space.prevent="openItem(item)" @click="openItem(item)">
             <NlIconBox :tone="toneOf(item.type)" :size="36">
               <svg
                 viewBox="0 0 16 16"

@@ -164,7 +164,7 @@ function onCommand(cmd) {
   justify-content: center;
   width: 32px;
   height: 32px;
-  font-size: 14px;
+  font-size: var(--nl-font-body);
   font-weight: 600;
   color: var(--nl-text-inverse);
   background: var(--nl-primary-gradient);
@@ -172,13 +172,13 @@ function onCommand(cmd) {
 }
 
 .nl-user-menu__name {
-  font-size: 14px;
+  font-size: var(--nl-font-body);
   font-weight: 500;
   color: var(--nl-text-1);
 }
 
 .nl-user-menu__caret {
-  font-size: 12px;
+  font-size: var(--nl-font-caption);
   color: var(--nl-text-3);
   transition: transform 0.15s;
 }
@@ -201,7 +201,7 @@ function onCommand(cmd) {
 
 .nl-user-menu__card-name {
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--nl-font-body);
   font-weight: 600;
   color: var(--nl-text-1);
   text-overflow: ellipsis;
@@ -209,12 +209,12 @@ function onCommand(cmd) {
 }
 
 .nl-user-menu__logout {
-  color: var(--nl-danger);
+  color: var(--nl-danger-text);
 
   &:hover,
   &:focus-visible {
     background: var(--nl-danger-bg);
-    color: var(--nl-danger);
+    color: var(--nl-danger-text);
   }
 }
 </style>

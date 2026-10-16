@@ -269,6 +269,8 @@ function handleResize() {
 const medicationStat = ref(null)
 // 空态：不是 loading 且总览为空（后端返回 null 或完全无数据）
 const isEmpty = computed(() => !loading.value && !overview.value)
+/** R4：五个统计接口并行拉取，任一失败都归到可重试的错误态，而不是「暂无数据」 */
+const loadError = ref(false)
 
 async function loadDashboard() {
   loading.value = true
@@ -285,12 +287,14 @@ async function loadDashboard() {
     orderTrend.value = trend
     companionTop.value = rank || []
     medicationStat.value = med
+    loadError.value = false
   } catch {
-    // 拦截器已弹过错误提示，这里只兜底把数据清空，交给空态/骨架展示
+    // 拦截器已弹过错误提示，这里只兜底把数据清空，交给错误态展示
     overview.value = null
     orderTrend.value = null
     companionTop.value = []
     medicationStat.value = null
+    loadError.value = true
   } finally {
     loading.value = false
     // DOM 此刻才真正渲染出来，等下一帧再量尺寸画 ECharts，否则拿不到宽高
@@ -326,6 +330,14 @@ watch(range, loadDashboard)
     </section>
 
     <NlSkeleton v-if="loading" :count="6" />
+
+    <NlEmpty
+      v-else-if="loadError"
+      type="network"
+      title="数据看板加载失败"
+      action-text="重试"
+      @action="loadDashboard"
+    />
 
     <NlEmpty
       v-else-if="isEmpty"
@@ -434,10 +446,9 @@ watch(range, loadDashboard)
   background: var(--nl-bg-card);
   border: 1px solid var(--nl-border);
   border-radius: $nl-radius-card;
-  box-shadow: var(--nl-shadow-card);
 
   &__label {
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
   }
 
@@ -448,14 +459,17 @@ watch(range, loadDashboard)
     color: var(--nl-text-1);
 
     &--success {
-      color: var(--nl-success);
+      color: var(--nl-success-text);
     }
   }
 
+  /* R2：这里原本是 var(--nl-success)，四个 KPI 的说明文字全被涂成成功绿，
+     包括「本周期全部订单」「全量累计」这种纯中性描述 —— 既语义误用，
+     #17B26A 在白底也只有 2.76:1。说明文字一律走中性灰。 */
   &__trend {
     margin-top: 6px;
-    font-size: $nl-font-caption;
-    color: var(--nl-success);
+    font-size: var(--nl-font-caption);
+    color: var(--nl-text-2);
   }
 }
 
@@ -501,11 +515,11 @@ watch(range, loadDashboard)
   &__val {
     font-size: 36px;
     font-weight: 700;
-    color: var(--nl-success);
+    color: var(--nl-success-text);
   }
 
   &__lbl {
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
   }
 }
@@ -522,7 +536,7 @@ watch(range, loadDashboard)
   gap: $nl-space-3;
   align-items: center;
   padding: 8px 0;
-  font-size: $nl-font-body;
+  font-size: var(--nl-font-body);
 
   & + .rank-item {
     border-top: 1px dashed var(--nl-divider);
@@ -534,15 +548,17 @@ watch(range, loadDashboard)
     justify-content: center;
     width: 24px;
     height: 24px;
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
     font-weight: 700;
     color: var(--nl-text-2);
     background: var(--nl-neutral-chip);
     border-radius: 50%;
 
-    &.is-top-1 { color: #fff;     background: #F2A900; }
-    &.is-top-2 { color: #fff;     background: #B1B5BB; }
-    &.is-top-3 { color: #fff;     background: #D78A4E; }
+    /* R2：白字在这三个底色上只有 2.0~2.5:1，不达 AA；换 --nl-text-1 后
+       6~8:1，金/银/铜的识别度完全保留。底色收进 --nl-rank-* 令牌。 */
+    &.is-top-1 { color: var(--nl-text-1); background: var(--nl-rank-1); }
+    &.is-top-2 { color: var(--nl-text-1); background: var(--nl-rank-2); }
+    &.is-top-3 { color: var(--nl-text-1); background: var(--nl-rank-3); }
   }
 
   &__name {
@@ -569,9 +585,9 @@ watch(range, loadDashboard)
   }
 
   &__rate {
-    color: var(--nl-success);
+    color: var(--nl-success-text);
     text-align: right;
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
   }
 }
 </style>

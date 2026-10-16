@@ -22,6 +22,8 @@ const filter = ref({ status: '' })
 const list = ref([])
 const loading = ref(false)
 const total = ref(0)
+/** R4：列表加载失败（与「当前筛选下没有数据」区分） */
+const loadError = ref(false)
 const page = ref(1)
 const size = ref(10)
 
@@ -33,9 +35,11 @@ async function loadList() {
     const data = await listComplaints(params)
     list.value = data?.records || []
     total.value = data?.total || 0
+    loadError.value = false
   } catch {
     list.value = []
     total.value = 0
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -134,6 +138,14 @@ onMounted(loadList)
     </section>
 
     <NlSkeleton v-if="loading" :count="5" />
+
+    <NlEmpty
+      v-else-if="loadError"
+      type="network"
+      title="投诉记录加载失败"
+      action-text="重试"
+      @action="loadList"
+    />
 
     <NlEmpty
       v-else-if="isEmpty"
@@ -257,7 +269,7 @@ onMounted(loadList)
   &__label {
     flex-shrink: 0;
     width: 88px;
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
     color: $nl-text-2;
     text-align: right;
   }

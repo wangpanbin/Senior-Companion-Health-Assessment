@@ -96,9 +96,9 @@ const router = useRouter()
     justify-content: center;
     width: 22px;
     height: 22px;
-    font-size: 12px;
+    font-size: var(--nl-font-caption);
     font-weight: 600;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     background: var(--nl-primary-light);
     border-radius: 50%;
   }
@@ -119,7 +119,7 @@ const router = useRouter()
 
   &__btn {
     width: 100%;
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
   }
 }
 </style>

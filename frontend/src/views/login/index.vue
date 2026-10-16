@@ -227,7 +227,7 @@ applyDemoAccount(activeRole.value)
                 </svg>
               </template>
             </el-input>
-            <div class="login__captcha-img" title="点击更换验证码" @click="loadCaptcha">
+            <div role="button" tabindex="0" class="login__captcha-img" title="点击更换验证码" @keydown.enter.prevent="loadCaptcha" @keydown.space.prevent="loadCaptcha" @click="loadCaptcha">
               <img v-if="captchaImage" :src="captchaImage" alt="验证码" />
               <span v-else class="login__captcha-empty">点击刷新</span>
             </div>
@@ -295,7 +295,6 @@ applyDemoAccount(activeRole.value)
     margin-bottom: $nl-space-3;
     background: var(--nl-primary-gradient);
     border-radius: 18px;
-    box-shadow: var(--nl-shadow-card);
   }
 
   &__title {
@@ -308,7 +307,7 @@ applyDemoAccount(activeRole.value)
 
   &__slogan {
     margin: 6px 0 0;
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     letter-spacing: 0.5px;
   }
@@ -318,8 +317,8 @@ applyDemoAccount(activeRole.value)
     max-width: 420px;
     padding: $nl-space-5;
     background: var(--nl-bg-card);
+    border: 1px solid var(--nl-border);
     border-radius: $nl-radius-card;
-    box-shadow: var(--nl-shadow-card);
   }
 
   &__roles {
@@ -328,7 +327,7 @@ applyDemoAccount(activeRole.value)
 
   &__roles-title {
     margin: 0 0 $nl-space-3;
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
   }
 
@@ -353,7 +352,7 @@ applyDemoAccount(activeRole.value)
 
     &:hover {
       transform: translateY(-1px);
-      box-shadow: var(--nl-shadow-card);
+      border-color: var(--nl-border-strong);
     }
 
     &.is-primary.is-active { background: var(--nl-primary-light);  border-color: var(--nl-primary);  }
@@ -363,13 +362,13 @@ applyDemoAccount(activeRole.value)
   }
 
   &__rolecard-label {
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     font-weight: 600;
     color: var(--nl-text-1);
   }
 
   &__rolecard-hint {
-    font-size: 11px;
+    font-size: var(--nl-font-caption);
     line-height: 1.3;
     color: var(--nl-text-2);
     text-align: center;
@@ -380,7 +379,7 @@ applyDemoAccount(activeRole.value)
     margin: $nl-space-3 0 $nl-space-4;
 
     :deep(.el-divider__text) {
-      font-size: $nl-font-caption;
+      font-size: var(--nl-font-caption);
       color: var(--nl-text-2);
     }
   }
@@ -412,7 +411,7 @@ applyDemoAccount(activeRole.value)
   }
 
   &__captcha-empty {
-    font-size: 12px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
   }
 
@@ -425,13 +424,13 @@ applyDemoAccount(activeRole.value)
 
   &__submit {
     width: 100%;
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 500;
   }
 
   &__hint {
     margin-top: $nl-space-4;
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     text-align: center;
   }
@@ -443,7 +442,7 @@ applyDemoAccount(activeRole.value)
 
     p {
       margin: 4px 0;
-      font-size: 12px;
+      font-size: var(--nl-font-caption);
       color: var(--nl-text-2);
     }
   }

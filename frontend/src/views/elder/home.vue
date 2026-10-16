@@ -60,12 +60,15 @@ const hasElderId = computed(() => elderId.value != null)
 
 /* ===== 今日服药提醒（需 elderId，无则降级为入口引导） ===== */
 const medLoading = ref(false)
+/** R4：加载失败与「无法取得 elderId / 今日无安排」两种空态区分开 */
+const medError = ref(false)
 const todayMeds = ref([])
 const medEmpty = computed(() => !medLoading.value && !hasElderId.value)
 const medNoData = computed(() => !medLoading.value && hasElderId.value && todayMeds.value.length === 0)
 
 /* ===== 最近订单（只读） ===== */
 const orderLoading = ref(false)
+const ordersError = ref(false)
 const recentOrders = ref([])
 
 async function loadProfile() {
@@ -82,8 +85,10 @@ async function loadTodayMeds() {
   medLoading.value = true
   try {
     todayMeds.value = (await getTodayTasks(elderId.value)) || []
+    medError.value = false
   } catch {
     todayMeds.value = []
+    medError.value = true
   } finally {
     medLoading.value = false
   }
@@ -94,8 +99,10 @@ async function loadRecentOrders() {
   try {
     const data = await listMyOrders({ page: 1, size: 5 })
     recentOrders.value = data?.records || []
+    ordersError.value = false
   } catch {
     recentOrders.value = []
+    ordersError.value = true
   } finally {
     orderLoading.value = false
   }
@@ -174,6 +181,14 @@ function goMedication() {
 
       <NlSkeleton v-if="medLoading" :count="3" />
 
+      <NlEmpty
+        v-else-if="medError"
+        type="network"
+        title="今日用药加载失败"
+        action-text="重试"
+        @action="loadTodayMeds"
+      />
+
       <ul v-else-if="hasElderId && todayMeds.length" class="med-list">
         <li v-for="m in todayMeds" :key="m.id" class="med-item">
           <div class="med-item__time is-num">{{ formatTime(m.planTime) }}</div>
@@ -214,6 +229,14 @@ function goMedication() {
 
       <NlSkeleton v-if="orderLoading" :count="3" />
 
+      <NlEmpty
+        v-else-if="ordersError"
+        type="network"
+        title="最近订单加载失败"
+        action-text="重试"
+        @action="loadRecentOrders"
+      />
+
       <ul v-else-if="recentOrders.length" class="order-list">
         <li v-for="o in recentOrders" :key="o.id" class="order-item">
           <div class="order-item__head">
@@ -243,7 +266,7 @@ function goMedication() {
 
   <!-- ==================== Desktop 形态（ADR-0007 · Q7 = Ⅱ ELDER 2 个高频页之一） ====================
        ELDER 保持**只读**（AGENTS.md §4.3）：桌面版同样不出现任何写操作入口。
-       内容宽度由 NlDesktopShell 统一限制为 720px 居中。
+       内容宽度由 NlDesktopShell 统一控制（768–1279 单列 720 / ≥1280 双栏 1120）。
   ============================================================================================ -->
   <NlDesktopShell v-else>
     <template #actions>
@@ -279,6 +302,14 @@ function goMedication() {
       </template>
 
       <NlSkeleton v-if="medLoading" :count="3" />
+
+      <NlEmpty
+        v-else-if="medError"
+        type="network"
+        title="今日用药加载失败"
+        action-text="重试"
+        @action="loadTodayMeds"
+      />
 
       <ul v-else-if="hasElderId && todayMeds.length" class="med-list">
         <li v-for="m in todayMeds" :key="m.id" class="med-item">
@@ -319,6 +350,14 @@ function goMedication() {
       </template>
 
       <NlSkeleton v-if="orderLoading" :count="3" />
+
+      <NlEmpty
+        v-else-if="ordersError"
+        type="network"
+        title="最近订单加载失败"
+        action-text="重试"
+        @action="loadRecentOrders"
+      />
 
       <ul v-else-if="recentOrders.length" class="desktop-orders">
         <li v-for="o in recentOrders" :key="o.id" class="desktop-orders__row">
@@ -431,9 +470,9 @@ function goMedication() {
     flex-shrink: 0;
     width: 56px;
     padding: 6px 0;
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     text-align: center;
     background: var(--nl-primary-light);
     border-radius: 8px;
@@ -474,13 +513,13 @@ function goMedication() {
   }
 
   &__fee {
-    font-size: 18px;
+    font-size: var(--nl-font-h2);
     font-weight: 700;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
   }
 
   &__hospital {
-    font-size: 15px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
     color: var(--nl-text-1);
   }
@@ -492,7 +531,7 @@ function goMedication() {
 
 /* ==========================================================================
    Desktop 形态专用样式（>= 768px 才渲染，故不做媒体查询）
-   宽度交给 NlDesktopShell 的 720px 容器。
+   宽度交给 NlDesktopShell 的内容容器（720 / 1120 两档）。
    ========================================================================== */
 .desktop-actions {
   &__label {
@@ -526,7 +565,7 @@ function goMedication() {
 
   &__hospital {
     overflow: hidden;
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 600;
     color: var(--nl-text-1);
     text-overflow: ellipsis;
@@ -540,9 +579,9 @@ function goMedication() {
   &__fee {
     flex-shrink: 0;
     min-width: 72px;
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 700;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     text-align: right;
   }
 }

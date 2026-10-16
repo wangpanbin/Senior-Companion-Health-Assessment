@@ -21,6 +21,8 @@ const tab = ref('PENDING')
 const list = ref([])
 const loading = ref(false)
 const total = ref(0)
+/** R4：列表加载失败（与「当前筛选下没有数据」区分） */
+const loadError = ref(false)
 const page = ref(1)
 const size = ref(10)
 
@@ -35,10 +37,12 @@ async function loadList() {
     })
     list.value = data?.records || []
     total.value = data?.total || 0
+    loadError.value = false
   } catch {
     // 拦截器已弹错误提示，这里只兜底清空，交给空态展示
     list.value = []
     total.value = 0
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -141,6 +145,14 @@ onMounted(loadList)
     </el-tabs>
 
     <NlSkeleton v-if="loading" :count="5" />
+
+    <NlEmpty
+      v-else-if="loadError"
+      type="network"
+      title="资质审核列表加载失败"
+      action-text="重试"
+      @action="loadList"
+    />
 
     <NlEmpty
       v-else-if="isEmpty"
@@ -289,7 +301,7 @@ onMounted(loadList)
     flex-shrink: 0;
     width: 88px;
     padding-top: 4px;
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
     color: $nl-text-2;
     text-align: right;
   }
@@ -307,7 +319,7 @@ onMounted(loadList)
     flex-direction: column;
     gap: 6px;
     align-items: center;
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
     color: $nl-text-2;
   }
 
@@ -318,7 +330,7 @@ onMounted(loadList)
     width: 80px;
     height: 56px;
     overflow: hidden;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     background: var(--nl-primary-light);
     border-radius: 6px;
     border: 1px dashed var(--nl-primary);

@@ -40,13 +40,15 @@ const appStore = useAppStore()
 /**
  * 形态判定（ADR-0007 / 计划 Stage 1）
  * - 窄屏（<= 767px）→ NlPhoneShell，模板与改造前**完全一致**
- * - 宽屏（>= 768px）→ NlDesktopShell，内容居中限宽 720（宽度由壳控制，此处不写死）
+ * - 宽屏（>= 768px）→ NlDesktopShell，内容居中限宽（720 单列 / ≥1280 双栏 1120，宽度由壳控制，此处不写死）
  */
 const { isMobile } = useDevice()
 
 /* ---------------- 老人（切换就诊人上下文） ---------------- */
 const elders = ref([])
 const eldersLoading = ref(false)
+/** R4：就诊人切换区加载失败（与「未绑定老人」的空态区分开） */
+const eldersError = ref(false)
 const activeElder = ref(0)
 const currentElder = computed(() => elders.value[activeElder.value] || null)
 
@@ -56,10 +58,12 @@ async function loadElders() {
     const data = await listElder({ page: 1, size: 100 })
     elders.value = data?.records || []
     activeElder.value = 0
+    eldersError.value = false
     loadTodayTasks(currentElder.value?.id)
   } catch {
     elders.value = []
     tasks.value = []
+    eldersError.value = true
   } finally {
     eldersLoading.value = false
   }
@@ -73,14 +77,17 @@ function pickElder(i) {
 /* ---------------- 最近订单 ---------------- */
 const orders = ref([])
 const ordersLoading = ref(false)
+const ordersError = ref(false)
 
 async function loadOrders() {
   ordersLoading.value = true
   try {
     const data = await listMyOrders({ page: 1, size: 5 })
     orders.value = data?.records || []
+    ordersError.value = false
   } catch {
     orders.value = []
+    ordersError.value = true
   } finally {
     ordersLoading.value = false
   }
@@ -89,10 +96,12 @@ async function loadOrders() {
 /* ---------------- 今日用药提醒 ---------------- */
 const tasks = ref([])
 const tasksLoading = ref(false)
+const tasksError = ref(false)
 
 async function loadTodayTasks(elderId) {
   if (elderId == null) {
     tasks.value = []
+    tasksError.value = false
     return
   }
   tasksLoading.value = true
@@ -100,8 +109,10 @@ async function loadTodayTasks(elderId) {
     // 后端返回 List<MedicationTaskVO>（数组），拦截器直接给数组
     const data = await getTodayTasks(elderId)
     tasks.value = data || []
+    tasksError.value = false
   } catch {
     tasks.value = []
+    tasksError.value = true
   } finally {
     tasksLoading.value = false
   }
@@ -122,9 +133,9 @@ async function refreshUnread() {
 
 /* ---------------- 导航 ---------------- */
 const quickEntries = [
-  { key: 'order',   icon: Calendar, label: '预约挂号', tone: 'primary', desc: '帮父母约医院陪诊',     path: '/family/order/step1' },
-  { key: 'med',     icon: Med,      label: '用药计划', tone: 'success', desc: '管理药品 / 服药提醒', path: '/family/medication' },
-  { key: 'track',   icon: Clock,    label: '进度查看', tone: 'warning', desc: '看正在进行的订单',     path: '/family/order' }
+  { key: 'order',   icon: Calendar, label: '预约挂号', tone: 'primary', path: '/family/order/step1' },
+  { key: 'med',     icon: Med,      label: '用药计划', tone: 'success', path: '/family/medication' },
+  { key: 'track',   icon: Clock,    label: '进度查看', tone: 'warning', path: '/family/order' }
 ]
 
 /* 底部 Tab 由 NlAppTabBar 统一管理（角色感知 + 路由感知） */
@@ -197,6 +208,14 @@ onBeforeUnmount(() => {
     <!-- ==================== 老人横滑卡 ==================== -->
     <NlSkeleton v-if="eldersLoading" :count="3" />
 
+    <NlEmpty
+      v-else-if="eldersError"
+      type="network"
+      title="就诊人加载失败"
+      action-text="重试"
+      @action="loadElders"
+    />
+
     <div v-else-if="!elders.length" class="elder-track__guide">
       <NlEmpty
         type="empty"
@@ -208,11 +227,12 @@ onBeforeUnmount(() => {
     </div>
 
     <section v-else class="elder-track">
-      <ul class="elder-track__list">
+      <ul role="list" class="elder-track__list">
         <li
-          v-for="(e, i) in elders"
-          :key="e.id"
+v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
           :class="['elder-track__item', { 'is-active': activeElder === i }]"
+          @keydown.enter.prevent="pickElder(i)"
+          @keydown.space.prevent="pickElder(i)"
           @click="pickElder(i)"
         >
           <NlAvatar :fallback="e.name ? e.name.slice(0, 1) : '?'" :size="56" tone="primary" />
@@ -221,7 +241,7 @@ onBeforeUnmount(() => {
             {{ e.genderLabel }}<template v-if="e.age != null"> · {{ e.age }} 岁</template>
           </div>
         </li>
-        <li class="elder-track__item elder-track__add" @click="addElder">
+        <li role="button" tabindex="0" class="elder-track__item elder-track__add" @keydown.enter.prevent="addElder" @keydown.space.prevent="addElder" @click="addElder">
           <div class="elder-track__addbox">
             <el-icon size="22"><Plus /></el-icon>
           </div>
@@ -232,13 +252,12 @@ onBeforeUnmount(() => {
 
     <!-- ==================== 三宫格 ==================== -->
     <NlCard plain>
-      <ul class="quickgrid">
-        <li v-for="q in quickEntries" :key="q.key" class="quickgrid__item" @click="quickEnter(q)">
+      <ul role="list" class="quickgrid">
+        <li v-for="q in quickEntries" :key="q.key" role="button" tabindex="0" class="quickgrid__item" @keydown.enter.prevent="quickEnter(q)" @keydown.space.prevent="quickEnter(q)" @click="quickEnter(q)">
           <NlIconBox :tone="q.tone" :size="48">
             <component :is="q.icon" />
           </NlIconBox>
           <div class="quickgrid__label">{{ q.label }}</div>
-          <div class="quickgrid__desc">{{ q.desc }}</div>
         </li>
       </ul>
     </NlCard>
@@ -255,6 +274,15 @@ onBeforeUnmount(() => {
       <NlSkeleton v-if="eldersLoading" :count="2" />
 
       <NlEmpty
+        v-else-if="eldersError"
+        type="network"
+        title="今日用药加载失败"
+        description="就诊人信息没取到，无法定位今日用药"
+        action-text="重试"
+        @action="loadElders"
+      />
+
+      <NlEmpty
         v-else-if="!currentElder"
         type="empty"
         title="暂无就诊人"
@@ -269,6 +297,14 @@ onBeforeUnmount(() => {
         </NlNoticeBar>
 
         <NlSkeleton v-if="tasksLoading" :count="2" />
+
+        <NlEmpty
+          v-else-if="tasksError"
+          type="network"
+          title="今日用药加载失败"
+          action-text="重试"
+          @action="loadTodayTasks(currentElder?.id)"
+        />
 
         <ul v-else-if="tasks.length" class="task-list">
           <li v-for="t in tasks" :key="t.id" class="task">
@@ -302,8 +338,16 @@ onBeforeUnmount(() => {
 
       <NlSkeleton v-if="ordersLoading" :count="2" />
 
-      <ul v-else-if="orders.length" class="order-list">
-        <li v-for="o in orders" :key="o.id" class="order-card" @click="viewOrder(o)">
+      <NlEmpty
+        v-else-if="ordersError"
+        type="network"
+        title="最近订单加载失败"
+        action-text="重试"
+        @action="loadOrders"
+      />
+
+      <ul v-else-if="orders.length" role="list" class="order-list">
+        <li v-for="o in orders" :key="o.id" role="button" tabindex="0" class="order-card" @keydown.enter.prevent="viewOrder(o)" @keydown.space.prevent="viewOrder(o)" @click="viewOrder(o)">
           <div class="order-card__head">
             <NlStatusChip :status="o.status" :text="o.statusLabel" :dot="o.status === 'PENDING' || o.status === 'IN_SERVICE'" />
             <span class="is-num order-card__amt">{{ formatMoney(o.fee) }}</span>
@@ -329,24 +373,13 @@ onBeforeUnmount(() => {
       </div>
     </NlCard>
 
-    <!-- ==================== 关爱之家 banner ==================== -->
-    <section class="love-banner">
-      <div class="love-banner__title">关爱家人，从陪诊开始</div>
-      <ul class="love-banner__tags">
-        <li>专业</li>
-        <li>安心</li>
-        <li>便捷</li>
-      </ul>
-      <p class="love-banner__sub">专业陪诊员 · 全程 6 节点打卡 · 家属端实时进度</p>
-    </section>
-
     <template #tabbar>
       <NlAppTabBar />
     </template>
   </NlPhoneShell>
 
   <!-- ==================== Desktop 形态（ADR-0007 / 计划 Stage 1） ====================
-       内容宽度由 NlDesktopShell 统一限制为 720px 居中（Q11），此处不写 width。
+       内容宽度由 NlDesktopShell 统一控制（768–1279 单列 720 / ≥1280 双栏 1120，Q11），此处不写 width。
        loading / empty / error 仍由本 view 自管（Q10 = ③）。
   ============================================================================== -->
   <NlDesktopShell v-else>
@@ -375,6 +408,14 @@ onBeforeUnmount(() => {
       <NlSkeleton v-if="eldersLoading" :count="2" />
 
       <NlEmpty
+        v-else-if="eldersError"
+        type="network"
+        title="就诊人加载失败"
+        action-text="重试"
+        @action="loadElders"
+      />
+
+      <NlEmpty
         v-else-if="!elders.length"
         type="empty"
         title="还没有绑定老人"
@@ -383,11 +424,12 @@ onBeforeUnmount(() => {
         @action="addElder"
       />
 
-      <ul v-else class="desktop-elders">
+      <ul v-else role="list" class="desktop-elders">
         <li
-          v-for="(e, i) in elders"
-          :key="e.id"
+v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
           :class="['desktop-elders__item', { 'is-active': activeElder === i }]"
+          @keydown.enter.prevent="pickElder(i)"
+          @keydown.space.prevent="pickElder(i)"
           @click="pickElder(i)"
         >
           <NlAvatar :fallback="e.name ? e.name.slice(0, 1) : '?'" :size="40" tone="primary" />
@@ -398,7 +440,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </li>
-        <li class="desktop-elders__item desktop-elders__add" @click="addElder">
+        <li role="button" tabindex="0" class="desktop-elders__item desktop-elders__add" @keydown.enter.prevent="addElder" @keydown.space.prevent="addElder" @click="addElder">
           <el-icon size="18"><Plus /></el-icon>
           <span class="nl-caption">添加老人</span>
         </li>
@@ -408,14 +450,13 @@ onBeforeUnmount(() => {
     <!-- 快捷入口 -->
     <NlCard>
       <template #title><span class="nl-h2">快捷入口</span></template>
-      <ul class="desktop-quick">
-        <li v-for="q in quickEntries" :key="q.key" class="desktop-quick__item" @click="quickEnter(q)">
+      <ul role="list" class="desktop-quick">
+        <li v-for="q in quickEntries" :key="q.key" role="button" tabindex="0" class="desktop-quick__item" @keydown.enter.prevent="quickEnter(q)" @keydown.space.prevent="quickEnter(q)" @click="quickEnter(q)">
           <NlIconBox :tone="q.tone" :size="40">
             <component :is="q.icon" />
           </NlIconBox>
           <div class="desktop-quick__text">
             <div class="desktop-quick__label">{{ q.label }}</div>
-            <div class="nl-caption nl-text-muted">{{ q.desc }}</div>
           </div>
         </li>
       </ul>
@@ -437,12 +478,29 @@ onBeforeUnmount(() => {
       <NlSkeleton v-if="eldersLoading || tasksLoading" :count="2" />
 
       <NlEmpty
+        v-else-if="eldersError"
+        type="network"
+        title="今日用药加载失败"
+        description="就诊人信息没取到，无法定位今日用药"
+        action-text="重试"
+        @action="loadElders"
+      />
+
+      <NlEmpty
         v-else-if="!currentElder"
         type="empty"
         title="暂无就诊人"
         description="添加并绑定老人后，可在这里查看其今日服药提醒"
         action-text="去绑定"
         @action="addElder"
+      />
+
+      <NlEmpty
+        v-else-if="tasksError"
+        type="network"
+        title="今日用药加载失败"
+        action-text="重试"
+        @action="loadTodayTasks(currentElder?.id)"
       />
 
       <ul v-else-if="tasks.length" class="task-list">
@@ -476,8 +534,16 @@ onBeforeUnmount(() => {
 
       <NlSkeleton v-if="ordersLoading" :count="2" />
 
-      <ul v-else-if="orders.length" class="desktop-orders">
-        <li v-for="o in orders" :key="o.id" class="desktop-orders__row" @click="viewOrder(o)">
+      <NlEmpty
+        v-else-if="ordersError"
+        type="network"
+        title="最近订单加载失败"
+        action-text="重试"
+        @action="loadOrders"
+      />
+
+      <ul v-else-if="orders.length" role="list" class="desktop-orders">
+        <li v-for="o in orders" :key="o.id" role="button" tabindex="0" class="desktop-orders__row" @keydown.enter.prevent="viewOrder(o)" @keydown.space.prevent="viewOrder(o)" @click="viewOrder(o)">
           <NlStatusChip
             :status="o.status"
             :text="o.statusLabel"
@@ -579,7 +645,6 @@ onBeforeUnmount(() => {
     border: 1.5px solid transparent;
     border-radius: var(--nl-radius-card);
     cursor: pointer;
-    box-shadow: var(--nl-shadow-card);
     transition: border-color 0.18s;
 
     &.is-active {
@@ -589,13 +654,13 @@ onBeforeUnmount(() => {
   }
 
   &__name {
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 600;
     color: var(--nl-text-1);
   }
 
   &__age {
-    font-size: 12px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
   }
 
@@ -619,10 +684,10 @@ onBeforeUnmount(() => {
     justify-content: center;
     width: 56px;
     height: 56px;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     background: var(--nl-bg-card);
+    border: 1px solid var(--nl-border);
     border-radius: 50%;
-    box-shadow: var(--nl-shadow-card);
   }
 }
 
@@ -658,14 +723,9 @@ onBeforeUnmount(() => {
 
   &__label {
     margin-top: 6px;
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 600;
     color: var(--nl-text-1);
-  }
-
-  &__desc {
-    font-size: 11px;
-    color: var(--nl-text-2);
   }
 }
 
@@ -688,7 +748,7 @@ onBeforeUnmount(() => {
   border-radius: var(--nl-radius-card);
 
   &__name {
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 600;
     color: var(--nl-text-1);
   }
@@ -727,9 +787,9 @@ onBeforeUnmount(() => {
   }
 
   &__amt {
-    font-size: 18px;
+    font-size: var(--nl-font-h2);
     font-weight: 700;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
   }
 
   &__body {
@@ -739,7 +799,7 @@ onBeforeUnmount(() => {
   }
 
   &__hospital {
-    font-size: 15px;
+    font-size: var(--nl-font-h3);
     font-weight: 500;
     color: var(--nl-text-1);
   }
@@ -759,43 +819,8 @@ onBeforeUnmount(() => {
   }
 
   &__chev {
-    font-size: 20px;
+    font-size: var(--nl-font-h2);
     color: var(--nl-text-3);
-  }
-}
-
-.love-banner {
-  padding: var(--nl-space-4);
-  background: linear-gradient(135deg, var(--nl-primary-light) 0%, var(--nl-primary-ghost) 100%);
-  border-radius: var(--nl-radius-card);
-
-  &__title {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--nl-primary-dark, var(--nl-primary));
-  }
-
-  &__tags {
-    display: flex;
-    gap: 6px;
-    padding: 0;
-    margin: var(--nl-space-2) 0 0;
-    list-style: none;
-
-    li {
-      padding: 2px 10px;
-      font-size: 11px;
-      font-weight: 500;
-      color: var(--nl-primary);
-      background: rgba(255, 255, 255, 0.8);
-      border-radius: 999px;
-    }
-  }
-
-  &__sub {
-    margin: var(--nl-space-2) 0 0;
-    font-size: 12px;
-    color: var(--nl-text-2);
   }
 }
 
@@ -805,7 +830,7 @@ onBeforeUnmount(() => {
 
 /* ==========================================================================
    Desktop 形态专用样式（>= 768px 才渲染，故不做媒体查询）
-   宽度一律交给 NlDesktopShell 的 720px 容器，这里只排版。
+   宽度一律交给 NlDesktopShell 的内容容器（720 / 1120 两档），这里只排版。
    ========================================================================== */
 .desktop-actions {
   &__label {
@@ -845,13 +870,13 @@ onBeforeUnmount(() => {
   }
 
   &__name {
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 600;
     color: var(--nl-text-1);
   }
 
   &__add {
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     border-style: dashed;
     border-color: var(--nl-border-strong);
   }
@@ -873,10 +898,10 @@ onBeforeUnmount(() => {
     cursor: pointer;
     border: 1px solid var(--nl-border);
     border-radius: var(--nl-radius-card);
-    transition: box-shadow 0.18s;
+    transition: border-color 0.18s;
 
     &:hover {
-      box-shadow: var(--nl-shadow-hover);
+      border-color: var(--nl-primary);
     }
   }
 
@@ -885,7 +910,7 @@ onBeforeUnmount(() => {
   }
 
   &__label {
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 600;
     color: var(--nl-text-1);
   }
@@ -922,7 +947,7 @@ onBeforeUnmount(() => {
 
   &__hospital {
     overflow: hidden;
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 500;
     color: var(--nl-text-1);
     text-overflow: ellipsis;
@@ -940,9 +965,9 @@ onBeforeUnmount(() => {
   &__amt {
     flex-shrink: 0;
     min-width: 72px;
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 700;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     text-align: right;
   }
 }

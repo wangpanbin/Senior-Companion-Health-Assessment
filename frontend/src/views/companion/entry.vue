@@ -16,7 +16,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlPhoneShell, NlMobileOnlyPage, NlCard, NlStatusChip, NlNoticeBar, NlSkeleton } from '@/components'
+import { NlPhoneShell, NlMobileOnlyPage, NlCard, NlStatusChip, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
 import { getMyCompanionApplication, applyCompanion } from '@/api/user'
 import { uploadFile } from '@/api/file'
 
@@ -25,6 +25,8 @@ const router = useRouter()
 /** 已提交的申请状态：null=从未提交 / PENDING / APPROVED / REJECTED */
 const app = ref(null)
 const loading = ref(true)
+/** R4：资质状态加载失败（不能静默回落成「未提交过」表单，否则用户会重复提交） */
+const loadError = ref(false)
 
 const form = ref({
   realName: '',
@@ -53,12 +55,20 @@ async function loadApplication() {
   try {
     const data = await getMyCompanionApplication()
     app.value = data ?? null
+    loadError.value = false
   } catch {
     // 拦截器已弹错
     app.value = null
+    loadError.value = true
   } finally {
     loading.value = false
   }
+}
+
+/** 错误态重试：需重新点亮骨架屏，loadApplication 只在 finally 里关 loading */
+async function reloadApplication() {
+  loading.value = true
+  await loadApplication()
 }
 
 function addCert() {
@@ -169,6 +179,15 @@ onMounted(loadApplication)
   <NlMobileOnlyPage>
   <NlPhoneShell :nav="{ title: '陪诊员入驻' }">
     <NlSkeleton v-if="loading" :count="3" class="pad" />
+
+    <NlEmpty
+      v-else-if="loadError"
+      type="network"
+      title="资质状态加载失败"
+      description="无法确认您是否已提交过资质，请重试"
+      action-text="重试"
+      @action="reloadApplication"
+    />
 
     <!-- 已提交：展示审核状态 -->
     <template v-else-if="submitted">
@@ -342,8 +361,8 @@ onMounted(loadApplication)
   justify-content: center;
   padding: 0 14px;
   height: 40px;
-  font-size: 13px;
-  color: var(--nl-primary);
+  font-size: var(--nl-font-caption);
+  color: var(--nl-primary-text);
   background: var(--nl-bg-card);
   border: 1.5px solid var(--nl-primary);
   border-radius: 10px;
@@ -388,7 +407,7 @@ onMounted(loadApplication)
 
   &__item {
     padding: 6px 14px;
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     background: var(--nl-bg-card);
     border: 1.5px solid var(--nl-border);
@@ -396,7 +415,7 @@ onMounted(loadApplication)
     cursor: pointer;
 
     &.is-active {
-      color: var(--nl-primary);
+      color: var(--nl-primary-text);
       background: var(--nl-primary-light);
       border-color: var(--nl-primary);
     }

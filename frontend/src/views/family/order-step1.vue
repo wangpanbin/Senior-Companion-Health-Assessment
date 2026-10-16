@@ -25,6 +25,8 @@ const draft = useOrderDraftStore()
 
 const elders = ref([])
 const loading = ref(false)
+/** R4：就诊人加载失败（与「还没绑定老人」空态区分） */
+const loadError = ref(false)
 const selectedId = ref(null)
 
 async function loadElders() {
@@ -37,8 +39,10 @@ async function loadElders() {
     if (elders.value.length && !selectedId.value) {
       selectedId.value = elders.value[0].id
     }
+    loadError.value = false
   } catch {
     elders.value = []
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -76,6 +80,14 @@ onMounted(loadElders)
       <NlSkeleton v-if="loading" :count="3" />
 
       <NlEmpty
+        v-else-if="loadError"
+        type="network"
+        title="就诊人加载失败"
+        action-text="重试"
+        @action="loadElders"
+      />
+
+      <NlEmpty
         v-else-if="!elders.length"
         type="empty"
         title="还没有绑定老人"
@@ -84,11 +96,12 @@ onMounted(loadElders)
         @action="router.push('/family/elder/bind')"
       />
 
-      <ul v-else class="elderpick">
+      <ul v-else role="list" class="elderpick">
         <li
-          v-for="e in elders"
-          :key="e.id"
+v-for="e in elders" :key="e.id" role="button" tabindex="0"
           :class="['elderpick__item', { 'is-active': selectedId === e.id }]"
+          @keydown.enter.prevent="pick(e.id)"
+          @keydown.space.prevent="pick(e.id)"
           @click="pick(e.id)"
         >
           <NlAvatar :fallback="e.name.slice(0, 1)" :size="48" tone="primary" />
@@ -141,7 +154,7 @@ onMounted(loadElders)
 
   &__cta {
     width: 100%;
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 500;
   }
 }

@@ -273,7 +273,7 @@ function submit() {
   &__btn {
     flex: 1;
     padding: 12px 0;
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 500;
     color: var(--nl-text-2);
     background: var(--nl-bg-card);
@@ -283,7 +283,7 @@ function submit() {
     border-bottom: 0;
 
     &.is-active {
-      color: var(--nl-primary);
+      color: var(--nl-primary-text);
       background: var(--nl-bg-card);
       border-bottom: 2px solid var(--nl-primary);
     }

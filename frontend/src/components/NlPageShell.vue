@@ -17,7 +17,7 @@
  * ```
  *   NlPageShell
  *     ├─ isMobile  → NlPhoneShell   (状态栏 + NavBar + 正文 + 固定 CTA)
- *     └─ 否则      → NlDesktopShell (64px 顶栏 + 正文居中限宽 720 + 正文内联 CTA)
+ *     └─ 否则      → NlDesktopShell (64px 顶栏 + 正文居中限宽：768–1279 单列 720 / ≥1280 双栏 1120 + 正文内联 CTA)
  * ```
  *
  * ## 用法（view 侧只改最外层）
@@ -44,7 +44,7 @@
  *               `:back="nav.back !== false"`）。桌面端默认也显示返回箭头，
  *               否则 `/family/medication` 这类非 `elderlyHidden` 的二级页在桌面端会没有回退入口。
  * - `hasCta` —— 对应原来的 `:has-cta`。手机端是底部固定条；桌面端改为**正文末尾内联**，
- *               避免在 720px 居中列上再叠一条通栏固定条。
+ *               避免在桌面居中列（720 / 1120 两档）上再叠一条通栏固定条。
  *
  * ## 注意
  *
@@ -128,7 +128,7 @@ const phoneCta = computed(() => props.hasCta && !!slots.cta)
     </template>
   </NlPhoneShell>
 
-  <!-- ==================== Desktop 形态：顶栏 + 720 居中列 ==================== -->
+  <!-- ==================== Desktop 形态：顶栏 + 居中内容列 ==================== -->
   <NlDesktopShell v-else :back="back">
     <template #actions>
       <slot name="actions" />

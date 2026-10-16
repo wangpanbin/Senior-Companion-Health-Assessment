@@ -45,28 +45,40 @@ const { isXs } = useResponsive()
 
 const isEmpty = computed(() => !loading.value && !elders.value.length)
 
+/** R4：列表加载失败（不能与「还没绑定老人」的空态混用） */
+const loadError = ref(false)
+
 async function loadElders() {
   loading.value = true
   try {
     const data = await listElder({ page: page.value, size: pageSize })
     elders.value = data?.records || []
     total.value = data?.total || 0
+    loadError.value = false
   } catch {
     elders.value = []
     total.value = 0
+    loadError.value = true
   } finally {
     loading.value = false
   }
 }
 
+/** 当前打开的档案 id：错误态重试时要用（不从 DOM 反推） */
+const detailId = ref(null)
+const detailError = ref(false)
+
 async function openDetail(id) {
+  detailId.value = id
   detailVisible.value = true
   detailLoading.value = true
   detail.value = null
+  detailError.value = false
   try {
     detail.value = await getElder(id)
   } catch {
     detail.value = null
+    detailError.value = true
   } finally {
     detailLoading.value = false
   }
@@ -122,6 +134,14 @@ onMounted(loadElders)
     <NlSkeleton v-if="loading" :count="3" class="list-pad" />
 
     <NlEmpty
+      v-else-if="loadError"
+      type="network"
+      title="老人档案加载失败"
+      action-text="重试"
+      @action="loadElders"
+    />
+
+    <NlEmpty
       v-else-if="isEmpty"
       title="还没有绑定老人"
       description="家属可绑定多位老人，帮他们预约陪诊 / 管理用药"
@@ -129,11 +149,12 @@ onMounted(loadElders)
       @action="bind"
     />
 
-    <ul v-else class="elders">
+    <ul v-else role="list" class="elders">
       <li
-        v-for="e in elders"
-        :key="e.id"
+v-for="e in elders" :key="e.id" role="button" tabindex="0"
         class="elder"
+        @keydown.enter.prevent="openDetail(e.id)"
+        @keydown.space.prevent="openDetail(e.id)"
         @click="openDetail(e.id)"
       >
         <NlAvatar :fallback="e.name ? e.name.slice(0, 1) : '?'" :size="48" tone="primary" />
@@ -200,7 +221,14 @@ onMounted(loadElders)
           <li v-if="detail.allergyHistory"><span>过敏史</span><b>{{ detail.allergyHistory }}</b></li>
         </ul>
       </template>
-      <NlEmpty v-else type="empty" title="档案加载失败" description="请关闭后重试" />
+      <NlEmpty
+        v-else
+        type="network"
+        title="档案加载失败"
+        description="请检查网络后重试"
+        action-text="重试"
+        @action="openDetail(detailId)"
+      />
     </el-dialog>
   </NlPageShell>
 </template>
@@ -247,13 +275,13 @@ onMounted(loadElders)
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
-    font-size: 15px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
     color: var(--nl-text-1);
   }
 
   &__rel {
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     font-weight: 400;
     color: var(--nl-text-2);
   }
@@ -286,7 +314,7 @@ onMounted(loadElders)
   margin-bottom: var(--nl-space-3);
 
   &__name {
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
     color: var(--nl-text-1);
   }
@@ -304,7 +332,7 @@ onMounted(loadElders)
     display: flex;
     gap: var(--nl-space-3);
     align-items: baseline;
-    font-size: 14px;
+    font-size: var(--nl-font-body);
 
     span {
       flex-shrink: 0;

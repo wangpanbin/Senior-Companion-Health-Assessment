@@ -35,7 +35,7 @@ function goHome() { router.push('/') }
     font-size: 96px;
     font-weight: 800;
     line-height: 1;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     opacity: 0.25;
   }
 

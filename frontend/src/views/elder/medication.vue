@@ -34,6 +34,7 @@ const tab = ref('today')
 
 /* ===== 今日待服 ===== */
 const todayLoading = ref(false)
+const todayError = ref(false)
 const todayMeds = ref([])
 
 /* ===== 服药日历 ===== */
@@ -42,6 +43,7 @@ const curMonth = ref(new Date().getMonth() + 1)
 const monthName = computed(() => `${curYear.value} 年 ${curMonth.value} 月`)
 
 const calLoading = ref(false)
+const calError = ref(false)
 const calData = ref(null) // MedicationCalendarVO
 const calMap = computed(() => {
   const map = {}
@@ -84,6 +86,7 @@ function next() {
 
 /* ===== 我的用药计划 ===== */
 const planLoading = ref(false)
+const plansError = ref(false)
 const plans = ref([])
 
 /* ===== 加载 ===== */
@@ -101,8 +104,10 @@ async function loadToday() {
   todayLoading.value = true
   try {
     todayMeds.value = (await getTodayTasks(elderId.value)) || []
+    todayError.value = false
   } catch {
     todayMeds.value = []
+    todayError.value = true
   } finally {
     todayLoading.value = false
   }
@@ -115,8 +120,10 @@ async function loadCalendar() {
     const start = toDateStr(curYear.value, curMonth.value, 1)
     const end = toDateStr(curYear.value, curMonth.value, new Date(curYear.value, curMonth.value, 0).getDate())
     calData.value = await getMedicationCalendar({ elderId: elderId.value, startDate: start, endDate: end }) || null
+    calError.value = false
   } catch {
     calData.value = null
+    calError.value = true
   } finally {
     calLoading.value = false
   }
@@ -128,8 +135,10 @@ async function loadPlans() {
   try {
     const data = await listMedicationPlans({ elderId: elderId.value, page: 1, size: 50 })
     plans.value = data?.records || []
+    plansError.value = false
   } catch {
     plans.value = []
+    plansError.value = true
   } finally {
     planLoading.value = false
   }
@@ -178,6 +187,13 @@ const calSummary = computed(() => calData.value?.summary || null)
       <!-- 今日 -->
       <NlCard v-if="tab === 'today'" title="今日服药">
         <NlSkeleton v-if="todayLoading" :count="3" />
+        <NlEmpty
+          v-else-if="todayError"
+          type="network"
+          title="今日服药加载失败"
+          action-text="重试"
+          @action="loadToday"
+        />
         <ul v-else-if="todayMeds.length" class="med-list">
           <li v-for="m in todayMeds" :key="m.id" class="med">
             <div class="med__row">
@@ -220,6 +236,13 @@ const calSummary = computed(() => calData.value?.summary || null)
           <div v-for="w in weeks" :key="w" class="cal-weeks__cell">{{ w }}</div>
         </div>
         <NlSkeleton v-if="calLoading" :count="5" />
+        <NlEmpty
+          v-else-if="calError"
+          type="network"
+          title="服药日历加载失败"
+          action-text="重试"
+          @action="loadCalendar"
+        />
         <div v-else class="cal-grid">
           <div v-for="(c, i) in calendarCells" :key="i" :class="['cal-cell', { 'is-today': c?.isToday, 'is-empty': !c }]">
             <template v-if="c">
@@ -233,6 +256,13 @@ const calSummary = computed(() => calData.value?.summary || null)
       <!-- 计划 -->
       <NlCard v-else-if="tab === 'plan'" title="我的用药计划">
         <NlSkeleton v-if="planLoading" :count="3" />
+        <NlEmpty
+          v-else-if="plansError"
+          type="network"
+          title="用药计划加载失败"
+          action-text="重试"
+          @action="loadPlans"
+        />
         <ul v-else-if="plans.length" class="plan-list">
           <li v-for="p in plans" :key="p.id" class="plan">
             <div class="plan__row">
@@ -272,7 +302,7 @@ const calSummary = computed(() => calData.value?.summary || null)
   &__btn {
     flex: 1;
     padding: 10px 0;
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 500;
     color: var(--nl-text-2);
     background: var(--nl-bg-card);
@@ -319,7 +349,7 @@ const calSummary = computed(() => calData.value?.summary || null)
 .cal-weeks {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  font-size: 11px;
+  font-size: var(--nl-font-caption);
   color: var(--nl-text-2);
   text-align: center;
 
@@ -348,12 +378,12 @@ const calSummary = computed(() => calData.value?.summary || null)
     border: 1.5px solid var(--nl-primary);
 
     .cal-cell__day {
-      color: var(--nl-primary);
+      color: var(--nl-primary-text);
     }
   }
 
   &__day {
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     color: var(--nl-text-1);
   }
 
@@ -396,12 +426,12 @@ const calSummary = computed(() => calData.value?.summary || null)
     font-weight: 600;
     text-align: center;
     background: var(--nl-primary-light);
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     border-radius: 8px;
   }
 
   &__name {
-    font-size: 15px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
     color: var(--nl-text-1);
   }
@@ -434,7 +464,7 @@ const calSummary = computed(() => calData.value?.summary || null)
   }
 
   &__name {
-    font-size: 15px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
     color: var(--nl-text-1);
   }

@@ -39,6 +39,8 @@ const ready = ref(false)
 const orders = ref([])
 const total = ref(0)
 const loading = ref(false)
+/** R4：大厅列表加载失败（与「附近暂无需求」空态区分） */
+const hallError = ref(false)
 
 const filter = ref('all') // all / high
 
@@ -80,9 +82,11 @@ async function loadHall() {
     const data = await listOrderHall({ page: 1, size: 50 })
     orders.value = data?.records || []
     total.value = data?.total || 0
+    hallError.value = false
   } catch {
     orders.value = []
     total.value = 0
+    hallError.value = true
   } finally {
     loading.value = false
   }
@@ -176,6 +180,14 @@ onMounted(async () => {
       <NlSkeleton v-if="loading" :count="3" class="list-pad" />
 
       <NlEmpty
+        v-else-if="hallError"
+        type="network"
+        title="接单大厅加载失败"
+        action-text="重试"
+        @action="loadHall"
+      />
+
+      <NlEmpty
         v-else-if="!filtered.length"
         type="empty"
         title="暂无订单"
@@ -230,7 +242,7 @@ onMounted(async () => {
   </NlPhoneShell>
 
   <!-- ==================== Desktop 形态（ADR-0007 · Q7 = Ⅱ COMPANION 高频页之一） ====================
-       内容宽度由 NlDesktopShell 统一限制为 720px 居中。
+       内容宽度由 NlDesktopShell 统一控制（768–1279 单列 720 / ≥1280 双栏 1120）。
        ⚠️ 接了单之后的 /companion/execute/:id 是 mobile-only（要 GPS 打卡），
           桌面下会落到"NlMobileOnlyNotice"提示页 —— 这是 ADR-0008 的既定契约。
   ============================================================================================== -->
@@ -282,6 +294,14 @@ onMounted(async () => {
         </div>
 
         <NlSkeleton v-if="loading" :count="3" />
+
+        <NlEmpty
+          v-else-if="hallError"
+          type="network"
+          title="接单大厅加载失败"
+          action-text="重试"
+          @action="loadHall"
+        />
 
         <NlEmpty
           v-else-if="!filtered.length"
@@ -349,7 +369,7 @@ onMounted(async () => {
 
   &__btn {
     padding: 6px 14px;
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     font-weight: 500;
     color: var(--nl-text-2);
     background: var(--nl-bg-card);
@@ -377,8 +397,8 @@ onMounted(async () => {
 .order {
   padding: var(--nl-space-4);
   background: var(--nl-bg-card);
+  border: 1px solid var(--nl-border);
   border-radius: var(--nl-radius-card);
-  box-shadow: var(--nl-shadow-card);
 
   &__head {
     display: flex;
@@ -389,13 +409,13 @@ onMounted(async () => {
 
   &__fee {
     font-family: var(--nl-font-num);
-    font-size: 22px;
+    font-size: var(--nl-font-h1);
     font-weight: 700;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
   }
 
   &__hospital {
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
     color: var(--nl-text-1);
   }
@@ -428,7 +448,7 @@ onMounted(async () => {
 
   &__grab {
     width: 100%;
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 500;
   }
 }
@@ -479,7 +499,7 @@ onMounted(async () => {
 
   &__hospital {
     overflow: hidden;
-    font-size: 15px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
     color: var(--nl-text-1);
     text-overflow: ellipsis;
@@ -495,9 +515,9 @@ onMounted(async () => {
   &__fee {
     flex-shrink: 0;
     min-width: 80px;
-    font-size: 18px;
+    font-size: var(--nl-font-h2);
     font-weight: 700;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     text-align: right;
   }
 }

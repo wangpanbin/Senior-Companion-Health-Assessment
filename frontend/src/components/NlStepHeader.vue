@@ -69,7 +69,7 @@ defineProps({
     justify-content: center;
     width: 28px;
     height: 28px;
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 600;
     color: var(--nl-text-3);
     background: var(--nl-bg-card);
@@ -106,13 +106,13 @@ defineProps({
   }
 
   &__item.is-current .nl-steps__dot {
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     border-color: var(--nl-primary);
     background: var(--nl-bg-card);
   }
 
   &__item.is-current .nl-steps__label {
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     font-weight: 600;
   }
 }

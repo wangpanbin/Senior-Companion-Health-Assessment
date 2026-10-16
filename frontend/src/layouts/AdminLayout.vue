@@ -206,7 +206,7 @@ function handleCommand(cmd) {
     justify-content: center;
     width: 34px;
     height: 34px;
-    font-size: 18px;
+    font-size: var(--nl-font-h2);
     font-weight: 700;
     color: var(--nl-text-inverse);
     background: var(--nl-primary);
@@ -215,7 +215,7 @@ function handleCommand(cmd) {
   }
 
   &__logo-text {
-    font-size: 17px;
+    font-size: var(--nl-font-h2);
     font-weight: 600;
     color: var(--nl-text-1);
     white-space: nowrap;
@@ -248,7 +248,7 @@ function handleCommand(cmd) {
   }
 
   &__page-title {
-    font-size: 18px;
+    font-size: var(--nl-font-h2);
     font-weight: 600;
     color: var(--nl-text-1);
   }
@@ -266,7 +266,7 @@ function handleCommand(cmd) {
   }
 
   &__elder-label {
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     color: var(--nl-text-2);
   }
 

@@ -62,7 +62,7 @@ const now = computed(() => {
 
   &__time {
     font-family: var(--nl-font-num);
-    font-size: 15px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
   }
 

@@ -169,7 +169,7 @@ const document = computed(() => DOCUMENTS[props.type] || DOCUMENTS.service)
     margin: 0;
     font-size: var(--nl-font-caption);
     font-weight: 600;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
   }
 
   &__footer {
@@ -194,7 +194,7 @@ const document = computed(() => DOCUMENTS[props.type] || DOCUMENTS.service)
       font-family: var(--nl-font-num);
       font-size: var(--nl-font-caption);
       font-weight: 700;
-      color: var(--nl-primary);
+      color: var(--nl-primary-text);
     }
 
     h3 {

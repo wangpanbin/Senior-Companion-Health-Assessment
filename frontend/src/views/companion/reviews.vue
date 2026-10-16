@@ -26,6 +26,8 @@ const myId = computed(() => userStore.userInfo?.id)
 
 const reviews = ref([])
 const loading = ref(false)
+/** R4：评价列表加载失败（与「还没有人评价」区分） */
+const loadError = ref(false)
 const replyDraft = ref({}) // { reviewId: string }
 
 async function load() {
@@ -38,8 +40,10 @@ async function load() {
     for (const r of reviews.value) {
       if (!(r.id in replyDraft.value)) replyDraft.value[r.id] = ''
     }
+    loadError.value = false
   } catch {
     reviews.value = []
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -94,6 +98,14 @@ onMounted(load)
   <NlPageShell title="收到的评价" module="M7" :show-back="true">
     <template v-if="loading">
       <NlSkeleton :rows="3" />
+    </template>
+    <template v-else-if="loadError">
+      <NlEmpty
+        type="network"
+        title="收到的评价加载失败"
+        action-text="重试"
+        @action="load"
+      />
     </template>
     <template v-else-if="isEmpty">
       <NlEmpty text="暂无评价" />
@@ -150,8 +162,8 @@ onMounted(load)
   margin: $nl-space-4;
   padding: $nl-space-4;
   background: var(--nl-bg-card);
+  border: 1px solid var(--nl-border);
   border-radius: $nl-radius-card;
-  box-shadow: $nl-shadow-card;
 
   &__head {
     display: flex;
@@ -162,11 +174,11 @@ onMounted(load)
 
   &__time {
     color: var(--nl-text-2);
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
   }
 
   &__author {
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
     color: var(--nl-text-1);
     margin-bottom: $nl-space-2;
@@ -188,9 +200,9 @@ onMounted(load)
   &__tag {
     padding: 2px 10px;
     background: var(--nl-primary-light);
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     border-radius: $nl-radius-pill;
-    font-size: 12px;
+    font-size: var(--nl-font-caption);
   }
 
   &__reply {
@@ -202,7 +214,7 @@ onMounted(load)
   }
 
   &__reply-label {
-    font-size: 12px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     margin-bottom: $nl-space-1;
   }
@@ -223,7 +235,7 @@ onMounted(load)
     padding: $nl-space-3;
     border: 1px solid var(--nl-divider);
     border-radius: $nl-radius-chip;
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-family: inherit;
     color: var(--nl-text-1);
     background: var(--nl-bg);
@@ -238,7 +250,7 @@ onMounted(load)
   }
 
   &__count {
-    font-size: 12px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
   }
 }

@@ -63,15 +63,27 @@ const relatedTarget = computed(() => {
   return ''
 })
 
+/** R4：传输层失败（可重试）与「消息确实不可用」（7001/7002）必须分开 */
+const loadError = ref(false)
+
 async function loadMessage() {
   try {
     message.value = await getMessage(route.params.id)
-  } catch {
-    // 7001 / 7002 / 网络失败：拦截器已提示（或静默），落「消息已不可查看」空态
+    loadError.value = false
+  } catch (e) {
+    // 业务码（7001 / 7002）= 消息确实不可用 → 落「消息已不可查看」空态（重试也没用）；
+    // 无业务码 = 网络/超时失败 → 落可重试的错误态。拦截器已提示，这里不重复弹。
     message.value = null
+    loadError.value = !e?.code
   } finally {
     loading.value = false
   }
+}
+
+/** 错误态重试：loading 只在 finally 里被关，需重新点亮 */
+async function reloadMessage() {
+  loading.value = true
+  await loadMessage()
 }
 
 function openRelated() {
@@ -84,6 +96,14 @@ onMounted(loadMessage)
 <template>
   <NlPageShell title="消息详情">
     <NlSkeleton v-if="loading" :count="3" class="message-detail__skeleton" />
+
+    <NlEmpty
+      v-else-if="loadError"
+      type="network"
+      title="消息加载失败"
+      action-text="重试"
+      @action="reloadMessage"
+    />
 
     <NlEmpty
       v-else-if="!message"
@@ -169,7 +189,7 @@ onMounted(loadMessage)
     display: inline-flex;
     padding: 2px 7px;
     font-size: var(--nl-font-caption);
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     background: var(--nl-primary-light);
     border-radius: var(--nl-radius-pill);
   }
