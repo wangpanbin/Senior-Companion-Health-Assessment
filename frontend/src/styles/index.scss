@@ -45,6 +45,11 @@
   --nl-purple-bg: #{$nl-purple-bg};
   --nl-neutral-chip: #{$nl-neutral-chip};
 
+  /* ----------- 排行榜奖牌 ----------- */
+  --nl-rank-1: #{$nl-rank-1};
+  --nl-rank-2: #{$nl-rank-2};
+  --nl-rank-3: #{$nl-rank-3};
+
 // 语义色·文字版：WCAG AA 达标，专供「色当文字用」的场景。
 // 原色留给边框/图标/渐变，理由与取值见 variables.scss 对应注释。
 --nl-primary-text: #{$nl-primary-text};
@@ -112,7 +117,7 @@
   --nl-listrow-min-height-elderly: #{$nl-listrow-min-height-elderly};
 
   /* ----------- 适老化指标（运行期可读，elderly.scss 覆盖） ----------- */
-  --nl-touch-min: 44px;
+  --nl-touch-min: 48px;
   --nl-border-width: 1px;
 
   /* ----------- 与 Element Plus 主题打通 ----------- */
@@ -140,8 +145,67 @@
   --el-border-radius-base: var(--nl-radius-btn);
   --el-border-radius-small: var(--nl-radius-chip);
 
-  /* 默认 Element Plus 全局尺寸（老人模式切到 large） */
-  --el-size-base: 48px;
+}
+
+/* ==========================================================================
+   Element Plus 移动端尺寸兜底
+   --------------------------------------------------------------------------
+   为什么原来那行是死的：--el-size-base 在 Element Plus 2.14.5 的 theme-chalk
+   全目录 0 处引用 —— 它既没被声明也没被消费，写了等于没写，适老化 48px 兜底
+   从未真正生效。真正驱动输入框/选择器的是 --el-component-size；按钮则是
+   .el-button { height: 32px } 直接写死、--large 才 40px，不吃任何尺寸变量。
+   所以按钮/输入框的触控高度只能由本项目自己兜底。
+
+   为什么只在 <768px 生效：AGENTS.md 要求可点击区 >= 48px，但桌面后台
+   （侧栏 220 + 720 内容列）整体放大到 48px 会把表格行高和筛选栏撑松，
+   违背 VISUAL_DENSITY=6。桌面端维持 Element Plus 默认 32px。
+   ========================================================================== */
+@media (max-width: 767px) {
+  :root {
+    --el-component-size: 48px;
+  }
+
+  .el-button:not(.el-button--small):not(.el-button--text):not(.el-button--link) {
+    min-height: 48px;
+  }
+
+  .el-input__wrapper,
+  .el-select__wrapper,
+  .el-textarea__inner {
+    min-height: 48px;
+  }
+
+  /* 窄屏勾选项文案不再 nowrap。实测：/register 在 320px 下横向溢出 35px、
+     老人模式下溢出扩大到 95px，根因就是这一行 nowrap 把「我已阅读并同意
+     《用户服务协议》与《隐私政策》」压成一行。normal 只在装不下时才换行。 */
+  .el-checkbox__label {
+    white-space: normal;
+    line-height: 1.5;
+  }
+}
+
+/* ===================== 键盘焦点可见性（R3） ===================== */
+/* 此前全站只有 NlUserMenu 一个组件定义了 :focus-visible，键盘用户
+   在其余 23 个 Nl 组件和全部 view 里都看不到焦点位置。
+   统一用 outline（不改布局、不产生重排），2px 主色 + 2px 偏移。
+   用 :focus-visible 而非 :focus，鼠标点击不显示、Tab 键才显示。 */
+:focus-visible {
+  outline: 2px solid var(--nl-primary-text);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* <li role=button> 这类非原生可交互元素的焦点框要更明显一点，
+   因为它们没有浏览器默认样式兜底。 */
+li[role='button']:focus-visible,
+[role='button']:focus-visible {
+  outline: 3px solid var(--nl-primary-text);
+  outline-offset: 2px;
+}
+
+/* 老人模式下焦点框加粗到 4px（视力较弱时更容易定位） */
+html.elderly-mode :focus-visible {
+  outline-width: 4px;
 }
 
 /* ===================== 基础重置 ===================== */
@@ -191,19 +255,19 @@ button {
   background: var(--nl-bg-card);
   border: 1px solid var(--nl-border);
   border-radius: var(--nl-radius-card);
-  box-shadow: var(--nl-shadow-card);
 }
 
 .nl-card--plain {
-  box-shadow: none;
+  border-color: transparent;
+  background: transparent;
 }
 
 .nl-card--hover {
   cursor: pointer;
-  transition: box-shadow 0.2s, transform 0.2s;
+  transition: border-color 0.2s, transform 0.2s;
 
   &:hover {
-    box-shadow: var(--nl-shadow-hover);
+    border-color: var(--nl-primary);
   }
 }
 

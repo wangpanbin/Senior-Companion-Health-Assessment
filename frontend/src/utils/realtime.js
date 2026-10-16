@@ -36,10 +36,10 @@ const RECONNECT_MAX_MS = 30000
  * 生产环境由 Nginx 转发。因此这里**不能**硬编码 `localhost:8080` ——
  * 一旦硬编码，局域网手机调试、Nginx 部署两种场景都会连不上。
  */
-function buildUrl(orderId) {
+function buildUrl(orderId, path) {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const token = encodeURIComponent(getToken())
-  return `${proto}//${window.location.host}/ws/progress?token=${token}&orderId=${encodeURIComponent(orderId)}`
+  return `${proto}//${window.location.host}${path}?token=${token}&orderId=${encodeURIComponent(orderId)}`
 }
 
 /**
@@ -52,9 +52,10 @@ function buildUrl(orderId) {
  * @param {(status: 'connecting'|'open'|'closed', detail?: string) => void} [handlers.onStatus]
  *        连接状态变化，用于页面显示「实时/已断开」
  * @param {() => void} [handlers.onGiveUp] 重连次数用尽（令牌已失效等），调用方应停止等待
+ * @param {string} [path='/ws/progress'] 通道路径；M13 复用时传 /ws/chat
  * @returns {{ close: () => void, isOpen: () => boolean }}
  */
-export function createProgressSocket(orderId, handlers = {}) {
+export function createProgressSocket(orderId, handlers = {}, path = '/ws/progress') {
   const { onEvent, onStatus, onGiveUp } = handlers
 
   let ws = null
@@ -111,7 +112,7 @@ export function createProgressSocket(orderId, handlers = {}) {
     onStatus?.('connecting')
 
     try {
-      ws = new WebSocket(buildUrl(orderId))
+      ws = new WebSocket(buildUrl(orderId, path))
     } catch {
       // 构造阶段就抛（地址非法等），直接进入重连流程
       scheduleReconnect()

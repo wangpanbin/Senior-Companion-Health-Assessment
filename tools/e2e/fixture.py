@@ -95,6 +95,8 @@ WRITE_TABLES = [
     "elder_profile",
     "family_elder_relation",
     "sys_user",
+    "chat_message",
+    "chat_read_cursor",
 ]
 
 # 删除顺序：子表 / 副作用表在前，主表在后（V1 schema 无 FK，仅按业务顺序对齐）
@@ -102,6 +104,8 @@ DELETE_ORDER = [
     "order_status_log",
     "order_reject_log",
     "internal_message",
+    "chat_message",
+    "chat_read_cursor",
     "order_checkin",
     "companion_track",
     "sys_file",
@@ -177,10 +181,15 @@ def exec_sql(sql, timeout=300):
 
 
 def scalar(sql, default=None):
-    rows = q(sql)
-    if not rows or not rows[0]:
-        return default
-    return rows[0][0]
+    # mysql.exe 偶发在退出码 0 时输出空 stdout（同一 SQL 立即重跑即正常），
+    # verify 遇到这种瞬时空结果不能当成 -1 否则会把回滚误判为脏数据
+    for attempt in range(3):
+        rows = q(sql)
+        if rows and rows[0]:
+            return rows[0][0]
+        if attempt < 2:
+            time.sleep(0.1)
+    return default
 
 
 def redis(args, timeout=20):

@@ -412,7 +412,7 @@ async function submitChangePwd() {
   }
 
   &__name {
-    font-size: 22px;
+    font-size: var(--nl-font-h1);
     font-weight: 700;
     color: var(--nl-text-inverse);
   }

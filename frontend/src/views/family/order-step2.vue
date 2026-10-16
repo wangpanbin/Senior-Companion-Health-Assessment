@@ -169,11 +169,12 @@ function next() {
     <!-- 医院列表 -->
     <section class="block">
       <h2 class="nl-h2 block__title">选择医院</h2>
-      <ul class="hospital-list">
+      <ul role="list" class="hospital-list">
         <li
-          v-for="h in hospitals"
-          :key="h.code"
+v-for="h in hospitals" :key="h.code" role="button" tabindex="0"
           :class="['hospital-item', { 'is-active': selectedHospital === h.code }]"
+          @keydown.enter.prevent="pickHospital(h)"
+          @keydown.space.prevent="pickHospital(h)"
           @click="pickHospital(h)"
         >
           <div class="hospital-item__main">
@@ -211,11 +212,12 @@ function next() {
     <!-- 日期 -->
     <section class="block">
       <h2 class="nl-h2 block__title">就诊日期</h2>
-      <ul class="date-track">
+      <ul role="list" class="date-track">
         <li
-          v-for="d in dates"
-          :key="d.idx"
+v-for="d in dates" :key="d.idx" role="button" tabindex="0"
           :class="['date-item', { 'is-active': selectedDate === d.idx }]"
+          @keydown.enter.prevent="pickDate(d.idx)"
+          @keydown.space.prevent="pickDate(d.idx)"
           @click="pickDate(d.idx)"
         >
           <div class="date-item__label">{{ d.label || d.week }}</div>
@@ -230,10 +232,9 @@ function next() {
       <p v-if="slotDisabled.allOff" class="nl-caption nl-text-muted slot-tip">
         今天的时段都已过，请选择明天及以后的日期
       </p>
-      <ul class="slot-grid">
+      <ul role="list" class="slot-grid">
         <li
-          v-for="s in slots"
-          :key="s.idx"
+v-for="s in slots" :key="s.idx" role="button" tabindex="0"
           :class="[
             'slot-item',
             {
@@ -241,6 +242,8 @@ function next() {
               'is-full': slotDisabled.map?.[s.idx]
             }
           ]"
+          @keydown.enter.prevent="pickSlot(s)"
+          @keydown.space.prevent="pickSlot(s)"
           @click="pickSlot(s)"
         >
           <div class="slot-item__time is-num">{{ s.label }}</div>
@@ -271,19 +274,19 @@ function next() {
   gap: var(--nl-space-2);
 
   &__fee {
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     text-align: center;
 
     strong {
-      font-size: 16px;
-      color: var(--nl-primary);
+      font-size: var(--nl-font-h3);
+      color: var(--nl-primary-text);
     }
   }
 
   &__btn {
     width: 100%;
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 500;
   }
 }
@@ -342,9 +345,9 @@ function next() {
   &__level {
     flex-shrink: 0;
     padding: 1px 6px;
-    font-size: 11px;
+    font-size: var(--nl-font-caption);
     font-weight: 500;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     background: var(--nl-primary-light);
     border-radius: 4px;
   }
@@ -381,7 +384,7 @@ function next() {
 
   &__item {
     padding: 6px 14px;
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     background: var(--nl-bg-card);
     border: 1.5px solid var(--nl-border);
@@ -389,7 +392,7 @@ function next() {
     cursor: pointer;
 
     &.is-active {
-      color: var(--nl-primary);
+      color: var(--nl-primary-text);
       background: var(--nl-primary-light);
       border-color: var(--nl-primary);
     }
@@ -431,12 +434,12 @@ function next() {
   }
 
   &__label {
-    font-size: 11px;
+    font-size: var(--nl-font-caption);
   }
 
   &__date {
     margin-top: 2px;
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
   }
 }
@@ -481,7 +484,7 @@ function next() {
   }
 
   &__time {
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
   }
 }

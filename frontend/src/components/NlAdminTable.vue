@@ -135,7 +135,6 @@ function formatCell(col, row) {
     background: var(--nl-bg-card);
     border: 1px solid var(--nl-border);
     border-radius: $nl-radius-card;
-    box-shadow: var(--nl-shadow-card);
   }
 
   &__card-fields {
@@ -148,13 +147,13 @@ function formatCell(col, row) {
     display: flex;
     gap: $nl-space-2;
     align-items: baseline;
-    font-size: $nl-font-body;
+    font-size: var(--nl-font-body);
   }
 
   &__card-label {
     flex-shrink: 0;
     width: 72px;
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
   }
 

@@ -37,12 +37,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OrderProgressHandler extends TextWebSocketHandler {
 
-    /** 握手阶段写入的属性名：订阅的订单 ID */
-    public static final String ATTR_ORDER_ID = "orderId";
-
-    /** 握手阶段写入的属性名：订阅者用户 ID */
-    public static final String ATTR_USER_ID = "userId";
-
     private static final String PING = "ping";
 
     private final OrderProgressHub hub;
@@ -60,7 +54,7 @@ public class OrderProgressHandler extends TextWebSocketHandler {
         hub.subscribe(orderId, session);
         hub.sendTo(session, OrderProgressHub.TYPE_CONNECTED, Map.of("orderId", orderId));
         log.info("进度订阅建立 | orderId={} | userId={} | sessionId={}",
-                orderId, session.getAttributes().get(ATTR_USER_ID), session.getId());
+                orderId, session.getAttributes().get(WsAttributes.USER_ID), session.getId());
     }
 
     @Override
@@ -92,7 +86,7 @@ public class OrderProgressHandler extends TextWebSocketHandler {
     }
 
     private static Long orderIdOf(WebSocketSession session) {
-        Object value = session.getAttributes().get(ATTR_ORDER_ID);
+        Object value = session.getAttributes().get(WsAttributes.ORDER_ID);
         return value instanceof Long id ? id : null;
     }
 

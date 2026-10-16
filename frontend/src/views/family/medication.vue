@@ -42,6 +42,8 @@ import { today, formatDate, formatTime, MEAL_RELATION_TEXT, labelOf } from '@/ut
 const elders = ref([])
 const currentElderId = ref(null)
 const elderLoading = ref(false)
+/** R4：就诊人切换区加载失败（与「一个老人都没绑定」的空态区分开） */
+const elderError = ref(false)
 
 const pad = (n) => String(n).padStart(2, '0')
 const dateKey = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`
@@ -74,6 +76,7 @@ function next() {
 const calendarData = ref({})
 const calendarSummary = ref(null)
 const calendarLoading = ref(false)
+const calendarError = ref(false)
 
 const weeks = ['一', '二', '三', '四', '五', '六', '日']
 
@@ -104,10 +107,12 @@ const tab = ref('today') // calendar / today / plan
 /* ====== 今日药品（真实接口） ====== */
 const todayTasks = ref([])
 const todayLoading = ref(false)
+const todayError = ref(false)
 
 /* ====== 计划（真实接口） ====== */
 const plans = ref([])
 const plansLoading = ref(false)
+const plansError = ref(false)
 const planTotal = ref(0)
 
 /* ====== 新建 / 编辑计划抽屉 ====== */
@@ -120,6 +125,7 @@ const medicineOptions = ref([])
 /** < 768 让新建/编辑计划弹窗 fullscreen（T-08；用 isXs(≤767)替代 !isMd 修复大屏 PC bug） */
 const { isXs } = useResponsive()
 const medicineLoading = ref(false)
+const medicineError = ref(false)
 const selectedDisclaimer = ref('')
 
 const MEAL_OPTIONS = [
@@ -147,8 +153,10 @@ async function loadElders() {
     if (currentElderId.value == null && elders.value.length) {
       currentElderId.value = elders.value[0].id
     }
+    elderError.value = false
   } catch {
     elders.value = []
+    elderError.value = true
   } finally {
     elderLoading.value = false
   }
@@ -160,8 +168,10 @@ async function loadToday() {
   try {
     const data = await getTodayTasks(currentElderId.value)
     todayTasks.value = Array.isArray(data) ? data : []
+    todayError.value = false
   } catch {
     todayTasks.value = []
+    todayError.value = true
   } finally {
     todayLoading.value = false
   }
@@ -189,9 +199,11 @@ async function loadCalendar() {
     })
     calendarData.value = map
     calendarSummary.value = data?.summary || null
+    calendarError.value = false
   } catch {
     calendarData.value = {}
     calendarSummary.value = null
+    calendarError.value = true
   } finally {
     calendarLoading.value = false
   }
@@ -204,9 +216,11 @@ async function loadPlans() {
     const data = await listMedicationPlans({ page: 1, size: 100, elderId: currentElderId.value })
     plans.value = data?.records || []
     planTotal.value = data?.total || 0
+    plansError.value = false
   } catch {
     plans.value = []
     planTotal.value = 0
+    plansError.value = true
   } finally {
     plansLoading.value = false
   }
@@ -314,8 +328,10 @@ async function loadMedicineOptions(preselectId) {
       const opt = medicineOptions.value.find((x) => x.id === preselectId)
       if (opt) selectedDisclaimer.value = opt.disclaimer || ''
     }
+    medicineError.value = false
   } catch {
     medicineOptions.value = []
+    medicineError.value = true
   } finally {
     medicineLoading.value = false
   }
@@ -412,7 +428,7 @@ onMounted(loadElders)
 
 <template>
   <NlPageShell title="用药管理" :has-tabs="true" :back="false">
-    <!-- 老人切换（多老人） -->
+    <!-- 老人切换（多老人）：加载失败时给可重试的错误态，而不是静默藏起来 -->
     <section v-if="elders.length" class="elder-tabs">
       <button
         v-for="e in elders"
@@ -423,6 +439,14 @@ onMounted(loadElders)
         {{ e.name || e.elderName || ('老人' + e.id) }}
       </button>
     </section>
+
+    <NlEmpty
+      v-else-if="elderError"
+      type="network"
+      title="就诊人加载失败"
+      action-text="重试"
+      @action="loadElders"
+    />
 
     <!-- 顶部 Tab -->
     <section class="med-tabs">
@@ -460,6 +484,13 @@ onMounted(loadElders)
         <div v-for="w in weeks" :key="w" class="cal-weeks__cell">{{ w }}</div>
       </div>
       <NlSkeleton v-if="calendarLoading" :count="6" />
+      <NlEmpty
+        v-else-if="calendarError"
+        type="network"
+        title="服药日历加载失败"
+        action-text="重试"
+        @action="loadCalendar"
+      />
       <div v-else class="cal-grid">
         <div
           v-for="(cell, i) in calendar"
@@ -499,6 +530,13 @@ onMounted(loadElders)
       </NlNoticeBar>
 
       <NlSkeleton v-if="todayLoading" :count="3" />
+      <NlEmpty
+        v-else-if="todayError"
+        type="network"
+        title="今日服药加载失败"
+        action-text="重试"
+        @action="loadToday"
+      />
       <NlEmpty
         v-else-if="!todayTasks.length"
         title="今天没有服药任务"
@@ -549,6 +587,13 @@ onMounted(loadElders)
 
       <NlSkeleton v-if="plansLoading" :count="3" />
       <NlEmpty
+        v-else-if="plansError"
+        type="network"
+        title="用药计划加载失败"
+        action-text="重试"
+        @action="loadPlans"
+      />
+      <NlEmpty
         v-else-if="!plans.length"
         title="还没有用药计划"
         description="点击下方按钮为老人添加用药计划"
@@ -598,7 +643,16 @@ onMounted(loadElders)
         剂量由家属按医嘱录入，系统不生成也不校验剂量是否合理。
       </NlNoticeBar>
       <el-form label-position="top" class="plan-form">
-        <el-form-item label="药品">
+        <el-form-item v-if="medicineError" label="药品">
+          <!-- 药品字典拉取失败：下拉会静默变空，这里显式给错误态 + 就地重试 -->
+          <NlEmpty
+            type="network"
+            title="药品字典加载失败"
+            action-text="重试"
+            @action="loadMedicineOptions"
+          />
+        </el-form-item>
+        <el-form-item v-else label="药品">
           <el-select
             v-model="planForm.medicineId"
             placeholder="选择药品（通用信息）"
@@ -693,7 +747,7 @@ onMounted(loadElders)
   &__btn {
     flex: 0 0 auto;
     padding: 8px 14px;
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     font-weight: 500;
     color: var(--nl-text-2);
     background: var(--nl-bg-card);
@@ -718,7 +772,7 @@ onMounted(loadElders)
   &__btn {
     flex: 1;
     padding: 10px 0;
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     font-weight: 500;
     color: var(--nl-text-2);
     background: var(--nl-bg-card);
@@ -761,7 +815,7 @@ onMounted(loadElders)
 .cal-weeks {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  font-size: 11px;
+  font-size: var(--nl-font-caption);
   color: var(--nl-text-2);
   text-align: center;
 
@@ -794,12 +848,12 @@ onMounted(loadElders)
     border: 1.5px solid var(--nl-primary);
 
     .cal-cell__day {
-      color: var(--nl-primary);
+      color: var(--nl-primary-text);
     }
   }
 
   &__day {
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     color: var(--nl-text-1);
   }
 
@@ -825,14 +879,14 @@ onMounted(loadElders)
 
 .cal-summary {
   padding: var(--nl-space-2) 0 0;
-  font-size: 12px;
+  font-size: var(--nl-font-caption);
 }
 
 .cal-legend {
   display: flex;
   gap: var(--nl-space-3);
   padding: var(--nl-space-2) 0 0;
-  font-size: 11px;
+  font-size: var(--nl-font-caption);
   color: var(--nl-text-2);
 
   .dot {

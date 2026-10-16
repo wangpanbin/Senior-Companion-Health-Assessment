@@ -38,7 +38,8 @@ DOMAINS = [
     ("三、陪诊订单与执行域（系统核心）", ["companion_order", "order_status_log", "order_reject_log",
                                           "order_checkin", "companion_track", "order_fee_item"]),
     ("四、用药管理域", ["medicine_dict", "medication_plan", "medication_task"]),
-    ("五、评价、投诉与消息域", ["order_review", "complaint", "internal_message"]),
+    ("五、评价、投诉与消息域", ["order_review", "complaint", "internal_message",
+                                   "chat_message", "chat_read_cursor"]),
 ]
 
 MODULE_OF = {
@@ -49,7 +50,7 @@ MODULE_OF = {
     "order_fee_item": "M4",
     "order_checkin": "M5", "companion_track": "M5", "medicine_dict": "M6",
     "medication_plan": "M6", "medication_task": "M6", "order_review": "M7",
-    "complaint": "M7", "internal_message": "M8",
+    "complaint": "M7", "internal_message": "M8", "chat_message": "M13", "chat_read_cursor": "M13",
 }
 
 TABLE_CN = {
@@ -63,6 +64,7 @@ TABLE_CN = {
     "companion_track": "陪诊轨迹点表", "medicine_dict": "药品字典表",
     "medication_plan": "用药计划表", "medication_task": "每日服药任务表",
     "order_review": "订单评价表", "complaint": "投诉表", "internal_message": "站内信表",
+    "chat_message": "订单聊天消息表（会话=订单）", "chat_read_cursor": "订单聊天已读游标表",
 }
 
 # 表间逻辑关系（用于 ER 图与关系说明；不做物理外键，见索引文档）
@@ -85,6 +87,9 @@ RELATIONS = [
     ("medication_plan", "medication_task", "||--o{", "plan_id", "计划生成每日任务"),
     ("sys_user", "internal_message", "||--o{", "receiver_id", "接收站内信"),
     ("sys_user", "companion_audit_record", "||--o{", "applicant_user_id", "陪诊员资质申请"),
+    ("companion_order", "chat_message", "||--o{", "order_id", "订单会话消息"),
+    ("sys_user", "chat_message", "||--o{", "sender_id", "家属/陪诊员发送消息"),
+    ("companion_order", "chat_read_cursor", "||--o{", "order_id", "订单会话已读游标"),
 ]
 
 # ---------------------------------------------------------------- 解析
@@ -167,7 +172,7 @@ def doc_readme(tables, counts):
     L = []
     L.append("# 银龄伴诊 · 数据库设计文档（M1）")
     L.append("")
-    L.append("> 本文档由 `backend/sql/V1__init_schema.sql` 自动生成，**与 DDL 同源**，")
+    L.append("> 本文档由 `backend/sql/V*.sql` 自动生成，**与 DDL 同源**，")
     L.append("> 凡改动建表脚本请重新生成本文档，禁止手工修改此处内容造成文档与代码漂移。")
     L.append("")
     L.append("## 一、文档清单")
@@ -176,7 +181,7 @@ def doc_readme(tables, counts):
     L.append("|---|---|")
     L.append("| `README.md` | 本文：设计约定、表清单、Flyway 用法 |")
     L.append("| `01-ER图.md` | 分域 ER 图（mermaid）、核心关系说明、订单状态机 |")
-    L.append("| `02-数据字典.md` | 20 张表逐字段字典（类型 / 可空 / 默认值 / 说明） |")
+    L.append("| `02-数据字典.md` | %d 张表逐字段字典（类型 / 可空 / 默认值 / 说明） |" % len(tables))
     L.append("| `03-索引设计与EXPLAIN.md` | 索引清单、设计理由、EXPLAIN 实测结论 |")
     L.append("| `04-种子数据说明.md` | 数据规模、边界场景覆盖、内置账号、加密脱敏 |")
     L.append("")
@@ -207,7 +212,7 @@ def doc_readme(tables, counts):
     L.append("")
     L.append("## 三、表清单")
     L.append("")
-    L.append("共 **%d** 张表，总计 **%s** 行种子数据。" % (len(tables), format(total, ",")))
+    L.append("共 **%d** 张表，当前运行库合计 **%s** 行（行数为文档生成时的库内快照）。" % (len(tables), format(total, ",")))
     L.append("")
     L.append("| # | 表名 | 中文名 | 模块 | 字段数 | 索引数 | 种子行数 |")
     L.append("|---|---|---|---|---|---|---|")
@@ -239,6 +244,8 @@ def doc_readme(tables, counts):
     L.append("| V1 | `V1__init_schema.sql` | 20 张表 DDL | `CREATE TABLE IF NOT EXISTS` |")
     L.append("| V2 | `V2__seed_data.sql` | 全量种子数据（20 表） | 先 `TRUNCATE` 再整体重灌 |")
     L.append("| V3 | `V3__seed_boundary.sql` | 边界场景补充（已取消订单 / 一星差评 / 已解绑关系） | 纯追加，id 段与 V2 不重叠 |")
+    L.append("| V4 | `V4__order_fee_item.sql` | 订单费用明细表（ADR-0009） | 纯增量建表 |")
+    L.append("| V5 | `V5__chat_message.sql` | 订单聊天消息与已读游标（ADR-0011） | 纯增量建表 |")
     L.append("")
     L.append("> **已执行的脚本不得再改**：`validate-on-migrate: true` 会校验 checksum，")
     L.append("> 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5…）。")
@@ -479,6 +486,9 @@ def doc_index(tables, counts):
         "idx_target_user": "查某用户被投诉记录（违规累计）",
         "idx_type2": "",
         "idx_receiver_read": "未读消息数 + 消息列表（覆盖索引）",
+        "idx_order_id_id": "聊天历史倒序游标、未读计数、会话最后一条",
+        "idx_sender": "按发送人审计聊天记录",
+        "uk_order_user": "一订单一用户一条已读游标（幂等 upsert）",
         "idx_receiver_type": "按类型筛选消息",
         "idx_biz": "",
     }
@@ -536,7 +546,7 @@ def doc_index(tables, counts):
     L.append("")
     L.append("## 三、EXPLAIN 实测结论")
     L.append("")
-    L.append("对 7 类高频查询执行 `EXPLAIN`，**全部命中索引，无 `type=ALL` 全表扫描，无 `filesort`**：")
+    L.append("对 10 类高频查询执行 `EXPLAIN`，**全部命中索引，无 `type=ALL` 全表扫描，无 `filesort`**：")
     L.append("")
     L.append("| # | 查询场景 | 命中索引 | 结论 |")
     L.append("|---|---|---|---|")
@@ -547,6 +557,9 @@ def doc_index(tables, counts):
     L.append("| 5 | 未读消息数 | `idx_receiver_read` | type=ref，覆盖索引 |")
     L.append("| 6 | 漏服扫描 | `idx_status_plan_time` | type=range |")
     L.append("| 7 | 评分聚合 | `idx_companion_valid` | type=ref，聚合前已过滤 |")
+    L.append("| 8 | 聊天历史倒序游标 | `idx_order_id_id` | range + 倒序索引扫描，无 filesort（极小表可选 PRIMARY） |")
+    L.append("| 9 | 聊天未读数 | `idx_order_id_id` + `uk_order_user` | type=ref，游标点查常量匹配 |")
+    L.append("| 10 | 已读游标点查 | `uk_order_user` | type=const |")
     L.append("")
     L.append("### 已知未走索引的查询（有意暂不优化）")
     L.append("")
@@ -580,7 +593,10 @@ def doc_seed(tables, counts):
     L.append("## 一、数据规模")
     L.append("")
     total = sum(counts.get(t["table"], 0) for t in tables)
-    L.append("共 %d 张表、**%s** 行数据，业务表每张 **≥ 30 行**（满足验收最低要求）。" % (len(tables), format(total, ",")))
+    L.append("共 %d 张表、当前运行库 **%s** 行；下表行数是生成文档时的**运行库快照**（含 E2E 产生的业务数据）。" % (len(tables), format(total, ",")))
+    L.append("")
+    L.append("V2 种子覆盖 V1 的 20 张业务表，每张 ≥30 行；V4/V5 增量表只建表、不预置种子，")
+    L.append("订单聊天消息等运行期数据由用户操作产生，行数为 0 不是数据缺失。")
     L.append("")
     L.append("| 表 | 中文名 | 行数 | 说明 |")
     L.append("|---|---|---|---|")
@@ -605,6 +621,8 @@ def doc_seed(tables, counts):
         "order_review": "30 条评分 2–5 星；含 6 条匿名、1 条管理员判定无效（`is_valid=0`）；V3 补 1 条 1 星差评",
         "complaint": "32 条：PENDING 10 / RESOLVED 11 / PROCESSING 6 / REJECTED 5；6 类投诉类型齐全；11 条 `penalty_to_target=1`；最长正文 440 字",
         "internal_message": "72 条 + V3 补 3 条；9 种消息类型（原每类 8 条）；已读 25 / 未读 50",
+        "chat_message": "V5 不预置；行数为运行期订单聊天快照（M13 测试/演示产生）",
+        "chat_read_cursor": "V5 不预置；每订单每用户最多一条，行数为运行期已读上报快照",
     }
     for domain, names in DOMAINS:
         for name in names:

@@ -53,7 +53,8 @@ public class FileController {
     private final FileStorageService fileStorageService;
 
     @Operation(summary = "上传文件",
-            description = "仅家属 / 陪诊员 / 管理员可上传。bizType 限 COMPANION_CERT / COMPLAINT / AVATAR 三种；"
+            description = "仅家属 / 陪诊员 / 管理员可上传。bizType 限 COMPANION_CERT / COMPLAINT / AVATAR / CHAT 四种"
+                    + "（CHAT 为 M13 订单聊天媒体专用：仅家属与陪诊员，单文件 ≤50MB，允许 jpg/png/webp/mp4）；"
                     + "不接收 bizId（关联由业务侧持 url 自行完成）")
     @PreAuthorize("hasAnyRole('" + RoleConstants.FAMILY + "','" + RoleConstants.COMPANION + "','" + RoleConstants.ADMIN + "')")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -63,6 +64,10 @@ public class FileController {
         if (type == null) {
             throw new BusinessException(ResultCode.PARAM_ERROR,
                     "不支持的业务类型 bizType，允许取值：" + allowedBizTypes());
+        }
+        if (type == FileBizType.CHAT && RoleConstants.ADMIN.equals(SecurityUtils.currentRole())) {
+            // 管理员仲裁只读（ADR-0011）：不能借通用端点往会话里塞媒体
+            throw new BusinessException(ResultCode.FORBIDDEN, "管理员无权上传聊天媒体");
         }
         FileUploadVO vo = fileStorageService.store(file, type.name(), null, SecurityUtils.currentUserId());
         log.info("文件上传成功 | bizType={} | uploaderId={} | fileId={}",

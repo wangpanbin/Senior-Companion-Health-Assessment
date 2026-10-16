@@ -14,7 +14,7 @@ import lombok.Getter;
  *   <li>{@code 4xxx} —— 陪诊执行与打卡</li>
  *   <li>{@code 5xxx} —— 用药管理</li>
  *   <li>{@code 6xxx} —— 评价与投诉</li>
- *   <li>{@code 7xxx} —— 站内信</li>
+ *   <li>{@code 7xxx} —— 站内信与订单聊天（M13）</li>
  *   <li>{@code 8xxx} —— 管理后台</li>
  *   <li>{@code 9xxx} —— 数据统计与导出</li>
  * </ul>
@@ -115,9 +115,35 @@ public enum ResultCode {
      */
     REVIEW_ALREADY_REPLIED(6006, "该评价已回复，不能重复回复"),
 
-    /* ==================== 7xxx 站内信 ==================== */
+    /* ==================== 7xxx 站内信与订单聊天 ==================== */
     MESSAGE_NOT_FOUND(7001, "消息不存在"),
     MESSAGE_NO_PERMISSION(7002, "无权查看该消息"),
+
+    /* ---------- 7xxx 订单聊天（M13，ADR-0011） ---------- */
+    /**
+     * 会话尚未建立：订单 {@code companion_id} 为空（PENDING 未接单），
+     * 没有会话对方，聊天无从谈起。接单后即开放。
+     */
+    CHAT_NOT_AVAILABLE(7003, "会话尚未建立，陪诊员接单后开放聊天"),
+    /**
+     * 聊天内容为空 / 超过 1000 字 / 命中合规词表（与 3007 同源口径）：
+     * 聊天不是绕过「不做诊断、不开药方」红线的旁路。
+     */
+    CHAT_CONTENT_ILLEGAL(7004, "消息内容为空、超过 1000 字或包含违规表述"),
+    CHAT_FILE_REQUIRED(7005, "图片 / 视频消息必须携带已上传的 fileId"),
+    /**
+     * 附件不合法：不存在、{@code biz_type} 不是 CHAT、或不属于当前发送人
+     * （防止引用他人附件充当自己的消息媒体）。
+     */
+    CHAT_FILE_NOT_OWNED(7006, "附件不存在或不属于当前发送人"),
+    CHAT_FILE_TYPE_MISMATCH(7007, "附件类型与消息类型不符（图片仅 jpg/png/webp，视频仅 mp4）"),
+    /**
+     * 无发言权限：会话双方以外一律只读。
+     * ELDER 走 {@code ElderReadOnlyInterceptor} 通常已被 403 拦截，此处兜底；
+     * ADMIN 仲裁只读是刻意设计（ADR-0011），不是遗漏。
+     */
+    CHAT_READ_ONLY(7008, "您在当前会话中只有查看权限"),
+    CHAT_FILE_TOO_LARGE(7009, "文件超过该业务类型的上限（聊天 50MB，其余 10MB）"),
 
     /* ==================== 8xxx 管理后台 ==================== */
     AUDIT_STATUS_ILLEGAL(8001, "资质审核状态不合法"),

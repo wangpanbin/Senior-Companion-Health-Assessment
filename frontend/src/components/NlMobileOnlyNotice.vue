@@ -85,7 +85,6 @@ function continueOnDesktop() {
     background: var(--nl-bg-card);
     border: 1px solid var(--nl-border);
     border-radius: var(--nl-radius-card);
-    box-shadow: var(--nl-shadow-card);
   }
 
   &__icon {
@@ -94,14 +93,14 @@ function continueOnDesktop() {
     justify-content: center;
     width: 64px;
     height: 64px;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     background: var(--nl-primary-light);
     border-radius: 50%;
   }
 
   &__title {
     margin: 0;
-    font-size: $nl-font-h2;
+    font-size: var(--nl-font-h2);
     font-weight: 600;
     color: var(--nl-text-1);
   }
@@ -110,7 +109,7 @@ function continueOnDesktop() {
     flex: 1;
     margin: 0;
     overflow: hidden;
-    font-size: $nl-font-caption;
+    font-size: var(--nl-font-caption);
     line-height: 1.6;
     color: var(--nl-text-2);
   }
@@ -127,7 +126,7 @@ function continueOnDesktop() {
   }
 
   &__qr-text {
-    font-size: $nl-font-micro;
+    font-size: var(--nl-font-micro);
   }
 }
 </style>

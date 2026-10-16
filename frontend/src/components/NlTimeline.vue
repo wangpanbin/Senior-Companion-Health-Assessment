@@ -136,14 +136,14 @@ defineEmits(['click'])
   }
 
   &__node.is-current .nl-timeline__dot {
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     background: var(--nl-bg-card);
     border: 2px solid var(--nl-primary);
     box-shadow: 0 0 0 6px rgba(29, 111, 242, 0.12);
     animation: nl-timeline-pulse 1.6s ease-in-out infinite;
   }
   &__node.is-current .nl-timeline__label {
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     font-weight: 600;
   }
 }

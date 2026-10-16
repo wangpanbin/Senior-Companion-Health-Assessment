@@ -28,7 +28,7 @@ $nl-bg-sunken: #f8fafd; // 输入框底
 $nl-bg-mask: rgba(17, 26, 41, 0.45); // 遮罩
 
 $nl-border: #e7edf5;
-$nl-border-strong: #d5dfe6;
+$nl-border-strong: #d5dfec;
 $nl-divider: #eff3f8;
 
 $nl-text-1: #17202f; // 主文（对比度 14.8:1）
@@ -49,6 +49,15 @@ $nl-info-bg: #e8f1fe;
 $nl-purple: #7a5af8;
 $nl-purple-bg: #f0edfe;
 $nl-neutral-chip: #f1f4f9;
+
+// -------------------- 排行榜奖牌色（R2 新增） --------------------
+// 为什么单列一组：陪诊员排行前三名的徽章底色。它们是**装饰性识别**，
+// 不是业务语义色，所以不进 success/warning/danger 体系，也不能继续
+// 硬编码在 dashboard.vue 里（R1 之前就是游离在令牌之外的三行 hex）。
+// 文字一律配 --nl-text-1：白字在这三个底色上只有 2.0~2.5:1，不达 AA。
+$nl-rank-1: #f2a900; // 金
+$nl-rank-2: #b1b5bb; // 银
+$nl-rank-3: #d78a4e; // 铜
 
 // -------------------- 语义色·文字版 --------------------
 // 为什么需要这一组：上面的语义色是给**边框 / 图标 / 渐变 / 填充**挑的，
@@ -129,10 +138,18 @@ $nl-listrow-min-height-elderly: 68px;
 $nl-phone-width: 390px;
 $nl-phone-height: 844px;
 
-// -------------------- 桌面端画布（ADR-0007 / Q5 = β 单档 720） --------------------
+// -------------------- 桌面端画布（ADR-0007 / Q5 = β 单档 720；2026-10 起 ≥1280 双栏） --------------------
 // ⚠️ 桌面形态内容区的宽度唯一真源是 NlDesktopShell 的 __content 容器；
-//    view 内部不要再写 max-width / width（Q11），改档位只需动这一个变量。
+//    view 内部不要再写 max-width / width（Q11），改档位只需动这两个变量。
+// 两档语义：
+//   768–1279px  → 单列居中，max-width 720（不变）
+//   ≥1280px     → 内容区放宽到 1120，相邻 .nl-card 两两并排成两列（flex-wrap 配对，
+//                 孤卡自动撑满整行），非卡片子元素（筛选条 / 列表 / 骨架 / 空态 / 免责条）默认通栏
 $nl-desktop-content-width: 720px;
+$nl-desktop-content-wide: 1120px;
+
+// ≥1280 双栏时卡片的最小并排宽度：不足则自动换行回通栏，避免窄卡片挤压
+$nl-desktop-col-min: 420px;
 
 // -------------------- 适老化硬约束（design.md §5 / PRD §2.1） --------------------
 $elderly-touch-min: 48px; // 可点击元素最小高度

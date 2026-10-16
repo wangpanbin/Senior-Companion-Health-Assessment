@@ -2,7 +2,7 @@
 /**
  * NlCard · 通用卡片（design.md §3.2）
  *
- * 视觉公式：白底 + 1px --nl-border + radius 14 + padding 16 + 内部 gap 12 + --nl-shadow-card
+ * 视觉公式：白底 + 1px --nl-border + radius 14 + padding 16 + 内部 gap 12（无投影，靠边框分层）
  * 禁止：再嵌套投影卡片（层级最多 2 层）；禁止跨卡片强投影
  */
 defineProps({
@@ -52,20 +52,18 @@ defineProps({
   background: var(--nl-bg-card);
   border: 1px solid var(--nl-border);
   border-radius: var(--nl-radius-card);
-  box-shadow: var(--nl-shadow-card);
 
   &--plain {
     border-color: transparent;
     background: transparent;
-    box-shadow: none;
   }
 
   &--hover {
     cursor: pointer;
-    transition: box-shadow 0.2s, transform 0.2s;
+    transition: border-color 0.2s, transform 0.2s;
 
     &:hover {
-      box-shadow: var(--nl-shadow-hover);
+      border-color: var(--nl-primary);
     }
 
     &:active {

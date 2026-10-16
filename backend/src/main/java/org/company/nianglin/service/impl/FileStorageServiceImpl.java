@@ -3,6 +3,7 @@ package org.company.nianglin.service.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.FileBizType;
 import org.company.nianglin.entity.SysFile;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.SysFileMapper;
@@ -13,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -28,13 +31,22 @@ import java.util.UUID;
  * <p>前端传来的 {@code Content-Type} 与文件扩展名都是<b>客户端说了算</b>的：
  * 把 {@code shell.jsp} 改名成 {@code a.jpg} 就能过扩展名白名单，
  * 把 {@code Content-Type} 写成 {@code image/jpeg} 更是 curl 一行的事。
- * 只认前几个字节的 magic number —— 那才是「这个文件究竟是什么」的物理证据。</p>
+ * 只认前几个字节的 magic number —— 那才是「这个文件究竟是什么」的物理证据。
+ * mp4 判据是 offset 4 起的 {@code ftyp} box（isom/mp42/MSNV 等 brand 全放行）。</p>
  *
  * <h3>文件名一律 UUID</h3>
  *
  * <p>原始文件名有两个问题：可以含 {@code ../} 造成路径穿越，
  * 也可以在多人同时上传时互相覆盖。UUID 重命名一次解决两个，
  * 原始名只作为 {@code origin_name} 记录下来供人工核对。</p>
+ *
+ * <h3>分级限额与流式落盘（M13，ADR-0011）</h3>
+ *
+ * <p>servlet {@code max-file-size} 全局提到 50MB（服务聊天媒体）后，代码层按
+ * bizType 分级守住原防线：{@code CHAT ≤ 50MB}，其余一律 {@code ≤ 10MB}。</p>
+ *
+ * <p>50MB 的文件<b>不允许 {@code getBytes()} 整体读进堆</b>：先从流里读前 12 字节
+ * 判型，再流式拷贝剩余字节落盘，堆上任何时刻只有 12 字节的头部缓冲。</p>
  *
  * @author 银龄伴诊团队
  * @since M5
@@ -49,6 +61,12 @@ public class FileStorageServiceImpl implements FileStorageService {
     /** 识别文件头所需的最少字节数（WebP 需要看到第 12 字节） */
     private static final int MIN_HEADER_BYTES = 12;
 
+    /** 非聊天业务的单文件上限（servlet 提额后由代码守住的 10MB 防线） */
+    private static final long DEFAULT_MAX_BYTES = 10L * 1024 * 1024;
+
+    /** 聊天媒体（bizType=CHAT）的单文件上限（ADR-0011 决策 D4） */
+    private static final long CHAT_MAX_BYTES = 50L * 1024 * 1024;
+
     private final SysFileMapper sysFileMapper;
 
     @Value("${nianglin.file.upload-dir:./uploads}")
@@ -59,28 +77,33 @@ public class FileStorageServiceImpl implements FileStorageService {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "请选择要上传的文件");
         }
+        checkSizeLimit(file.getSize(), bizType);
 
-        byte[] bytes;
-        try {
-            bytes = file.getBytes();
-        } catch (IOException e) {
-            log.warn("读取上传文件失败 | bizType={} | bizId={} | {}", bizType, bizId, e.getMessage());
-            throw new BusinessException(ResultCode.PARAM_ERROR, "文件读取失败，请重试");
-        }
-
-        String ext = detectExtension(bytes);
-        if (ext == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "文件类型不允许（仅支持 jpg / png / webp / pdf）");
-        }
-
-        String monthDir = LocalDateTime.now().format(MONTH_DIR_FORMAT);
-        String storedName = UUID.randomUUID().toString().replace("-", "") + "." + ext;
-        Path target = Paths.get(uploadDir, monthDir).resolve(storedName);
-        try {
+        String ext;
+        String monthDir;
+        String storedName;
+        Path target;
+        // 判型与落盘必须共用同一条流：只读前 12 字节识别类型，随后从消费点续传。
+        // 不能判型后再 file.getInputStream() 开第二条 —— 部分实现会从头再读，
+        // 头部 12 字节就会在落盘文件里重复出现（文件损坏）。
+        try (InputStream in = file.getInputStream()) {
+            byte[] header = in.readNBytes(MIN_HEADER_BYTES);
+            ext = detectExtension(header);
+            if (ext == null || ("mp4".equals(ext) && FileBizType.of(bizType) != FileBizType.CHAT)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "文件类型不允许（mp4 仅限订单聊天）");
+            }
+            monthDir = LocalDateTime.now().format(MONTH_DIR_FORMAT);
+            storedName = UUID.randomUUID().toString().replace("-", "") + "." + ext;
+            target = Paths.get(uploadDir, monthDir).resolve(storedName);
+            // 目录必须先于输出流创建：newOutputStream 不会自动建父目录，
+            // 每月首个文件就会因月份目录不存在而失败
             Files.createDirectories(target.getParent());
-            Files.write(target, bytes);
+            try (OutputStream out = Files.newOutputStream(target)) {
+                out.write(header);
+                in.transferTo(out);
+            }
         } catch (IOException e) {
-            log.error("文件落盘失败 | dir={} | {}", target.getParent(), e.getMessage());
+            log.error("文件读取/落盘失败 | uploadDir={} | {}", uploadDir, e.getMessage());
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "文件保存失败，请稍后重试");
         }
 
@@ -98,8 +121,24 @@ public class FileStorageServiceImpl implements FileStorageService {
         record.setUploaderId(uploaderId);
         sysFileMapper.insert(record);
 
-        log.info("文件已上传 | bizType={} | bizId={} | size={} | ext={}", bizType, bizId, bytes.length, ext);
+        log.info("文件已上传 | bizType={} | bizId={} | size={} | ext={}", bizType, bizId, file.getSize(), ext);
         return FileUploadVO.of(record);
+    }
+
+    /**
+     * 按 bizType 分级校验单文件大小。
+     *
+     * <p>servlet 上限（50MB）只是最后一道闸；非 CHAT 业务的 10MB 防线必须由这里守住，
+     * 否则提额会连带放开资质证件 / 投诉证据等场景。bizType 解析不出来
+     * （如打卡照片走裸串 {@code CHECKIN}，不在 {@link FileBizType} 白名单里）
+     * 一律按默认 10MB 收紧。</p>
+     */
+    private static void checkSizeLimit(long size, String bizType) {
+        long max = FileBizType.of(bizType) == FileBizType.CHAT ? CHAT_MAX_BYTES : DEFAULT_MAX_BYTES;
+        if (size > max) {
+            throw new BusinessException(ResultCode.CHAT_FILE_TOO_LARGE,
+                    "文件超过大小上限（聊天 50MB，其余 10MB）");
+        }
     }
 
     /**
@@ -127,6 +166,10 @@ public class FileStorageServiceImpl implements FileStorageService {
         // PDF: "%PDF"
         if (bytes[0] == '%' && bytes[1] == 'P' && bytes[2] == 'D' && bytes[3] == 'F') {
             return "pdf";
+        }
+        // MP4: offset 4 起为 "ftyp"（ISO BMFF 容器，isom/mp42/MSNV 等 brand 全放行）
+        if (bytes[4] == 'f' && bytes[5] == 't' && bytes[6] == 'y' && bytes[7] == 'p') {
+            return "mp4";
         }
         return null;
     }

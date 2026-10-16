@@ -85,6 +85,9 @@
 | `internal_message` | `idx_receiver_type` | 普通 | `receiver_id`, `type` | 按类型筛选消息 |
 | `internal_message` | `idx_biz` | 普通 | `biz_type`, `biz_id` | 支撑业务查询条件 |
 | `internal_message` | `idx_create_time` | 普通 | `create_time` | 时间倒序分页 / 按日统计 |
+| `chat_message` | `idx_order_id_id` | 普通 | `order_id`, `id` | 聊天历史倒序游标、未读计数、会话最后一条 |
+| `chat_message` | `idx_sender` | 普通 | `sender_id`, `create_time` | 按发送人审计聊天记录 |
+| `chat_read_cursor` | `uk_order_user` | 唯一 | `order_id`, `user_id` | 一订单一用户一条已读游标（幂等 upsert） |
 
 ## 二、关键设计决策
 
@@ -127,7 +130,7 @@
 
 ## 三、EXPLAIN 实测结论
 
-对 7 类高频查询执行 `EXPLAIN`，**全部命中索引，无 `type=ALL` 全表扫描，无 `filesort`**：
+对 10 类高频查询执行 `EXPLAIN`，**全部命中索引，无 `type=ALL` 全表扫描，无 `filesort`**：
 
 | # | 查询场景 | 命中索引 | 结论 |
 |---|---|---|---|
@@ -138,6 +141,9 @@
 | 5 | 未读消息数 | `idx_receiver_read` | type=ref，覆盖索引 |
 | 6 | 漏服扫描 | `idx_status_plan_time` | type=range |
 | 7 | 评分聚合 | `idx_companion_valid` | type=ref，聚合前已过滤 |
+| 8 | 聊天历史倒序游标 | `idx_order_id_id` | range + 倒序索引扫描，无 filesort（极小表可选 PRIMARY） |
+| 9 | 聊天未读数 | `idx_order_id_id` + `uk_order_user` | type=ref，游标点查常量匹配 |
+| 10 | 已读游标点查 | `uk_order_user` | type=const |
 
 ### 已知未走索引的查询（有意暂不优化）
 

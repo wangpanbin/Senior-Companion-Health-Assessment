@@ -16,6 +16,8 @@ import { listMyOrders } from '@/api/order'
 import { formatMoney, formatDate } from '@/utils/format'
 
 const loading = ref(true)
+/** R4：收入账单加载失败（与「暂无已完成订单」区分） */
+const loadError = ref(false)
 const bills = ref([])
 /** 当前展开记账面板的订单 ID（ADR-0009：陪诊员在收入页直接补记代垫/服务费） */
 const expandedId = ref(null)
@@ -60,9 +62,11 @@ async function loadIncome() {
       (o) => o.status === 'COMPLETED' || o.status === 'REVIEWED'
     )
     bills.value = done
+    loadError.value = false
     // 结算状态 / 金额直接来自列表字段 paymentStatus / actualFee，无需再逐单 getOrder（去 N+1）
   } catch {
     bills.value = []
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -78,6 +82,14 @@ onMounted(loadIncome)
     </NlNoticeBar>
 
     <NlSkeleton v-if="loading" :count="3" class="pad" />
+
+    <NlEmpty
+      v-else-if="loadError"
+      type="network"
+      title="收入账单加载失败"
+      action-text="重试"
+      @action="loadIncome"
+    />
 
     <NlEmpty
       v-else-if="!bills.length"
@@ -160,17 +172,17 @@ onMounted(loadIncome)
   &__card {
     padding: var(--nl-space-3);
     background: var(--nl-bg-card);
+    border: 1px solid var(--nl-border);
     border-radius: var(--nl-radius-card);
-    box-shadow: var(--nl-shadow-card);
 
     &--success {
       background: var(--nl-success-bg);
-      .kpi__val { color: var(--nl-success); }
+      .kpi__val { color: var(--nl-success-text); }
     }
 
     &--primary {
       background: var(--nl-primary-ghost);
-      .kpi__val { color: var(--nl-primary); }
+      .kpi__val { color: var(--nl-primary-text); }
     }
   }
 
@@ -181,7 +193,7 @@ onMounted(loadIncome)
 
   &__val {
     margin-top: 6px;
-    font-size: 20px;
+    font-size: var(--nl-font-h2);
     font-weight: 700;
     color: var(--nl-text-1);
   }
@@ -224,7 +236,7 @@ onMounted(loadIncome)
   }
 
   &__hosp {
-    font-size: 14px;
+    font-size: var(--nl-font-body);
   }
 
   &__pay {
@@ -232,9 +244,9 @@ onMounted(loadIncome)
   }
 
   &__fee {
-    font-size: 18px;
+    font-size: var(--nl-font-h2);
     font-weight: 700;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
   }
 }
 </style>

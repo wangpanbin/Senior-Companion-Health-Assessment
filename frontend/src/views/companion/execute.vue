@@ -45,6 +45,8 @@ const order = ref(null)
 const progress = ref(null)
 const checkins = ref([])
 const loading = ref(true)
+/** R4：主数据加载失败（与「未找到该订单」区分） */
+const loadError = ref(false)
 
 const connected = ref(false)
 const checking = ref(false)
@@ -110,10 +112,12 @@ async function loadAll() {
     order.value = o ?? null
     progress.value = p ?? null
     checkins.value = c || []
+    loadError.value = false
   } catch {
     order.value = null
     progress.value = null
     checkins.value = []
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -303,6 +307,14 @@ onBeforeUnmount(() => {
     <NlSkeleton v-if="loading" :count="3" class="pad" />
 
     <NlEmpty
+      v-else-if="loadError"
+      type="network"
+      title="订单数据加载失败"
+      action-text="重试"
+      @action="loadAll"
+    />
+
+    <NlEmpty
       v-else-if="!order"
       type="empty"
       title="未找到该订单"
@@ -330,6 +342,7 @@ onBeforeUnmount(() => {
             进度 {{ progress?.progressPercent != null ? progress.progressPercent : 0 }}%
           </span>
         </div>
+        <el-button v-if="order.companionId" type="primary" plain @click="$router.push(`/chat/${orderId}`)">联系对方</el-button>
       </NlCard>
 
       <!-- 6 节点时间线 -->
@@ -463,7 +476,7 @@ onBeforeUnmount(() => {
   background: linear-gradient(135deg, var(--nl-primary-light) 0%, var(--nl-bg-card) 90%);
 
   &__title {
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
     color: var(--nl-text-1);
   }
@@ -524,7 +537,7 @@ onBeforeUnmount(() => {
 
     &__abn {
       margin-top: 2px;
-      color: var(--nl-danger);
+      color: var(--nl-danger-text);
     }
   }
 }
@@ -542,8 +555,8 @@ onBeforeUnmount(() => {
     border-radius: 50%;
   }
 
-  &.is-ok { color: var(--nl-success); .dot { background: var(--nl-success); } }
-  &.is-fail { color: var(--nl-danger); .dot { background: var(--nl-danger); } }
+  &.is-ok { color: var(--nl-success-text); .dot { background: var(--nl-success); } }
+  &.is-fail { color: var(--nl-danger-text); .dot { background: var(--nl-danger); } }
 }
 
 .loc {
@@ -596,6 +609,6 @@ onBeforeUnmount(() => {
 
 .live {
   margin: var(--nl-space-2) 0 0;
-  color: var(--nl-success);
+  color: var(--nl-success-text);
 }
 </style>

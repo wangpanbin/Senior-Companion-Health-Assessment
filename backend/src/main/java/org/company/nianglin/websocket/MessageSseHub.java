@@ -58,6 +58,16 @@ public class MessageSseHub {
     /** 新消息事件 */
     public static final String EVENT_NEW_MESSAGE = "NEW_MESSAGE";
 
+    /**
+     * 订单聊天新消息提醒（M13，ADR-0011）。
+     *
+     * <p>与 {@link #EVENT_NEW_MESSAGE} 同构的单向「服务器→用户」提醒：
+     * 只投递 {@code orderId / msgType / preview}，<b>不投递聊天载荷本体</b>——
+     * 载荷由 {@code /ws/chat} 与 REST 历史接口承担，
+     * 不破坏「M5 双向 WS / M8 单向 SSE」的通道分工。</p>
+     */
+    public static final String EVENT_CHAT_MESSAGE = "CHAT_MESSAGE";
+
     private static final DateTimeFormatter PUSH_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final ConcurrentHashMap<Long, Set<SseEmitter>> groups = new ConcurrentHashMap<>();

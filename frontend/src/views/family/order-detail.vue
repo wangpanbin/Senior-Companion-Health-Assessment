@@ -284,6 +284,7 @@ onBeforeUnmount(() => {
           </div>
           <NlStatusChip :status="order.status" :text="order.statusLabel" />
         </div>
+        <el-button v-if="order.companionId" type="primary" plain @click="router.push(`/chat/${orderId}`)">联系对方</el-button>
       </NlCard>
 
       <!-- 陪诊员 -->
@@ -426,7 +427,7 @@ onBeforeUnmount(() => {
   }
 
   &__name {
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
   }
 }
@@ -475,7 +476,7 @@ onBeforeUnmount(() => {
 
     > span:last-child {
       flex: 1;
-      font-size: 14px;
+      font-size: var(--nl-font-body);
       color: var(--nl-text-1);
     }
   }
@@ -499,8 +500,8 @@ onBeforeUnmount(() => {
   }
 
   &__fee-val {
-    font-size: 18px;
-    color: var(--nl-primary) !important;
+    font-size: var(--nl-font-h2);
+    color: var(--nl-primary-text) !important;
   }
 }
 
@@ -515,13 +516,13 @@ onBeforeUnmount(() => {
 
   &__score {
     font-weight: 600;
-    color: var(--nl-primary);
-    font-size: 16px;
+    color: var(--nl-primary-text);
+    font-size: var(--nl-font-h3);
   }
 
   &__time {
     color: var(--nl-text-2);
-    font-size: 12px;
+    font-size: var(--nl-font-caption);
   }
 
   &__invalid {
@@ -544,9 +545,9 @@ onBeforeUnmount(() => {
   &__tag {
     padding: 2px 10px;
     background: var(--nl-primary-light);
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
     border-radius: $nl-radius-pill;
-    font-size: 12px;
+    font-size: var(--nl-font-caption);
   }
 
   &__reply {
@@ -558,7 +559,7 @@ onBeforeUnmount(() => {
   }
 
   &__reply-label {
-    font-size: 12px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     margin-bottom: $nl-space-1;
   }
@@ -593,7 +594,7 @@ onBeforeUnmount(() => {
   }
 
   &__main {
-    font-size: 14px;
+    font-size: var(--nl-font-body);
     color: var(--nl-text-1);
   }
 

@@ -57,6 +57,19 @@ export const routes = [
     path: '/',
     component: MobileLayout,
     children: [
+      // ---------- M13 订单沟通 ----------
+      {
+        path: 'chat',
+        name: 'ChatSessions',
+        component: () => import('@/views/chat/session-list.vue'),
+        meta: { title: '订单沟通', icon: 'ChatDotRound', roles: ['FAMILY', 'COMPANION'], module: 'M13', code: 'M-28' }
+      },
+      {
+        path: 'chat/:orderId',
+        name: 'ChatRoom',
+        component: () => import('@/views/chat/room.vue'),
+        meta: { title: '订单沟通', roles: ['FAMILY', 'COMPANION', 'ELDER'], module: 'M13', code: 'M-27' }
+      },
       // ---------- 老人端 ELDER ----------
       {
         path: 'elder/home',
@@ -436,6 +449,12 @@ export const routes = [
         name: 'AdminOperLog',
         component: () => import('@/views/admin/oper-log.vue'),
         meta: { title: '操作日志', icon: 'Document', roles: ['ADMIN'], module: 'M9', code: 'W-08' }
+      },
+      {
+        path: 'chat',
+        name: 'AdminChatViewer',
+        component: () => import('@/views/admin/chat-viewer.vue'),
+        meta: { title: '沟通记录', icon: 'ChatDotRound', roles: ['ADMIN'], module: 'M13', code: 'W-09' }
       }
     ]
   },

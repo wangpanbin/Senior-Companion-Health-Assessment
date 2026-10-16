@@ -186,7 +186,7 @@ loadCaptcha()
         <label class="nl-caption form__label">图形验证码</label>
         <div class="sms">
           <el-input v-model="form.captchaCode" placeholder="右侧 4 位" maxlength="4" size="large" />
-          <div class="sms__img" title="点击更换验证码" @click="loadCaptcha">
+          <div role="button" tabindex="0" class="sms__img" title="点击更换验证码" @keydown.enter.prevent="loadCaptcha" @keydown.space.prevent="loadCaptcha" @click="loadCaptcha">
             <img v-if="captchaImage" :src="captchaImage" alt="验证码" />
             <span v-else class="nl-caption nl-text-weak">点击刷新</span>
           </div>
@@ -240,7 +240,7 @@ loadCaptcha()
     color: var(--nl-text-2);
 
     &.is-active {
-      color: var(--nl-primary);
+      color: var(--nl-primary-text);
       background: var(--nl-primary-light);
       border-color: var(--nl-primary);
     }
@@ -248,12 +248,12 @@ loadCaptcha()
 
   &__label {
     margin-top: var(--nl-space-2);
-    font-size: 15px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
   }
 
   &__hint {
-    font-size: 11px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     text-align: center;
   }
@@ -282,13 +282,13 @@ loadCaptcha()
   &__submit {
     width: 100%;
     margin-top: var(--nl-space-3);
-    font-size: 16px;
+    font-size: var(--nl-font-h3);
     font-weight: 500;
   }
 
   &__login {
     margin-top: var(--nl-space-3);
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     text-align: center;
   }

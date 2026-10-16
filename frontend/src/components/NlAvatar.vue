@@ -65,7 +65,7 @@ function handleImageError() {
   &__text {
     font-family: var(--nl-font-cn);
     font-weight: 600;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
   }
 
   &__badge {
@@ -73,7 +73,7 @@ function handleImageError() {
     right: -4px;
     bottom: -2px;
     padding: 2px 6px;
-    font-size: 10px;
+    font-size: var(--nl-font-micro);
     font-weight: 500;
     color: #fff;
     background: var(--nl-success);
@@ -104,22 +104,22 @@ function handleImageError() {
   }
 
   &.is-primary .nl-avatar__text {
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
   }
   &.is-success .nl-avatar__text {
-    color: var(--nl-success);
+    color: var(--nl-success-text);
   }
   &.is-warning .nl-avatar__text {
-    color: var(--nl-warning);
+    color: var(--nl-warning-text);
   }
   &.is-danger .nl-avatar__text {
-    color: var(--nl-danger);
+    color: var(--nl-danger-text);
   }
   &.is-purple .nl-avatar__text {
-    color: var(--nl-purple);
+    color: var(--nl-purple-text);
   }
   &.is-info .nl-avatar__text {
-    color: var(--nl-info);
+    color: var(--nl-info-text);
   }
   &.is-neutral .nl-avatar__text {
     color: var(--nl-text-2);

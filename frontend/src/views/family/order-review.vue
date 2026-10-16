@@ -29,8 +29,12 @@ const orderId = route.params.id
 
 const order = ref(null)
 const orderLoading = ref(false)
+/** R4：加载失败与「订单不存在」必须分开 */
+const orderError = ref(false)
 const existingReview = ref(null)
 const checking = ref(false)
+/** R4：是否已评价的预检失败（不阻断展示，但阻断重复提交） */
+const reviewCheckError = ref(false)
 const submitting = ref(false)
 
 const form = ref({
@@ -69,8 +73,10 @@ async function loadOrder() {
   try {
     const data = await getOrder(orderId)
     order.value = data || null
+    orderError.value = false
   } catch {
     order.value = null
+    orderError.value = true
   } finally {
     orderLoading.value = false
   }
@@ -82,8 +88,10 @@ async function loadExistingReview() {
     const data = await getReviewByOrder(orderId)
     // 后端未评价时 data 为 null
     existingReview.value = data || null
+    reviewCheckError.value = false
   } catch {
     existingReview.value = null
+    reviewCheckError.value = true
   } finally {
     checking.value = false
   }
@@ -132,6 +140,23 @@ onMounted(() => {
 <template>
   <NlPageShell title="评价订单">
     <NlSkeleton v-if="orderLoading || checking" :count="3" />
+
+    <NlEmpty
+      v-else-if="orderError"
+      type="network"
+      title="订单信息加载失败"
+      action-text="重试"
+      @action="loadOrder"
+    />
+
+    <NlEmpty
+      v-else-if="reviewCheckError"
+      type="network"
+      title="评价状态检查失败"
+      description="无法确认该订单是否已评价，请重试后再提交"
+      action-text="重试"
+      @action="loadExistingReview"
+    />
 
     <template v-else-if="order">
       <!-- 订单摘要（只读） -->
@@ -193,8 +218,8 @@ onMounted(() => {
 
         <NlCard title="综合评分">
           <div class="score">
-            <ul class="stars">
-              <li v-for="n in 5" :key="n" @click="setScore(n)">
+            <ul role="list" class="stars">
+              <li v-for="n in 5" :key="n" role="button" tabindex="0" @keydown.enter.prevent="setScore(n)" @keydown.space.prevent="setScore(n)" @click="setScore(n)">
                 <svg viewBox="0 0 24 24" width="36" height="36">
                   <path
                     d="M12 2.5l3 6.6 7 .9-5.1 4.9 1.3 7-6.2-3.4-6.2 3.4 1.3-7L2 10l7-.9 3-6.6z"
@@ -211,11 +236,12 @@ onMounted(() => {
         </NlCard>
 
         <NlCard title="印象标签（多选，最多 5 个）">
-          <ul class="tags">
+          <ul role="list" class="tags">
             <li
-              v-for="t in tags"
-              :key="t"
+v-for="t in tags" :key="t" role="button" tabindex="0"
               :class="['tags__item', { 'is-active': form.tags.includes(t) }]"
+              @keydown.enter.prevent="toggleTag(t)"
+              @keydown.space.prevent="toggleTag(t)"
               @click="toggleTag(t)"
             >
               {{ t }}
@@ -293,9 +319,9 @@ onMounted(() => {
     color: var(--nl-text-2);
 
     &.is-active {
-      color: var(--nl-warning);
+      color: var(--nl-warning-text);
       font-weight: 600;
-      font-size: 18px;
+      font-size: var(--nl-font-h2);
     }
   }
 }
@@ -332,7 +358,7 @@ onMounted(() => {
 
   &__item {
     padding: 6px 14px;
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
     background: var(--nl-bg-sunken);
     border: 1px solid transparent;
@@ -340,7 +366,7 @@ onMounted(() => {
     cursor: pointer;
 
     &.is-active {
-      color: var(--nl-primary);
+      color: var(--nl-primary-text);
       background: var(--nl-primary-light);
       border-color: var(--nl-primary);
     }
@@ -349,7 +375,7 @@ onMounted(() => {
 
 .review-content {
   margin: var(--nl-space-3) 0 0;
-  font-size: 14px;
+  font-size: var(--nl-font-body);
   line-height: 1.6;
   color: var(--nl-text-1);
 }

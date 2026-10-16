@@ -19,17 +19,17 @@ html.elderly-mode {
   --nl-text-link: #{$nl-primary-dark};
 
   /* 字阶整体 ×1.25（保留层级关系，最小 18px） */
-  --nl-font-display: #{($nl-font-display * 1.25) * 1px};
-  --nl-font-h1: #{($nl-font-h1 * 1.25) * 1px}; // 27.5
-  --nl-font-h2: #{($nl-font-h2 * 1.25) * 1px}; // 22.5
-  --nl-font-h3: #{($nl-font-h3 * 1.25) * 1px}; // 20
+  --nl-font-display: #{$nl-font-display * 1.25};
+  --nl-font-h1: #{$nl-font-h1 * 1.25}; // 27.5
+  --nl-font-h2: #{$nl-font-h2 * 1.25}; // 22.5
+  --nl-font-h3: #{$nl-font-h3 * 1.25}; // 20
   --nl-font-body: #{$elderly-font-min}; // 18px 基线
-  --nl-font-caption: #{($nl-font-caption * 1.25) * 1px}; // 15
-  --nl-font-micro: #{($nl-font-micro * 1.25) * 1px}; // 12.5
+  --nl-font-caption: #{$nl-font-caption * 1.25}; // 15
+  --nl-font-micro: #{$nl-font-micro * 1.25}; // 12.5
 
   /* 行高同步 */
-  --nl-lh-h1: #{($nl-font-h1 * 1.25 * 1.4) * 1px};
-  --nl-lh-h2: #{($nl-font-h2 * 1.25 * 1.4) * 1px};
+  --nl-lh-h1: #{$nl-font-h1 * 1.25 * 1.4};
+  --nl-lh-h2: #{$nl-font-h2 * 1.25 * 1.4};
   --nl-lh-body: 1.8em;
 
   /* 正文颜色加深（去灰对比） */
@@ -102,6 +102,21 @@ html.elderly-mode {
     height: 30px;
     font-size: 15px;
     line-height: 28px;
+  }
+
+  /* EP 内部类，design.md §5 的覆盖清单没列，但语义上属于「辅助信息 /
+     表单标签」，同样必须跟着字阶缩放。漏掉的后果实测过：
+     .el-checkbox__label 在老人模式下停在 14px、.el-divider__text 停在 12px。
+
+     ⚠️ --large / --small 变体必须显式列出：EP 的
+     .el-checkbox.el-checkbox--large .el-checkbox__label { font-size: 14px }
+     权重是 (0,3,0)，会压过只写 .el-checkbox__label 的 (0,2,1)。 */
+  .el-checkbox__label,
+  .el-checkbox.el-checkbox--large .el-checkbox__label,
+  .el-checkbox.el-checkbox--small .el-checkbox__label,
+  .el-divider__text {
+    font-size: var(--nl-font-caption);
+    line-height: 1.4;
   }
 
   /* 老人模式提示语：加大加重 */

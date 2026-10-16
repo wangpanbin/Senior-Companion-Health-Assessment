@@ -9,12 +9,12 @@
  *   ┌──────────────────────────────────────────────────────────┐
  *   │ 顶栏 64px：Logo + route.meta.title + [module chip] + actions │
  *   ├──────────────────────────────────────────────────────────┤
- *   │            内容区 max-width 720px 居中 padding 24           │
+ *   │     内容区居中：768–1279 单列 720px；≥1280 双栏 1120px      │
  *   └──────────────────────────────────────────────────────────┘
  *
  * ## 两条硬约束（计划 §2 关键约束 1 / 5）
  *
- * 1. **内容宽度永远不超过 720px** —— 由本组件的 `__content` 容器统一控制；
+ * 1. **内容宽度由本组件统一控制**（720 / 1120 两档，见样式尾部的双栏规则）——
  *    view 内部**不要**再写死 width / max-width（Q11：宽度直接写死在 NlDesktopShell）。
  * 2. **mobile-only 路由整体替换** —— `route.meta.mobileOnly` 为真时不渲染默认插槽，
  *    改渲染 `NlMobileOnlyNotice`。view 内部**不要**为此写 v-if（计划 §2 关键约束 5）。
@@ -179,7 +179,7 @@ function goBack() {
     justify-content: center;
     width: 34px;
     height: 34px;
-    font-size: 18px;
+    font-size: var(--nl-font-h2);
     font-weight: 700;
     color: var(--nl-text-inverse);
     background: var(--nl-primary-gradient);
@@ -188,7 +188,7 @@ function goBack() {
 
   &__title {
     overflow: hidden;
-    font-size: 18px;
+    font-size: var(--nl-font-h2);
     font-weight: 600;
     color: var(--nl-text-1);
     text-overflow: ellipsis;
@@ -198,7 +198,7 @@ function goBack() {
   &__code {
     flex-shrink: 0;
     padding: 2px 8px;
-    font-size: 12px;
+    font-size: var(--nl-font-caption);
     font-weight: 500;
     color: var(--nl-text-2);
     background: var(--nl-bg-sunken);
@@ -224,10 +224,54 @@ function goBack() {
     gap: $nl-space-5;
     box-sizing: border-box;
     /* ⚠️ 全站桌面形态的宽度唯一真源：view 内不得再写 max-width */
-    max-width: $nl-desktop-content-width; // 720px
+    max-width: $nl-desktop-content-width; // 720px（768–1279 档；≥1280 档见文件尾部双栏规则）
     min-height: calc(100vh - #{$header-height});
     padding: $nl-space-6; // 24px
     margin: 0 auto;
+  }
+}
+</style>
+
+<style lang="scss">
+@use '@/styles/variables.scss' as *;
+
+/* ==========================================================================
+   ≥1280 双栏（ADR-0007 「2026-10 变更」）
+
+   ⚠️ 这段规则**刻意不加 scoped**：双栏要作用到默认插槽里的子元素（.nl-card 等），
+   而插槽内容是 view 编译的，只携带 view 自己的 scope id，本组件的 scoped 选择器
+   匹配不到它们（scoped + :deep 也能做，但 `:deep(> *)` 直接子元素语义依赖编译器
+   实现细节，非 scoped 全局块更直白可控）。选择器全部带 .nl-desktop-shell__ 前缀，
+   不会泄漏到别处。
+
+   flex-wrap 配对规则（为什么不用 grid）：
+     · 所有直接子元素 flex-basis: 100%（通栏）：筛选条 / 列表 / 骨架 / 空态 / 免责条 / CTA
+     · 相邻 .nl-card 用 calc(50% - 10px) 基宽两两并排；
+       同一行内的剩余空间按 flex-grow 均分 —— **孤卡自动撑满整行**，
+       不会出现「半宽卡片 + 右侧空洞」；卡片不够并排宽度时自动换行回通栏。
+     · 读序保持从左到右、从上到下，与单列时一致。
+   ========================================================================== */
+@media (min-width: 1280px) {
+  /* 双类名抬高特异性：scoped 块的选择器是 `.nl-desktop-shell__inner[data-v-x]`（0,2,0），
+     非 scoped 单类名（0,1,0）会输掉 max-width 覆盖；`.nl-desktop-shell .xxx` 同为（0,2,0），
+     且本 style 块在 SFC 内位于 scoped 块之后，注入顺序保证同特异性时后到胜出。 */
+  .nl-desktop-shell .nl-desktop-shell__inner {
+    max-width: $nl-desktop-content-wide; // 顶栏与内容区同宽对齐
+  }
+
+  .nl-desktop-shell .nl-desktop-shell__content {
+    flex-flow: row wrap;
+    max-width: $nl-desktop-content-wide;
+
+    > * {
+      flex: 1 1 100%;
+      min-width: 0;
+    }
+
+    > .nl-card {
+      flex: 1 1 calc(50% - #{$nl-space-5} / 2);
+      min-width: $nl-desktop-col-min;
+    }
   }
 }
 </style>

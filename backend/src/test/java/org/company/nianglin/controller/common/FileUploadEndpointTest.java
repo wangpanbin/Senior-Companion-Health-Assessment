@@ -58,6 +58,12 @@ class FileUploadEndpointTest {
             0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44
     };
 
+    /** 最小合法 MP4：任意 4 字节 + "ftyp" + brand "isom"（凑满 12 字节判型窗口） */
+    private static final byte[] MP4_BYTES = {
+            0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm',
+            0x00, 0x00, 0x02, 0x00
+    };
+
     @Autowired
     private MockMvc mockMvc;
     @Autowired
@@ -107,6 +113,20 @@ class FileUploadEndpointTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403))
                 .andExpect(jsonPath("$.message").value(containsString("只读")));
+    }
+
+    @Test
+    @DisplayName("权限 · 管理员上传聊天媒体 → 403，仲裁只读不能借上传塞进会话")
+    void adminChatUploadShouldBeForbidden() throws Exception {
+        long before = sysFileMapper.selectCount(Wrappers.<SysFile>lambdaQuery());
+        mockMvc.perform(multipart("/api/file/upload")
+                        .file(new MockMultipartFile("file", "clip.mp4", "video/mp4", MP4_BYTES))
+                        .param("bizType", "CHAT")
+                        .header(AUTH, token(1L, RoleConstants.ADMIN)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ResultCode.FORBIDDEN.getCode()))
+                .andExpect(jsonPath("$.message").value(containsString("管理员")));
+        assertEquals(before, (long) sysFileMapper.selectCount(Wrappers.<SysFile>lambdaQuery()));
     }
 
     @Test

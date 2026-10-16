@@ -1,10 +1,10 @@
-# design.md · 银龄伴诊 前端设计规范（Design Spec v1.0）
+# design.md · 银龄伴诊 前端设计规范（Design Spec v1.2）
 
 > **文档定位**：本文件是「银龄伴诊」前端的**视觉与交互唯一真源**。任何页面开发、组件封装、样式令牌取值，一律以本文件为准。
 > **上游依据**：`docs/prd/PRD.md`（产品需求）· `plan.md`（工程拆分）· `AGENTS.md`（编码规范）
 > **视觉依据**：竞讲原型板 `银龄伴诊-原型总览.png`（M11/M3/M4/M5/M6/M8/M9/M10 十个板块）
 > **适用对象**：前端 C 位（UI）为主，A 位（前端主力）共同遵守
-> **版本**：v1.0 · 2026-09-16 · 随 PRD 版本锁（W7 / W12 / W17）同步修订
+> **版本**：v1.1 · 2026-10-15 · 在 v1.0 基础上按浏览器实测结果修正
 
 ---
 
@@ -18,7 +18,7 @@
 | 字体 | Noto Sans SC（中文）/ Inter（数字·英文）；数字统一用 Inter 保证等宽对齐 |
 | 圆角 | 卡片 14 · 按钮 12 · 标签 6 · 底部胶囊 36 |
 | 阴影 | 单层轻投影，禁止重阴影 / 拟态 |
-| 最小触控区 | 普通 44px · **老人模式 48px（硬约束）** |
+| 最小触控区 | **>=48px（普通与老人模式同口径，AGENTS.md §3.5）** · Element Plus 控件仅在 <768px 放大到 48px，桌面后台维持 32px |
 | 基线字号 | 普通 14px · **老人模式 ≥18px（硬约束）** |
 | 移动端画布 | 390 × 844（含 62px 状态栏 + 62px 胶囊 Tab Bar） |
 | 管理后台画布 | 1440 × 900（左栏 220 + 内容区） |
@@ -169,7 +169,7 @@
 /* 圆角 */
 --nl-radius-card: 14px;   --nl-radius-btn: 12px;
 --nl-radius-chip: 6px;    --nl-radius-input: 12px;
---nl-radius-pill: 999px;  --nl-radius-phone: 44px;
+--nl-radius-pill: 999px;
 ```
 
 ### 2.4 阴影（**只允许这三档**）
@@ -179,6 +179,10 @@
 --nl-shadow-hover: 0 6px 16px rgba(23, 43, 77, 0.08);
 --nl-shadow-float: 0 8px 24px rgba(23, 43, 77, 0.12);   /* 底部 Tab Bar / 弹层 */
 ```
+
+> **v1.2 补充**：卡片**一律不用投影**（见 §3.2），`--nl-shadow-card` / `--nl-shadow-hover`
+> 自 v1.2 起仅限小浮层（头像环、弹出菜单等）使用，新代码不得再给卡片加阴影；
+> hover 反馈统一改用 `border-color: var(--nl-primary)`。
 
 禁止：拟态（neumorphism）、发光（glow）、多层重投影、彩色阴影。
 
@@ -200,6 +204,13 @@
 | `--nl-font-micro` | 10 / 14 | 500 | Tab Bar 标签（大写字母间距 0.5px） |
 
 **数字规范**：金额、距离、评分、日期时间一律 `--nl-font-num` + `font-variant-numeric: tabular-nums`，保证右对齐与等宽。
+
+> **v1.1 补充 · 必须用 `var(--nl-font-*)` 而不是 `$nl-font-*`**：SCSS 变量在编译期就固化成 px，
+> 老人模式的运行时覆盖对它无效。v1.0 时期项目里有 134 处写死 px 或 `$nl-font-*` 的字号，
+> 老人模式下完全不缩放，现已全部归入 `var()`。新增样式一律用 `var()`。
+
+> **v1.1 补充 · 展示级字号例外**：`404` 的大字（96px）、KPI 数值（28/36px）、页面主标题（24/26px）
+> 这 5 处刻意保持固定，不参与老人模式缩放 —— 它们是视觉锚点而非正文，放大反而破坏版面。
 
 ### 2.6 尺寸硬约束
 
@@ -235,9 +246,11 @@
 ### 3.2 卡片
 
 ```
-卡片 = 白底 + 1px --nl-border + radius 14 + padding 16 + 内部 gap 12 + --nl-shadow-card
+卡片 = 白底 + 1px --nl-border + radius 14 + padding 16 + 内部 gap 12（无投影，靠边框分层）
 ```
 
+- **v1.2 起卡片去投影**：分层一律靠 1px `--nl-border`；`--plain`（嵌套卡）连边框都不要。
+- hover 提影改为 `border-color: var(--nl-primary)`（按压 `translateY(1px)` 保留）。
 - 卡片标题行：`h3(16/500)` 左 + 右侧操作（`caption` 文字或 chevron 图标）。
 - 卡片内**禁止**再嵌套投影卡片（层级最多 2 层：底 → 卡）。
 
@@ -359,7 +372,13 @@
 | 菜单 | 全量 | 隐藏 `meta.elderlyHidden` 路由（陪诊员端/后台/统计图表/资质入驻） |
 | 交互 | 允许二级筛选 | 复杂筛选折叠为「更多条件」，核心流程 ≤ 3 步 |
 
-实现落点：`styles/elderly.scss` 用 `.elderly-mode { --nl-font-body: 18px; ... }` 覆盖 CSS 变量，组件层零改动。持久化键 `nl_elderly_mode`（值 `'1'`/`'0'`）。
+实现落点：`styles/elderly.scss` 用 `html.elderly-mode` 覆盖 CSS 自定义属性，组件层零改动。
+
+持久化键 **`nianglin_elderly_mode`**，取值 `'true'` / `'false'`（见 `frontend/src/utils/auth.js:13,77`）。
+
+> ⚠️ **写规范时踩过的坑（v1.1 修正）**：本节此前写的是 `nl_elderly_mode` / `'1'`/`'0'`，
+> 与代码不符。按错误键名设置偏好会静默失效 —— 实测中老人模式因此完全不生效，
+> 且不报错。改键名时务必同步改本文件与 §6.2 的白名单。
 
 ---
 
@@ -373,7 +392,7 @@
 
 2. **隐私最小化**
    - 手机号、身份证号**直接渲染后端返回的脱敏串**（`138****8888` / `110101********4567`），前端不持有明文。
-   - `localStorage` 白名单仅允许：`nl_token`、`nl_user_id`、`nl_role`、`nl_elderly_mode`、`nl_nickname`。
+   - `localStorage` 白名单仅允许（真实键名见 `frontend/src/utils/auth.js`）：`nianglin_access_token`、`nianglin_refresh_token`、`nianglin_user_info`、`nianglin_elderly_mode`、`nianglin_admin_sidebar_mode`。
    - **禁止**写入：密码、身份证号（含加密串）、完整手机号。
    - 前端日志、埋点、错误上报**禁止**携带任何身份证字段。
 
@@ -399,7 +418,7 @@
 | 图标 | `frontend/src/components/icons/` 存 SVG 源文件，统一 24×24 viewBox、`stroke: currentColor`、`stroke-width: 1.8`、`stroke-linecap: round` |
 | 请求层 | 统一走 `utils/request.js`；错误码映射到 §3.7 反馈策略；401 跳登录、403 走无权限页 |
 | 单位 | 布局用 `px`（移动端不做 rem 缩放），字号用 CSS 变量 |
-| 断点 | `<768px` 移动端；`≥768px` 平板/桌面（仅后台使用） |
+| 断点 | 形态判定真源是 `useDevice.js` 的 `MOBILE_QUERY = (max-width: 767px)`；档位体系在 `useResponsive.js`（360 / 480 / 768 / 1024 / 1280 五档）。**SCSS 的 `$bp-*` 变量未被任何组件使用**，view 内如需媒体查询请直接写 px |
 
 ---
 
@@ -436,3 +455,5 @@
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-09-16 | 首版。基于 PRD v1.0 与竞讲原型板提取视觉规范，锁定令牌、组件、页面规划与合规落地口径 |
+| v1.1 | 2026-10-15 | 按 Playwright 实测修正 7 处与代码不符的条目：触控区口径（44→48）、localStorage 键名与取值、断点描述、移除不存在的 `--nl-radius-phone`；补充「字号必须用 `var()`」与「展示级字号例外」两条规则。同步修复了 `elderly.scss` 中 8 处 `calc(Npx * 1px)` 无效 CSS（px×px 非法，浏览器整条丢弃，导致老人模式字号放大失效）与 `index.scss` 中从未被 Element Plus 2.14.5 消费的 `--nl-size-base` 死变量 |
+| v1.2 | 2026-10-16 | 方向 A（一色到底 + 硬收敛）落地：① §3.2 卡片公式去投影，靠 1px 边框分层，hover 提影改 `border-color`；② §2.4 注记两档阴影令牌收缩为小浮层专用；③ 删除家属首页 `love-banner`（无业务依据的装饰渐变块）与快捷入口 `desc` 副标题（少字原则） |

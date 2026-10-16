@@ -37,6 +37,20 @@ SELECT '=== 7. 陪诊员评分聚合（应 idx_companion_valid） ===' AS sectio
 EXPLAIN SELECT companion_id, ROUND(AVG(score), 2) FROM order_review
  WHERE companion_id = 301 AND is_valid = 1 GROUP BY companion_id;
 
+SELECT '=== 8. 聊天历史倒序游标（应 idx_order_id_id，小表可选 PRIMARY） ===' AS section;
+EXPLAIN SELECT id, sender_id, msg_type, content FROM chat_message
+ WHERE order_id = 1001 AND id < 999999 ORDER BY id DESC LIMIT 20;
+
+SELECT '=== 9. 聊天未读数（应 idx_order_id_id + uk_order_user） ===' AS section;
+EXPLAIN SELECT COUNT(*) FROM chat_message m
+ LEFT JOIN chat_read_cursor c ON c.order_id = m.order_id AND c.user_id = 101 AND c.deleted = 0
+ WHERE m.order_id = 1001 AND m.deleted = 0
+   AND m.id > COALESCE(c.last_read_message_id, 0) AND m.sender_id <> 101;
+
+SELECT '=== 10. 已读游标点查（应 uk_order_user） ===' AS section;
+EXPLAIN SELECT last_read_message_id FROM chat_read_cursor
+ WHERE order_id = 1001 AND user_id = 101;
+
 -- -----------------------------------------------------------------------------
 -- 已知未走索引的查询（有意不优化，详见 docs/db/03-索引设计与EXPLAIN.md"已知未走索引的查询"）
 -- 「按 cancel_time 排序筛选 status='CANCELLED'」会出现 Using filesort。

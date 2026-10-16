@@ -202,7 +202,7 @@ async function exportFile() {
     flex-shrink: 0;
     width: 80px;
     padding-top: 8px;
-    font-size: $nl-font-body;
+    font-size: var(--nl-font-body);
     color: $nl-text-2;
     text-align: right;
   }

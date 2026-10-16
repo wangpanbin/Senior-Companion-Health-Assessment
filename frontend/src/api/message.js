@@ -53,21 +53,23 @@ export function removeMessage(messageId) {
  *
  * @param {number} [_intervalMs] 兼容旧签名的占位参数（SSE 模式下无意义）
  * @param {(count: number, byType?: Record<string, number>) => void} [onChange] 未读数变化回调
+ * @param {(payload: object) => void} [onChatMessage] M13 共用 SSE，调用方刷新权威未读总数
  * @returns {{ stop: () => void, refresh: () => Promise<void> }}
  */
-export function startUnreadPolling(_intervalMs = 60000, onChange) {
+export function startUnreadPolling(_intervalMs = 60000, onChange, onChatMessage) {
   let source = null
   let stopped = false
   let last = -1
 
   function apply(count, byType) {
-    if (count !== last) {
+    if (!stopped && count !== last) {
       last = count
       onChange?.(count, byType || {})
     }
   }
 
   async function refresh() {
+    if (stopped || !onChange) return
     try {
       const data = await getUnreadCount()
       // ⚠️ 后端 `UnreadCountVO` 的字段是 **`total`**（外加一份按类型分组的 `byType`），
@@ -94,6 +96,17 @@ export function startUnreadPolling(_intervalMs = 60000, onChange) {
         // 心跳/注释帧解析失败忽略，等下一帧
       }
     })
+    source.addEventListener('CHAT_MESSAGE', (event) => {
+      if (stopped) return
+      try {
+        onChatMessage?.(JSON.parse(event.data))
+      } catch {
+        // 非业务帧不触发刷新
+      }
+    })
+    source.onopen = () => {
+      if (!stopped) onChatMessage?.({ type: 'CONNECTED' })
+    }
     source.onerror = () => {
       // EventSource 自动重连；断连期间给一次主动拉取兜底，红点不至于停在旧值
       refresh()

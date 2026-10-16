@@ -381,7 +381,25 @@ onBeforeUnmount(() => polling?.stop())
 
 1. **加载态**：`loading.value = true` → 渲染 `<NlSkeleton :count="3" />`，不要白屏。
 2. **空态**：`<NlEmpty type="empty" title="..." description="..." action-text="..." @action="..." />`。
-3. **异常**：`catch` 里把列表置空、`loading=false`，**不重复弹提示**（拦截器已弹）。
+3. **异常**：`catch` 里把列表置空、`loading=false`，**并把对应的 `xxxError` 置 true**；
+   模板在骨架屏与空态之间插一个可重试的错误分支，**不重复弹提示**（拦截器已弹）：
+
+   ```vue
+   <NlSkeleton v-if="todayLoading" :count="3" />
+   <NlEmpty
+     v-else-if="todayError"
+     type="network"
+     title="今日用药加载失败"
+     action-text="重试"
+     @action="loadToday"
+   />
+   <NlEmpty v-else-if="!todayTasks.length" type="empty" title="…" />
+   <ul v-else …>
+   ```
+
+   要点：**错误态 ≠ 空态**——失败清空后若不区分，用户会把「加载失败」当成「本来就没数据」。
+   每个独立数据区块各自维护 `xxxError`（分区级，不整页重载）；成功路径必须把标记复位为 `false`。
+   范式：`frontend/src/views/family/order-detail.vue`（`loadError`）。
 4. **无假数据**：所有数字来自接口。没有接口来源的模块直接删除。
 5. **合规文案**：涉及药品、健康信息的页面必须有免责声明（`NlNoticeBar` 或 `NlComplianceBar`）。
 6. **样式**：色值/字号一律走 CSS 变量（前缀 `--nl-`），**禁止硬编码色值**。

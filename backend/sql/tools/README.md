@@ -41,16 +41,17 @@
    追加数据一律新开版本号（`V4__xxx.sql`、`V5__xxx.sql`…）。
    `gen_seed.py` 目前只对应 V2，**若要再生成请先确认 V2 尚未在目标库执行**。
 2. Entity / Mapper 是**生成物**，不要手工改。
-   要改字段就先改 `V1__init_schema.sql`，再重跑 `gen_entity.py`，
-   这样实体与表结构永远零偏差（M1 验收项）。
-3. `V1` 改了就要同步重跑 `gen_db_docs.py`，否则 `docs/db/` 会与代码漂移。
+   要改字段就先改对应 `V*.sql`，再用 `gen_entity.py --tables <表名>` 定向重生成，
+   这样实体与表结构永远零偏差（M1 验收项）。脚本只覆盖指定表，**不删除其它实体或自定义 Mapper**。
+3. `V*.sql` 改了就要同步重跑 `gen_db_docs.py`，否则 `docs/db/` 会与代码漂移。
 
 ## 用法
 
 ### 1. 改表结构后同步实体
 
 ```bash
-python gen_entity.py
+# 只重生成本次改过 DDL 的表；例如 M13 聊天两表
+python gen_entity.py --tables chat_message chat_read_cursor
 ```
 
 ### 2. 重新生成种子数据（⚠️ 见上方约束 1）

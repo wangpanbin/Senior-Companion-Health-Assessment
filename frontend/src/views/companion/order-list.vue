@@ -19,6 +19,8 @@ const router = useRouter()
 const tab = ref('all')
 const orders = ref([])
 const loading = ref(false)
+/** R4：列表加载失败（与「该 tab 下没有订单」区分） */
+const loadError = ref(false)
 const total = ref(0)
 
 /** tab key 即后端 OrderStatus 枚举名（'all' 除外） */
@@ -38,9 +40,11 @@ async function loadOrders() {
     const data = await listMyOrders(params)
     orders.value = data?.records || []
     total.value = data?.total || 0
+    loadError.value = false
   } catch {
     orders.value = []
     total.value = 0
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -77,14 +81,22 @@ onMounted(loadOrders)
     <NlSkeleton v-if="loading" :count="3" class="list-pad" />
 
     <NlEmpty
+      v-else-if="loadError"
+      type="network"
+      title="订单列表加载失败"
+      action-text="重试"
+      @action="loadOrders"
+    />
+
+    <NlEmpty
       v-else-if="isEmpty"
       type="empty"
       title="暂无订单"
       description="去大厅看看有没有合适的订单"
     />
 
-    <ul v-else class="orders">
-      <li v-for="o in orders" :key="o.id" class="order" @click="view(o)">
+    <ul v-else role="list" class="orders">
+      <li v-for="o in orders" :key="o.id" role="button" tabindex="0" class="order" @keydown.enter.prevent="view(o)" @keydown.space.prevent="view(o)" @click="view(o)">
         <div class="order__head">
           <NlStatusChip :status="o.status" :text="o.statusLabel" :dot="o.status === 'IN_SERVICE'" />
           <span class="order__fee is-num">{{ formatMoney(o.fee) }}</span>
@@ -96,6 +108,7 @@ onMounted(loadOrders)
           · {{ formatVisitTime(o.visitTime) }}
         </div>
         <div class="order__id is-num">{{ o.orderNo }}</div>
+        <el-button v-if="o.status !== 'PENDING'" type="primary" plain @keydown.stop @click.stop="router.push(`/chat/${o.id}`)">联系对方</el-button>
       </li>
     </ul>
 
@@ -119,7 +132,7 @@ onMounted(loadOrders)
 
   &__btn {
     padding: 6px 14px;
-    font-size: 13px;
+    font-size: var(--nl-font-caption);
     font-weight: 500;
     color: var(--nl-text-2);
     background: var(--nl-bg-card);
@@ -164,13 +177,13 @@ onMounted(loadOrders)
   }
 
   &__fee {
-    font-size: 18px;
+    font-size: var(--nl-font-h2);
     font-weight: 700;
-    color: var(--nl-primary);
+    color: var(--nl-primary-text);
   }
 
   &__hosp {
-    font-size: 15px;
+    font-size: var(--nl-font-h3);
     font-weight: 600;
     color: var(--nl-text-1);
   }
@@ -182,7 +195,7 @@ onMounted(loadOrders)
   &__id {
     margin-top: var(--nl-space-2);
     color: var(--nl-text-2);
-    font-size: 11px;
+    font-size: var(--nl-font-caption);
   }
 }
 

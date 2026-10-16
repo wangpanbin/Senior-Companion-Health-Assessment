@@ -42,8 +42,8 @@ defineProps({
   &.is-success { background: var(--nl-success-bg);   color: var(--nl-success-text); }
   &.is-warning { background: var(--nl-warning-bg);   color: var(--nl-warning-text); }
   &.is-danger  { background: var(--nl-danger-bg);    color: var(--nl-danger-text); }
-  &.is-purple  { background: var(--nl-purple-bg);    color: var(--nl-purple); }
-  &.is-info    { background: var(--nl-info-bg);      color: var(--nl-info); }
+  &.is-purple  { background: var(--nl-purple-bg);    color: var(--nl-purple-text); }
+  &.is-info    { background: var(--nl-info-bg);      color: var(--nl-info-text); }
   &.is-neutral { background: var(--nl-neutral-chip); color: var(--nl-text-2); }
 }
 </style>
