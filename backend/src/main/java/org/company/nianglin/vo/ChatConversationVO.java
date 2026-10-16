@@ -85,33 +85,17 @@ public class ChatConversationVO implements Serializable {
         private LocalDateTime createTime;
     }
 
-    /** 由最后一条消息实体生成预览；{@code null} 表示会话尚无消息 */
+    /** 由最后一条消息实体生成预览；{@code null} 表示会话尚无消息。预览文案口径见 {@link ChatMsgType#previewOf} */
     public static LastMessage lastOf(ChatMessage message) {
         if (message == null) {
             return null;
         }
         ChatMsgType type = ChatMsgType.of(message.getMsgType());
         String label = type == null ? message.getMsgType() : type.label();
-        // 媒体消息不透传说明文字（见类注释）；兜底未知类型按原文截断
-        String preview = switch (type == null ? ChatMsgType.TEXT : type) {
-            case IMAGE -> "[图片]";
-            case VIDEO -> "[视频]";
-            case TEXT -> previewOf(message.getContent());
-        };
         return new LastMessage()
                 .setMsgType(message.getMsgType())
                 .setMsgTypeLabel(label)
-                .setPreview(preview)
+                .setPreview(ChatMsgType.previewOf(message.getMsgType(), message.getContent()))
                 .setCreateTime(message.getCreateTime());
-    }
-
-    /** 截断到 30 字（列表单行展示的物理上限） */
-    public static String previewOf(String content) {
-        if (content == null) {
-            return null;
-        }
-        String trimmed = content.trim();
-        return trimmed.codePointCount(0, trimmed.length()) <= 30
-                ? trimmed : trimmed.substring(0, trimmed.offsetByCodePoints(0, 29)) + "…";
     }
 }

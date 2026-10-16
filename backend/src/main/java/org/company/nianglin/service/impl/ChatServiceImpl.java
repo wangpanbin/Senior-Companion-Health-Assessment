@@ -164,11 +164,7 @@ public class ChatServiceImpl implements ChatService {
         Map<String, Object> payload = new HashMap<>(4);
         payload.put("orderId", order.getId());
         payload.put("msgType", vo.getMsgType());
-        payload.put("preview", switch (ChatMsgType.of(vo.getMsgType())) {
-            case IMAGE -> "[图片]";
-            case VIDEO -> "[视频]";
-            case TEXT -> ChatConversationVO.previewOf(vo.getContent());
-        });
+        payload.put("preview", ChatMsgType.previewOf(vo.getMsgType(), vo.getContent()));
         try {
             messageSseHub.push(resolvePeerUserId(order, me.userId()), MessageSseHub.EVENT_CHAT_MESSAGE, payload);
         } catch (RuntimeException ex) {

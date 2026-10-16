@@ -13,7 +13,6 @@ import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.impl.ChatServiceImpl;
 import org.company.nianglin.support.MybatisLambdaCache;
-import org.company.nianglin.vo.ChatConversationVO;
 import org.company.nianglin.websocket.ChatMessageHub;
 import org.company.nianglin.websocket.MessageSseHub;
 import org.junit.jupiter.api.AfterEach;
@@ -168,13 +167,6 @@ class ChatServiceTest {
         involved();
         assertCode(ResultCode.CHAT_CONTENT_ILLEGAL, () -> service.send(101L, dto("TEXT", "字".repeat(1001))));
         verifyNoInteractions(messages);
-    }
-
-    @Test
-    @DisplayName("预览包含省略号仍不超过三十个完整字符")
-    void previewShouldPreserveCodePointsWithinThirtyCharacters() {
-        String text = "\uD840\uDC00".repeat(31);
-        assertEquals("\uD840\uDC00".repeat(29) + "…", ChatConversationVO.previewOf(text));
     }
 
     @Test
