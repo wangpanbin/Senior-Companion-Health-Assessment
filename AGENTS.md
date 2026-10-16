@@ -41,6 +41,7 @@
 ### 0.2 AI 工具自我约束
 
 - 任何代码改动落地前，**先说明思路与改动文件清单**，再开始改。
+- **新增功能 / 编写代码必须在独立分支上完成**：动手写代码前先新建分支（功能用 `feature/<module>-<name>`、修 bug 用 `bugfix/<module>-<name>`、改文档用 `docs/<name>`），全程在该分支上提交，**禁止直接在 `main` / `develop` 上编写或提交代码**；任务完成、检查通过后再按 §7.1 合并回主分支并删除该分支。仅改动文档、配置且不涉及代码生成时可经用户确认后免开分支。
 - **不要删除** `plan.md`、`README.md`、`docs/api/*`、`.gitignore`、`pom.xml`、`package.json`、根目录 `.workbuddy/`；这些是项目根骨。
 - **不要执行破坏性命令**：`rm -rf`、强制 `git push --force` 到 `main` / `develop`、直接 drop database、`mvn clean install -DskipTests` 之外的危险 Maven 目标。对 `git commit`、`git push`、`git reset`、`git clean`、重启服务、删容器等动作必须**先确认**。
 - **不要在仓库中留下明文密码 / 真实手机号 / 真实身份证号**。所有示例数据用合规占位串（如 `13800000000`、`110101199001010001`）。
@@ -554,6 +555,7 @@ main← develop ← feature/<module>-<name>
 - 可以直接向 `main` / `develop` 推 push,但是必须先review。
 - 每周五合并到 `develop`。
 - `main` 设为受保护分支，PR 必须有 Code Review。
+- **AI 新增功能 / 编写代码时必须先新建分支，并在该独立分支上完成全部改动与提交**：不得检出 `main` / `develop` 后直接写代码，也不允许"先在主分支改完再补分支"；改动全部落地且 §11 检查通过后，再合并回主分支并删除功能分支（见 §7.3）。
 
 ### 7.2 提交信息格式
 
@@ -577,7 +579,7 @@ main← develop ← feature/<module>-<name>
 - **AI 只能** 在用户明确授权后才执行 `git commit` / `git push`。
 - AI **必须** 生成符合上述格式的提交信息再 commit。
 - AI **禁止** `git push --force` 到任何受保护分支。
-- AI **禁止** 直接修改 `main` / `develop`，必须基于 `feature/...` 分支。
+- AI **禁止** 直接修改 `main` / `develop`，必须基于 `feature/...` 分支——即**写第一行代码前就先新建独立分支**，所有编辑与提交都发生在该分支上，不允许在主分支上改完再倒签补分支。
 
 ---
 
