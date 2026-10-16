@@ -99,19 +99,23 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
                     payload.passwordVersion(), payload.jti(), payload.expiresAtMillis());
 
             // 归属校验：非相关方在这里就出不去，不会进到会话注册表
-            orderService.requireInvolved(orderId, loginUser);
+            org.company.nianglin.entity.CompanionOrder order = orderService.requireInvolved(orderId, loginUser);
+            if ("/ws/chat".equals(request.getURI().getPath()) && order.getCompanionId() == null) {
+                throw new BusinessException(org.company.nianglin.common.ResultCode.CHAT_NOT_AVAILABLE);
+            }
 
-            attributes.put(OrderProgressHandler.ATTR_ORDER_ID, orderId);
-            attributes.put(OrderProgressHandler.ATTR_USER_ID, payload.userId());
-            attributes.put("role", payload.role());
+            attributes.put(WsAttributes.ORDER_ID, orderId);
+            attributes.put(WsAttributes.USER_ID, payload.userId());
+            attributes.put(WsAttributes.ROLE, payload.role());
             log.info("进度订阅握手通过 | orderId={} | userId={} | role={}",
                     orderId, payload.userId(), payload.role());
             return true;
         } catch (BusinessException e) {
             // 401 与 403 分开回：前端据此决定「去刷新令牌」还是「别白试了」。
             // 注意日志里不打印 token 本身
-            boolean forbidden = e.getCode() != null
-                    && e.getCode().equals(org.company.nianglin.common.ResultCode.FORBIDDEN.getCode());
+            boolean forbidden = org.company.nianglin.common.ResultCode.FORBIDDEN.getCode().equals(e.getCode())
+                    || org.company.nianglin.common.ResultCode.ORDER_NO_PERMISSION.getCode().equals(e.getCode())
+                    || org.company.nianglin.common.ResultCode.CHAT_NOT_AVAILABLE.getCode().equals(e.getCode());
             log.warn("进度订阅握手被拒 | orderId={} | code={} | message={}", orderId, e.getCode(), e.getMessage());
             response.setStatusCode(forbidden ? HttpStatus.FORBIDDEN : HttpStatus.UNAUTHORIZED);
             return false;

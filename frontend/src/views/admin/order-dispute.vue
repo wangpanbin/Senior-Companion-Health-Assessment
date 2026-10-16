@@ -141,6 +141,7 @@ onMounted(loadList)
       </template>
       <template #actions="{ row }">
         <el-button type="primary" text size="small" @click="open(row)">处理</el-button>
+        <el-button text size="small" @click="$router.push({ name: 'AdminChatViewer', query: { orderId: row.id } })">查看沟通记录</el-button>
       </template>
     </NlAdminTable>
 

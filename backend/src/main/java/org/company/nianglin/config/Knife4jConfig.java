@@ -108,6 +108,11 @@ public class Knife4jConfig {
     }
 
     @Bean
+    public GroupedOpenApi chatApi() {
+        return group("11-订单聊天", "org.company.nianglin.controller.chat");
+    }
+
+    @Bean
     public GroupedOpenApi commonApi() {
         return GroupedOpenApi.builder()
                 .group("00-通用与健康检查")

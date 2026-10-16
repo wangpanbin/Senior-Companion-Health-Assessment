@@ -181,6 +181,7 @@ onMounted(loadList)
           处理
         </el-button>
         <span v-else class="nl-caption nl-text-muted">已结案</span>
+        <el-button v-if="row.orderId" text size="small" @click="$router.push({ name: 'AdminChatViewer', query: { orderId: row.orderId } })">查看沟通记录</el-button>
       </template>
     </NlAdminTable>
 

@@ -81,6 +81,9 @@ export const ROUTES = {
   adminComplaint: '/admin/complaint',
   adminExport: '/admin/export',
   adminOperLog: '/admin/oper-log',
+  chatSessions: '/chat',
+  chatRoom: (orderId) => `/chat/${orderId}`,
+  adminChatViewer: '/admin/chat',
   error403: '/error/403',
   error404: '/error/404'
 }

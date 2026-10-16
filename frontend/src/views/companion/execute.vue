@@ -342,6 +342,7 @@ onBeforeUnmount(() => {
             进度 {{ progress?.progressPercent != null ? progress.progressPercent : 0 }}%
           </span>
         </div>
+        <el-button v-if="order.companionId" type="primary" plain @click="$router.push(`/chat/${orderId}`)">联系对方</el-button>
       </NlCard>
 
       <!-- 6 节点时间线 -->

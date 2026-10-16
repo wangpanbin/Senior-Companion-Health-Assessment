@@ -36,11 +36,16 @@ import {
 } from '@/api/message'
 import { formatDateTime } from '@/utils/format'
 import { useUserStore } from '@/store/modules/user'
+import { useChatUnread } from '@/composables/useChatUnread'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const roleLabel = computed(() => userStore.roleLabel || '用户')
+const chatWriter = computed(() => ['FAMILY', 'COMPANION'].includes(userStore.role))
+const { total: chatUnread, error: chatUnreadError, handleMessage: onChatMessage } = useChatUnread({
+  enabled: chatWriter, subscribe: false
+})
 
 /**
  * 本 view 被三条路由共用（ADR-0008 只把 `/elder/message` 列为 mobile-only）。
@@ -131,7 +136,7 @@ onMounted(() => {
   polling = startUnreadPolling(60000, (n) => {
     // 轮询只更新红点数；列表内的已读态由本页本地维护
     void n
-  })
+  }, chatWriter.value ? onChatMessage : undefined)
 })
 
 onBeforeUnmount(() => {
@@ -143,6 +148,12 @@ onBeforeUnmount(() => {
   <!-- mobile-only 守卫只对 /elder/message 生效（见脚本里 mobileOnlyHere 的注释） -->
   <NlMobileOnlyPage :enabled="mobileOnlyHere">
     <NlPageShell :title="`消息（${unreadCount} 条未读）`" :has-tabs="true" :back="false">
+      <NlCard v-if="chatWriter" title="订单沟通">
+        <div class="msg-bar">
+          <span class="nl-body">{{ chatUnreadError ? '未读数暂不可用' : `${chatUnread} 条未读` }} · 与本单对方沟通陪诊安排</span>
+          <el-button type="primary" plain @click="router.push('/chat')">进入订单沟通</el-button>
+        </div>
+      </NlCard>
       <!-- 顶部操作条 -->
       <section class="msg-bar">
         <span class="nl-caption nl-text-muted">

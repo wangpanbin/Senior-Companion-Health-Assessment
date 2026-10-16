@@ -248,6 +248,7 @@ function goMedication() {
             {{ o.department }}<template v-if="o.elderAge != null"> · {{ o.elderAge }}岁</template> · {{ formatVisitTime(o.visitTime) }}
           </div>
           <div v-if="o.companionName" class="nl-caption nl-text-weak">陪诊员：{{ o.companionName }}</div>
+          <el-button v-if="o.companionName" type="primary" plain @click="router.push(`/chat/${o.id}`)">查看沟通（只读）</el-button>
         </li>
       </ul>
 
@@ -376,6 +377,7 @@ function goMedication() {
             {{ o.companionName ? `陪诊员：${o.companionName}` : '待接单' }}
           </span>
           <span class="is-num desktop-orders__fee">{{ formatMoney(o.fee) }}</span>
+          <el-button v-if="o.companionName" type="primary" plain @click="router.push(`/chat/${o.id}`)">查看沟通（只读）</el-button>
         </li>
       </ul>
 

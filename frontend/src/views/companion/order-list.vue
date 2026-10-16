@@ -108,6 +108,7 @@ onMounted(loadOrders)
           · {{ formatVisitTime(o.visitTime) }}
         </div>
         <div class="order__id is-num">{{ o.orderNo }}</div>
+        <el-button v-if="o.status !== 'PENDING'" type="primary" plain @keydown.stop @click.stop="router.push(`/chat/${o.id}`)">联系对方</el-button>
       </li>
     </ul>
 

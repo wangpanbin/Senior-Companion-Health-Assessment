@@ -35,7 +35,8 @@
    > `@Operation` 描述与本条豁免说明，三处一起改。
    > 同一口径的其它位置（`GET /api/order` 列表、`/api/user/elder`、`/api/admin/**`）**一律脱敏**，
    > 不要拿本条豁免去类推其它接口。
-3. **一期不做**：在线支付（改为线上记账 + 线下结算）、地图导航（改为文字地址 + 签到坐标）、IM 聊天（改为站内信）。任何 AI 输出涉及这三块都要主动拒绝或改写为替代方案。
+3. **一期不做**：在线支付（改为线上记账 + 线下结算）、地图导航（改为文字地址 + 签到坐标）、IM 聊天（改为站内信）。
+   > **二期变更（2026-10-16，ADR-0011）**：IM 聊天已按 **M13 订单聊天** 形态放开——仅限**按陪诊订单**的家属↔陪诊员双向聊天（`/api/chat/**`），ELDER 只读、ADMIN 仲裁只读，**不做**自由加好友式 IM；在线支付与地图导航红线**不变**，涉及仍须主动拒绝或改写。聊天沿用全部合规约束（不做诊断、敏感词拦截、脱敏、免责声明），契约见 `docs/api/11-order-chat.md`。
 
 ### 0.2 AI 工具自我约束
 
@@ -246,7 +247,7 @@ public class OrderServiceImpl implements OrderService {
 2. 同步更新 `docs/api/README.md` 的对应段位表格。
 3. **不要**新增跨段位或杂糅语义的码（如把订单相关错误放到 1xxx）。
 
-段位含义：`2xx/4xx/5xx` 通用；`1xxx` 认证账号；`2xxx` 用户档案；`3xxx` 陪诊订单；`4xxx` 陪诊执行打卡；`5xxx` 用药；`6xxx` 评价投诉；`7xxx` 站内信；`8xxx` 管理后台；`9xxx` 统计导出。
+段位含义：`2xx/4xx/5xx` 通用；`1xxx` 认证账号；`2xxx` 用户档案；`3xxx` 陪诊订单；`4xxx` 陪诊执行打卡；`5xxx` 用药；`6xxx` 评价投诉；`7xxx` 站内信与订单聊天（M13）；`8xxx` 管理后台；`9xxx` 统计导出。
 
 ### 2.8 鉴权 / Spring Security
 
@@ -480,12 +481,12 @@ PENDING ──► ACCEPTED ──► IN_SERVICE ──► COMPLETED ──► RE
 | 项 | 约定 |
 |---|---|
 | 请求类型 | `multipart/form-data`，字段名统一 `file` |
-| 单文件上限 | 10 MB |
-| 单请求上限 | 20 MB |
-| 允许类型 | `image/jpeg`、`image/png`、`image/webp`、`application/pdf` |
+| 单文件上限 | 10 MB；**`bizType=CHAT` 为 50 MB**（M13 聊天专用，代码层按 bizType 分级，servlet 全局 50MB/52MB） |
+| 单请求上限 | 52 MB（原 20 MB 随 servlet 提额上调；非聊天类型仍由代码守 10 MB） |
+| 允许类型 | `image/jpeg`、`image/png`、`image/webp`、`application/pdf`；**`bizType=CHAT` 另允许 `video/mp4`** |
 | 返回 | `{ fileId, url, size }` |
 | 存储 | 一期落本地 `./uploads/{yyyyMM}/{uuid}.{ext}`，后续可替换为对象存储 |
-| 校验 | 必须读文件头（magic bytes）二次确认，**禁止**信任前端传来的 `Content-Type` |
+| 校验 | 必须读文件头（magic bytes）二次确认，**禁止**信任前端传来的 `Content-Type`；50MB 走流式落盘（**禁止**整文件 `getBytes()` 读进堆） |
 
 ---
 

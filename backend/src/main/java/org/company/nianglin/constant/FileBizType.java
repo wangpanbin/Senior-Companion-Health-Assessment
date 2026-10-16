@@ -7,9 +7,10 @@ import java.util.Arrays;
  *
  * <p>{@code sys_file.biz_type} 列注释定义了 5 个取值：
  * {@code COMPANION_CERT}(资质证件) / {@code CHECKIN}(打卡照片) /
- * {@code COMPLAINT}(投诉证据) / {@code AVATAR}(头像) / {@code REVIEW}(评价图片)。</p>
+ * {@code COMPLAINT}(投诉证据) / {@code AVATAR}(头像) / {@code REVIEW}(评价图片)。
+ * M13（ADR-0011）新增 {@code CHAT}(订单聊天媒体)。</p>
  *
- * <p><b>本通用端点只放行其中 3 个</b>，刻意<b>不放行</b> {@code CHECKIN} 与 {@code REVIEW}：</p>
+ * <p><b>本通用端点只放行其中 4 个</b>，刻意<b>不放行</b> {@code CHECKIN} 与 {@code REVIEW}：</p>
  * <ul>
  *   <li>{@code CHECKIN}：打卡照片有专属入口
  *       {@code POST /api/execution/{orderId}/photo}，那里会校验「须为本单陪诊员」，
@@ -22,6 +23,11 @@ import java.util.Arrays;
  * 自行关联到具体业务（如 {@code certificates[].url}、{@code complaint.evidence[]}），
  * 因此统一走本通用端点即可。</p>
  *
+ * <p>⚠️ {@code CHAT} 是唯一有<b>角色限制</b>的类型：仅 FAMILY / COMPANION 可传
+ * （50MB / 允许 mp4，是聊天媒体消息的专用通道）；ADMIN 被控制器显式拒绝 ——
+ * 管理员仲裁只读，不因通用端点破防（ADR-0011 决策 D4）。其附件与发送人的绑定
+ * 由 {@code ChatService} 校验 {@code uploader_id}（回 7006）。</p>
+ *
  * @author 银龄伴诊团队
  * @since M5
  */
@@ -33,6 +39,8 @@ public enum FileBizType {
     COMPLAINT("投诉证据"),
     /** 用户头像 */
     AVATAR("头像"),
+    /** 订单聊天媒体（M13，仅 FAMILY/COMPANION，单文件 ≤50MB，允许 mp4） */
+    CHAT("订单聊天媒体"),
     ;
 
     private final String label;

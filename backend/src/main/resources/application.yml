@@ -33,8 +33,11 @@ spring:
       write-dates-as-timestamps: false
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 20MB
+      # M13（ADR-0011）：全局提到 50MB 服务聊天媒体；非 CHAT 业务的 10MB 防线
+      # 由 FileStorageServiceImpl#checkSizeLimit 按.bizType 分级守住。
+      # request 上限必须大于 file 上限（multipart 含表单开销），否则大文件必然超限。
+      max-file-size: 50MB
+      max-request-size: 52MB
   mvc:
     throw-exception-if-no-handler-found: true
   web:

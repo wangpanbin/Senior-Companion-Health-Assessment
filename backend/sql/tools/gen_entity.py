@@ -1,18 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-从 V1__init_schema.sql 解析表结构，生成 MyBatis-Plus Entity 与 Mapper。
-直接解析 DDL 而不是手写，保证「实体字段 ↔ 数据库列」零偏差（M1 验收项）。
-
-输出：
-  backend/src/main/java/org/company/nianglin/entity/*.java
-  backend/src/main/java/org/company/nianglin/mapper/*.java
-"""
+"""解析 V*.sql 的 CREATE TABLE，为 --tables 指定表生成实体与基础 Mapper。"""
+import argparse
+import glob
 import os
 import re
 
 BASE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                      "..", ".."))
-DDL = os.path.join(BASE, "sql", "V1__init_schema.sql")
+SQL_GLOB = os.path.join(BASE, "sql", "V*.sql")
 ENTITY_DIR = os.path.join(BASE, "src", "main", "java", "org", "company", "nianglin", "entity")
 MAPPER_DIR = os.path.join(BASE, "src", "main", "java", "org", "company", "nianglin", "mapper")
 
@@ -184,27 +179,29 @@ def gen_mapper(table, table_comment):
 
 
 def main():
-    with open(DDL, "r", encoding="utf-8") as f:
-        text = f.read()
-    tables = parse_ddl(text)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--tables", nargs="+", required=True,
+                        help="仅覆盖指定表的 Entity 与基础 Mapper；不删除其它文件")
+    args = parser.parse_args()
+    tables = {}
+    for path in sorted(glob.glob(SQL_GLOB)):
+        with open(path, "r", encoding="utf-8") as f:
+            for table, comment, cols in parse_ddl(f.read()):
+                tables[table] = (table, comment, cols)
+    unknown = set(args.tables) - tables.keys()
+    if unknown:
+        parser.error("找不到建表定义：" + ", ".join(sorted(unknown)))
     os.makedirs(ENTITY_DIR, exist_ok=True)
     os.makedirs(MAPPER_DIR, exist_ok=True)
-    # 清掉占位文件与旧的生成结果
-    for d in (ENTITY_DIR, MAPPER_DIR):
-        for name in os.listdir(d):
-            if name == ".gitkeep" or name.endswith(".java"):
-                os.remove(os.path.join(d, name))
-    for table, tc, cols in tables:
-        cls, code = gen_entity(table, tc, cols)
-        with open(os.path.join(ENTITY_DIR, cls + ".java"), "w", encoding="utf-8") as f:
+    for table in dict.fromkeys(args.tables):
+        _, comment, cols = tables[table]
+        cls, code = gen_entity(table, comment, cols)
+        with open(os.path.join(ENTITY_DIR, cls + ".java"), "w", encoding="utf-8", newline="\n") as f:
             f.write(code)
-        with open(os.path.join(MAPPER_DIR, cls + "Mapper.java"), "w", encoding="utf-8") as f:
-            f.write(gen_mapper(table, tc))
-    print("tables parsed =", len(tables))
-    print("entities =", len(os.listdir(ENTITY_DIR)))
-    print("mappers  =", len(os.listdir(MAPPER_DIR)))
-    for table, tc, cols in tables:
-        print("  %-26s -> %-26s fields=%d" % (table, pascal_table(table), len(cols) - len(BASE_COLS)))
+        with open(os.path.join(MAPPER_DIR, cls + "Mapper.java"), "w", encoding="utf-8", newline="\n") as f:
+            f.write(gen_mapper(table, comment))
+        print("generated:", cls, cls + "Mapper")
 
 
-main()
+if __name__ == "__main__":
+    main()
