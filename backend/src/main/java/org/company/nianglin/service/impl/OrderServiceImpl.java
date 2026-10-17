@@ -52,6 +52,7 @@ import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
+import org.company.nianglin.vo.OrderFulfillmentVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
@@ -310,6 +311,17 @@ public class OrderServiceImpl implements OrderService {
                 elder == null ? null : ageOf(elder),
                 companionName,
                 readPhotoList(order.getServicePhotos()));
+    }
+
+    /* ================================================================== */
+    /* 4b. 履约详情（V3.1）                                                */
+    /* ================================================================== */
+
+    @Override
+    public OrderFulfillmentVO fulfillmentDetail(Long orderId) {
+        // 鉴权完全复用 detail 的参与方判定 —— 不为履约另开一套可见性规则
+        CompanionOrder order = requireInvolved(orderId);
+        return fulfillmentService.fulfillmentDetail(order);
     }
 
     /* ================================================================== */

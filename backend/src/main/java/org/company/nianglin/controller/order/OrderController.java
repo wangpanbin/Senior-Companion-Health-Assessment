@@ -26,6 +26,7 @@ import org.company.nianglin.vo.OrderFeeItemSummaryVO;
 import org.company.nianglin.vo.OrderFeeItemVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderTimelineVO;
+import org.company.nianglin.vo.OrderFulfillmentVO;
 import org.company.nianglin.vo.OrderUrgeResultVO;
 import org.company.nianglin.vo.OrderVO;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -120,6 +121,17 @@ public class OrderController {
     @PostMapping
     public Result<OrderCreateResultVO> create(@Valid @RequestBody OrderCreateDTO dto) {
         return Result.success("下单成功，正在为您匹配陪诊员", orderService.create(dto));
+    }
+
+    @Operation(summary = "订单履约详情（V3.1）",
+            description = "返回订单当前的履约风险等级、等待时长、催单次数与完整事件流水"
+                    + "（按发生时间升序，从下单到当前）。"
+                    + "可见性与订单详情完全一致：下单家属 / 接单陪诊员 / 就诊老人 / 管理员，其余 3004。"
+                    + "事件流为空时返回空数组，不返回 null")
+    @GetMapping("/{id}/fulfillment")
+    public Result<OrderFulfillmentVO> fulfillmentDetail(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("id") Long id) {
+        return Result.success(orderService.fulfillmentDetail(id));
     }
 
     @Operation(summary = "取消订单",

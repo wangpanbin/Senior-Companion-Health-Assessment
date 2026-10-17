@@ -12,6 +12,7 @@ import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
+import org.company.nianglin.vo.OrderFulfillmentVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
@@ -61,6 +62,17 @@ public interface OrderService {
 
     /** 订单详情（须为相关方） */
     OrderVO detail(Long orderId);
+
+    /**
+     * 履约详情（V3.1 · T4）：风险等级 + 事件流水。
+     *
+     * <p>鉴权走与 {@link #detail(Long)} 完全相同的参与方判定（下单家属 /
+     * 接单陪诊员 / 就诊老人 / 管理员），其余返回 {@code 3004}。
+     * 之所以不新写一套：同一笔订单出现两套可见性规则，迟早会有人在其中一套上漏掉边界。</p>
+     *
+     * @throws org.company.nianglin.exception.BusinessException 3001 订单不存在 / 3004 非参与方
+     */
+    OrderFulfillmentVO fulfillmentDetail(Long orderId);
 
     /** 取消订单（FAMILY 本人，仅 PENDING 可取消） */
     void cancel(Long orderId, OrderCancelDTO dto);

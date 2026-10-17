@@ -2,6 +2,8 @@ package org.company.nianglin.service;
 
 import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.dto.OrderUrgeDTO;
+import org.company.nianglin.entity.CompanionOrder;
+import org.company.nianglin.vo.OrderFulfillmentVO;
 import org.company.nianglin.vo.OrderUrgeResultVO;
 
 /**
@@ -55,4 +57,17 @@ public interface FulfillmentService {
      *                                                         3008 不可催 / 3009 过于频繁
      */
     OrderUrgeResultVO urge(Long orderId, OrderUrgeDTO dto);
+
+    /**
+     * 装配某笔订单的履约详情（只读；V3.1 · T4）。
+     *
+     * <p><b>本方法不做任何权限判定。</b>调用方必须先完成参与方校验 ——
+     * 鉴权归 {@code OrderService#requireInvolved}，履约模块只负责读与装配。
+     * 这样切分是为了避开循环依赖：{@code OrderService} 建单时要用履约服务登记事件，
+     * 履约服务就不能反过来依赖订单服务。</p>
+     *
+     * <p>事件流按发生时间<b>升序</b>返回（从下单到当前）；无事件时返回空列表，
+     * <b>不返回 null、不报错</b>。</p>
+     */
+    OrderFulfillmentVO fulfillmentDetail(CompanionOrder order);
 }

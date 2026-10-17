@@ -28,12 +28,15 @@ import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.support.FulfillmentRiskEvaluator;
 import org.company.nianglin.util.ComplianceCheckUtil;
+import org.company.nianglin.util.TimeUtil;
+import org.company.nianglin.vo.OrderFulfillmentEventVO;
+import org.company.nianglin.vo.OrderFulfillmentVO;
 import org.company.nianglin.vo.OrderUrgeResultVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -113,7 +116,9 @@ public class FulfillmentServiceImpl implements FulfillmentService {
      * @return 是否真的发生了升级（被抢或无需升级都返回 {@code false}）
      */
     private boolean escalateOne(CompanionOrder order, LocalDateTime now) {
-        int waitMinutes = (int) Duration.between(order.getCreateTime(), now).toMinutes();
+        // 钳制规则与订单出参、履约详情共用 TimeUtil —— 三处若各算各的，
+        // 会出现「管理端说等了很久、家属端显示 0 分钟」这种没法自证的分歧
+        int waitMinutes = TimeUtil.elapsedMinutes(order.getCreateTime(), now);
 
         FulfillmentRisk expected = FulfillmentRiskEvaluator.evaluate(
                 waitMinutes,
@@ -211,6 +216,70 @@ public class FulfillmentServiceImpl implements FulfillmentService {
     }
 
     /* ================================================================== */
+    /* 只读：履约详情                                                      */
+    /* ================================================================== */
+
+    @Override
+    public OrderFulfillmentVO fulfillmentDetail(CompanionOrder order) {
+        FulfillmentRisk risk = FulfillmentRisk.of(order.getFulfillmentRisk());
+        if (risk == null) {
+            risk = FulfillmentRisk.NORMAL;
+        }
+        boolean pending = OrderStatus.PENDING.name().equals(order.getStatus());
+        // 与 OrderVO#base 同口径收敛：详情页与订单列表若对同一笔订单给出两种风险，
+        // 家属会先怀疑自己看错了，再怀疑平台
+        FulfillmentRisk visible = pending ? risk : FulfillmentRisk.NORMAL;
+        int urgeCount = order.getUrgeCount() == null ? 0 : order.getUrgeCount();
+
+        List<OrderFulfillmentEventVO> events = eventMapper.selectList(
+                        Wrappers.<OrderFulfillmentEvent>lambdaQuery()
+                                .eq(OrderFulfillmentEvent::getOrderId, order.getId())
+                                .orderByAsc(OrderFulfillmentEvent::getOperateTime)
+                                .orderByAsc(OrderFulfillmentEvent::getId))
+                .stream()
+                // 升序由两处共同保证：SQL 的 ORDER BY 走索引，这份排序兜住「保证属于这个 VO」。
+                // 两者同向，不是冗余——将来有人改了查询条件，契约不会跟着失效。
+                // operateTime / id 可能为 null（并发同秒写入），null 排最后而不是抛 NPE。
+                .sorted(Comparator.comparing(OrderFulfillmentEvent::getOperateTime,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(OrderFulfillmentEvent::getId,
+                                Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(e -> OrderFulfillmentEventVO.of(e.getEventType(), e.getFromRisk(), e.getToRisk(),
+                        e.getTriggerSource(), e.getOperatorRole(), e.getRemark(), e.getOperateTime()))
+                .toList();
+
+        return OrderFulfillmentVO.of(
+                new OrderFulfillmentVO.CompanionOrderSnapshot(
+                        order.getId(), order.getOrderNo(), order.getStatus(),
+                        OrderStatus.labelOf(order.getStatus()),
+                        visible.name(), visible.getLabel(),
+                        pending ? waitMinutesOf(order) : 0,
+                        urgeCount,
+                        pending && visible.atLeast(FulfillmentRisk.URGENT),
+                        nextUrgeAvailableAt(order, urgeCount, pending)),
+                events);
+    }
+
+    /** 下次可催时间：不可催时为 null；从未催过单且可催时就是「现在」 */
+    private LocalDateTime nextUrgeAvailableAt(CompanionOrder order, int urgeCount, boolean pending) {
+        FulfillmentRisk risk = FulfillmentRisk.of(order.getFulfillmentRisk());
+        if (!pending || risk == null || !risk.atLeast(FulfillmentRisk.URGENT)) {
+            return null;
+        }
+        if (urgeCount >= properties.getUrgeMaxTimes()) {
+            return null;
+        }
+        if (order.getLastUrgeAt() == null) {
+            return null;
+        }
+        return order.getLastUrgeAt().plusMinutes(properties.getUrgeCooldownMinutes());
+    }
+
+    private static int waitMinutesOf(CompanionOrder order) {
+        return TimeUtil.elapsedMinutes(order.getCreateTime(), LocalDateTime.now());
+    }
+
+    /* ================================================================== */
     /* 下单登记                                                            */
     /* ================================================================== */
 
@@ -276,7 +345,7 @@ public class FulfillmentServiceImpl implements FulfillmentService {
      * 催单时通知当前可接单的陪诊员。
      *
      * <p>只推「资质已通过 + 处于接单中」的人：推给休息中或离线的人，
-     * 既接不了单又被打扰，只会让���更快地关掉接单开关 —— 那与催单的目的正好相反。</p>
+     * 既接不了单又被打扰，只会让他更快地关掉接单开关 —— 那与催单的目的正好相反。</p>
      */
     private void notifyAvailableCompanions(CompanionOrder order) {
         List<Long> userIds = companionProfileMapper.selectList(
