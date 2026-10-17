@@ -213,7 +213,7 @@ public class AdminController {
                     + "本操作不改变订单状态（改完仍是 PENDING），因此不经过订单状态流转唯一入口。"
                     + "同一事务内：条件更新订单 + 写 ORDER_REASSIGNED 履约事件 + 写操作审计 + 发三方站内信。"
                     + "与陪诊员抢单竞争时条件更新失败返回 3010。"
-                    + "reason 10-200 字且过合规词表")
+                    + "reason 10-200 字且过合规词表（命中返回 6003）")
     @PostMapping("/order/{id}/reassign")
     public Result<ReassignResultVO> reassign(
             @Parameter(description = "订单 ID", example = "1001") @PathVariable("id") Long id,
