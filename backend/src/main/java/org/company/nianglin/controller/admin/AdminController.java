@@ -17,6 +17,7 @@ import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.ComplaintHandleDTO;
 import org.company.nianglin.dto.FulfillmentRiskQuery;
+import org.company.nianglin.dto.OrderReassignDTO;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
 import org.company.nianglin.dto.ReviewRulingDTO;
@@ -35,6 +36,7 @@ import org.company.nianglin.vo.ComplaintHandleResultVO;
 import org.company.nianglin.vo.ComplaintVO;
 import org.company.nianglin.vo.FulfillmentSummaryVO;
 import org.company.nianglin.vo.OperLogVO;
+import org.company.nianglin.vo.ReassignResultVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
 import org.company.nianglin.vo.ReviewRulingResultVO;
 import org.company.nianglin.vo.UserStatusResultVO;
@@ -203,6 +205,20 @@ public class AdminController {
             @Parameter(description = "评价 ID", example = "30001") @PathVariable("id") Long reviewId,
             @Valid @RequestBody ReviewRulingDTO dto) {
         return Result.success("裁定已生效", reviewService.reviewValidity(reviewId, dto));
+    }
+
+    @Operation(summary = "管理员改派陪诊员（V3.1）",
+            description = "仅处理「待接单且尚无接单人」的订单；已接单 / 服务中的订单要换人属纠纷处理，"
+                    + "走 /order/{id}/arbitrate，不在本端点处理。"
+                    + "本操作不改变订单状态（改完仍是 PENDING），因此不经过订单状态流转唯一入口。"
+                    + "同一事务内：条件更新订单 + 写 ORDER_REASSIGNED 履约事件 + 写操作审计 + 发三方站内信。"
+                    + "与陪诊员抢单竞争时条件更新失败返回 3010。"
+                    + "reason 10-200 字且过合规词表")
+    @PostMapping("/order/{id}/reassign")
+    public Result<ReassignResultVO> reassign(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("id") Long id,
+            @Valid @RequestBody OrderReassignDTO dto) {
+        return Result.success("已改派", adminService.reassign(id, dto));
     }
 
     /* ==================== 履约风险中心（V3.1） ==================== */

@@ -54,6 +54,8 @@ class AdminAccessMatrixTest {
     private static final String API_FULFILLMENT_SUMMARY = "/api/admin/fulfillment/summary";
     /** 履约风险中心 · 风险订单列表（V3.1 · T6） */
     private static final String API_FULFILLMENT_RISK_LIST = "/api/admin/fulfillment/risk-list";
+    /** 改派陪诊员（V3.1 · T7） */
+    private static final String API_REASSIGN = "/api/admin/order/1001/reassign";
 
     @Autowired
     private MockMvc mockMvc;
@@ -198,7 +200,43 @@ class AdminAccessMatrixTest {
     }
 
     /* ================================================================== */
-    /* 5 · 管理员侧：注解确实放行（否则上面前提不成立）                        */
+    /* 5 · 改派（V3.1 · T7）：非管理员一律 403                             */
+    /* ================================================================== */
+
+    /**
+     * 改派端点的越权用例必须携带<b>能通过参数校验</b>的请求体。
+     *
+     * <p>理由与「封禁用户」那组相同：请求体不合法会死在参数解析层，
+     * 拿到「因为 body 非法所以 400」的假绿，而真正的越权路径根本没被走到。
+     * 这里给出合规的目标陪诊员 ID 与 10–200 字理由。</p>
+     */
+    private static final String VALID_REASSIGN_BODY =
+            "{\"companionId\":302,\"reason\":\"原陪诊员临时有事无法前往，已协调另一位陪诊员接单\"}";
+
+    @ParameterizedTest(name = "改派 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("改派 · 非管理员改派订单 → 403（携带合法请求体，避免参数层假绿）")
+    void nonAdminShouldNotReassign(String role) throws Exception {
+        mockMvc.perform(post(API_REASSIGN)
+                        .contentType(JSON)
+                        .content(VALID_REASSIGN_BODY)
+                        .header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("改派 · 未登录改派订单 → 401")
+    void anonymousShouldGet401OnReassign() throws Exception {
+        mockMvc.perform(post(API_REASSIGN)
+                        .contentType(JSON)
+                        .content(VALID_REASSIGN_BODY))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    /* ================================================================== */
+    /* 6 · 管理员侧：注解确实放行（否则上面前提不成立）                        */
     /* ================================================================== */
 
     @Test

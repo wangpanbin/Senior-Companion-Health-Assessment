@@ -20,7 +20,18 @@
  */
 import { ref, onMounted } from 'vue'
 import { NlCard, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
-import { getFulfillmentSummary, listFulfillmentRisks } from '@/api/admin'
+import { ElMessage } from 'element-plus'
+import {
+
+  getFulfillmentSummary,
+
+  listFulfillmentRisks,
+
+  reassignOrder,
+
+  listUsers
+
+} from '@/api/admin'
 import { getOrder } from '@/api/order'
 import { formatDateTime } from '@/utils/format'
 import { fulfillmentTone } from '@/utils/fulfillment'
@@ -134,9 +145,78 @@ async function openDetail(row) {
   }
 }
 
+/* ==================== 行内「改派」 ==================== */
+
+const reassignVisible = ref(false)
+const reassignTarget = ref(null)
+const reassignReason = ref('')
+const reassignSubmitting = ref(false)
+const companions = ref([])
+const companionsLoading = ref(false)
+const reassignRow = ref(null)
+
+/**
+ * 候选名单取管理员用户列表里角色为陪诊员的账号。
+ *
+ * 该接口不返回资质与接单状态，所以「谁能接」由服务端判定，
+ * 前端只负责把候选列出来 —— 在前端再判一遍必然与服务端分叉。
+ */
+async function loadCompanions() {
+  companionsLoading.value = true
+  try {
+    const data = await listUsers({ page: 1, size: 100, role: 'COMPANION' })
+    companions.value = data?.records || []
+  } catch {
+    companions.value = []
+  } finally {
+    companionsLoading.value = false
+  }
+}
+
+function openReassign(row) {
+  reassignRow.value = row
+  reassignTarget.value = null
+  reassignReason.value = ''
+  reassignVisible.value = true
+  if (!companions.value.length) loadCompanions()
+}
+
+async function submitReassign() {
+  if (!reassignTarget.value) {
+    ElMessage.warning('请选择目标陪诊员')
+    return
+  }
+  const reason = reassignReason.value.trim()
+  if (reason.length < 10) {
+    ElMessage.warning('改派理由至少 10 字（会写入审计与三方通知）')
+    return
+  }
+  reassignSubmitting.value = true
+  try {
+    await reassignOrder(reassignRow.value.orderId, {
+      companionId: reassignTarget.value,
+      reason
+    })
+    ElMessage.success('已改派，三方将收到站内通知')
+    reassignVisible.value = false
+    // 计数与列表都要刷：改派不改状态，但风险等级与「已协调」标记会变
+    loadSummary()
+    loadList()
+  } catch {
+    // 错误提示已由请求拦截器统一处理（3007 / 3010 / 2003 / 2007）
+  } finally {
+    reassignSubmitting.value = false
+  }
+}
+
+
+
 onMounted(() => {
+
   loadSummary()
+
   loadList()
+
 })
 </script>
 
@@ -206,6 +286,7 @@ onMounted(() => {
 
       <template #actions="{ row }">
         <el-button text size="small" @click="openDetail(row)">查看详情</el-button>
+        <el-button text size="small" type="warning" @click="openReassign(row)">改派</el-button>
       </template>
     </NlAdminTable>
 
@@ -248,6 +329,50 @@ onMounted(() => {
 
     <template #footer>
       <el-button @click="detailVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- ==================== 改派弹窗 ==================== -->
+  <el-dialog v-model="reassignVisible" title="改派陪诊员" width="520px">
+    <p v-if="reassignRow" class="reassign__meta">
+      订单 {{ reassignRow.orderNo }} · 当前 {{ reassignRow.fulfillmentRiskLabel }}
+    </p>
+
+    <el-form label-width="84px">
+      <el-form-item label="目标陪诊员">
+        <el-select
+          v-model="reassignTarget"
+          placeholder="选择陪诊员"
+          filterable
+          :loading="companionsLoading"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="c in companions"
+            :key="c.id"
+            :label="`${c.nickname || c.username}（${c.realName || '未填写真实姓名'}）`"
+            :value="c.id"
+          />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item label="改派理由">
+        <el-input
+          v-model="reassignReason"
+          type="textarea"
+          :rows="3"
+          maxlength="200"
+          show-word-limit
+          placeholder="10–200 字，将写入审计与三方通知"
+        />
+      </el-form-item>
+    </el-form>
+
+    <template #footer>
+      <el-button @click="reassignVisible = false">取消</el-button>
+      <el-button type="primary" :loading="reassignSubmitting" @click="submitReassign">
+        确认改派
+      </el-button>
     </template>
   </el-dialog>
 </template>
@@ -344,7 +469,15 @@ onMounted(() => {
   color: var(--tone);
 }
 
+.reassign__meta {
+  margin: 0 0 var(--nl-space-3);
+  font-size: var(--nl-font-caption);
+  color: var(--nl-text-2);
+}
+
 .pager {
+
+
   display: flex;
   justify-content: flex-end;
   margin-top: var(--nl-space-3);

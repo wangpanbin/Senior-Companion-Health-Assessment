@@ -124,3 +124,16 @@ export function getFulfillmentSummary() {
 export function listFulfillmentRisks(params) {
   return request({ url: '/admin/fulfillment/risk-list', method: 'get', params })
 }
+
+
+/**
+ * 改派陪诊员（V3.1 · T7）。
+ *
+ * 仅对「待接单且尚无接单人」的订单开放；已接单的订单要换人走纠纷仲裁。
+ * 服务端会再校验目标陪诊员的资质与接单状态，前端不做第二套判定。
+ * @param {number} orderId
+ * @param {{ companionId: number, reason: string }} data reason 10–200 字
+ */
+export function reassignOrder(orderId, data) {
+  return request({ url: `/admin/order/${orderId}/reassign`, method: 'post', data })
+}

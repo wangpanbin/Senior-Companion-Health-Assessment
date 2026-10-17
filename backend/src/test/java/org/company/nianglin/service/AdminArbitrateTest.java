@@ -122,6 +122,7 @@ class AdminArbitrateTest {
         adminService = new AdminServiceImpl(null, companionProfileMapper, sysUserMapper,
                 null, orderMapper, operLogMapper,
                 new OperLogRecorderImpl(operLogMapper, userNameResolver), null, null,
+                null, null,
                 messageService, orderService, userNameResolver, null, null, null,
                 new ObjectMapper());
     }

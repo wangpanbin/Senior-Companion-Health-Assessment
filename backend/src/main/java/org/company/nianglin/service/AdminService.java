@@ -9,6 +9,7 @@ import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.ComplaintHandleDTO;
 import org.company.nianglin.dto.FulfillmentRiskQuery;
+import org.company.nianglin.dto.OrderReassignDTO;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
 import org.company.nianglin.dto.UserDisableDTO;
@@ -26,6 +27,7 @@ import org.company.nianglin.vo.ComplaintHandleResultVO;
 import org.company.nianglin.vo.ComplaintVO;
 import org.company.nianglin.vo.FulfillmentSummaryVO;
 import org.company.nianglin.vo.OperLogVO;
+import org.company.nianglin.vo.ReassignResultVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
 import org.company.nianglin.vo.UserStatusResultVO;
 
@@ -160,6 +162,27 @@ public interface AdminService {
      * @throws org.company.nianglin.exception.BusinessException 400 risk 不是四档之一
      */
     PageResult<AdminFulfillmentRiskItemVO> fulfillmentRiskList(FulfillmentRiskQuery query);
+
+    /* ==================== 改派陪诊员（V3.1） ==================== */
+
+    /**
+     * 管理员把「还没人接」的订单改派给一位合格陪诊员（V3.1 · T7）。
+     *
+     * <p><b>边界：仅处理 {@code PENDING} 且 {@code companionId IS NULL} 的订单。</b>
+     * 已接单 / 服务中的订单要换人属纠纷处理，走 {@link #arbitrate(Long, ArbitrateDTO)}，
+     * 不在本方法范围内 —— 同一件事只允许存在一条改变订单归属的路径。</p>
+     *
+     * <p>本操作<b>不改变订单状态</b>，因此不经过订单状态流转唯一入口；
+     * 状态仍由陪诊员接单时经该入口变更。</p>
+     *
+     * <p>同一事务内四件事：条件更新订单 → 写履约事件 {@code ORDER_REASSIGNED}
+     * → 写操作审计（含前后陪诊员与理由）→ 发三方站内信（家属 / 目标陪诊员 / 原陪诊员）。</p>
+     *
+     * @throws org.company.nianglin.exception.BusinessException
+     *         3001 订单不存在 · 3010 不可改派（含与抢单竞争失败）· 2007 目标不存在
+     *         · 2003 目标资质未过 · 3007 理由命中医疗建议词表
+     */
+    ReassignResultVO reassign(Long id, OrderReassignDTO dto);
 
     /* ==================== 供 M10 导出复用 ==================== */
 

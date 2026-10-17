@@ -28,6 +28,14 @@ public enum OperType {
     ENABLE_USER("解封用户"),
     RESET_PASSWORD("重置密码"),
     ARBITRATE_ORDER("订单纠纷处理"),
+    /**
+     * 管理员改派陪诊员（V3.1 · T7）。
+     *
+     * <p>与 {@link #ARBITRATE_ORDER} 是两件事、两条边界：纠纷处理强制改<b>终态</b>，
+     * 改派只把「还没人接」的订单指给一位合格陪诊员，<b>不改订单状态</b>。
+     * 合并成一个类型会让审计日志分不清「谁被强制取消了」和「谁被安排了陪诊员」。</p>
+     */
+    REASSIGN_ORDER("订单改派"),
     HANDLE_COMPLAINT("处理投诉"),
     /**
      * 评价有效性裁定（E4）。

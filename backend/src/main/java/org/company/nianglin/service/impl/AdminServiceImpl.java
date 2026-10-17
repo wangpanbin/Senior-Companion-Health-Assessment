@@ -12,12 +12,14 @@ import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.AccountStatus;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.ComplaintStatus;
+import org.company.nianglin.constant.FulfillmentEventType;
 import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OperTargetType;
 import org.company.nianglin.constant.OperType;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RoleConstants;
+import org.company.nianglin.constant.TriggerSource;
 import org.company.nianglin.constant.WorkStatus;
 import org.company.nianglin.dto.AdminAuditQuery;
 import org.company.nianglin.dto.AdminComplaintQuery;
@@ -27,6 +29,7 @@ import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.CertificateItem;
 import org.company.nianglin.dto.ComplaintHandleDTO;
+import org.company.nianglin.dto.OrderReassignDTO;
 import org.company.nianglin.dto.FulfillmentRiskQuery;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
@@ -36,6 +39,8 @@ import org.company.nianglin.entity.AdminOperLog;
 import org.company.nianglin.entity.CompanionAuditRecord;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
+import org.company.nianglin.entity.OrderFulfillmentEvent;
+import org.company.nianglin.entity.OrderRejectLog;
 import org.company.nianglin.entity.Complaint;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.SysUser;
@@ -45,8 +50,10 @@ import org.company.nianglin.mapper.AdminReadMapper;
 import org.company.nianglin.mapper.CompanionAuditRecordMapper;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
+import org.company.nianglin.mapper.OrderFulfillmentEventMapper;
 import org.company.nianglin.mapper.ComplaintMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
+import org.company.nianglin.mapper.OrderRejectLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
@@ -58,6 +65,7 @@ import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.AesUtil;
+import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.util.TimeUtil;
 import org.company.nianglin.vo.AdminFulfillmentRiskItemVO;
@@ -70,6 +78,7 @@ import org.company.nianglin.vo.AuditPageVO;
 import org.company.nianglin.vo.ComplaintHandleResultVO;
 import org.company.nianglin.vo.ComplaintVO;
 import org.company.nianglin.vo.FulfillmentSummaryVO;
+import org.company.nianglin.vo.ReassignResultVO;
 import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.OrderVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
@@ -146,6 +155,10 @@ public class AdminServiceImpl implements AdminService {
     private final OperLogRecorder operLogRecorder;
     private final AdminReadMapper adminReadMapper;
     private final OrderReadMapper orderReadMapper;
+    /** 拒单记录：改派前置校验「目标陪诊员是否拒过该单」用 */
+    private final OrderRejectLogMapper orderRejectLogMapper;
+    /** 履约事件流水：改派要留一条 ORDER_REASSIGNED 事件 */
+    private final OrderFulfillmentEventMapper fulfillmentEventMapper;
     private final MessageService messageService;
     private final OrderService orderService;
     private final UserNameResolver userNameResolver;
@@ -746,6 +759,187 @@ public class AdminServiceImpl implements AdminService {
                     .setAdminCoordinated(coordinated.contains(order.getId()))
                     .setCreateTime(order.getCreateTime());
         }).toList();
+    }
+
+    /* ================================================================== */
+    /* 13. 改派陪诊员（V3.1 · T7）                                         */
+    /* ================================================================== */
+
+    /**
+     * 管理员把「还没人接」的订单改派给一位合格陪诊员（V3.1 · T7）。
+     *
+     * <h3>为什么只处理未接单订单</h3>
+     *
+     * <p>本端点<b>不改订单状态</b>（改完仍是 {@code PENDING}），因此不经过
+     * 订单状态流转唯一入口（ADR-0010）——状态的唯一入口仍然是陪诊员接单那一步。
+     * 已接单 / 服务中的订单要换人属纠纷处理，走既有管理员仲裁通道。
+     * 把「换人」塞进状态机会出现两条改变订单归属的路径，
+     * 事后没人说得清这笔单是谁在什么情况下换的人。</p>
+     *
+     * <h3>四件事在同一个事务里</h3>
+     *
+     * <p>条件更新订单 → 写履约事件 {@code ORDER_REASSIGNED} → 写操作审计 → 发三方站内信。
+     * 任何一步失败整体回滚：只改了订单却没留事件，管理端「已协调」标记就永远点不亮，
+     * 下一位管理员会以为这一单还没人管。</p>
+     *
+     * @throws org.company.nianglin.exception.BusinessException
+     *         3001 订单不存在 · 3010 不可改派（含并发失败）· 2007 目标不存在
+     *         · 2003 目标资质未过 · 3007 理由命中医疗建议词表
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ReassignResultVO reassign(Long id, OrderReassignDTO dto) {
+        String reason = normalizeReassignReason(dto.getReason());
+
+        // ① 订单存在
+        CompanionOrder order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
+        }
+        // ② 只处理「待接单且尚无接单人」的订单
+        boolean pending = OrderStatus.PENDING.name().equals(order.getStatus());
+        if (!pending || order.getCompanionId() != null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE);
+        }
+        // 改派前的接单人快照：按 ② 此刻必然为 null，但仍按字段读取 ——
+        // 将来若放宽前置条件（例如允许改派给已接单但未开工的订单），
+        // 这里不用改，通知逻辑也不会漏掉原陪诊员
+        Long fromCompanionId = order.getCompanionId();
+
+        // ③-⑥ 目标陪诊员必须合格
+        CompanionProfile target = requireReassignableCompanion(dto.getCompanionId(), id);
+
+        // 与陪诊员抢单竞争的唯一保护：条件是「仍是待接单 且 仍无人接单」。
+        // 抢单走的是乐观锁（version），改派走的是这两条 WHERE ——
+        // 两者更新同一行，数据库保证只有一个能改成功，败者拿 3010 / 3003
+        int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .set(CompanionOrder::getCompanionId, target.getUserId())
+                .eq(CompanionOrder::getId, id)
+                .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name())
+                .isNull(CompanionOrder::getCompanionId));
+        if (rows == 0) {
+            throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE,
+                    "订单刚被接走或已被改派，请刷新后重试");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        // 风险等级本操作不改，只在事件里留下「改派发生在哪个等级」
+        FulfillmentRisk risk = FulfillmentRisk.of(order.getFulfillmentRisk());
+        if (risk == null) {
+            risk = FulfillmentRisk.NORMAL;
+        }
+
+        writeReassignEvent(id, risk, SecurityUtils.currentUserId(), reason, now);
+
+        // 审计的 before / after 记的是**陪诊员**而不是订单状态：本操作不改状态，
+        // 两栏都写 PENDING 会让这条日志读起来像「什么都没发生」
+        operLogRecorder.record(OperType.REASSIGN_ORDER, OperTargetType.ORDER, id,
+                order.getOrderNo(),
+                fromCompanionId == null ? "未指派" : String.valueOf(fromCompanionId),
+                String.valueOf(target.getUserId()),
+                "管理员改派：" + reason);
+
+        notifyReassign(order, target, fromCompanionId);
+
+        log.info("管理员改派完成 | orderId={} | {} → {} | adminId={}",
+                id, fromCompanionId, target.getUserId(), SecurityUtils.currentUserId());
+        return ReassignResultVO.of(id, fromCompanionId, target.getUserId(), risk.name());
+    }
+
+    /**
+     * 目标陪诊员的合格判定（V3.1 · T7 的 REFACTOR 落点）。
+     *
+     * <p>四条要求收敛到这一个方法里，避免在主流程上散成四段 {@code if}
+     * ——那样迟早会出现「改派判了三条、批量脚本判了四条」的分叉。</p>
+     *
+     * <p>四条按<b>代价从低到高</b>排序：存在性 → 资质 → 接单状态 → 拒单记录。
+     * 前两条是纯读，后两条才碰档案与拒单表。</p>
+     */
+    private CompanionProfile requireReassignableCompanion(Long companionId, Long orderId) {
+        CompanionProfile target = companionProfileMapper.selectById(companionId);
+        if (target == null) {
+            throw new BusinessException(ResultCode.COMPANION_NOT_FOUND);
+        }
+        AuditStatus auditStatus = AuditStatus.of(target.getAuditStatus());
+        if (auditStatus == null || !auditStatus.isApproved()) {
+            // 资质没过审的账号不能被强行指派：这是绕过审核流程的后门。
+            // 档案缺资质字段（null）同样不放行，与 requireApprovedCompanion 同一口径
+            throw new BusinessException(ResultCode.COMPANION_NOT_AUDITED);
+        }
+        // 接单资格走 isAccepting() 这个唯一判定入口，不写 "AVAILABLE".equals(...) 的裸比较：
+        // 将来再加一个「忙但可接」的状态，散落的字符串比较会漏掉它。
+        // 状态为 null（档案缺字段）同样视为不可接单，不放行
+        WorkStatus workStatus = WorkStatus.of(target.getWorkStatus());
+        if (workStatus == null || !workStatus.isAccepting()) {
+            // 指派给一个已经关掉接单开关的人，等于把这单再挂回无人认领
+            throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE,
+                    "目标陪诊员当前不在接单状态");
+        }
+        Long rejected = orderRejectLogMapper.selectCount(Wrappers.<OrderRejectLog>lambdaQuery()
+                .eq(OrderRejectLog::getOrderId, orderId)
+                .eq(OrderRejectLog::getCompanionId, companionId));
+        if (rejected != null && rejected > 0) {
+            // 他拒过这一单，再指派回去只会被再拒一次，
+            // 而家属在这一轮里多等的正是这十几分钟
+            throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE,
+                    "目标陪诊员曾拒绝过该订单");
+        }
+        return target;
+    }
+
+    /** 改派理由：过合规词表 + 规整空白（与催单备注同一份词表） */
+    private static String normalizeReassignReason(String reason) {
+        String text = reason == null ? "" : reason.trim();
+        String hit = ComplianceCheckUtil.firstHit(text);
+        if (hit != null) {
+            throw new BusinessException(ResultCode.CONTENT_SENSITIVE,
+                    "改派理由包含不合规表述（" + hit + "），请修改后重试");
+        }
+        return text;
+    }
+
+    private void writeReassignEvent(Long orderId, FulfillmentRisk risk,
+                                    Long adminId, String reason, LocalDateTime now) {
+        OrderFulfillmentEvent event = new OrderFulfillmentEvent();
+        event.setOrderId(orderId);
+        event.setEventType(FulfillmentEventType.ORDER_REASSIGNED.name());
+        // 改派不改风险，前后等级相同；这样事件流里这一条仍能读出「当时是什么等级」
+        event.setFromRisk(risk.name());
+        event.setToRisk(risk.name());
+        event.setTriggerSource(TriggerSource.ADMIN.name());
+        event.setOperatorId(adminId);
+        event.setOperatorRole(RoleConstants.ADMIN);
+        event.setRemark(reason);
+        event.setOperateTime(now);
+        fulfillmentEventMapper.insert(event);
+    }
+
+    /**
+     * 三方通知：下单家属 / 目标陪诊员 / 原陪诊员。
+     *
+     * <p>三方各发各的措辞（{@code audience} 占位符区分）：家属要知道「已经安排好了」，
+     * 目标要知道「有一单在等你去接」，原陪诊员要知道「这单换人了」。
+     * 用一条模板三个人看，只会让其中两方读到跟自己无关的信息。</p>
+     */
+    private void notifyReassign(CompanionOrder order, CompanionProfile target, Long fromCompanionId) {
+        Long orderId = order.getId();
+
+        Map<String, Object> familyParams = new HashMap<>(4);
+        familyParams.put("orderNo", order.getOrderNo());
+        familyParams.put("audience", "FAMILY");
+        messageService.send(order.getFamilyId(), MessageType.ORDER_REASSIGNED, orderId, familyParams);
+
+        Map<String, Object> targetParams = new HashMap<>(4);
+        targetParams.put("orderNo", order.getOrderNo());
+        targetParams.put("audience", "COMPANION");
+        messageService.send(target.getUserId(), MessageType.ORDER_REASSIGNED, orderId, targetParams);
+
+        if (fromCompanionId != null && !fromCompanionId.equals(target.getUserId())) {
+            Map<String, Object> formerParams = new HashMap<>(4);
+            formerParams.put("orderNo", order.getOrderNo());
+            formerParams.put("audience", "FORMER_COMPANION");
+            messageService.send(fromCompanionId, MessageType.ORDER_REASSIGNED, orderId, formerParams);
+        }
     }
 
     /* ================================================================== */

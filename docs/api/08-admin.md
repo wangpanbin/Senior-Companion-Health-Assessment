@@ -102,6 +102,7 @@
 | 13 | POST | `/api/admin/review/{id}/validity` | ADMIN | 评价有效性裁定（E4） |
 | 14 | GET | `/api/admin/fulfillment/summary` | ADMIN | 履约风险四档计数（V3.1） |
 | 15 | GET | `/api/admin/fulfillment/risk-list` | ADMIN | 风险订单列表（V3.1） |
+| 16 | POST | `/api/admin/order/{id}/reassign` | ADMIN | 改派陪诊员（V3.1） |
 
 ---
 
@@ -627,6 +628,68 @@
 - 不在四档内的脏值在 `FIELD` 中返回 0，会排在**最前**——异常数据优先暴露。
 - `adminCoordinated` 由事件流水批量判定（`trigger_source = 'ADMIN'`），
   覆盖协调与改派两类事件，将来新增管理员动作时不必改判定条件。
+
+---
+
+## 16. 改派陪诊员（V3.1 · T7）
+
+`POST /api/admin/order/{id}/reassign`　权限：**ADMIN**
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 约束 | 说明 |
+|---|---|:--:|---|---|
+| `companionId` | Long | ✓ | 目标陪诊员的用户 ID | 改派给谁 |
+| `reason` | String | ✓ | 10–200 字符，且过合规词表 | 改派理由（写入审计与三方通知） |
+
+### 响应
+
+```json
+{
+  "code": 200,
+  "message": "已改派",
+  "data": { "orderId": 1001, "fromCompanionId": null, "toCompanionId": 302, "fulfillmentRisk": "URGENT" }
+}
+```
+
+### 前置校验（顺序固定）
+
+| # | 条件 | 失败码 |
+|---|---|---|
+| ① | 理由过合规词表 | `3007` |
+| ② | 订单存在 | `3001` |
+| ③ | `status == PENDING` 且 `companionId IS NULL` | `3010` |
+| ④ | 目标陪诊员存在 | `2007` |
+| ⑤ | 目标 `auditStatus == APPROVED` | `2003` |
+| ⑥ | 目标 `workStatus == AVAILABLE` | `3010` |
+| ⑦ | 目标未拒过该单 | `3010` |
+
+### 边界（改动前必读）
+
+**本端点只处理「还没人接」的订单。** 已 `ACCEPTED` / `IN_SERVICE` 的订单要换人属纠纷处理，
+走 §9 的管理员仲裁通道（强制终态并通知双方），**不在本端点处理** ——
+同一件事只允许存在一条改变订单归属的路径，否则事后没人说得清这笔单是怎么换的人。
+
+### 事务边界
+
+同一事务内四件事，任一步失败整体回滚：
+
+1. **条件更新** `companion_id`，条件是「`status = PENDING` **且** `companion_id IS NULL`」；
+2. 写履约事件 `ORDER_REASSIGNED`（`trigger_source = ADMIN`，理由入备注）；
+3. 写操作审计（`OperType.REASSIGN_ORDER`，**before / after 记的是陪诊员**而不是订单状态 ——
+   本操作不改状态，两栏都写 `PENDING` 会让这条日志读起来像「什么都没发生」）；
+4. 发三方站内信：下单家属 / 目标陪诊员 / 原陪诊员（`fromCompanionId` 非空时）。
+
+### 状态机
+
+**本操作不改变 `status`**（改完仍是 `PENDING`），因此**不经过订单状态流转唯一入口**（ADR-0010）。
+`status` 仍由陪诊员接单时经该入口变更。
+
+### 并发
+
+与陪诊员抢单竞争同一行：改派靠上面的条件更新，抢单走既有乐观锁。
+数据库保证只有一个能改成功 —— 败者分别得到 `3010` / `3003`，
+且改派败者**不留事件、不发通知、不写审计**（回滚干净）。
 
 ---
 
