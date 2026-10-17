@@ -97,7 +97,25 @@ companion_order.fulfillment_risk VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
 - ✅ `V6__order_fulfillment.sql` 已落地，`information_schema` 守卫保证幂等；
 - ✅ `OrderStatus` 的 `TRANSITIONS` 与 `canTransitTo` **零改动**（`git diff` 可证）；
 - ✅ `OrderStatusTest` 86 条既有判据全绿，未因本决策改写任何断言；
-- ✅ 风险只在 `PENDING` 时对外可见：`OrderVOFulfillmentTest` / `FulfillmentServiceDetailTest` 各有一组「非待接单一律收敛」用例钉住。
+- ✅ 风险只在 `PENDING` 时对外可见：`OrderVOFulfillmentTest` / `FulfillmentServiceDetailTest` 各有一组「非待接单一律收敛」用例钉住；
+- ✅ 离开 `PENDING` 时风险在流转入口回落 `NORMAL`：`OrderTransitionServiceTest` 四条用例覆盖接单 / 取消 / 管理员强制 / 已接单后的流转。
+
+---
+
+## 附：与 `AGENTS.md` §2.4 的字面张力（豁免说明）
+
+§2.4 写的是「并发敏感的接口用 `@Version` 乐观锁，**不要**自己写 `UPDATE ... WHERE id=? AND status=?`」。
+本版的三处条件更新（风险升级、催单计数、管理员改派）看起来与之冲突，实际不冲突：
+
+| | `@Version` 乐观锁 | 本版的条件更新 |
+|---|---|---|
+| 保护的是 | **整行**的并发写（谁改了这一行） | **某个业务前提**是否仍然成立（还是不是待接单 / 计数有没有超限） |
+| 败者拿到什么 | `3003` 或回滚 | 由业务语义决定（`3008` / `3009` / `3010`） |
+| 能否表达「必须仍是 PENDING」 | 不能 —— version 不知道状态 | 能 |
+
+抢单这条路径**仍然走 `@Version`**（`OrderServiceImpl#accept`），改派与抢单竞争同一行时，
+数据库保证只有一个能改成功，败者分别拿到 `3010` / `3003`。
+换句话说：**行的独占权归乐观锁，业务前提的判定归条件更新**，两者互补而非替代。
 
 ---
 
