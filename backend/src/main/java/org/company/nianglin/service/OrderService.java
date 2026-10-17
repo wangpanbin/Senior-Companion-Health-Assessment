@@ -56,7 +56,14 @@ public interface OrderService {
     /** 我的订单列表：按当前角色自动决定数据范围（家属看自己下的、陪诊员看自己接的、老人看自己就诊的） */
     PageResult<OrderVO> myOrders(OrderQuery query);
 
-    /** 待接单订单大厅（COMPANION 且资质已通过；只含未过期的 PENDING 单，并排除自己已拒过的） */
+    /**
+     * 待接单订单大厅（COMPANION 且资质已通过；只含未过期的 PENDING 单，并排除自己已拒过的）
+     *
+     * <p>V3.1 · T8：可选 {@code sortBy} 走白名单，只开放 {@code RECOMMEND}
+     * （缺省取配置 {@code nianglin.fulfillment.hall-default-sort}），非法值返回
+     * {@code 400} 且不静默降级。排序三级：就诊时间升序 → 服务区域匹配者优先 →
+     * ID 升序兜底，保证分页不重不漏。响应结构零变更。</p>
+     */
     PageResult<OrderVO> hall(OrderHallQuery query);
 
     /** 订单详情（须为相关方） */

@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.config.FulfillmentProperties;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
@@ -157,7 +158,7 @@ class OrderServiceTest {
         orderService = new OrderServiceImpl(orderMapper, statusLogMapper, rejectLogMapper,
                 elderProfileMapper, companionProfileMapper, sysUserMapper, orderReadMapper,
                 elderService, messageService, redisTemplate, new ObjectMapper(),
-                transitionService, orderFeeItemService, fulfillmentService);
+                transitionService, orderFeeItemService, fulfillmentService, new FulfillmentProperties());
     }
 
     @AfterEach
