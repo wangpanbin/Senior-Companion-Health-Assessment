@@ -256,6 +256,9 @@ onMounted(async () => {
         </button>
       </div>
 
+      <!-- 排序（V3.1 · T8）：只开放推荐序，所以没有排序选择器，只留一句说明 -->
+      <p class="nl-caption nl-text-weak sort-note">按推荐顺序排列 · 更多排序方式后续开放</p>
+
       <NlSkeleton v-if="loading" :count="3" class="list-pad" />
 
       <NlEmpty
@@ -390,6 +393,9 @@ onMounted(async () => {
             {{ f.label }}
           </button>
         </div>
+
+        <!-- 排序（V3.1 · T8）：只开放推荐序，所以没有排序选择器，只留一句说明 -->
+        <p class="nl-caption nl-text-weak sort-note">按推荐顺序排列 · 更多排序方式后续开放</p>
 
         <NlSkeleton v-if="loading" :count="3" />
 
@@ -616,6 +622,11 @@ onMounted(async () => {
 .list-foot {
   margin: var(--nl-space-4) 0 0;
   text-align: center;
+}
+
+/* 排序说明：V3.1 只有推荐序，没有选择器可放，就占一行 */
+.sort-note {
+  margin: 0 var(--nl-gutter) var(--nl-space-3);
 }
 
 /* ==========================================================================

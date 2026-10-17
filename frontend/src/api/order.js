@@ -19,7 +19,13 @@ export function listMyOrders(params) {
   return request({ url: '/order', method: 'get', params })
 }
 
-/** 待接单订单大厅（陪诊员） */
+/**
+ * 待接单订单大厅（陪诊员）
+ *
+ * 可选 sortBy 白名单 V3.1 只放行 RECOMMEND，缺省取后端配置 nianglin.fulfillment.hall-default-sort；
+ * 非法值（含 V3.4 才开放的距离 / 时间匹配 / 收益优先）后端返回 400 且不静默降级为推荐序，
+ * 所以本页不传这个参数 —— 只有一个排序项时没有选择器，也就没有需要传的取值。
+ */
 export function listOrderHall(params) {
   return request({ url: '/order/hall', method: 'get', params })
 }

@@ -43,6 +43,22 @@ public class OrderHallQuery extends PageQuery<CompanionOrder> {
     @Schema(description = "就诊日期止（含），格式 yyyy-MM-dd", example = "2026-09-25")
     private String endDate;
 
+    /**
+     * 排序维度，可选；V3.1 只开放 {@code RECOMMEND}。
+     *
+     * <p><b>为什么用白名单拒绝而不是悄悄回落推荐序</b>：静默降级会让陪诊员
+     * 以为拿到的是「按距离排」的结果，实际是推荐序。与其让人在错误的假设上
+     * 决定接不接单，不如当场 {@code 400}。非法值的错误消息由 Service 拼，
+     * 会带上「该维度后续版本开放」这句说明。</p>
+     *
+     * <p>这里只做长度护栏，<b>不在注解里写正则</b>：白名单同时管着
+     * {@code nianglin.fulfillment.hall-default-sort} 的配置值，判定必须
+     * 留在 Service，才能让「请求传错」与「配置写错」得到同一个错误。</p>
+     */
+    @Schema(description = "排序维度，V3.1 只开放 RECOMMEND（缺省取配置）", example = "RECOMMEND")
+    @Size(max = 20, message = "排序维度不能超过 20 个字符")
+    private String sortBy;
+
     /** MyBatis-Plus 分页对象 */
     public Page<CompanionOrder> toMpPage() {
         return toPage(new Page<>());
