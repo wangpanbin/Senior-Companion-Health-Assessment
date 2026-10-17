@@ -47,7 +47,7 @@ import static org.mockito.Mockito.verify;
  *
  * <p><b>本类锁定的是一个已被修复、且在种子数据里完全看不出来的缺陷。</b>
  * arbitrate 与 forceTerminal 同处一个 {@code @Transactional}，共享同一个 SqlSession；
- * MyBatis 一级缓存（{@code localCacheScope=SESSION}，默认开）��「相同语句 + 相同参数」
+ * MyBatis 一级缓存（{@code localCacheScope=SESSION}，默认开）把「相同语句 + 相同参数」
  * 返回<b>同一个对象实例</b>。于是 forceTerminal 内部 {@code selectById} 拿到的就是
  * arbitrate 里那个 {@code before} 实例，{@code orderTransitionService.forceTerminal}
  * 随即把它的 {@code status} 改成目标状态。若 arbitrate 在写日志时才读
@@ -117,7 +117,7 @@ class AdminArbitrateTest {
         orderService = new OrderServiceImpl(orderMapper, statusLogMapper, null,
                 null, companionProfileMapper, sysUserMapper, null,
                 null, messageService, null, new ObjectMapper(),
-                transitionService, null);
+                transitionService, null, null);
 
         adminService = new AdminServiceImpl(null, companionProfileMapper, sysUserMapper,
                 null, orderMapper, operLogMapper,

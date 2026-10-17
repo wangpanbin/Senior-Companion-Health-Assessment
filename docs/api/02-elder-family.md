@@ -143,6 +143,7 @@ M2 解决的是「**你是什么角色**」，本模块真正要解决的是「*
 | 10 | DELETE | `/api/user/elder/{id}` | FAMILY（绑定人） | 删除老人档案（逻辑删除） |
 | 11 | POST | `/api/user/elder/bind` | **FAMILY** | 绑定已存在的老人账号 |
 | 12 | DELETE | `/api/user/elder/{id}/bind` | FAMILY（绑定人） | 解绑 |
+| 13 | PUT | `/api/user/companion/work-status` | **COMPANION** | 切换接单状态（V3.1 · T0） |
 
 > 「**ELDER → 403**」不是角色注解拦的，而是 `ElderReadOnlyInterceptor` ——
 > 老人账号只读规则对所有非 GET 请求一律生效，写新接口时**不需要**为它单独加判断。
@@ -672,6 +673,81 @@ M2 解决的是「**你是什么角色**」，本模块真正要解决的是「*
 
 ---
 
+## 13. 切换陪诊员接单状态（V3.1 · T0）
+
+PUT /api/user/companion/work-status　权限：**COMPANION**
+
+> **边界（务必读完再实现调用方）**：本接口**只影响新订单的匹配**，**不影响已接订单**。已 ACCEPTED / IN_SERVICE 的订单继续按订单状态机推进，不会因为陪诊员切到「休息中」而被中断或取消。「自主控制接单」不得被实现成「自主放弃在手服务」。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 约束 | 说明 |
+|---|---|---|---|---|
+| `workStatus` | String | 是 | 非空，取值见下 | 接单状态 |
+
+取值（大小写不敏感，首尾空白会被忽略）：
+
+| 值 | 含义 | 是否接受新订单 |
+|---|---|---|
+| `AVAILABLE` | 接单中 | 是 |
+| `REST` | 休息中（主动暂停） | 否 |
+| `OFFLINE` | 离线 | 否 |
+
+> `OFFLINE` 与 `REST` 在「是否接单」上完全一致，区别只在于语义：前者是「我现在没在上线」，后者是「我今天排满了」。**一期不做在线状态展示，也不会按在线状态路由消息** —— 不要把它当成推送开关。
+
+### 成功响应
+
+返回 CompanionProfileVO（与 GET /api/user/companion/{id} 同结构），前端可就地回填开关状态，无需再发一次查询。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `workStatus` | String | 切换后的接单状态 |
+| `workStatusLabel` | String | 中文（可接单 / 休息中 / 离线） |
+| `realName` | String | 脱敏姓名 |
+| `auditStatus` / `auditStatusLabel` | String | 资质状态 |
+| `score` / `orderCount` / `serviceArea` / `availableTime` | — | 其余字段同公开资料 |
+
+### 错误码
+
+| 码 | 场景 |
+|---|---|
+| `400` | 状态字面量非法（消息中会列出全部合法取值） |
+| `2003` | 资质未通过审核 |
+| `2007` | 当前账号没有陪诊员档案 |
+| `401` / `403` | 未登录 / 非陪诊员角色（注解拦截） |
+
+> **判定顺序**：先校验状态值合法性，再校验资质。一个资质已通过的陪诊员把状态写成 BUSY 时，报的是 400 而不是 2003 —— 他此刻要改的显然是那个错字。
+
+### 示例
+
+请求：
+
+```json
+{ "workStatus": "REST" }
+```
+
+响应：
+
+```json
+{
+  "code": 200,
+  "message": "接单状态已更新",
+  "data": {
+    "id": 301,
+    "realName": "李*军",
+    "serviceArea": "海口市美兰区",
+    "availableTime": "周一至周五 08:00-18:00",
+    "auditStatus": "APPROVED",
+    "auditStatusLabel": "已通过",
+    "score": "4.80",
+    "orderCount": 12,
+    "workStatus": "REST",
+    "workStatusLabel": "休息中"
+  }
+}
+```
+
+---
 ## 三、验收标准（M3）
 
 ### 3.1 计划书验收项

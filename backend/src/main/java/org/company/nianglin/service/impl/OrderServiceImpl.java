@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.AuditStatus;
+import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
@@ -43,6 +44,7 @@ import org.company.nianglin.service.support.OrderTransitionService;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.ElderService;
+import org.company.nianglin.service.FulfillmentService;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderFeeItemService;
 import org.company.nianglin.service.OrderService;
@@ -150,6 +152,8 @@ public class OrderServiceImpl implements OrderService {
     /** 订单状态流转唯一入口（ADR-0010）——本类所有改状态的路径都必须经由它 */
     private final OrderTransitionService orderTransitionService;
     private final OrderFeeItemService orderFeeItemService;
+    /** 履约保障（V3.1）——下单登记事件与风险扫描；不改订单状态 */
+    private final FulfillmentService fulfillmentService;
 
     /* ================================================================== */
     /* 1. 创建订单                                                         */
@@ -188,10 +192,17 @@ public class OrderServiceImpl implements OrderService {
         // 乐观锁字段必须显式给初值：@Version 参与 UPDATE 的 WHERE 条件，
         // 让它为 null 会让「第一次接单」永远匹配不上
         order.setVersion(0);
+        // 履约风险显式给初值而不是依赖库默认值：实体随后会被回填进 VO，
+        // 若这里留 null，create 的返回值与重新查库的值会对不上。
+        order.setFulfillmentRisk(FulfillmentRisk.NORMAL.name());
+        order.setUrgeCount(0);
         orderMapper.insert(order);
 
         writeStatusLog(order.getId(), null, OrderStatus.PENDING, me, "下单成功");
         notifyOrderCreated(order);
+        // 履约事件与订单同事务：订单建了却没有「开始等」的时间戳，
+        // 风险中心就永远只能显示一个孤立的等待时长
+        fulfillmentService.registerCreated(order.getId(), me.userId(), order.getOrderNo());
 
         log.info("陪诊订单已创建 | orderId={} | orderNo={} | familyId={} | elderId={}",
                 order.getId(), order.getOrderNo(), me.userId(), elder.getId());

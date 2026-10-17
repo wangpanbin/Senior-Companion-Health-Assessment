@@ -137,6 +137,10 @@ class OrderServiceTest {
     @Mock
     private OrderFeeItemService orderFeeItemService;
 
+    /** 履约保障（V3.1）——下单时登记一条 ORDER_CREATED 履约事件；行为由 FulfillmentServiceScanTest 覆盖 */
+    @Mock
+    private FulfillmentService fulfillmentService;
+
     private OrderServiceImpl orderService;
 
     @BeforeEach
@@ -153,7 +157,7 @@ class OrderServiceTest {
         orderService = new OrderServiceImpl(orderMapper, statusLogMapper, rejectLogMapper,
                 elderProfileMapper, companionProfileMapper, sysUserMapper, orderReadMapper,
                 elderService, messageService, redisTemplate, new ObjectMapper(),
-                transitionService, orderFeeItemService);
+                transitionService, orderFeeItemService, fulfillmentService);
     }
 
     @AfterEach

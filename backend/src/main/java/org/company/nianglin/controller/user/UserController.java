@@ -7,7 +7,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.Result;
+import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.CompanionApplyDTO;
+import org.company.nianglin.dto.CompanionWorkStatusUpdateDTO;
 import org.company.nianglin.dto.ProfileUpdateDTO;
 import org.company.nianglin.service.CompanionService;
 import org.company.nianglin.service.UserService;
@@ -96,6 +98,18 @@ public class UserController {
     @GetMapping("/companion/application")
     public Result<CompanionApplicationVO> myCompanionApplication() {
         return Result.success(companionService.myApplication());
+    }
+
+    @Operation(summary = "切换陪诊员接单状态",
+            description = "陪诊员自助控制是否接受新订单：AVAILABLE-可接单 / REST-休息中 / OFFLINE-离线。"
+                    + "**切换只影响新订单的匹配，不影响已接订单** —— "
+                    + "已接单或服务中的订单继续按订单状态机推进，不会被中断或取消。"
+                    + "资质未通过时返回 2003；状态值非法时返回 400 并在消息中列出合法取值。")
+    @PreAuthorize("hasRole('" + RoleConstants.COMPANION + "')")
+    @PutMapping("/companion/work-status")
+    public Result<CompanionProfileVO> updateCompanionWorkStatus(
+            @Valid @RequestBody CompanionWorkStatusUpdateDTO dto) {
+        return Result.success("接单状态已更新", companionService.updateWorkStatus(dto));
     }
 
     @Operation(summary = "查询陪诊员公开资料",

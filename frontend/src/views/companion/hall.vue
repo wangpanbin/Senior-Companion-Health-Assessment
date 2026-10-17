@@ -19,14 +19,17 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   NlPhoneShell, NlDesktopShell, NlAppTabBar, NlCard, NlStatusChip, NlEmpty, NlSkeleton,
-  NlNoticeBar, NlUserMenu
+  NlUserMenu
 } from '@/components'
 import { useDevice } from '@/composables/useDevice'
 import { listOrderHall, acceptOrder } from '@/api/order'
-import { getMyCompanionApplication } from '@/api/user'
+import { getMyCompanionApplication, getCompanionProfile, updateCompanionWorkStatus } from '@/api/user'
+import { useUserStore } from '@/store/modules/user'
 import { formatVisitTime, formatMoney } from '@/utils/format'
 
 const router = useRouter()
+const userStore = useUserStore()
+const myId = computed(() => userStore.userInfo?.id)
 
 /** 形态判定（ADR-0007）：窄屏走手机壳，宽屏走桌面壳 */
 const { isMobile } = useDevice()
@@ -43,6 +46,56 @@ const loading = ref(false)
 const hallError = ref(false)
 
 const filter = ref('all') // all / high
+
+/* ================================================================== *
+ * 接单状态自助开关（V3.1 · T0）
+ *
+ * 语义边界：切换只影响**新订单的匹配**，不影响已接订单。
+ * 已接单 / 服务中的订单继续按订单状态机推进，不会因为陪诊员切到
+ * 「休息中」而被中断或取消 —— 页面文案也据此措辞，不写「停止服务」。
+ *
+ * 前端禁用按钮不构成安全边界：服务端仍会二次校验资质与状态值。
+ * ================================================================== */
+
+/** null=加载中 / AVAILABLE / REST / OFFLINE */
+const workStatus = ref(null)
+const workStatusSaving = ref(false)
+
+const WORK_STATUS_OPTIONS = [
+  { value: 'AVAILABLE', label: '接单中' },
+  { value: 'REST', label: '休息中' },
+  { value: 'OFFLINE', label: '离线' }
+]
+
+/** 当前是否接受新订单；与后端 WorkStatus.isAccepting 同源 */
+const isAccepting = computed(() => workStatus.value === 'AVAILABLE')
+
+const workStatusHint = computed(() => {
+  if (workStatus.value === 'REST') return '暂停接单，不影响已接的订单'
+  if (workStatus.value === 'OFFLINE') return '当前不接新订单，不影响已接的订单'
+  return ''
+})
+
+async function loadWorkStatus() {
+  if (!myId.value) return
+  const data = await getCompanionProfile(myId.value)
+  workStatus.value = data?.workStatus ?? null
+}
+
+async function switchWorkStatus(target) {
+  if (workStatusSaving.value || target === workStatus.value) return
+  workStatusSaving.value = true
+  try {
+    const data = await updateCompanionWorkStatus(target)
+    // 就地回填，不必再发一次查询
+    workStatus.value = data?.workStatus ?? target
+    ElMessage.success(`已切换为「${data?.workStatusLabel ?? target}」`)
+  } catch {
+    // 拦截器已经弹过错误消息，这里不重复提示；workStatus 保持原值
+  } finally {
+    workStatusSaving.value = false
+  }
+}
 
 /* 底部 Tab 由 NlAppTabBar 统一管理（角色感知 + 路由感知） */
 
@@ -114,6 +167,7 @@ function goEntry() {
 onMounted(async () => {
   try {
     await loadCert()
+    await loadWorkStatus()
   } catch {
     // 拦截器已弹错
   } finally {
@@ -157,10 +211,35 @@ onMounted(async () => {
           <NlStatusChip scope="audit" :status="certStatus" :text="certText" :dot="certStatus === 'APPROVED'" />
         </div>
         <div class="cert-bar__right">
-          <span class="nl-caption" :class="certStatus === 'APPROVED' ? 'nl-text-muted' : 'nl-text-weak'">
-            {{ certStatus === 'APPROVED' ? '接单中' : '不可接单' }}
+          <span class="nl-caption" :class="isAccepting ? 'nl-text-muted' : 'nl-text-weak'">
+            {{ isAccepting ? '接单中' : '暂停接单' }}
           </span>
         </div>
+      </section>
+
+      <!-- 接单状态开关：点击即切换，仅在资质通过时可用 -->
+      <section class="work-switch">
+        <div class="work-switch__head">
+          <span class="nl-caption nl-text-muted">我的接单状态</span>
+          <span v-if="workStatusHint" class="nl-caption nl-text-weak">{{ workStatusHint }}</span>
+        </div>
+        <div class="work-switch__opts" role="group" aria-label="接单状态">
+          <button
+            v-for="opt in WORK_STATUS_OPTIONS"
+            :key="opt.value"
+            type="button"
+            class="work-switch__btn"
+            :class="{ 'is-active': workStatus === opt.value }"
+            :disabled="workStatusSaving"
+            :aria-pressed="workStatus === opt.value"
+            @click="switchWorkStatus(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+        <p v-if="!isAccepting" class="work-switch__note">
+          新订单不会再出现在你的大厅里，已接的订单照常服务。
+        </p>
       </section>
 
       <div class="filters">
@@ -267,9 +346,28 @@ onMounted(async () => {
     />
 
     <template v-else>
-      <NlNoticeBar tone="success">
-        资质已通过，可在大厅抢单。订单执行（GPS 打卡）请用手机端完成。
-      </NlNoticeBar>
+      <section class="work-switch work-switch--desktop">
+        <div class="work-switch__head">
+          <span class="nl-body nl-text-muted">我的接单状态：{{ isAccepting ? '接单中' : '暂停接单' }}</span>
+        </div>
+        <div class="work-switch__opts" role="group" aria-label="接单状态">
+          <button
+            v-for="opt in WORK_STATUS_OPTIONS"
+            :key="opt.value"
+            type="button"
+            class="work-switch__btn"
+            :class="{ 'is-active': workStatus === opt.value }"
+            :disabled="workStatusSaving"
+            :aria-pressed="workStatus === opt.value"
+            @click="switchWorkStatus(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+        <span class="nl-caption nl-text-weak">
+          {{ isAccepting ? '订单执行（GPS 打卡）请用手机端完成' : workStatusHint }}
+        </span>
+      </section>
 
       <NlCard>
         <template #title>
@@ -358,6 +456,68 @@ onMounted(async () => {
     display: flex;
     gap: var(--nl-space-2);
     align-items: center;
+  }
+}
+
+.work-switch {
+  margin: var(--nl-space-3);
+  padding: var(--nl-space-3);
+  background: var(--nl-bg-card);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-card);
+
+  &__head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--nl-space-2);
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: var(--nl-space-2);
+  }
+
+  &__opts {
+    display: flex;
+    gap: var(--nl-space-2);
+  }
+
+  &__btn {
+    flex: 1;
+    /* 触控区不低于适老化基线，老人模式下会由 elderly.scss 再放大 */
+    min-height: var(--nl-touch-min);
+    padding: 0 var(--nl-space-3);
+    font-size: var(--nl-font-body);
+    color: var(--nl-text-2);
+    background: var(--nl-bg-sunken);
+    border: 1px solid var(--nl-border);
+    border-radius: var(--nl-radius-card);
+    cursor: pointer;
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    &.is-active {
+      color: var(--nl-text-inverse);
+      background: var(--nl-primary);
+      border-color: var(--nl-primary);
+    }
+
+    /* 键盘可达：切换状态不是纯装饰操作 */
+    &:focus-visible {
+      outline: 2px solid var(--nl-primary);
+      outline-offset: 2px;
+    }
+  }
+
+  &__note {
+    margin: var(--nl-space-2) 0 0;
+    font-size: var(--nl-font-caption);
+    color: var(--nl-text-3);
+  }
+
+  &--desktop {
+    margin: 0 0 var(--nl-space-4);
   }
 }
 

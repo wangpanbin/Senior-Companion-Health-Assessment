@@ -54,6 +54,10 @@ public final class MessageTemplateUtil {
             case REVIEW_REPLIED -> "评价被回复";
             case REVIEW_APPEAL_SUBMITTED -> "收到评价申诉";
             case REVIEW_INVALIDATED -> "评价被裁定无效";
+            case FULFILLMENT_WARNING -> "订单匹配时间较长";
+            case FULFILLMENT_URGENT -> "订单需要尽快安排陪诊员";
+            case ORDER_URGED -> "有订单在等待陪诊员";
+            case ORDER_REASSIGNED -> "订单已改派陪诊员";
             case SYSTEM_NOTICE -> "系统公告";
         };
     }
@@ -122,6 +126,23 @@ public final class MessageTemplateUtil {
                         ? "平台裁定订单 %s 中的一条评价为无效，评分已重算。".formatted(orderNo)
                         : "平台裁定订单 %s 中的一条评价为无效（%s），评分已重算。".formatted(orderNo, reason);
             }
+            case FULFILLMENT_WARNING ->
+                    "订单 %s 还在等待陪诊员接单，系统正在为您扩大匹配范围。".formatted(value(p, "orderNo"));
+            case FULFILLMENT_URGENT ->
+                    "订单 %s 等待陪诊员的时间较久，平台正在协调安排。".formatted(value(p, "orderNo"));
+            case ORDER_URGED ->
+                    "有一笔订单正在等待陪诊员，您可以前往订单大厅查看。";
+            case ORDER_REASSIGNED -> {
+                // audience 由调用方区分：FAMILY / COMPANION / FORMER_COMPANION
+                String audience = value(p, "audience");
+                String orderNo = value(p, "orderNo");
+                yield switch (audience) {
+                    case "COMPANION" -> "订单 %s 已指派给您，请尽快前往订单大厅查看。".formatted(orderNo);
+                    case "FORMER_COMPANION" ->
+                            "订单 %s 已改派给其他陪诊员，感谢您的关注。".formatted(orderNo);
+                    default -> "订单 %s 已由平台安排陪诊员，请留意。".formatted(orderNo);
+                };
+            }
             case SYSTEM_NOTICE -> value(p, "content");
         };
     }
@@ -143,6 +164,9 @@ public final class MessageTemplateUtil {
             case ORDER_CREATED, ORDER_ACCEPTED, ORDER_PROGRESS, ORDER_COMPLETED, ORDER_CANCELLED,
                     REVIEW_REPLIED, REVIEW_INVALIDATED ->
                     "/family?orderId=" + bizId;
+            // 履约类消息一律跳订单详情：家属看风险、陪诊员看大厅指向的那一单
+            case FULFILLMENT_WARNING, FULFILLMENT_URGENT, ORDER_URGED, ORDER_REASSIGNED ->
+                    "/order/" + bizId;
             case AUDIT_RESULT -> "/profile/companion";
             case MEDICATION_REMIND -> "/family?elderId=" + bizId;
             case COMPLAINT_SUBMITTED, REVIEW_APPEAL_SUBMITTED -> "/admin?complaintId=" + bizId;
