@@ -16,6 +16,7 @@ import org.company.nianglin.dto.AdminUserQuery;
 import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.ComplaintHandleDTO;
+import org.company.nianglin.dto.FulfillmentRiskQuery;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
 import org.company.nianglin.dto.ReviewRulingDTO;
@@ -23,6 +24,7 @@ import org.company.nianglin.dto.UserDisableDTO;
 import org.company.nianglin.dto.UserEnableDTO;
 import org.company.nianglin.service.AdminService;
 import org.company.nianglin.service.ReviewService;
+import org.company.nianglin.vo.AdminFulfillmentRiskItemVO;
 import org.company.nianglin.vo.AdminOrderVO;
 import org.company.nianglin.vo.AdminUserVO;
 import org.company.nianglin.vo.ArbitrateResultVO;
@@ -31,6 +33,7 @@ import org.company.nianglin.vo.AuditDecisionResultVO;
 import org.company.nianglin.vo.AuditPageVO;
 import org.company.nianglin.vo.ComplaintHandleResultVO;
 import org.company.nianglin.vo.ComplaintVO;
+import org.company.nianglin.vo.FulfillmentSummaryVO;
 import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
 import org.company.nianglin.vo.ReviewRulingResultVO;
@@ -200,6 +203,28 @@ public class AdminController {
             @Parameter(description = "评价 ID", example = "30001") @PathVariable("id") Long reviewId,
             @Valid @RequestBody ReviewRulingDTO dto) {
         return Result.success("裁定已生效", reviewService.reviewValidity(reviewId, dto));
+    }
+
+    /* ==================== 履约风险中心（V3.1） ==================== */
+
+    @Operation(summary = "履约风险计数",
+            description = "待接单订单按风险等级分组计数，四个字段恒定全部返回（为 0 时返回 0，不省略）。"
+                    + "只统计 status=PENDING —— 已接单的订单风险已回落，计入会凭空放大问题。"
+                    + "只读，不写操作日志")
+    @GetMapping("/fulfillment/summary")
+    public Result<FulfillmentSummaryVO> fulfillmentSummary() {
+        return Result.success(adminService.fulfillmentSummary());
+    }
+
+    @Operation(summary = "风险订单列表",
+            description = "分页返回待接单订单，risk 可选（四档之一，缺省返回全部）。"
+                    + "默认排序固定：风险等级降序 → 等待时长降序 → id 降序，不开放 sortField。"
+                    + "姓名与订单号一律脱敏（订单详情的全名豁免不适用于列表）；"
+                    + "risk 不是四档之一返回 400 且不静默忽略")
+    @GetMapping("/fulfillment/risk-list")
+    public Result<PageResult<AdminFulfillmentRiskItemVO>> fulfillmentRiskList(
+            @Valid FulfillmentRiskQuery query) {
+        return Result.success(adminService.fulfillmentRiskList(query));
     }
 
     /* ==================== 操作日志 ==================== */

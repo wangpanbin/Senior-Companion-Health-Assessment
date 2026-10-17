@@ -12,6 +12,7 @@ import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.AccountStatus;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.ComplaintStatus;
+import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OperTargetType;
 import org.company.nianglin.constant.OperType;
@@ -26,6 +27,7 @@ import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.CertificateItem;
 import org.company.nianglin.dto.ComplaintHandleDTO;
+import org.company.nianglin.dto.FulfillmentRiskQuery;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
 import org.company.nianglin.dto.UserDisableDTO;
@@ -57,6 +59,8 @@ import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.AesUtil;
 import org.company.nianglin.util.MaskUtil;
+import org.company.nianglin.util.TimeUtil;
+import org.company.nianglin.vo.AdminFulfillmentRiskItemVO;
 import org.company.nianglin.vo.AdminOrderVO;
 import org.company.nianglin.vo.AdminUserVO;
 import org.company.nianglin.vo.ArbitrateResultVO;
@@ -65,6 +69,7 @@ import org.company.nianglin.vo.AuditDecisionResultVO;
 import org.company.nianglin.vo.AuditPageVO;
 import org.company.nianglin.vo.ComplaintHandleResultVO;
 import org.company.nianglin.vo.ComplaintVO;
+import org.company.nianglin.vo.FulfillmentSummaryVO;
 import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.OrderVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
@@ -81,6 +86,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -109,6 +115,27 @@ public class AdminServiceImpl implements AdminService {
 
     /** 驳回原因的最小长度（文档 §3：5–200 字符） */
     private static final int MIN_REJECT_REASON_LENGTH = 5;
+
+    /**
+     * 风险列表的唯一排序（V3.1 · T6，spec §2.6）：
+     * 风险等级降序 → 等待时长降序 → id 降序。
+     *
+     * <p>三个要点：</p>
+     * <ul>
+     *   <li><b>等待时长降序 = {@code create_time ASC}</b>：等得越久，下单时间越早。
+     *       等待时长本身不落库，SQL 里也不存在这个列，按它排序等价于按下单时间反向排；</li>
+     *   <li>{@code FIELD} 的参数顺序本身就是「严重度从高到低」，所以后面不写 DESC；</li>
+     *   <li>不在四档内的脏值 {@code FIELD} 返回 0，会排在<b>最前</b> —— 异常数据优先暴露，
+     *       而不是被沉到管理员翻不到的地方。</li>
+     * </ul>
+     *
+     * <p>为什么整段 ORDER BY 走 {@code last()}：MyBatis-Plus 的 {@code orderBy*}
+     * 只接受列，塞不进 {@code FIELD(...)} 这样的表达式；而混合「既 orderBy 又 last」
+     * 会产出两个 ORDER BY 的非法 SQL，所以排序必须<b>整段</b>放进来，不能再调 {@code orderBy*}。</p>
+     */
+    private static final String FULFILLMENT_RISK_LIST_ORDER_BY =
+            "ORDER BY FIELD(fulfillment_risk,'MANUAL_REQUIRED','URGENT','WARNING','NORMAL'), "
+                    + "create_time ASC, id DESC";
 
     private final CompanionAuditRecordMapper auditRecordMapper;
     private final CompanionProfileMapper companionProfileMapper;
@@ -608,6 +635,117 @@ public class AdminServiceImpl implements AdminService {
 
         Page<AdminOperLog> page = operLogMapper.selectPage(query.toMpPage(), wrapper);
         return PageResult.of(page, page.getRecords().stream().map(OperLogVO::of).toList());
+    }
+
+    /* ================================================================== */
+    /* 11 / 12. 履约风险中心（V3.1 · T6）                                  */
+    /* ================================================================== */
+
+    @Override
+    public FulfillmentSummaryVO fulfillmentSummary() {
+        // 分组计数整表跑一次（不带 risk 筛选）：四张卡必须显示整口径数字，
+        // 管理员一按等级筛选，卡片跟着变就没有参考价值了
+        List<Map<String, Object>> rows =
+                adminReadMapper.selectFulfillmentRiskCounts(fulfillmentScopeStatus());
+        return FulfillmentSummaryVO.of(rows);
+    }
+
+    @Override
+    public PageResult<AdminFulfillmentRiskItemVO> fulfillmentRiskList(FulfillmentRiskQuery query) {
+        FulfillmentRisk risk = parseRiskFilter(query.getRisk());
+
+        LambdaQueryWrapper<CompanionOrder> wrapper = Wrappers.<CompanionOrder>lambdaQuery()
+                .eq(CompanionOrder::getStatus, fulfillmentScopeStatus());
+        if (risk != null) {
+            wrapper.eq(CompanionOrder::getFulfillmentRisk, risk.name());
+        }
+        // 整段排序必须走 last()（见 FULFILLMENT_RISK_LIST_ORDER_BY 的说明），
+        // 因此这里不能再调 orderBy*
+        wrapper.last(FULFILLMENT_RISK_LIST_ORDER_BY);
+
+        Page<CompanionOrder> page = orderMapper.selectPage(query.toMpPage(), wrapper);
+        return PageResult.of(page, toFulfillmentRiskItems(page.getRecords()));
+    }
+
+    /**
+     * 履约风险候选集的<b>唯一</b>状态条件（V3.1 · T6）：只统计待接单。
+     *
+     * <p>计数 SQL 与列表查询都从这里取值，两处口径由同一个方法绑定。
+     * 拆成两处各写各的，最后会得到「卡片显示 5 单、列表只有 4 行」这种
+     * 没人能解释的对不上账。</p>
+     */
+    private static String fulfillmentScopeStatus() {
+        return OrderStatus.PENDING.name();
+    }
+
+    /** 解析风险等级筛选；缺省返回 {@code null} 表示全部，非法值 {@code 400} 不静默忽略 */
+    private FulfillmentRisk parseRiskFilter(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        FulfillmentRisk risk = FulfillmentRisk.of(raw.trim());
+        if (risk == null) {
+            // 静默忽略非法等级会让管理员以为筛过的结果就是全部，
+            // 而他此刻正需要知道「没有符合这个条件的」还是「条件没生效」
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "risk 只能是 NORMAL / WARNING / URGENT / MANUAL_REQUIRED 之一");
+        }
+        return risk;
+    }
+
+    /**
+     * 批量装配风险列表项。
+     *
+     * <p>整页两条批量查询：老人姓名一份、人工介入标记一份。
+     * 逐行查会把一页 10 条变成 20 次往返。</p>
+     *
+     * <p>姓名与订单号在此处脱敏 —— 列表口径一律脱敏（spec §2.6），
+     * 订单详情的全名豁免只对详情生效。</p>
+     */
+    private List<AdminFulfillmentRiskItemVO> toFulfillmentRiskItems(List<CompanionOrder> orders) {
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> elderIds = orders.stream()
+                .map(CompanionOrder::getElderId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, ElderProfile> elders = new HashMap<>();
+        if (!elderIds.isEmpty()) {
+            for (ElderProfile elder : orderReadMapper.selectEldersIgnoringLogicDelete(elderIds)) {
+                elders.put(elder.getId(), elder);
+            }
+        }
+
+        Set<Long> coordinated = new HashSet<>(adminReadMapper.selectAdminCoordinatedOrderIds(
+                orders.stream().map(CompanionOrder::getId).toList()));
+
+        LocalDateTime now = LocalDateTime.now();
+        return orders.stream().map(order -> {
+            FulfillmentRisk risk = FulfillmentRisk.of(order.getFulfillmentRisk());
+            if (risk == null) {
+                // 列是 NOT NULL DEFAULT 'NORMAL'，到这里只能是人工改库的脏值；
+                // 按 NORMAL 展示与顶部计数的口径保持一致（脏值同样并入 normal）
+                risk = FulfillmentRisk.NORMAL;
+            }
+            ElderProfile elder = elders.get(order.getElderId());
+            return new AdminFulfillmentRiskItemVO()
+                    .setOrderId(order.getId())
+                    .setOrderNo(MaskUtil.generic(order.getOrderNo(), 4, 4))
+                    .setElderName(elder == null ? null : MaskUtil.name(elder.getName()))
+                    .setHospital(order.getHospital())
+                    .setDepartment(order.getDepartment())
+                    .setVisitTime(order.getVisitTime())
+                    .setFulfillmentRisk(risk.name())
+                    .setFulfillmentRiskLabel(risk.getLabel())
+                    // 等待时长不落库、装配现算，钳制规则与订单详情共用 TimeUtil
+                    .setWaitMinutes(TimeUtil.elapsedMinutes(order.getCreateTime(), now))
+                    .setUrgeCount(order.getUrgeCount() == null ? 0 : order.getUrgeCount())
+                    .setAdminCoordinated(coordinated.contains(order.getId()))
+                    .setCreateTime(order.getCreateTime());
+        }).toList();
     }
 
     /* ================================================================== */

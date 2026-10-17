@@ -17,7 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * M9 管理后台越权矩阵：4 角色 × 3 类接口（读列表 / 写操作 / 操作日志）。
+ * M9 管理后台越权矩阵：4 角色 × 4 类接口（读列表 / 写操作 / 操作日志 / 履约风险中心）。
  *
  * <p>M9 的鉴权特点：<b>整类 `@PreAuthorize("hasRole('ADMIN')")` 写在类上</b>，
  * 没有任何「部分接口开放给其他角色」的例外。因此本矩阵的核心断言就是
@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@DisplayName("M9 管理后台越权矩阵：4 角色 × 3 类接口")
+@DisplayName("M9 管理后台越权矩阵：4 角色 × 4 类接口")
 class AdminAccessMatrixTest {
 
     private static final String AUTH_HEADER = "Authorization";
@@ -50,6 +50,10 @@ class AdminAccessMatrixTest {
     private static final String API_DISABLE_USER = "/api/admin/user/9001/disable";
     /** 日志类：操作日志查询 */
     private static final String API_OPER_LOG = "/api/admin/oper-log";
+    /** 履约风险中心 · 计数（V3.1 · T6） */
+    private static final String API_FULFILLMENT_SUMMARY = "/api/admin/fulfillment/summary";
+    /** 履约风险中心 · 风险订单列表（V3.1 · T6） */
+    private static final String API_FULFILLMENT_RISK_LIST = "/api/admin/fulfillment/risk-list";
 
     @Autowired
     private MockMvc mockMvc;
@@ -132,7 +136,69 @@ class AdminAccessMatrixTest {
     }
 
     /* ================================================================== */
-    /* 4 · 管理员侧：注解确实放行（否则上面前提不成立）                        */
+    /* 4 · 履约风险中心（V3.1 · T6）：非管理员一律 403                     */
+    /* ================================================================== */
+
+    @ParameterizedTest(name = "风险计数 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("履约风险中心 · 非管理员看风险计数 → 403（四档数字暴露平台的单量）")
+    void nonAdminShouldNotReadFulfillmentSummary(String role) throws Exception {
+        mockMvc.perform(get(API_FULFILLMENT_SUMMARY).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @ParameterizedTest(name = "风险列表 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("履约风险中心 · 非管理员看风险列表 → 403（列表含脱敏姓名与订单信息）")
+    void nonAdminShouldNotReadFulfillmentRiskList(String role) throws Exception {
+        mockMvc.perform(get(API_FULFILLMENT_RISK_LIST).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("履约风险中心 · 未登录读风险计数 → 401")
+    void anonymousShouldGet401OnFulfillmentSummary() throws Exception {
+        mockMvc.perform(get(API_FULFILLMENT_SUMMARY))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("履约风险中心 · 管理员读风险计数 → 四个字段恒定齐全且为数字")
+    void adminShouldReadFulfillmentSummary() throws Exception {
+        // 这条同时是「SQL 能在真库上跑通」的验收：分组计数里写死的
+        // status / fulfillment_risk / deleted 任何一列名拼错，这里就会红
+        mockMvc.perform(get(API_FULFILLMENT_SUMMARY).header(AUTH_HEADER, admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.manualRequired").isNumber())
+                .andExpect(jsonPath("$.data.urgent").isNumber())
+                .andExpect(jsonPath("$.data.warning").isNumber())
+                .andExpect(jsonPath("$.data.normal").isNumber());
+    }
+
+    @Test
+    @DisplayName("履约风险中心 · 管理员读风险列表 → 200 且 records 为空数组也不报错")
+    void adminShouldReadFulfillmentRiskList() throws Exception {
+        // 整段 ORDER BY 走 last() + 分页拦截器的组合由本用例在真库上验一次：
+        // 分页统计要能把 ORDER BY 剥掉、主查询要能拼上 LIMIT
+        mockMvc.perform(get(API_FULFILLMENT_RISK_LIST).header(AUTH_HEADER, admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records").isArray());
+    }
+
+    @Test
+    @DisplayName("履约风险中心 · 管理员传非法风险等级 → 400 且不静默返回全量")
+    void adminShouldGet400OnUnknownRiskLevel() throws Exception {
+        mockMvc.perform(get(API_FULFILLMENT_RISK_LIST).header(AUTH_HEADER, admin())
+                        .param("risk", "AT_RISK"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
+    /* ================================================================== */
+    /* 5 · 管理员侧：注解确实放行（否则上面前提不成立）                        */
     /* ================================================================== */
 
     @Test

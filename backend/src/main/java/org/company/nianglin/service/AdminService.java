@@ -8,12 +8,14 @@ import org.company.nianglin.dto.AdminUserQuery;
 import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.ComplaintHandleDTO;
+import org.company.nianglin.dto.FulfillmentRiskQuery;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
 import org.company.nianglin.dto.UserDisableDTO;
 import org.company.nianglin.dto.UserEnableDTO;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.SysUser;
+import org.company.nianglin.vo.AdminFulfillmentRiskItemVO;
 import org.company.nianglin.vo.AdminOrderVO;
 import org.company.nianglin.vo.AdminUserVO;
 import org.company.nianglin.vo.ArbitrateResultVO;
@@ -22,6 +24,7 @@ import org.company.nianglin.vo.AuditDecisionResultVO;
 import org.company.nianglin.vo.AuditPageVO;
 import org.company.nianglin.vo.ComplaintHandleResultVO;
 import org.company.nianglin.vo.ComplaintVO;
+import org.company.nianglin.vo.FulfillmentSummaryVO;
 import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
 import org.company.nianglin.vo.UserStatusResultVO;
@@ -132,6 +135,31 @@ public interface AdminService {
 
     /** 操作日志查询（只读，不提供任何修改与删除入口） */
     PageResult<OperLogVO> operLogList(OperLogQuery query);
+
+    /* ==================== 履约风险中心（V3.1） ==================== */
+
+    /**
+     * 待接单订单的四档风险计数（V3.1 · T6）。
+     *
+     * <p>四档字段<b>恒定全部返回</b>，某档为 0 时返回 0 而不是省略该字段 ——
+     * 「这一档 0 单」与「这一档没统计」在卡片上必须能被区分。</p>
+     *
+     * <p>口径与 {@link #fulfillmentRiskList(FulfillmentRiskQuery)} 共用：
+     * 只统计 {@code status = PENDING}，不含已接单订单。</p>
+     */
+    FulfillmentSummaryVO fulfillmentSummary();
+
+    /**
+     * 风险订单列表（V3.1 · T6）。
+     *
+     * <p>默认排序固定为「风险等级降序 → 等待时长降序 → id 降序」，不开放 sortField：
+     * 这一页面的唯一正确读法就是先看最坏的几单。</p>
+     *
+     * <p>姓名与订单号在列表口径一律脱敏（订单详情的全名豁免<b>不适用</b>于列表）。</p>
+     *
+     * @throws org.company.nianglin.exception.BusinessException 400 risk 不是四档之一
+     */
+    PageResult<AdminFulfillmentRiskItemVO> fulfillmentRiskList(FulfillmentRiskQuery query);
 
     /* ==================== 供 M10 导出复用 ==================== */
 

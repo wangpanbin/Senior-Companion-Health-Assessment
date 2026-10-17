@@ -99,3 +99,28 @@ export function rulingReview(reviewId, data) {
 export function listOperLogs(params) {
   return request({ url: '/admin/oper-log', method: 'get', params })
 }
+
+/* ---------------- 履约风险中心（V3.1 · T6） ---------------- */
+
+/**
+ * 四档风险计数（整口径，只统计待接单订单）。
+ *
+ * 四个字段恒定全部返回，某档为 0 时返回 0 而不是省略 —— 卡片据此显示数字，
+ * 不必再做 undefined 兜底。
+ * 返回：{ manualRequired, urgent, warning, normal }
+ */
+export function getFulfillmentSummary() {
+  return request({ url: '/admin/fulfillment/summary', method: 'get' })
+}
+
+/**
+ * 风险订单列表。
+ *
+ * @param {{ page: number, size: number, risk?: string }} params
+ *   risk 缺省返回全部等级；只能是 NORMAL / WARNING / URGENT / MANUAL_REQUIRED，
+ *   传别的后端返 400 且**不静默返回全量**。
+ * 排序固定为「等级降序 → 等待时长降序 → id 降序」，接口不接受排序参数。
+ */
+export function listFulfillmentRisks(params) {
+  return request({ url: '/admin/fulfillment/risk-list', method: 'get', params })
+}

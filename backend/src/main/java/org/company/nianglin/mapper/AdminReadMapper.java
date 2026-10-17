@@ -112,4 +112,55 @@ public interface AdminReadMapper {
             </script>
             """)
     List<Map<String, Object>> selectLatestComplaintIds(@Param("orderIds") Collection<Long> orderIds);
+
+    /**
+     * 待接单订单的履约风险分组计数（V3.1 · T6，风险中心顶部四个卡）。
+     *
+     * <p>与 {@link #selectAuditStatusCounts()} 同一范式：标签要显示的是
+     * <b>整口径的数字</b>，不是当前筛选结果里的 —— 管理员一按等级筛选，
+     * 若四张卡跟着变，正常等待那张就永远是 0，看板立刻失去参考价值。</p>
+     *
+     * <p>三条必须写在 SQL 里的口径（漏掉任何一条，数字会悄悄偏）：</p>
+     * <ol>
+     *   <li>{@code deleted = 0} —— 原生 {@code @Select} 不经 {@code @TableLogic} 注入；</li>
+     *   <li>{@code status = #{status}} —— <b>只统计待接单</b>；已接单的风险早已回落，
+     *       计进去等于凭空放大问题；</li>
+     *   <li>分组键做 {@code COALESCE} 兜底 —— 列是 {@code NOT NULL DEFAULT 'NORMAL'}，
+     *       正常数据不会有 NULL，但人工改库会；分出一个 NULL 组会让前端无键可取。</li>
+     * </ol>
+     *
+     * <p>状态由参数传入而不是写死字面量：计数与列表页的候选集要共用同一处定义
+     * （{@code OrderStatus.PENDING}），否则两处条件迟早漂移成「卡片显示 5 单、列表只有 4 行」。</p>
+     *
+     * @param status 订单状态字面量，由调用方传 {@code OrderStatus.PENDING.name()}
+     * @return 每行形如 {@code {risk: URGENT, cnt: 3}}；某档无数据时该档缺席（前端按 0 处理）
+     */
+    @Select("""
+            SELECT COALESCE(fulfillment_risk, 'NORMAL') AS risk, COUNT(*) AS cnt
+            FROM companion_order
+            WHERE deleted = 0 AND status = #{status}
+            GROUP BY COALESCE(fulfillment_risk, 'NORMAL')
+            """)
+    List<Map<String, Object>> selectFulfillmentRiskCounts(@Param("status") String status);
+
+    /**
+     * 批量标记「这些订单已被管理员人工介入过」（V3.1 · T6）。
+     *
+     * <p>判据是 {@code trigger_source = 'ADMIN'} 而不是事件类型：改派（{@code ORDER_REASSIGNED}）
+     * 与协调（{@code ADMIN_COORDINATED}）是两个不同的事件类型，但对管理员的语义相同 ——
+     * 「这一单平台已经管过了，不必再从头排查」。按触发来源判，将来新增管理员动作时
+     * 不必回头改这里的 IN 列表。</p>
+     *
+     * @param orderIds 订单 ID 集合，调用方保证非空
+     * @return 有过人工介入记录的订单 ID；没有的缺席
+     */
+    @Select("""
+            <script>
+            SELECT DISTINCT order_id
+            FROM order_fulfillment_event
+            WHERE deleted = 0 AND trigger_source = 'ADMIN' AND order_id IN
+            <foreach collection="orderIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </script>
+            """)
+    List<Long> selectAdminCoordinatedOrderIds(@Param("orderIds") Collection<Long> orderIds);
 }
