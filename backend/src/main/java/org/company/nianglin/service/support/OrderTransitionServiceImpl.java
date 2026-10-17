@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.entity.CompanionOrder;
@@ -64,6 +65,11 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
         requireLegalTransition(from, target);
 
         order.setStatus(target.name());
+        // spec §5.3：离开 PENDING 时履约风险回落 NORMAL。
+        // 搭在**同一条**乐观锁更新上（不额外发一条 UPDATE）：
+        // updateById 只写非空字段，这里置为 NORMAL 即会随本次落库，
+        // 与状态变更天然同事务 —— 不存在「状态改了、风险还挂着」的中间态。
+        collapseRiskOnLeavingPending(from, target, order);
         // 乐观锁：MyBatis-Plus 生成 WHERE id=? AND version=?，
         // 50 并发抢单只有第 1 个 affectedRows=1，其余为 0。
         int rows = orderMapper.updateById(order);
@@ -112,6 +118,9 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
         }
 
         order.setStatus(target.name());
+        // 管理员强制终态同样要收敛风险（spec §5.3 第三行）：
+        // 强制完成 / 强制取消也是「离开 PENDING」，风险不该继续挂着
+        collapseRiskOnLeavingPending(current, target, order);
         int rows = orderMapper.updateById(order);
         if (rows == 0) {
             throw new BusinessException(ResultCode.CONFLICT, "订单状态已变更，请刷新后重试");
@@ -120,6 +129,26 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
         writeLog(order.getId(), current, target, Operator.of(adminId, RoleConstants.ADMIN, false),
                 remark, 1);
         log.info("管理员强制终态 | orderId={} | {} -> {} | adminId={}", order.getId(), current, target, adminId);
+    }
+
+    /**
+     * 离开 {@code PENDING} 时把履约风险收敛为 {@link FulfillmentRisk#NORMAL}（spec §5.3）。
+     *
+     * <p><b>为什么放在流转入口而不是扫描任务</b>：扫描任务只负责升级，
+     * 若降级也交给它，就会出现「订单已被接走，但下一轮扫描（5 分钟后）之前
+     * 风险仍显示较高」的窗口 —— 而这段时间家属看到的是一条已经不成立的告警。
+     * 放在入口意味着风险与状态<b>在同一条 UPDATE 里一起落库</b>，
+     * 不存在中间态，也不需要第二个改风险等级的入口。</p>
+     *
+     * <p>调用方传的是<b>流转前</b>的 {@code from}：只有从 {@code PENDING} 出发的流转
+     * 才需要收敛；已接单的订单再流转（服务中 → 已完成）时，风险本就是 NORMAL，
+     * 重复置值无害但也无必要。</p>
+     */
+    private void collapseRiskOnLeavingPending(OrderStatus from, OrderStatus target, CompanionOrder order) {
+        if (from != OrderStatus.PENDING || target == OrderStatus.PENDING) {
+            return;
+        }
+        order.setFulfillmentRisk(FulfillmentRisk.NORMAL.name());
     }
 
     /**

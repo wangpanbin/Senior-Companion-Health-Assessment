@@ -12,11 +12,14 @@ import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.AccountStatus;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.ComplaintStatus;
+import org.company.nianglin.constant.FulfillmentEventType;
+import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OperTargetType;
 import org.company.nianglin.constant.OperType;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RoleConstants;
+import org.company.nianglin.constant.TriggerSource;
 import org.company.nianglin.constant.WorkStatus;
 import org.company.nianglin.dto.AdminAuditQuery;
 import org.company.nianglin.dto.AdminComplaintQuery;
@@ -26,6 +29,8 @@ import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.CertificateItem;
 import org.company.nianglin.dto.ComplaintHandleDTO;
+import org.company.nianglin.dto.OrderReassignDTO;
+import org.company.nianglin.dto.FulfillmentRiskQuery;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
 import org.company.nianglin.dto.UserDisableDTO;
@@ -34,6 +39,8 @@ import org.company.nianglin.entity.AdminOperLog;
 import org.company.nianglin.entity.CompanionAuditRecord;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
+import org.company.nianglin.entity.OrderFulfillmentEvent;
+import org.company.nianglin.entity.OrderRejectLog;
 import org.company.nianglin.entity.Complaint;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.SysUser;
@@ -43,8 +50,10 @@ import org.company.nianglin.mapper.AdminReadMapper;
 import org.company.nianglin.mapper.CompanionAuditRecordMapper;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
+import org.company.nianglin.mapper.OrderFulfillmentEventMapper;
 import org.company.nianglin.mapper.ComplaintMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
+import org.company.nianglin.mapper.OrderRejectLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
@@ -56,7 +65,10 @@ import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.AesUtil;
+import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MaskUtil;
+import org.company.nianglin.util.TimeUtil;
+import org.company.nianglin.vo.AdminFulfillmentRiskItemVO;
 import org.company.nianglin.vo.AdminOrderVO;
 import org.company.nianglin.vo.AdminUserVO;
 import org.company.nianglin.vo.ArbitrateResultVO;
@@ -65,6 +77,8 @@ import org.company.nianglin.vo.AuditDecisionResultVO;
 import org.company.nianglin.vo.AuditPageVO;
 import org.company.nianglin.vo.ComplaintHandleResultVO;
 import org.company.nianglin.vo.ComplaintVO;
+import org.company.nianglin.vo.FulfillmentSummaryVO;
+import org.company.nianglin.vo.ReassignResultVO;
 import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.OrderVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
@@ -81,6 +95,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -110,6 +125,27 @@ public class AdminServiceImpl implements AdminService {
     /** 驳回原因的最小长度（文档 §3：5–200 字符） */
     private static final int MIN_REJECT_REASON_LENGTH = 5;
 
+    /**
+     * 风险列表的唯一排序（V3.1 · T6，spec §2.6）：
+     * 风险等级降序 → 等待时长降序 → id 降序。
+     *
+     * <p>三个要点：</p>
+     * <ul>
+     *   <li><b>等待时长降序 = {@code create_time ASC}</b>：等得越久，下单时间越早。
+     *       等待时长本身不落库，SQL 里也不存在这个列，按它排序等价于按下单时间反向排；</li>
+     *   <li>{@code FIELD} 的参数顺序本身就是「严重度从高到低」，所以后面不写 DESC；</li>
+     *   <li>不在四档内的脏值 {@code FIELD} 返回 0，会排在<b>最前</b> —— 异常数据优先暴露，
+     *       而不是被沉到管理员翻不到的地方。</li>
+     * </ul>
+     *
+     * <p>为什么整段 ORDER BY 走 {@code last()}：MyBatis-Plus 的 {@code orderBy*}
+     * 只接受列，塞不进 {@code FIELD(...)} 这样的表达式；而混合「既 orderBy 又 last」
+     * 会产出两个 ORDER BY 的非法 SQL，所以排序必须<b>整段</b>放进来，不能再调 {@code orderBy*}。</p>
+     */
+    private static final String FULFILLMENT_RISK_LIST_ORDER_BY =
+            "ORDER BY FIELD(fulfillment_risk,'MANUAL_REQUIRED','URGENT','WARNING','NORMAL'), "
+                    + "create_time ASC, id DESC";
+
     private final CompanionAuditRecordMapper auditRecordMapper;
     private final CompanionProfileMapper companionProfileMapper;
     private final SysUserMapper sysUserMapper;
@@ -119,6 +155,10 @@ public class AdminServiceImpl implements AdminService {
     private final OperLogRecorder operLogRecorder;
     private final AdminReadMapper adminReadMapper;
     private final OrderReadMapper orderReadMapper;
+    /** 拒单记录：改派前置校验「目标陪诊员是否拒过该单」用 */
+    private final OrderRejectLogMapper orderRejectLogMapper;
+    /** 履约事件流水：改派要留一条 ORDER_REASSIGNED 事件 */
+    private final OrderFulfillmentEventMapper fulfillmentEventMapper;
     private final MessageService messageService;
     private final OrderService orderService;
     private final UserNameResolver userNameResolver;
@@ -608,6 +648,298 @@ public class AdminServiceImpl implements AdminService {
 
         Page<AdminOperLog> page = operLogMapper.selectPage(query.toMpPage(), wrapper);
         return PageResult.of(page, page.getRecords().stream().map(OperLogVO::of).toList());
+    }
+
+    /* ================================================================== */
+    /* 11 / 12. 履约风险中心（V3.1 · T6）                                  */
+    /* ================================================================== */
+
+    @Override
+    public FulfillmentSummaryVO fulfillmentSummary() {
+        // 分组计数整表跑一次（不带 risk 筛选）：四张卡必须显示整口径数字，
+        // 管理员一按等级筛选，卡片跟着变就没有参考价值了
+        List<Map<String, Object>> rows =
+                adminReadMapper.selectFulfillmentRiskCounts(fulfillmentScopeStatus());
+        return FulfillmentSummaryVO.of(rows);
+    }
+
+    @Override
+    public PageResult<AdminFulfillmentRiskItemVO> fulfillmentRiskList(FulfillmentRiskQuery query) {
+        FulfillmentRisk risk = parseRiskFilter(query.getRisk());
+
+        LambdaQueryWrapper<CompanionOrder> wrapper = Wrappers.<CompanionOrder>lambdaQuery()
+                .eq(CompanionOrder::getStatus, fulfillmentScopeStatus());
+        if (risk != null) {
+            wrapper.eq(CompanionOrder::getFulfillmentRisk, risk.name());
+        }
+        // 整段排序必须走 last()（见 FULFILLMENT_RISK_LIST_ORDER_BY 的说明），
+        // 因此这里不能再调 orderBy*
+        wrapper.last(FULFILLMENT_RISK_LIST_ORDER_BY);
+
+        Page<CompanionOrder> page = orderMapper.selectPage(query.toMpPage(), wrapper);
+        return PageResult.of(page, toFulfillmentRiskItems(page.getRecords()));
+    }
+
+    /**
+     * 履约风险候选集的<b>唯一</b>状态条件（V3.1 · T6）：只统计待接单。
+     *
+     * <p>计数 SQL 与列表查询都从这里取值，两处口径由同一个方法绑定。
+     * 拆成两处各写各的，最后会得到「卡片显示 5 单、列表只有 4 行」这种
+     * 没人能解释的对不上账。</p>
+     */
+    private static String fulfillmentScopeStatus() {
+        return OrderStatus.PENDING.name();
+    }
+
+    /** 解析风险等级筛选；缺省返回 {@code null} 表示全部，非法值 {@code 400} 不静默忽略 */
+    private FulfillmentRisk parseRiskFilter(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        FulfillmentRisk risk = FulfillmentRisk.of(raw.trim());
+        if (risk == null) {
+            // 静默忽略非法等级会让管理员以为筛过的结果就是全部，
+            // 而他此刻正需要知道「没有符合这个条件的」还是「条件没生效」
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "risk 只能是 NORMAL / WARNING / URGENT / MANUAL_REQUIRED 之一");
+        }
+        return risk;
+    }
+
+    /**
+     * 批量装配风险列表项。
+     *
+     * <p>整页两条批量查询：老人姓名一份、人工介入标记一份。
+     * 逐行查会把一页 10 条变成 20 次往返。</p>
+     *
+     * <p>姓名与订单号在此处脱敏 —— 列表口径一律脱敏（spec §2.6），
+     * 订单详情的全名豁免只对详情生效。</p>
+     */
+    private List<AdminFulfillmentRiskItemVO> toFulfillmentRiskItems(List<CompanionOrder> orders) {
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> elderIds = orders.stream()
+                .map(CompanionOrder::getElderId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, ElderProfile> elders = new HashMap<>();
+        if (!elderIds.isEmpty()) {
+            for (ElderProfile elder : orderReadMapper.selectEldersIgnoringLogicDelete(elderIds)) {
+                elders.put(elder.getId(), elder);
+            }
+        }
+
+        Set<Long> coordinated = new HashSet<>(adminReadMapper.selectAdminCoordinatedOrderIds(
+                orders.stream().map(CompanionOrder::getId).toList()));
+
+        LocalDateTime now = LocalDateTime.now();
+        return orders.stream().map(order -> {
+            FulfillmentRisk risk = FulfillmentRisk.of(order.getFulfillmentRisk());
+            if (risk == null) {
+                // 列是 NOT NULL DEFAULT 'NORMAL'，到这里只能是人工改库的脏值；
+                // 按 NORMAL 展示与顶部计数的口径保持一致（脏值同样并入 normal）
+                risk = FulfillmentRisk.NORMAL;
+            }
+            ElderProfile elder = elders.get(order.getElderId());
+            return new AdminFulfillmentRiskItemVO()
+                    .setOrderId(order.getId())
+                    .setOrderNo(MaskUtil.generic(order.getOrderNo(), 4, 4))
+                    .setElderName(elder == null ? null : MaskUtil.name(elder.getName()))
+                    .setHospital(order.getHospital())
+                    .setDepartment(order.getDepartment())
+                    .setVisitTime(order.getVisitTime())
+                    .setFulfillmentRisk(risk.name())
+                    .setFulfillmentRiskLabel(risk.getLabel())
+                    // 等待时长不落库、装配现算，钳制规则与订单详情共用 TimeUtil
+                    .setWaitMinutes(TimeUtil.elapsedMinutes(order.getCreateTime(), now))
+                    .setUrgeCount(order.getUrgeCount() == null ? 0 : order.getUrgeCount())
+                    .setAdminCoordinated(coordinated.contains(order.getId()))
+                    .setCreateTime(order.getCreateTime());
+        }).toList();
+    }
+
+    /* ================================================================== */
+    /* 13. 改派陪诊员（V3.1 · T7）                                         */
+    /* ================================================================== */
+
+    /**
+     * 管理员把「还没人接」的订单改派给一位合格陪诊员（V3.1 · T7）。
+     *
+     * <h3>为什么只处理未接单订单</h3>
+     *
+     * <p>本端点<b>不改订单状态</b>（改完仍是 {@code PENDING}），因此不经过
+     * 订单状态流转唯一入口（ADR-0010）——状态的唯一入口仍然是陪诊员接单那一步。
+     * 已接单 / 服务中的订单要换人属纠纷处理，走既有管理员仲裁通道。
+     * 把「换人」塞进状态机会出现两条改变订单归属的路径，
+     * 事后没人说得清这笔单是谁在什么情况下换的人。</p>
+     *
+     * <h3>四件事在同一个事务里</h3>
+     *
+     * <p>条件更新订单 → 写履约事件 {@code ORDER_REASSIGNED} → 写操作审计 → 发三方站内信。
+     * 任何一步失败整体回滚：只改了订单却没留事件，管理端「已协调」标记就永远点不亮，
+     * 下一位管理员会以为这一单还没人管。</p>
+     *
+     * @throws org.company.nianglin.exception.BusinessException
+     *         3001 订单不存在 · 3010 不可改派（含并发失败）· 2007 目标不存在
+     *         · 2003 目标资质未过 · 6003 理由命中医疗建议词表（CONTENT_SENSITIVE）
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ReassignResultVO reassign(Long id, OrderReassignDTO dto) {
+        String reason = normalizeReassignReason(dto.getReason());
+
+        // ① 订单存在
+        CompanionOrder order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
+        }
+        // ② 只处理「待接单且尚无接单人」的订单
+        boolean pending = OrderStatus.PENDING.name().equals(order.getStatus());
+        if (!pending || order.getCompanionId() != null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE);
+        }
+        // 改派前的接单人快照：按 ② 此刻必然为 null，但仍按字段读取 ——
+        // 将来若放宽前置条件（例如允许改派给已接单但未开工的订单），
+        // 这里不用改，通知逻辑也不会漏掉原陪诊员
+        Long fromCompanionId = order.getCompanionId();
+
+        // ③-⑥ 目标陪诊员必须合格
+        CompanionProfile target = requireReassignableCompanion(dto.getCompanionId(), id);
+
+        // 与陪诊员抢单竞争的唯一保护：条件是「仍是待接单 且 仍无人接单」。
+        // 抢单走的是乐观锁（version），改派走的是这两条 WHERE ——
+        // 两者更新同一行，数据库保证只有一个能改成功，败者拿 3010 / 3003
+        int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .set(CompanionOrder::getCompanionId, target.getUserId())
+                .eq(CompanionOrder::getId, id)
+                .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name())
+                .isNull(CompanionOrder::getCompanionId));
+        if (rows == 0) {
+            throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE,
+                    "订单刚被接走或已被改派，请刷新后重试");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        // 风险等级本操作不改，只在事件里留下「改派发生在哪个等级」
+        FulfillmentRisk risk = FulfillmentRisk.of(order.getFulfillmentRisk());
+        if (risk == null) {
+            risk = FulfillmentRisk.NORMAL;
+        }
+
+        writeReassignEvent(id, risk, SecurityUtils.currentUserId(), reason, now);
+
+        // 审计的 before / after 记的是**陪诊员**而不是订单状态：本操作不改状态，
+        // 两栏都写 PENDING 会让这条日志读起来像「什么都没发生」
+        operLogRecorder.record(OperType.REASSIGN_ORDER, OperTargetType.ORDER, id,
+                order.getOrderNo(),
+                fromCompanionId == null ? "未指派" : String.valueOf(fromCompanionId),
+                String.valueOf(target.getUserId()),
+                "管理员改派：" + reason);
+
+        notifyReassign(order, target, fromCompanionId);
+
+        log.info("管理员改派完成 | orderId={} | {} → {} | adminId={}",
+                id, fromCompanionId, target.getUserId(), SecurityUtils.currentUserId());
+        return ReassignResultVO.of(id, fromCompanionId, target.getUserId(), risk.name());
+    }
+
+    /**
+     * 目标陪诊员的合格判定（V3.1 · T7 的 REFACTOR 落点）。
+     *
+     * <p>四条要求收敛到这一个方法里，避免在主流程上散成四段 {@code if}
+     * ——那样迟早会出现「改派判了三条、批量脚本判了四条」的分叉。</p>
+     *
+     * <p>四条按<b>代价从低到高</b>排序：存在性 → 资质 → 接单状态 → 拒单记录。
+     * 前两条是纯读，后两条才碰档案与拒单表。</p>
+     */
+    private CompanionProfile requireReassignableCompanion(Long companionId, Long orderId) {
+        CompanionProfile target = companionProfileMapper.selectById(companionId);
+        if (target == null) {
+            throw new BusinessException(ResultCode.COMPANION_NOT_FOUND);
+        }
+        AuditStatus auditStatus = AuditStatus.of(target.getAuditStatus());
+        if (auditStatus == null || !auditStatus.isApproved()) {
+            // 资质没过审的账号不能被强行指派：这是绕过审核流程的后门。
+            // 档案缺资质字段（null）同样不放行，与 requireApprovedCompanion 同一口径
+            throw new BusinessException(ResultCode.COMPANION_NOT_AUDITED);
+        }
+        // 接单资格走 isAccepting() 这个唯一判定入口，不写 "AVAILABLE".equals(...) 的裸比较：
+        // 将来再加一个「忙但可接」的状态，散落的字符串比较会漏掉它。
+        // 状态为 null（档案缺字段）同样视为不可接单，不放行
+        WorkStatus workStatus = WorkStatus.of(target.getWorkStatus());
+        if (workStatus == null || !workStatus.isAccepting()) {
+            // 指派给一个已经关掉接单开关的人，等于把这单再挂回无人认领
+            throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE,
+                    "目标陪诊员当前不在接单状态");
+        }
+        Long rejected = orderRejectLogMapper.selectCount(Wrappers.<OrderRejectLog>lambdaQuery()
+                .eq(OrderRejectLog::getOrderId, orderId)
+                .eq(OrderRejectLog::getCompanionId, companionId));
+        if (rejected != null && rejected > 0) {
+            // 他拒过这一单，再指派回去只会被再拒一次，
+            // 而家属在这一轮里多等的正是这十几分钟
+            throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE,
+                    "目标陪诊员曾拒绝过该订单");
+        }
+        return target;
+    }
+
+    /** 改派理由：过合规词表 + 规整空白（与催单备注同一份词表） */
+    private static String normalizeReassignReason(String reason) {
+        String text = reason == null ? "" : reason.trim();
+        String hit = ComplianceCheckUtil.firstHit(text);
+        if (hit != null) {
+            throw new BusinessException(ResultCode.CONTENT_SENSITIVE,
+                    "改派理由包含不合规表述（" + hit + "），请修改后重试");
+        }
+        return text;
+    }
+
+    private void writeReassignEvent(Long orderId, FulfillmentRisk risk,
+                                    Long adminId, String reason, LocalDateTime now) {
+        OrderFulfillmentEvent event = new OrderFulfillmentEvent();
+        event.setOrderId(orderId);
+        event.setEventType(FulfillmentEventType.ORDER_REASSIGNED.name());
+        // 改派不改风险，前后等级相同；这样事件流里这一条仍能读出「当时是什么等级」
+        event.setFromRisk(risk.name());
+        event.setToRisk(risk.name());
+        event.setTriggerSource(TriggerSource.ADMIN.name());
+        event.setOperatorId(adminId);
+        event.setOperatorRole(RoleConstants.ADMIN);
+        event.setRemark(reason);
+        event.setOperateTime(now);
+        fulfillmentEventMapper.insert(event);
+    }
+
+    /**
+     * 三方通知：下单家属 / 目标陪诊员 / 原陪诊员。
+     *
+     * <p>三方各发各的措辞（{@code audience} 占位符区分）：家属要知道「已经安排好了」，
+     * 目标要知道「有一单在等你去接」，原陪诊员要知道「这单换人了」。
+     * 用一条模板三个人看，只会让其中两方读到跟自己无关的信息。</p>
+     */
+    private void notifyReassign(CompanionOrder order, CompanionProfile target, Long fromCompanionId) {
+        Long orderId = order.getId();
+
+        Map<String, Object> familyParams = new HashMap<>(4);
+        familyParams.put("orderNo", order.getOrderNo());
+        familyParams.put("audience", "FAMILY");
+        messageService.send(order.getFamilyId(), MessageType.ORDER_REASSIGNED, orderId, familyParams);
+
+        Map<String, Object> targetParams = new HashMap<>(4);
+        targetParams.put("orderNo", order.getOrderNo());
+        targetParams.put("audience", "COMPANION");
+        messageService.send(target.getUserId(), MessageType.ORDER_REASSIGNED, orderId, targetParams);
+
+        if (fromCompanionId != null && !fromCompanionId.equals(target.getUserId())) {
+            Map<String, Object> formerParams = new HashMap<>(4);
+            formerParams.put("orderNo", order.getOrderNo());
+            formerParams.put("audience", "FORMER_COMPANION");
+            messageService.send(fromCompanionId, MessageType.ORDER_REASSIGNED, orderId, formerParams);
+        }
     }
 
     /* ================================================================== */

@@ -99,6 +99,10 @@
 | 10 | GET | `/api/admin/complaint` | ADMIN | 投诉列表 |
 | 11 | POST | `/api/admin/complaint/{id}/handle` | ADMIN | 处理投诉 |
 | 12 | GET | `/api/admin/oper-log` | ADMIN | 操作日志查询 |
+| 13 | POST | `/api/admin/review/{id}/validity` | ADMIN | 评价有效性裁定（E4） |
+| 14 | GET | `/api/admin/fulfillment/summary` | ADMIN | 履约风险四档计数（V3.1） |
+| 15 | GET | `/api/admin/fulfillment/risk-list` | ADMIN | 风险订单列表（V3.1） |
+| 16 | POST | `/api/admin/order/{id}/reassign` | ADMIN | 改派陪诊员（V3.1） |
 
 ---
 
@@ -531,6 +535,161 @@
   }
 }
 ```
+
+---
+
+## 14. 履约风险计数（V3.1 · T6）
+
+`GET /api/admin/fulfillment/summary`　权限：**ADMIN**　只读，**不写操作日志**
+
+### 响应
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `manualRequired` | int | 需要人工介入的订单数 |
+| `urgent` | int | 履约风险较高的订单数 |
+| `warning` | int | 等待时间较长的订单数 |
+| `normal` | int | 正常等待的订单数 |
+
+```json
+{ "code": 200, "message": "操作成功", "data": { "manualRequired": 1, "urgent": 3, "warning": 5, "normal": 12 } }
+```
+
+### 实现要点
+
+- **四个字段恒定全部返回**，某档为 0 时返回 0 而不是省略字段。
+  「这一档 0 单」和「这一档没统计」在卡片上必须能被区分，字段类型用原语 `int` 从根上杜绝省略。
+- **只统计 `status = 'PENDING'`**，与 §15 的候选集共用同一处定义。
+  已接单的订单风险已回落，计入等于凭空放大问题。
+- 分组键做 `COALESCE` 兜底：列是 `NOT NULL DEFAULT 'NORMAL'`，正常数据不会有 NULL，
+  但人工改库会；分出一个 NULL 组会让前端无键可取。
+- 未匹配到枚举的脏值并入 `normal`，保证**四档之和 = 待接单总数**——
+  对不上账的看板没人敢用。
+
+---
+
+## 15. 风险订单列表（V3.1 · T6）
+
+`GET /api/admin/fulfillment/risk-list`　权限：**ADMIN**　只读，**不写操作日志**
+
+### 请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|:--:|---|
+| `page` / `size` | Long | 否 | 沿用分页基类，`size` 上限 100 |
+| `risk` | String | 否 | `NORMAL` / `WARNING` / `URGENT` / `MANUAL_REQUIRED` 之一；**缺省返回全部等级** |
+
+**排序固定为「风险等级降序 → 等待时长降序 → id 降序」，不开放 `sortField`**：
+这一页面的唯一正确读法就是先看最坏的几单。
+
+### 响应
+
+```json
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "total": 9,
+    "records": [
+      {
+        "orderId": 1001,
+        "orderNo": "NL20**********0001",
+        "elderName": "张*海",
+        "hospital": "市第一人民医院",
+        "department": "心内科",
+        "visitTime": "2026-10-18 09:00:00",
+        "fulfillmentRisk": "URGENT",
+        "fulfillmentRiskLabel": "履约风险较高",
+        "waitMinutes": 45,
+        "urgeCount": 2,
+        "adminCoordinated": false,
+        "createTime": "2026-10-17 09:30:00"
+      }
+    ]
+  }
+}
+```
+
+### 错误场景
+
+| code | 触发条件 |
+|---|---|
+| 400 | `risk` 不是四档之一（**不静默返回全量**） |
+
+### 实现要点
+
+- **姓名与订单号一律脱敏**：订单详情的全名豁免只适用于已过归属校验的详情页。
+  列表是可被反复扫读的界面，一次投屏就把多名老人的姓名连同订单号带走了。
+  需要核对全名时走行内「查看详情」（订单详情接口，相关方口径）。
+- **排序整段走 `last()`**：MyBatis-Plus 的 `orderBy*` 只接受列，
+  塞不进 `FIELD(...)` 这样的表达式；而「既 orderBy 又 last」会产出两个 ORDER BY 的非法 SQL。
+  因此这一查询**不能再调 `orderBy*`**。
+- **等待时长降序 = `create_time` 升序**：等得越久下单越早，等待时长本身不落库。
+- 不在四档内的脏值在 `FIELD` 中返回 0，会排在**最前**——异常数据优先暴露。
+- `adminCoordinated` 由事件流水批量判定（`trigger_source = 'ADMIN'`），
+  覆盖协调与改派两类事件，将来新增管理员动作时不必改判定条件。
+
+---
+
+## 16. 改派陪诊员（V3.1 · T7）
+
+`POST /api/admin/order/{id}/reassign`　权限：**ADMIN**
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 约束 | 说明 |
+|---|---|:--:|---|---|
+| `companionId` | Long | ✓ | 目标陪诊员的用户 ID | 改派给谁 |
+| `reason` | String | ✓ | 10–200 字符，且过合规词表 | 改派理由（写入审计与三方通知） |
+
+### 响应
+
+```json
+{
+  "code": 200,
+  "message": "已改派",
+  "data": { "orderId": 1001, "fromCompanionId": null, "toCompanionId": 302, "fulfillmentRisk": "URGENT" }
+}
+```
+
+### 前置校验（顺序固定）
+
+| # | 条件 | 失败码 |
+|---|---|---|
+| ① | 理由过合规词表 | `6003`（`CONTENT_SENSITIVE`） |
+| ② | 订单存在 | `3001` |
+| ③ | `status == PENDING` 且 `companionId IS NULL` | `3010` |
+| ④ | 目标陪诊员存在 | `2007` |
+| ⑤ | 目标 `auditStatus == APPROVED` | `2003` |
+| ⑥ | 目标 `workStatus == AVAILABLE` | `3010` |
+| ⑦ | 目标未拒过该单 | `3010` |
+
+### 边界（改动前必读）
+
+**本端点只处理「还没人接」的订单。** 已 `ACCEPTED` / `IN_SERVICE` 的订单要换人属纠纷处理，
+走 §9 的管理员仲裁通道（强制终态并通知双方），**不在本端点处理** ——
+同一件事只允许存在一条改变订单归属的路径，否则事后没人说得清这笔单是怎么换的人。
+
+### 事务边界
+
+同一事务内四件事，任一步失败整体回滚：
+
+1. **条件更新** `companion_id`，条件是「`status = PENDING` **且** `companion_id IS NULL`」；
+2. 写履约事件 `ORDER_REASSIGNED`（`trigger_source = ADMIN`，理由入备注）；
+3. 写操作审计（`OperType.REASSIGN_ORDER`，**before / after 记的是陪诊员**而不是订单状态 ——
+   本操作不改状态，两栏都写 `PENDING` 会让这条日志读起来像「什么都没发生」）；
+4. 发三方站内信：下单家属 / 目标陪诊员 / 原陪诊员（`fromCompanionId` 非空时）。
+
+### 状态机
+
+**本操作不改变 `status`**（改完仍是 `PENDING`），因此**不经过订单状态流转唯一入口**（ADR-0010）。
+`status` 仍由陪诊员接单时经该入口变更。
+
+### 并发
+
+与陪诊员抢单竞争同一行：改派靠上面的条件更新，抢单走既有乐观锁。
+数据库保证只有一个能改成功 —— 败者分别得到 `3010` / `3003`，
+且改派败者**不留事件、不发通知、不写审计**（回滚干净）。
 
 ---
 

@@ -14,9 +14,11 @@ import org.company.nianglin.dto.OrderCompleteDTO;
 import org.company.nianglin.dto.OrderCreateDTO;
 import org.company.nianglin.dto.OrderHallQuery;
 import org.company.nianglin.dto.OrderQuery;
+import org.company.nianglin.dto.OrderUrgeDTO;
 import org.company.nianglin.dto.OrderRejectDTO;
 import org.company.nianglin.dto.FeeItemCreateDTO;
 import org.company.nianglin.service.OrderFeeItemService;
+import org.company.nianglin.service.FulfillmentService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
@@ -24,6 +26,8 @@ import org.company.nianglin.vo.OrderFeeItemSummaryVO;
 import org.company.nianglin.vo.OrderFeeItemVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderTimelineVO;
+import org.company.nianglin.vo.OrderFulfillmentVO;
+import org.company.nianglin.vo.OrderUrgeResultVO;
 import org.company.nianglin.vo.OrderVO;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -66,6 +70,8 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService orderService;
+    /** 履约保障（V3.1）——催单 */
+    private final FulfillmentService fulfillmentService;
     private final OrderFeeItemService orderFeeItemService;
 
     /* ==================== 查询 ==================== */
@@ -117,6 +123,17 @@ public class OrderController {
         return Result.success("下单成功，正在为您匹配陪诊员", orderService.create(dto));
     }
 
+    @Operation(summary = "订单履约详情（V3.1）",
+            description = "返回订单当前的履约风险等级、等待时长、催单次数与完整事件流水"
+                    + "（按发生时间升序，从下单到当前）。"
+                    + "可见性与订单详情完全一致：下单家属 / 接单陪诊员 / 就诊老人 / 管理员，其余 3004。"
+                    + "事件流为空时返回空数组，不返回 null")
+    @GetMapping("/{id}/fulfillment")
+    public Result<OrderFulfillmentVO> fulfillmentDetail(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("id") Long id) {
+        return Result.success(orderService.fulfillmentDetail(id));
+    }
+
     @Operation(summary = "取消订单",
             description = "仅下单家属可取消，且仅「待接单」状态可取消（否则 3006）。"
                     + "已接单的订单需取消必须走管理员纠纷处理，避免陪诊员白跑")
@@ -127,6 +144,19 @@ public class OrderController {
             @Valid @RequestBody OrderCancelDTO dto) {
         orderService.cancel(id, dto);
         return Result.success("订单已取消", null);
+    }
+
+    @Operation(summary = "催促接单（V3.1）",
+            description = "仅下单家属、仅「待接单」、且履约风险已达「较高」时可催（否则 3008）。"
+                    + "受冷却期与次数上限约束，过于频繁返回 3009。"
+                    + "催单只会提醒**当前可接单**的陪诊员，不会打断休息中或离线的陪诊员。"
+                    + "本接口**不改变订单状态**")
+    @PreAuthorize("hasRole('" + RoleConstants.FAMILY + "')")
+    @PostMapping("/{id}/urge")
+    public Result<OrderUrgeResultVO> urge(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("id") Long id,
+            @Valid @RequestBody(required = false) OrderUrgeDTO dto) {
+        return Result.success("已提醒陪诊员尽快接单", fulfillmentService.urge(id, dto));
     }
 
     /* ==================== 陪诊员操作 ==================== */

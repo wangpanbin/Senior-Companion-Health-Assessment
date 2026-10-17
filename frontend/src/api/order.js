@@ -19,7 +19,13 @@ export function listMyOrders(params) {
   return request({ url: '/order', method: 'get', params })
 }
 
-/** 待接单订单大厅（陪诊员） */
+/**
+ * 待接单订单大厅（陪诊员）
+ *
+ * 可选 sortBy 白名单 V3.1 只放行 RECOMMEND，缺省取后端配置 nianglin.fulfillment.hall-default-sort；
+ * 非法值（含 V3.4 才开放的距离 / 时间匹配 / 收益优先）后端返回 400 且不静默降级为推荐序，
+ * 所以本页不传这个参数 —— 只有一个排序项时没有选择器，也就没有需要传的取值。
+ */
 export function listOrderHall(params) {
   return request({ url: '/order/hall', method: 'get', params })
 }
@@ -27,6 +33,17 @@ export function listOrderHall(params) {
 /** 订单详情 */
 export function getOrder(orderId) {
   return request({ url: `/order/${orderId}`, method: 'get' })
+}
+
+/**
+ * 家属催单（V3.1 · T5）
+ * 对应文档：docs/api/03-order.md §11
+ *
+ * 能否催单由 OrderVO.canUrge 决定，冷却期与次数上限一律在服务端判定，
+ * 前端不做本地兜底。被拒（3008 不可催 / 3009 过于频繁）时由请求拦截器统一提示。
+ */
+export function urgeOrder(orderId, data) {
+  return request({ url: `/order/${orderId}/urge`, method: 'post', data })
 }
 
 /** 取消订单（仅「待接单」状态，家属） */

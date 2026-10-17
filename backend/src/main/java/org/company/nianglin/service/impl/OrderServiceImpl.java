@@ -13,7 +13,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.config.FulfillmentProperties;
 import org.company.nianglin.constant.AuditStatus;
+import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
@@ -43,6 +45,7 @@ import org.company.nianglin.service.support.OrderTransitionService;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.ElderService;
+import org.company.nianglin.service.FulfillmentService;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderFeeItemService;
 import org.company.nianglin.service.OrderService;
@@ -50,6 +53,7 @@ import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
+import org.company.nianglin.vo.OrderFulfillmentVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
@@ -71,8 +75,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -150,6 +156,10 @@ public class OrderServiceImpl implements OrderService {
     /** 订单状态流转唯一入口（ADR-0010）——本类所有改状态的路径都必须经由它 */
     private final OrderTransitionService orderTransitionService;
     private final OrderFeeItemService orderFeeItemService;
+    /** 履约保障（V3.1）——下单登记事件与风险扫描；不改订单状态 */
+    private final FulfillmentService fulfillmentService;
+    /** 履约保障配置（V3.1 · T1）——大厅缺省排序键取自 nianglin.fulfillment.hall-default-sort */
+    private final FulfillmentProperties fulfillmentProperties;
 
     /* ================================================================== */
     /* 1. 创建订单                                                         */
@@ -188,10 +198,17 @@ public class OrderServiceImpl implements OrderService {
         // 乐观锁字段必须显式给初值：@Version 参与 UPDATE 的 WHERE 条件，
         // 让它为 null 会让「第一次接单」永远匹配不上
         order.setVersion(0);
+        // 履约风险显式给初值而不是依赖库默认值：实体随后会被回填进 VO，
+        // 若这里留 null，create 的返回值与重新查库的值会对不上。
+        order.setFulfillmentRisk(FulfillmentRisk.NORMAL.name());
+        order.setUrgeCount(0);
         orderMapper.insert(order);
 
         writeStatusLog(order.getId(), null, OrderStatus.PENDING, me, "下单成功");
         notifyOrderCreated(order);
+        // 履约事件与订单同事务：订单建了却没有「开始等」的时间戳，
+        // 风险中心就永远只能显示一个孤立的等待时长
+        fulfillmentService.registerCreated(order.getId(), me.userId(), order.getOrderNo());
 
         log.info("陪诊订单已创建 | orderId={} | orderNo={} | familyId={} | elderId={}",
                 order.getId(), order.getOrderNo(), me.userId(), elder.getId());
@@ -252,13 +269,30 @@ public class OrderServiceImpl implements OrderService {
     /* 3. 待接单订单大厅                                                   */
     /* ================================================================== */
 
+    /**
+     * 大厅排序键白名单：排序键 → 排序列（{@code ORDER BY} 片段，V3.1 · T8）。
+     *
+     * <p>V3.1 <b>只开放 {@code RECOMMEND} 一种排序</b>。距离 / 时间匹配 / 收益优先
+     * 三个维度随 V3.4 的加权规则引擎一并开放 —— {@code service_area} /
+     * {@code available_time} 现在是自由文本，此时把四种排序写死，V3.4 必然推翻，
+     * 所以宁可只给一种，也不给一个注定要改的实现。</p>
+     *
+     * <p>用映射表而不是 {@code if} / {@code switch} 分支：V3.4 加新维度时，
+     * 「白名单放行」与「排序实现」仍然是同一处改动，不会出现
+     * 「放行了却没实现」这种半吊子状态。</p>
+     */
+    private static final Map<String, Function<CompanionProfile, String>> HALL_SORTS = Map.of(
+            "RECOMMEND", OrderServiceImpl::recommendOrderBy);
+
     @Override
     public PageResult<OrderVO> hall(OrderHallQuery query) {
         LoginUser me = SecurityUtils.currentUser();
 
         // 双重拦截的第二重：角色注解只能保证"是 COMPANION"，
-        // 保证不了"资质已经审过了"
-        requireApprovedCompanion(me.userId());
+        // 保证不了"资质已经审过了"。排序键的校验排它后面：
+        // 没资质的人连大厅都进不去，先报 2003 比先报参数错更贴近他此刻遇到的问题
+        CompanionProfile profile = requireApprovedCompanion(me.userId());
+        String sortKey = resolveHallSortKey(query.getSortBy());
 
         LambdaQueryWrapper<CompanionOrder> wrapper = Wrappers.<CompanionOrder>lambdaQuery()
                 .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name())
@@ -278,11 +312,87 @@ public class OrderServiceImpl implements OrderService {
         }
         // 大厅按「就诊时间」筛，因为陪诊员是按住哪天有空来接单的
         applyDateRange(wrapper, CompanionOrder::getVisitTime, query.getStartDate(), query.getEndDate());
-        wrapper.orderByAsc(CompanionOrder::getVisitTime).orderByAsc(CompanionOrder::getId);
+        wrapper.last(HALL_SORTS.get(sortKey).apply(profile));
 
         Page<CompanionOrder> page = orderMapper.selectPage(query.toMpPage(), wrapper);
         return toVoPage(page, true);
     }
+
+    /**
+     * 解析大厅排序键：请求不传时取配置项，请求与配置走<b>同一份白名单</b>。
+     *
+     * <p>不在白名单里一律 {@code 400}，不回落推荐序 —— 静默降级会让陪诊员以为
+     * 拿到的是「按距离排」的结果，实际是推荐序，拿错误的前提决定接不接单比
+     * 直接报错更糟。配置值同样过白名单：「配置写错」和「参数写错」的后果完全一样，
+     * 都是拿不到实现的排序键。</p>
+     */
+    private String resolveHallSortKey(String requestedSort) {
+        String raw = StringUtils.hasText(requestedSort)
+                ? requestedSort.trim()
+                : StringUtils.hasText(fulfillmentProperties.getHallDefaultSort())
+                        ? fulfillmentProperties.getHallDefaultSort().trim()
+                        : "";
+        String sortKey = raw.toUpperCase(Locale.ROOT);
+        if (!HALL_SORTS.containsKey(sortKey)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的排序维度："
+                    + (raw.isEmpty() ? "（空值）" : raw) + "；该维度将在后续版本开放，当前仅支持 "
+                    + String.join(" / ", HALL_SORTS.keySet()));
+        }
+        return sortKey;
+    }
+
+    /**
+     * 推荐序的三级排序键：就诊时间升序 → 服务区域匹配者优先 → ID 升序兜底。
+     *
+     * <p>ID 那一级不是冗余：同一就诊时间下若没有它，同一批数据在两页之间可能重排，
+     * 分页就不重不漏了。</p>
+     */
+    private static String recommendOrderBy(CompanionProfile profile) {
+        return "ORDER BY visit_time ASC" + areaMatchRank(profile) + ", id ASC";
+    }
+
+    /**
+     * 「服务区域匹配者优先」这一级的排序列，命中排 0、未命中排 1。
+     *
+     * <p><b>包含式匹配，不做任何推断</b>：订单表没有独立的服务区域字段，因此拿订单的
+     * 医院名与地址去包含陪诊员档案里的服务区域 / 可服务时段，四个条件任一命中即算匹配。
+     * 用 {@code LOCATE} 而不是 {@code LIKE} —— LIKE 会把档案里的 {@code %} / {@code _}
+     * 当通配符，那等于替陪诊员猜了一个他没写过的范围。</p>
+     *
+     * <p>两栏皆空时返回空串：不产出这一级，而不是让「空」匹配一切。</p>
+     */
+    private static String areaMatchRank(CompanionProfile profile) {
+        List<String> conditions = new ArrayList<>();
+        appendMatchConditions(conditions, profile.getServiceArea());
+        appendMatchConditions(conditions, profile.getAvailableTime());
+        if (conditions.isEmpty()) {
+            return "";
+        }
+        return ", CASE WHEN " + String.join(" OR ", conditions) + " THEN 0 ELSE 1 END";
+    }
+
+    /** 一栏档案文本对应两个匹配条件：医院名、地址 */
+    private static void appendMatchConditions(List<String> conditions, String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            return;
+        }
+        String literal = sqlStringLiteral(keyword.trim());
+        conditions.add("LOCATE(" + literal + ", hospital) > 0");
+        conditions.add("LOCATE(" + literal + ", address) > 0");
+    }
+
+    /**
+     * 自由文本 → SQL 字符串字面量。
+     *
+     * <p>MyBatis-Plus 的排序只接受列名（{@code SFunction}），{@code last()} 是唯一能把
+     * 表达式放进 ORDER BY 的口子，而它不接绑定参数，所以档案文本必须在 Java 侧转义。
+     * 单引号翻倍是 SQL 标准写法，与 {@code sql_mode} 无关；这里用不到反斜杠转义，
+     * 因为 {@code LOCATE} 没有通配符语义。</p>
+     */
+    private static String sqlStringLiteral(String raw) {
+        return "'" + raw.replace("'", "''") + "'";
+    }
+
 
     /* ================================================================== */
     /* 4. 订单详情                                                         */
@@ -299,6 +409,17 @@ public class OrderServiceImpl implements OrderService {
                 elder == null ? null : ageOf(elder),
                 companionName,
                 readPhotoList(order.getServicePhotos()));
+    }
+
+    /* ================================================================== */
+    /* 4b. 履约详情（V3.1）                                                */
+    /* ================================================================== */
+
+    @Override
+    public OrderFulfillmentVO fulfillmentDetail(Long orderId) {
+        // 鉴权完全复用 detail 的参与方判定 —— 不为履约另开一套可见性规则
+        CompanionOrder order = requireInvolved(orderId);
+        return fulfillmentService.fulfillmentDetail(order);
     }
 
     /* ================================================================== */

@@ -83,6 +83,29 @@ def parse_ddl(text):
     return tables
 
 
+def parse_alters(text):
+    """返回 {table: [(col, sql_type, not_null, comment), ...]}，来自 ALTER TABLE ... ADD COLUMN。
+
+    之所以独立成函数而不是在 parse_ddl 里顺手做：增量迁移（V4/V5/V6）与建表脚本
+    （V1）**不是同一个文件**，而 parse_ddl 是逐文件调用的。在 parse_ddl 里找
+    ALTER TABLE 时，V6 那一遍的上下文里根本没有 companion_order 的 CREATE，
+    于是增量列会被无声丢弃。这里先全量收集，再由调用方统一合并。
+    """
+    alters = {}
+    for m in re.finditer(
+            r"ALTER TABLE\s+`(\w+)`\s+ADD COLUMN\s+`(\w+)`\s+"
+            r"([A-Za-z]+(?:\(\d+\))?)((?:[^']|'')*)",
+            text):
+        table, col, sql_type, tail = m.group(1), m.group(2), m.group(3), m.group(4)
+        not_null = "NOT NULL" in tail.upper()
+        ccm = re.search(r"COMMENT\s+'((?:[^']|'')*)'", tail)
+        comment = ccm.group(1).replace("''", "'") if ccm else ""
+        alters.setdefault(table, [])
+        alters[table] = [c for c in alters[table] if c[0] != col]
+        alters[table].append((col, sql_type, not_null, comment))
+    return alters
+
+
 def gen_entity(table, table_comment, cols):
     cls = pascal_table(table)
     fields = [c for c in cols if c[0] not in BASE_COLS]
@@ -184,10 +207,27 @@ def main():
                         help="仅覆盖指定表的 Entity 与基础 Mapper；不删除其它文件")
     args = parser.parse_args()
     tables = {}
+    alters = {}
     for path in sorted(glob.glob(SQL_GLOB)):
         with open(path, "r", encoding="utf-8") as f:
-            for table, comment, cols in parse_ddl(f.read()):
+            content = f.read()
+            for table, comment, cols in parse_ddl(content):
                 tables[table] = (table, comment, cols)
+            # ALTER 与 CREATE 可能在不同文件里，先全量收集再统一合并
+            for table, extra in parse_alters(content).items():
+                alters.setdefault(table, []).extend(extra)
+
+    # 合并增量列：同名以最后一次 ALTER 为准（后写的迁移覆盖先写的）
+    for table, extra_cols in alters.items():
+        entry = tables.get(table)
+        if entry is None:
+            continue
+        cols = entry[2]
+        for col, sql_type, not_null, comment in extra_cols:
+            cols = [c for c in cols if c[0] != col]
+            cols.append((col, sql_type, not_null, comment))
+        tables[table] = (entry[0], entry[1], cols)
+
     unknown = set(args.tables) - tables.keys()
     if unknown:
         parser.error("找不到建表定义：" + ", ".join(sorted(unknown)))

@@ -1,6 +1,7 @@
 package org.company.nianglin.service;
 
 import org.company.nianglin.dto.CompanionApplyDTO;
+import org.company.nianglin.dto.CompanionWorkStatusUpdateDTO;
 import org.company.nianglin.vo.CompanionApplicationVO;
 import org.company.nianglin.vo.CompanionApplyResultVO;
 import org.company.nianglin.vo.CompanionProfileVO;
@@ -31,4 +32,21 @@ public interface CompanionService {
 
     /** 陪诊员公开资料（不返回身份证、电话、证件、驳回原因） */
     CompanionProfileVO publicProfile(Long companionUserId);
+
+    /**
+     * 陪诊员切换自己的接单状态（V3.1 · T0）。
+     *
+     * <p><b>不变量：只改档案上的接单状态，不触碰任何在手订单。</b>
+     * 已 {@code ACCEPTED} / {@code IN_SERVICE} 的订单继续按订单状态机推进 ——
+     * 「自主控制接单」不能被实现成「自主放弃在手服务」。</p>
+     *
+     * <p>判定顺序：先看资质（未通过返回 {@code 2003}），再看状态值是否合法。
+     * 资质已通过但状态写错时，优先报「状态值非法」而不是「资质未通过」，
+     * 因为前者才是用户此刻真正要改的东西。</p>
+     *
+     * @throws org.company.nianglin.exception.BusinessException 2003 资质未通过 /
+     *                                                         2007 无陪诊员档案 /
+     *                                                         400 状态字面量非法
+     */
+    CompanionProfileVO updateWorkStatus(CompanionWorkStatusUpdateDTO dto);
 }

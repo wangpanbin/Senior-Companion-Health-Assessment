@@ -3,10 +3,12 @@ package org.company.nianglin.vo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.util.MaskUtil;
+import org.company.nianglin.util.TimeUtil;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -99,6 +101,27 @@ public class OrderVO {
 
     @Schema(description = "订单状态中文", example = "已接单")
     private String statusLabel;
+
+    /* ================================================================== */
+    /* 履约风险（V3.1）                                                   */
+    /* ================================================================== */
+
+    @Schema(description = "履约风险等级；**与订单状态正交**，仅「待接单」时有意义，"
+            + "其余状态恒为 NORMAL", example = "URGENT")
+    private String fulfillmentRisk;
+
+    @Schema(description = "履约风险中文", example = "履约风险较高")
+    private String fulfillmentRiskLabel;
+
+    @Schema(description = "从下单到当前的等待分钟数；非待接单时为 0", example = "45")
+    private Integer waitMinutes;
+
+    @Schema(description = "累计催单次数", example = "1")
+    private Integer urgeCount;
+
+    @Schema(description = "前端据此决定是否展示「催促接单」按钮。"
+            + "**这不是安全边界** —— 服务端仍会二次校验状态、风险、冷却期与次数上限")
+    private Boolean canUrge;
 
     @Schema(description = "服务费（两位小数字符串）", example = "128.00")
     private String fee;
@@ -204,6 +227,11 @@ public class OrderVO {
 
     /** 三套口径共用的基础字段 */
     private static OrderVO base(CompanionOrder o) {
+        FulfillmentRisk risk = riskOf(o);
+        boolean pending = OrderStatus.PENDING.name().equals(o.getStatus());
+        // 非待接单一律收敛成 NORMAL：已经被接走或已取消的订单再挂一条
+        // 「等待时间较长 / 需要人工介入」，是在向家属展示一条已经不成立的告警
+        FulfillmentRisk visible = pending ? risk : FulfillmentRisk.NORMAL;
         return new OrderVO()
                 .setId(o.getId())
                 .setOrderNo(o.getOrderNo())
@@ -212,8 +240,28 @@ public class OrderVO {
                 .setVisitTime(o.getVisitTime())
                 .setStatus(o.getStatus())
                 .setStatusLabel(OrderStatus.labelOf(o.getStatus()))
+                .setFulfillmentRisk(visible.name())
+                .setFulfillmentRiskLabel(visible.getLabel())
+                // 非待接单时等待时长归零：已接单的订单再说「等了多久」没有意义，
+                // 家属看到「等待 300 分钟」会以为订单坏了
+                .setWaitMinutes(pending ? waitMinutes(o) : 0)
+                .setUrgeCount(o.getUrgeCount() == null ? 0 : o.getUrgeCount())
+                // canUrge 只表达「此刻点了会不会被拒」，不表达「点了就会成功」：
+                // 冷却期与次数上限在服务端判定，前端拿不到也不需要
+                .setCanUrge(pending && visible.atLeast(FulfillmentRisk.URGENT))
                 .setFee(money(o.getFee()))
                 .setCreateTime(o.getCreateTime());
+    }
+
+    /** 库里为 NULL 视为 NORMAL —— V6 之前的订单没有这一列值 */
+    private static FulfillmentRisk riskOf(CompanionOrder o) {
+        FulfillmentRisk risk = FulfillmentRisk.of(o.getFulfillmentRisk());
+        return risk == null ? FulfillmentRisk.NORMAL : risk;
+    }
+
+    /** 等待时长不落库，每次装配现算；钳制规则的唯一出处见 {@link TimeUtil#elapsedMinutes} */
+    private static int waitMinutes(CompanionOrder o) {
+        return TimeUtil.elapsedMinutes(o.getCreateTime(), LocalDateTime.now());
     }
 
     /** 金额一律两位小数字符串；空值保持 {@code null}（配合 non_null 直接消失） */

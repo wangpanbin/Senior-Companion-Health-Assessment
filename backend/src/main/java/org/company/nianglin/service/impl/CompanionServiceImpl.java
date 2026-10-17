@@ -11,6 +11,7 @@ import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.WorkStatus;
 import org.company.nianglin.dto.CertificateItem;
 import org.company.nianglin.dto.CompanionApplyDTO;
+import org.company.nianglin.dto.CompanionWorkStatusUpdateDTO;
 import org.company.nianglin.entity.CompanionAuditRecord;
 import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.exception.BusinessException;
@@ -137,6 +138,63 @@ public class CompanionServiceImpl implements CompanionService {
             throw new BusinessException(ResultCode.COMPANION_NOT_FOUND);
         }
         return CompanionProfileVO.ofPublic(profile);
+    }
+
+    /* ================================================================== */
+    /* 切换接单状态（V3.1 · T0）                                           */
+    /* ================================================================== */
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>本方法<b>只写 companion_profile.work_status 一列</b>。
+     * 这是刻意的：接单状态管的是「要不要给我派新单」，不是「我手上的单还算不算数」。
+     * 两者混在一起会产出一个很坏的结果 —— 陪诊员为了下线休息，把三笔在服务中的订单一起取消掉，
+     * 而这恰恰是平台最不能接受的服务中断。</p>     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CompanionProfileVO updateWorkStatus(CompanionWorkStatusUpdateDTO dto) {
+        Long userId = SecurityUtils.currentUserId();
+
+        // 先解析状态值：让「你填错了」比「你没资质」先报出来。
+        // 一个资质已通过的陪诊员把状态写成 BUSY 时，他此刻要改的显然是那个错字。
+        WorkStatus target = WorkStatus.of(dto.getWorkStatus() == null ? null : dto.getWorkStatus().trim());
+        if (target == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "接单状态只能是 " + availableWorkStatusLiterals() + " 之一");
+        }
+
+        CompanionProfile profile = findProfile(userId);
+        if (profile == null) {
+            throw new BusinessException(ResultCode.COMPANION_NOT_FOUND);
+        }
+        if (!AuditStatus.APPROVED.name().equals(profile.getAuditStatus())) {
+            throw new BusinessException(ResultCode.COMPANION_NOT_AUDITED);
+        }
+
+        LambdaUpdateWrapper<CompanionProfile> update = Wrappers.<CompanionProfile>lambdaUpdate()
+                .eq(CompanionProfile::getId, profile.getId())
+                .set(CompanionProfile::getWorkStatus, target.name());
+        companionProfileMapper.update(null, update);
+
+        log.info("陪诊员接单状态已切换 | userId={} | from={} | to={}",
+                userId, profile.getWorkStatus(), target.name());
+
+        // 回填的是「切换后」的状态快照，前端可就地更新开关，不用再发一次查询
+        profile.setWorkStatus(target.name());
+        return CompanionProfileVO.ofPublic(profile);
+    }
+
+    /** 合法状态字面量列表，用于拼装可指导用户改正的错误消息 */
+    private static String availableWorkStatusLiterals() {
+        StringBuilder sb = new StringBuilder();
+        for (WorkStatus s : WorkStatus.values()) {
+            if (!sb.isEmpty()) {
+                sb.append(" / ");
+            }
+            sb.append(s.name());
+        }
+        return sb.toString();
     }
 
     /* ================================================================== */

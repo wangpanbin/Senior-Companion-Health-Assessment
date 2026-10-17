@@ -41,6 +41,13 @@
 | `MEDICATION_REMIND` | 用药提醒 | 漏服扫描（M6） | 下单家属 / 绑定家属 |
 | `COMPLAINT_SUBMITTED` | 新投诉待处理 | 家属提交投诉（M7） | **全部管理员** + 被投诉方 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 管理员处理（M9） | 投诉双方 |
+| `REVIEW_REPLIED` | 评价被回复 | 陪诊员回复评价（E4） | 评价人（家属） |
+| `REVIEW_APPEAL_SUBMITTED` | 收到评价申诉 | 陪诊员对评价申诉（E4） | 被申诉家属 + **全部管理员** |
+| `REVIEW_INVALIDATED` | 评价被裁定无效 | 管理员裁定（E4） | 评价家属 + 陪诊员 |
+| `FULFILLMENT_WARNING` | 订单匹配时间较长 | 风险升为「等待时间较长」（V3.1） | 下单家属 |
+| `FULFILLMENT_URGENT` | 订单需要尽快安排陪诊员 | 风险升为「履约风险较高」（V3.1） | 下单家属 |
+| `ORDER_URGED` | 有订单在等待陪诊员 | 家属催单（V3.1） | 全部资质已过审且处于接单中的陪诊员 |
+| `ORDER_REASSIGNED` | 订单已改派陪诊员 | 管理员改派（V3.1） | 下单家属 + 目标陪诊员 + 原陪诊员（若有） |
 | `SYSTEM_NOTICE` | 系统公告 | 管理员手动发布 | 全部用户 |
 
 ---

@@ -64,3 +64,17 @@ export function bindElder(data) {
 export function unbindElder(elderId) {
   return request({ url: `/user/elder/${elderId}/bind`, method: 'delete' })
 }
+
+/**
+ * 切换陪诊员接单状态（V3.1 · T0）
+ *
+ * 只影响新订单匹配，不影响已接订单 —— 已接单/服务中的订单继续按状态机推进。
+ * @param {'AVAILABLE'|'REST'|'OFFLINE'} workStatus
+ */
+export function updateCompanionWorkStatus(workStatus) {
+  return request({
+    url: '/user/companion/work-status',
+    method: 'put',
+    data: { workStatus }
+  })
+}

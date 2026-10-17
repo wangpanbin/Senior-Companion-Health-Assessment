@@ -81,6 +81,8 @@ export const ROUTES = {
   adminComplaint: '/admin/complaint',
   adminExport: '/admin/export',
   adminOperLog: '/admin/oper-log',
+  /** V3.1 履约风险中心（W-10） */
+  adminFulfillment: '/admin/fulfillment',
   chatSessions: '/chat',
   chatRoom: (orderId) => `/chat/${orderId}`,
   adminChatViewer: '/admin/chat',

@@ -102,6 +102,35 @@ nianglin:
     auto-cancel-minutes: 60
     # 打卡坐标允许偏离订单地址的最大距离（米），用于防虚假打卡
     checkin-max-distance-meters: 2000
+  # 履约保障（V3.1 · T1）
+  # 风险等级由「订单已等待多少分钟」判定，判定逻辑在 FulfillmentRiskEvaluator（纯函数）。
+  # ⚠️ 三个阈值必须严格递增，否则应用启动失败（FulfillmentRiskEvaluator#validateThresholds）；
+  #    这是刻意的：反向配置（如 紧急 10 / 预警 30）会表现为「先紧急后预警」。
+
+  #    没人能解释，且要等到事故现场才发现。
+  # 阈值已于 2026-10-17 由产品确认：预警线 10 分钟（URGENT 30 / MANUAL_REQUIRED 120 同步沿用）。
+  fulfillment:
+    # 等待达到该分钟数升为 WARNING（等待时间较长，系统正在扩大匹配范围）
+    warning-minutes: 10
+    # 升为 URGENT（履约风险较高，此时开放家属催单）
+    urgent-minutes: 30
+    # 升为 MANUAL_REQUIRED（需管理员人工介入，出现在履约风险中心红区）
+    manual-required-minutes: 120
+    # 家属两次催单之间的最小间隔（分钟），防止把陪诊员刷到关接单
+    urge-cooldown-minutes: 10
+    # 单笔订单允许的催单次数上限
+    urge-max-times: 3
+    # 风险扫描任务总开关；关掉后 @Scheduled 方法不注册（压测 / 排查时用）
+    scheduler-enabled: true
+    # 单轮扫描的候选订单上限；超出部分留给下一轮，避免一轮跑太久超过锁 TTL
+    scan-batch: 200
+    # 扫描间隔（毫秒），默认 5 分钟
+    scheduler-interval-ms: 300000
+    # 首次扫描前的延迟（毫秒），避开应用启动瞬间的数据库冷启动高峰
+    scheduler-initial-delay-ms: 60000
+    # 订单大厅默认排序。V3.1 只实现 RECOMMEND（时间临近 + 同服务区域优先）；
+    # 传其它值一律 400 而不是静默降级 —— 加权规则引擎在 V3.4 才开放。
+    hall-default-sort: RECOMMEND
   # 评价（E4 评价公信力闭环）
   review:
     # 评价提交后多少日内可发起 REVIEW_APPEAL 申诉；超时由 Service 层返回 409。

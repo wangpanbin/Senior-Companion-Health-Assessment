@@ -52,6 +52,35 @@ public enum MessageType {
      * 裁定理由前 30 字摘要。</p>
      */
     REVIEW_INVALIDATED("评价被裁定无效", MessageBizType.ORDER),
+    /**
+     * 订单等待较久，风险升为「等待时间较长」（V3.1）。
+     *
+     * <p>接收人是<b>下单家属</b>，{@code bizId=orderId}。文案只陈述事实
+     * （「还在等、系统在扩大匹配范围」），不含任何医疗判断。</p>
+     */
+    FULFILLMENT_WARNING("订单匹配时间较长", MessageBizType.ORDER),
+    /**
+     * 订单履约风险较高（V3.1）。
+     *
+     * <p>接收人是下单家属。此时家属已可催单，文案不主动教用户去催 ——
+     * 按钮本身就在订单详情里，站内信只负责告知状态变化。</p>
+     */
+    FULFILLMENT_URGENT("订单需要尽快安排陪诊员", MessageBizType.ORDER),
+    /**
+     * 家属催单（V3.1）。
+     *
+     * <p>接收人是<b>全部资质已通过且处于可接单状态的陪诊员</b>，
+     * {@code bizId=orderId}。不是管理员 —— 管理员的入口是履约风险中心，
+     * 不是站内信；把两者混在一起会让管理员的消息列表变成噪音源。</p>
+     */
+    ORDER_URGED("有订单在等待陪诊员", MessageBizType.ORDER),
+    /**
+     * 订单改派陪诊员（V3.1 · T7）。
+     *
+     * <p>接收人是下单家属 + 目标陪诊员 + 原陪诊员（若有），
+     * {@code bizId=orderId}。三类接收方用同一模板，靠占位符区分措辞。</p>
+     */
+    ORDER_REASSIGNED("订单已改派陪诊员", MessageBizType.ORDER),
     SYSTEM_NOTICE("系统公告", MessageBizType.SYSTEM),
     ;
 

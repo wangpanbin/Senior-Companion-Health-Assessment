@@ -33,10 +33,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlPageShell, NlCard, NlStatusChip, NlTimeline, NlAvatar, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
 import OrderFeeItems from '@/components/OrderFeeItems.vue'
-import { getOrder, getOrderTimeline, cancelOrder } from '@/api/order'
+import { getOrder, getOrderTimeline, cancelOrder, urgeOrder } from '@/api/order'
 import { listCheckins, connectProgressSocket } from '@/api/execution'
 import { getReviewByOrder } from '@/api/review'
 import { formatDateTime, CHECKIN_NODE_ORDER } from '@/utils/format'
+import {
+  showFulfillmentBar,
+  fulfillmentTone,
+  waitMinutesText,
+  canUrgeOrder
+} from '@/utils/fulfillment'
 
 const route = useRoute()
 const router = useRouter()
@@ -49,6 +55,8 @@ const review = ref(null)
 const loading = ref(true)
 const loadError = ref(false)
 const liveConnected = ref(false)
+/** V3.1：催单按钮的 in-flight 态，避免连点 */
+const urging = ref(false)
 
 let socket = null
 
@@ -70,6 +78,40 @@ async function loadAll() {
     loadError.value = true
   } finally {
     loading.value = false
+  }
+}
+
+/* ==================== 履约状态条（V3.1 · T5） ==================== */
+
+/*
+ * 等级、文案、能否催单全部来自后端字段，前端只做「等级 → 视觉」的映射（utils/fulfillment）。
+ * 不在待接单时整条消失 —— 订单被接走后继续挂着「等待时间较长」是在提示一件已经结束的事。
+ */
+const fulfillment = computed(() => {
+  const o = order.value
+  if (!showFulfillmentBar(o)) {
+    return { visible: false }
+  }
+  const tone = fulfillmentTone(o.fulfillmentRisk)
+  return {
+    visible: true,
+    toneKey: tone.key,
+    toneRank: tone.rank,
+    waitText: waitMinutesText(o.waitMinutes),
+    canUrge: canUrgeOrder(o)
+  }
+})
+
+async function doUrge() {
+  urging.value = true
+  try {
+    await urgeOrder(orderId, {})
+    ElMessage.success('已催促，陪诊员会尽快接单')
+    await loadAll()
+  } catch {
+    // 3008 / 3009 的提示已由请求拦截器统一处理
+  } finally {
+    urging.value = false
   }
 }
 
@@ -275,6 +317,35 @@ onBeforeUnmount(() => {
         <template v-else>本服务为线下结算，平台不代收费用</template>
       </NlNoticeBar>
 
+      <!-- 履约状态条：图标 + 文案 + 左侧色条。不用纯红 alarming 底色（老人模式下情绪负担过重） -->
+      <div v-if="fulfillment.visible" class="fulfillment" :class="`is-${fulfillment.toneKey}`" role="status">
+        <span class="fulfillment__bar" aria-hidden="true" />
+        <span class="fulfillment__icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <circle cx="10" cy="10" r="7.5" />
+            <template v-if="fulfillment.toneRank >= 1">
+              <path d="M10 5.6v4.8" />
+              <circle cx="10" cy="13.6" r="0.9" fill="currentColor" stroke="none" />
+            </template>
+          </svg>
+        </span>
+        <div class="fulfillment__body">
+          <div class="fulfillment__label">{{ order.fulfillmentRiskLabel }}</div>
+          <div v-if="fulfillment.waitText" class="fulfillment__wait">{{ fulfillment.waitText }}</div>
+        </div>
+        <el-button
+          v-if="fulfillment.canUrge"
+          class="fulfillment__urge"
+          type="primary"
+          plain
+          round
+          :loading="urging"
+          @click="doUrge"
+        >
+          催促接单
+        </el-button>
+      </div>
+
       <!-- 订单概览 -->
       <NlCard>
         <div class="overview">
@@ -408,6 +479,62 @@ onBeforeUnmount(() => {
 
 .pad {
   padding: 0 var(--nl-gutter);
+}
+
+/* 履约状态条：颜色只走 --tone（色条与图标），正文色固定走 --nl-text-1，
+   这样四档的风险等级不会因为令牌色差而牺牲文案对比度 */
+.fulfillment {
+  --tone: var(--nl-border-strong);
+  display: flex;
+  align-items: center;
+  gap: var(--nl-space-3);
+  margin: 0 var(--nl-gutter) var(--nl-space-3);
+  padding: var(--nl-space-3);
+  padding-left: 0;
+  background: var(--nl-bg-card);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-card);
+
+  &.is-warning { --tone: var(--nl-warning-text); }
+  &.is-urgent { --tone: var(--nl-danger-text); }
+  &.is-manual { --tone: var(--nl-purple-text); }
+
+  &__bar {
+    align-self: stretch;
+    flex-shrink: 0;
+    width: 4px;
+    background: var(--tone);
+    border-radius: var(--nl-radius-card) 0 0 var(--nl-radius-card);
+  }
+
+  &__icon {
+    display: flex;
+    flex-shrink: 0;
+    color: var(--tone);
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__label {
+    font-size: var(--nl-font-body);
+    font-weight: 600;
+    color: var(--nl-text-1);
+  }
+
+  &__wait {
+    margin-top: 2px;
+    font-size: var(--nl-font-caption);
+    color: var(--nl-text-2);
+  }
+
+  /* 触控高度走令牌，老人模式下自动抬到 56px */
+  &__urge {
+    flex-shrink: 0;
+    min-height: var(--nl-touch-min);
+  }
 }
 
 .overview {

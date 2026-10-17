@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.config.FulfillmentProperties;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
@@ -137,6 +138,10 @@ class OrderServiceTest {
     @Mock
     private OrderFeeItemService orderFeeItemService;
 
+    /** 履约保障（V3.1）——下单时登记一条 ORDER_CREATED 履约事件；行为由 FulfillmentServiceScanTest 覆盖 */
+    @Mock
+    private FulfillmentService fulfillmentService;
+
     private OrderServiceImpl orderService;
 
     @BeforeEach
@@ -153,7 +158,7 @@ class OrderServiceTest {
         orderService = new OrderServiceImpl(orderMapper, statusLogMapper, rejectLogMapper,
                 elderProfileMapper, companionProfileMapper, sysUserMapper, orderReadMapper,
                 elderService, messageService, redisTemplate, new ObjectMapper(),
-                transitionService, orderFeeItemService);
+                transitionService, orderFeeItemService, fulfillmentService, new FulfillmentProperties());
     }
 
     @AfterEach

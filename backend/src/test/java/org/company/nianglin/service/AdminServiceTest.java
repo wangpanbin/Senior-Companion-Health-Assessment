@@ -18,7 +18,9 @@ import org.company.nianglin.mapper.CompanionAuditRecordMapper;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.mapper.ComplaintMapper;
+import org.company.nianglin.mapper.OrderFulfillmentEventMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
+import org.company.nianglin.mapper.OrderRejectLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
@@ -108,6 +110,12 @@ class AdminServiceTest {
     private OrderReadMapper orderReadMapper;
 
     @Mock
+    private OrderRejectLogMapper orderRejectLogMapper;
+
+    @Mock
+    private OrderFulfillmentEventMapper fulfillmentEventMapper;
+
+    @Mock
     private MessageService messageService;
 
     @Mock
@@ -133,6 +141,7 @@ class AdminServiceTest {
         service = new AdminServiceImpl(auditRecordMapper, companionProfileMapper, sysUserMapper,
                 complaintMapper, orderMapper, operLogMapper,
                 new OperLogRecorderImpl(operLogMapper, userNameResolver), adminReadMapper, orderReadMapper,
+                orderRejectLogMapper, fulfillmentEventMapper,
                 messageService, orderService, userNameResolver, passwordEncoder, securityProperties,
                 tokenStore, new ObjectMapper());
         loginAsAdmin();

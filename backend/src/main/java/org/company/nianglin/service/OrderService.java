@@ -12,6 +12,7 @@ import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
+import org.company.nianglin.vo.OrderFulfillmentVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
@@ -56,11 +57,29 @@ public interface OrderService {
     /** 我的订单列表：按当前角色自动决定数据范围（家属看自己下的、陪诊员看自己接的、老人看自己就诊的） */
     PageResult<OrderVO> myOrders(OrderQuery query);
 
-    /** 待接单订单大厅（COMPANION 且资质已通过；只含未过期的 PENDING 单，并排除自己已拒过的） */
+    /**
+     * 待接单订单大厅（COMPANION 且资质已通过；只含未过期的 PENDING 单，并排除自己已拒过的）
+     *
+     * <p>V3.1 · T8：可选 {@code sortBy} 走白名单，只开放 {@code RECOMMEND}
+     * （缺省取配置 {@code nianglin.fulfillment.hall-default-sort}），非法值返回
+     * {@code 400} 且不静默降级。排序三级：就诊时间升序 → 服务区域匹配者优先 →
+     * ID 升序兜底，保证分页不重不漏。响应结构零变更。</p>
+     */
     PageResult<OrderVO> hall(OrderHallQuery query);
 
     /** 订单详情（须为相关方） */
     OrderVO detail(Long orderId);
+
+    /**
+     * 履约详情（V3.1 · T4）：风险等级 + 事件流水。
+     *
+     * <p>鉴权走与 {@link #detail(Long)} 完全相同的参与方判定（下单家属 /
+     * 接单陪诊员 / 就诊老人 / 管理员），其余返回 {@code 3004}。
+     * 之所以不新写一套：同一笔订单出现两套可见性规则，迟早会有人在其中一套上漏掉边界。</p>
+     *
+     * @throws org.company.nianglin.exception.BusinessException 3001 订单不存在 / 3004 非参与方
+     */
+    OrderFulfillmentVO fulfillmentDetail(Long orderId);
 
     /** 取消订单（FAMILY 本人，仅 PENDING 可取消） */
     void cancel(Long orderId, OrderCancelDTO dto);

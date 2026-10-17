@@ -455,6 +455,20 @@ export const routes = [
         name: 'AdminChatViewer',
         component: () => import('@/views/admin/chat-viewer.vue'),
         meta: { title: '沟通记录', icon: 'ChatDotRound', roles: ['ADMIN'], module: 'M13', code: 'W-09' }
+      },
+      {
+        path: 'fulfillment',
+        name: 'AdminFulfillment',
+        component: () => import('@/views/admin/fulfillment.vue'),
+        meta: {
+          title: '履约风险',
+          icon: 'AlarmClock',
+          roles: ['ADMIN'],
+          // 履约保障是 V3.1 新增模块，plan.md 的模块编号只到 M13；
+          // 本页挂在管理后台（M9）名下，与同组的订单 / 投诉页保持一致
+          module: 'M9',
+          code: 'W-10'
+        }
       }
     ]
   },

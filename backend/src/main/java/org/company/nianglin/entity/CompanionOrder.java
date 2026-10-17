@@ -183,4 +183,13 @@ public class CompanionOrder extends BaseEntity {
     @Schema(description = "乐观锁版本号（**接单防超卖**，MyBatis-Plus @Version）")
     private Integer version;
 
+    @Schema(description = "fulfillment_risk")
+    private String fulfillmentRisk;
+
+    @Schema(description = "urge_count")
+    private Integer urgeCount;
+
+    @Schema(description = "last_urge_at")
+    private LocalDateTime lastUrgeAt;
+
 }

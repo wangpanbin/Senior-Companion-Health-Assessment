@@ -159,6 +159,49 @@ class UserAccessMatrixTest {
                 .andExpect(jsonPath("$.data").doesNotExist());
     }
 
+    /* ============ ④ 接单状态自助控制（V3.1 · T0） ============ */
+
+    /**
+     * spec §7.3 要求：切换接单状态对 FAMILY / ELDER / ADMIN 一律 403。
+     *
+     * <p>端点上挂的是 {@code hasRole('COMPANION')}，靠注解就能拦 ——
+     * 但注解一旦被人「顺手」改成 {@code isAuthenticated()}，这里必须立刻变红，
+     * 因为那会让家属也能把陪诊员切成休息中。</p>
+     */
+    @ParameterizedTest(name = "非陪诊员切换接单状态 · {0} → 403")
+    @CsvSource({"FAMILY,101", "ELDER,201", "ADMIN,1"})
+    @DisplayName("切换接单状态 · 非陪诊员角色一律 403（含老人的只读规则叠加）")
+    void nonCompanionShouldNotSwitchWorkStatus(String role, long userId) throws Exception {
+        mockMvc.perform(put("/api/user/companion/work-status")
+                        .contentType(JSON)
+                        .content("{\"workStatus\":\"REST\"}")
+                        .header(AUTH_HEADER, token(userId, role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("切换接单状态 · 未登录 → 401")
+    void anonymousShouldNotSwitchWorkStatus() throws Exception {
+        mockMvc.perform(put("/api/user/companion/work-status")
+                        .contentType(JSON)
+                        .content("{\"workStatus\":\"REST\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("切换接单状态 · 资质未过审的陪诊员 → 2003（角色对但没资格）")
+    void unauditedCompanionShouldBeRejected() throws Exception {
+        // 角色是 COMPANION 但 audit_status = PENDING —— 注解放行、业务层必须拦下
+        mockMvc.perform(put("/api/user/companion/work-status")
+                        .contentType(JSON)
+                        .content("{\"workStatus\":\"REST\"}")
+                        .header(AUTH_HEADER, token(COMPANION_PENDING, RoleConstants.COMPANION)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.COMPANION_NOT_AUDITED.getCode()));
+    }
+
     /* ============ 工具 ============ */
 
     private String elder() {
