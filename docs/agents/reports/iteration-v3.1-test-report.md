@@ -14,7 +14,7 @@
 
 | 门禁 | 结果 | 说明 |
 |---|:--:|---|
-| 后端 `mvn -B verify` | ✅ **881 / 881** | 含编译、单测、打包；V3.1 新增 **154** 条 |
+| 后端 `mvn -B verify` | ✅ **890 / 890** | 含编译、单测、打包；V3.1 新增 **163** 条 |
 | 前端 `pnpm run lint:check` | ✅ **0 警告** | `--max-warnings 0` |
 | 前端 `pnpm run test` | ✅ **89 / 89** | V3.1 新增 **22** 条 |
 | 前端 `pnpm run build` | ✅ | 533 modules |
@@ -22,6 +22,7 @@
 | Playwright V3.1 新增（15） | ✅ **23 / 23** | 新建 `15-fulfillment.spec.js` |
 | 反向验证 · 状态机转移边 | ✅ | 删边后 3 条变红，还原后 18 条复绿 |
 | 反向验证 · 风险阈值 | ✅ | 改坏 WARNING 阈值后 2 条变红，还原后复绿 |
+| code-review（Standards + Spec 双轴） | ✅ | 两条轴各跑一遍；硬违规与契约偏差已修（见 §九） |
 
 **结论**：V3.1 的新增行为与既有 166 条基线用例全部通过，无回归、无跳过、无重试放行。
 
@@ -57,6 +58,8 @@
 | `HallSortTest` | 14 | 白名单拒绝 400（含配置值）；三级稳定排序；档案文本注入防御 |
 | `AdminFulfillmentTest` | 17 | 四档计数恒定齐全；脏值并入 normal（四档之和 = 总数）；列表脱敏 |
 | `AdminReassignTest` | 19 | 七类拒绝路径；**改派不改状态**；审计记前后陪诊员；抢单竞争失败干净失败 |
+| `OrderTransitionServiceTest`（+4） | 14 | **离开 PENDING 时风险回落 NORMAL**（接单 / 取消 / 管理员强制），且搭同一条更新落库 |
+| `UserAccessMatrixTest`（+3） | 17 | 切接单状态对 FAMILY / ELDER / ADMIN 一律 403；未登录 401；资质未过 2003 |
 
 **前端新增 22 条**（`src/utils/__tests__/fulfillment.test.js`）：等级 → 视觉映射唯一性、
 四档文案随后端下发、非待接单不渲染、`canUrge` 完全由后端驱动、列表正常等待不出标记。
@@ -123,10 +126,27 @@
 | 2 | 扫描任务的**真实多实例竞争**未在 E2E 环境复现（单测是 Mockito） | 低 | 有条件时起两个实例压一次，确认 Redis 锁 + 条件更新配合无误 |
 | 3 | `change log` 首次建立（`CHANGELOG.md`），此前无版本化变更记录 | 低 | 后续每版同步更新 |
 | 4 | 既有 E2E 套件基线从 166 涨到 176，工单里的数字未同步 | 无 | 已在本报告注明 |
+| 5 | `FulfillmentEventType.MATCHING_STARTED` 与 `ADMIN_COORDINATED` 目前无生产写入点 | 低 | 枚举值是 spec §3.5 列的八种之一，本期只落了六种；V3.2 若引入「开始匹配」事件再启用 |
+| 6 | 前端三档风险色调 SCSS 在四处重复 | 低 | 可抽成 SCSS partial，但四处所属组件分属不同模块，强行抽会引入跨模块耦合 |
 
 ---
 
-## 八、产物索引
+## 八、code-review 处置记录（Standards + Spec 双轴）
+
+| 轴 | 发现 | 处置 |
+|---|---|---|
+| Spec | spec §5.3 要求「离开 `PENDING` 时 `fulfillment_risk` 回落 `NORMAL`，在流转入口内、与状态变更同事务」，实现只有读侧收敛 | ✅ **已修**：`OrderTransitionServiceImpl` 在离开 `PENDING` 时把风险置为 `NORMAL`，搭同一条乐观锁更新的车（不额外发 UPDATE），+4 条单测 |
+| Spec | spec §2.2 明写 `SET urge_count = urge_count + 1`「并发核心，必须精确实现」，实现用的是预读值 +1 | ✅ **已修**：改用 `setSql("urge_count = urge_count + 1")`，自增原子性交回数据库 |
+| Spec | spec §7.3 / T0 RED 要求切接单状态对 FAMILY / ELDER / ADMIN 各一条 403 | ✅ **已修**：补 3 条（含未登录 401、资质未过 2003） |
+| Standards | 改派理由的错误码引用三处写成 3007，实际是 `CONTENT_SENSITIVE(6003)` | ✅ **已修**：javdoc、前端注释、E2E 断言、接口文档四处同步 |
+| Standards | `eventTypeOf` 的 javadoc 与 switch `default` 行为自相矛盾 | ✅ **已修**：补明 `NORMAL` 分支不可达、`default` 是脏数据兜底 |
+| Standards | `writeReassignEvent` 与 `FulfillmentServiceImpl#writeEvent` 字段构造高度重复 | ⚠️ 保留：两处分别属「改派」与「扫描」两个模块，抽出公共方法会让履约模块反向依赖管理端；已在两处 javadoc 注明同一套字段语义 |
+| Standards | `FulfillmentRisk.of(...) == null → NORMAL` 的兜底散落 6 处 | ⚠️ 保留：每处兜底的理由不同（读侧收敛 / 脏值计数 / 事件字段），合并成一个 `ofOrDefault` 会掩盖这些差异；已在 `FulfillmentRisk` javadoc 记录统一口径 |
+| Standards | `MATCHING_STARTED` / `ADMIN_COORDINATED` 无生产写入点 | ⚠️ 保留：spec §3.5 列的八种事件本期只落六种，见 §七 第 5 条 |
+
+---
+
+## 九、产物索引
 
 | 产物 | 路径 |
 |---|---|

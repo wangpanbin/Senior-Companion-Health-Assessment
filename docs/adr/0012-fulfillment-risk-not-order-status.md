@@ -85,7 +85,10 @@ companion_order.fulfillment_risk VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
 
 - (-) 多一张表、多一列 —— V6 迁移因此是「三列 + 一表 + 三索引」而不是零成本；
 - (-) 读者需要同时理解两张日志表的分工 —— 缓解 = 两张表的 javadoc 各自写明「与另一张的区别」，且 `V6` 顶部用注释重申；
-- (-) 「离开 PENDING 即回落 NORMAL」是一条**隐式规则**，只由扫描任务维护 —— 缓解 = `OrderVO#base` 在装配时对非 `PENDING` 强制收敛，即使库里的值没被清理，对外也不展示。
+- (-) 「离开 PENDING 即回落 NORMAL」需要一处**显式落点** —— 已落在订单状态流转唯一入口
+  （spec §5.3）：`OrderTransitionServiceImpl` 在离开 `PENDING` 时把风险置为 `NORMAL`，
+  **搭同一条乐观锁更新的车**，不额外发一条 UPDATE，因此与状态变更天然同事务、无中间态。
+  读侧的强制收敛（`OrderVO#base`）仍保留，作为脏数据的第二道防线。
 
 ---
 

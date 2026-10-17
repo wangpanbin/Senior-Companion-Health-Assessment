@@ -784,7 +784,7 @@ public class AdminServiceImpl implements AdminService {
      *
      * @throws org.company.nianglin.exception.BusinessException
      *         3001 订单不存在 · 3010 不可改派（含并发失败）· 2007 目标不存在
-     *         · 2003 目标资质未过 · 3007 理由命中医疗建议词表
+     *         · 2003 目标资质未过 · 6003 理由命中医疗建议词表（CONTENT_SENSITIVE）
      */
     @Override
     @Transactional(rollbackFor = Exception.class)

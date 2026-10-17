@@ -203,7 +203,7 @@ async function submitReassign() {
     loadSummary()
     loadList()
   } catch {
-    // 错误提示已由请求拦截器统一处理（3007 / 3010 / 2003 / 2007）
+    // 错误提示已由请求拦截器统一处理（6003 合规词表 / 3010 不可改派 / 2003 资质 / 2007 不存在）
   } finally {
     reassignSubmitting.value = false
   }

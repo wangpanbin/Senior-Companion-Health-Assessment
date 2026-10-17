@@ -190,6 +190,10 @@ public class FulfillmentServiceImpl implements FulfillmentService {
         // ⚠️ 这里是整个 T3 的并发核心：自增 + 全部资格判定合并成一条 UPDATE。
         // 先查后写会让两个并发请求都通过校验并把 urge_count 写成同一个值；
         // 影响 0 行 = 被别人抢先 / 在冷却期 / 已超限，三者对外统一报 3009。
+        //
+        // 自增走 setSql 而不是 set(预读值 + 1)：spec §2.2 要求 `urge_count = urge_count + 1`。
+        // 用预读值会让「读到 2 → 写 3」这条路径在并发下把两个请求写成同一个值，
+        // 计数少加一次 —— 上限保护随之失真。SQL 侧自增由数据库保证原子性。
         int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
                 .eq(CompanionOrder::getId, orderId)
                 .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name())
@@ -198,7 +202,7 @@ public class FulfillmentServiceImpl implements FulfillmentService {
                 .lt(CompanionOrder::getUrgeCount, maxTimes)
                 .and(w -> w.isNull(CompanionOrder::getLastUrgeAt)
                         .or().le(CompanionOrder::getLastUrgeAt, cooldownBoundary))
-                .set(CompanionOrder::getUrgeCount, order.getUrgeCount() + 1)
+                .setSql("urge_count = urge_count + 1")
                 .set(CompanionOrder::getLastUrgeAt, now));
         if (rows == 0) {
             throw new BusinessException(ResultCode.ORDER_URGE_TOO_FREQUENT);
@@ -300,6 +304,33 @@ public class FulfillmentServiceImpl implements FulfillmentService {
      * <p>{@link FulfillmentRisk#NORMAL} 落到 {@code MANUAL_REQUIRED} 是「退回正常」，
      * 那条路径不该由扫描触发（扫描只升不降），但真发生时也需要一条可追溯的记录，
      * 所以仍返回 {@code MANUAL_REQUIRED} 之外的一个合法值而不是 {@code null}。</p>
+     */
+    /**
+     * 风险等级 → 风险类事件类型。
+     *
+     * <p>{@code NORMAL} 不属于「风险升高」，理论上不该进来 —— 但扫描只对
+     * 「应有等级高于当前等级」的订单动手，而 NORMAL 是最低档，
+     * 永远不会高于任何等级，因此这条分支不可达。{@code default} 兜住它，
+     * 是为了脏数据（库里存了枚举之外的值、{@code of} 返回 null）不至于 NPE，
+     * <b>不是</b>「NORMAL 也要记一条需要人工介入的事件」。</p>
+     */
+    /**
+     * 风险等级 → 风险类事件类型。
+     *
+     * <p>{@code NORMAL} 不属于「风险升高」，理论上不该进来 —— 但扫描只对
+     * 「应有等级高于当前等级」的订单动手，而 NORMAL 是最低档，
+     * 永远不会高于任何等级，因此这条分支不可达。{@code default} 兜住它，
+     * 是为了脏数据（库里存了枚举之外的值、{@code of} 返回 null）不至于 NPE，
+     * <b>不是</b>「NORMAL 也要记一条需要人工介入的事件」。</p>
+     */
+    /**
+     * 风险等级 → 风险类事件类型。
+     *
+     * <p>{@code NORMAL} 不属于「风险升高」，理论上不该进来 —— 但扫描只对
+     * 「应有等级高于当前等级」的订单动手，而 NORMAL 是最低档，
+     * 永远不会高于任何等级，因此这条分支不可达。{@code default} 兜住它，
+     * 是为了脏数据（库里存了枚举之外的值、{@code of} 返回 null）不至于 NPE，
+     * <b>不是</b>「NORMAL 也要记一条需要人工介入的事件」。</p>
      */
     private FulfillmentEventType eventTypeOf(FulfillmentRisk risk) {
         return switch (risk) {

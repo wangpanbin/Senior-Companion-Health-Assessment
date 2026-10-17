@@ -81,6 +81,57 @@ class OrderTransitionServiceTest {
         return OrderTransitionService.Operator.of(userId, RoleConstants.FAMILY, false);
     }
 
+    /* ============ V3.1 · spec §5.3 离开 PENDING 时的风险收敛 ============ */
+
+    @Test
+    @DisplayName("风险收敛 · 接单离开 PENDING 时履约风险回落 NORMAL（与状态同一条更新落库）")
+    void leavingPendingShouldCollapseRisk() {
+        CompanionOrder order = order(OrderStatus.PENDING);
+        order.setFulfillmentRisk("MANUAL_REQUIRED");
+
+        transitionService.transition(order, OrderStatus.ACCEPTED, companion(301L), "已接单");
+
+        assertEquals("NORMAL", order.getFulfillmentRisk(),
+                "接单后风险必须回落，否则家属会继续看到一条已经不成立的告警");
+        // 关键：不额外发 UPDATE —— 风险搭同一条乐观锁更新的车，天然同事务
+        verify(orderMapper, org.mockito.Mockito.times(1))
+                .updateById(org.mockito.ArgumentMatchers.<org.company.nianglin.entity.CompanionOrder>any());
+    }
+
+    @Test
+    @DisplayName("风险收敛 · 家属取消离开 PENDING 同样回落")
+    void cancellingPendingShouldCollapseRisk() {
+        CompanionOrder order = order(OrderStatus.PENDING);
+        order.setFulfillmentRisk("URGENT");
+
+        transitionService.transition(order, OrderStatus.CANCELLED, family(101L), "临时有事");
+
+        assertEquals("NORMAL", order.getFulfillmentRisk());
+    }
+
+    @Test
+    @DisplayName("风险收敛 · 管理员强制终态同样回落（spec §5.3 第三行）")
+    void forceTerminalShouldCollapseRisk() {
+        CompanionOrder order = order(OrderStatus.PENDING);
+        order.setFulfillmentRisk("WARNING");
+
+        transitionService.forceTerminal(order, OrderStatus.CANCELLED, 1L, "管理员强制取消");
+
+        assertEquals("NORMAL", order.getFulfillmentRisk());
+    }
+
+    @Test
+    @DisplayName("风险收敛 · 已接单之后的流转不重复置值（风险本就是 NORMAL）")
+    void nonPendingTransitionShouldNotTouchRisk() {
+        CompanionOrder order = order(OrderStatus.ACCEPTED);
+        order.setFulfillmentRisk("NORMAL");
+
+        transitionService.transition(order, OrderStatus.IN_SERVICE, companion(301L), "开始服务");
+
+        assertEquals("NORMAL", order.getFulfillmentRisk());
+        assertEquals(OrderStatus.IN_SERVICE.name(), order.getStatus());
+    }
+
     @Test
     @DisplayName("合法正向流转：改状态 + version+1 + 写流转日志")
     void legalForwardTransitionShouldUpdateAndLog() {
