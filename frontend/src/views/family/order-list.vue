@@ -24,6 +24,7 @@ import { useRouter } from 'vue-router'
 import { NlPageShell, NlAppTabBar, NlStatusChip, NlEmpty, NlSkeleton } from '@/components'
 import { listMyOrders } from '@/api/order'
 import { formatVisitTime, formatMoney } from '@/utils/format'
+import { fulfillmentBadge } from '@/utils/fulfillment'
 
 const router = useRouter()
 
@@ -74,6 +75,13 @@ function view(o) {
 
 const isEmpty = computed(() => !loading.value && !orders.value.length)
 
+/**
+ * 卡片视图模型：把风险标记预先算好挂到订单上。
+ * 不在模板里对每张卡调三次 fulfillmentBadge(o)。
+ * 正常等待的标记是 null（见 utils/fulfillment 的说明：扫读界面挂满正常标记等于没标记）。
+ */
+const cards = computed(() => orders.value.map((o) => ({ ...o, badge: fulfillmentBadge(o) })))
+
 onMounted(loadOrders)
 </script>
 
@@ -110,10 +118,16 @@ onMounted(loadOrders)
     />
 
     <ul v-else role="list" class="orders">
-      <li v-for="o in orders" :key="o.id" role="button" tabindex="0" class="order" @keydown.enter.prevent="view(o)" @keydown.space.prevent="view(o)" @click="view(o)">
+      <li v-for="o in cards" :key="o.id" role="button" tabindex="0" class="order" @keydown.enter.prevent="view(o)" @keydown.space.prevent="view(o)" @click="view(o)">
         <div class="order__head">
-          <!-- 优先用后端下发的 statusLabel；chip 的 scope 只做兜底 -->
-          <NlStatusChip :status="o.status" :text="o.statusLabel" :dot="o.status === 'PENDING' || o.status === 'IN_SERVICE'" />
+          <div class="order__head-main">
+            <!-- 优先用后端下发的 statusLabel；chip 的 scope 只做兜底 -->
+            <NlStatusChip :status="o.status" :text="o.statusLabel" :dot="o.status === 'PENDING' || o.status === 'IN_SERVICE'" />
+            <!-- 风险轻量标记：只占卡内一行的位置，不新增表格列 -->
+            <span v-if="o.badge" class="order__risk" :class="`is-${o.badge.key}`">
+              <span class="order__risk-dot" aria-hidden="true" />{{ o.badge.label }}
+            </span>
+          </div>
           <span class="order__fee is-num">{{ formatMoney(o.fee) }}</span>
         </div>
         <div class="order__hospital">{{ o.hospital }}</div>
@@ -222,7 +236,52 @@ onMounted(loadOrders)
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: var(--nl-space-2);
     margin-bottom: var(--nl-space-2);
+  }
+
+  &__head-main {
+    display: flex;
+    align-items: center;
+    gap: var(--nl-space-2);
+    min-width: 0;
+  }
+
+  /* 文案色与底色成对取自 *-text / *-bg 令牌（与 NlNoticeBar 同一套口径，对比度已过 AA） */
+  &__risk {
+    --tone: var(--nl-text-2);
+    --tone-bg: var(--nl-bg-sunken);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 10px;
+    font-size: var(--nl-font-micro);
+    color: var(--tone);
+    background: var(--tone-bg);
+    border-radius: var(--nl-radius-pill);
+    white-space: nowrap;
+
+    &-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--tone);
+    }
+
+    &.is-warning {
+      --tone: var(--nl-warning-text);
+      --tone-bg: var(--nl-warning-bg);
+    }
+
+    &.is-urgent {
+      --tone: var(--nl-danger-text);
+      --tone-bg: var(--nl-danger-bg);
+    }
+
+    &.is-manual {
+      --tone: var(--nl-purple-text);
+      --tone-bg: var(--nl-purple-bg);
+    }
   }
 
   &__fee {

@@ -35,6 +35,17 @@ export function getOrder(orderId) {
   return request({ url: `/order/${orderId}`, method: 'get' })
 }
 
+/**
+ * 家属催单（V3.1 · T5）
+ * 对应文档：docs/api/03-order.md §11
+ *
+ * 能否催单由 OrderVO.canUrge 决定，冷却期与次数上限一律在服务端判定，
+ * 前端不做本地兜底。被拒（3008 不可催 / 3009 过于频繁）时由请求拦截器统一提示。
+ */
+export function urgeOrder(orderId, data) {
+  return request({ url: `/order/${orderId}/urge`, method: 'post', data })
+}
+
 /** 取消订单（仅「待接单」状态，家属） */
 export function cancelOrder(orderId, data) {
   return request({ url: `/order/${orderId}/cancel`, method: 'put', data })

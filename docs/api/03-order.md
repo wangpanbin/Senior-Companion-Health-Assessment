@@ -76,6 +76,10 @@ M4 和 M3 一样，权限不是一个注解就能说完的，而是**三段式**
 | `servicePhotos` | Array | — | — | ✓ |
 | `acceptTime` / `startTime` / `finishTime` | String | — | — | ✓ |
 | `cancelTime` / `cancelReason` | String | — | — | ✓ |
+| `fulfillmentRisk` / `fulfillmentRiskLabel` | String | ✓ | ✓ | ✓ |
+| `waitMinutes` | Integer | ✓ | ✓ | ✓ |
+| `urgeCount` | Integer | ✓ | ✓ | ✓ |
+| `canUrge` | Boolean | ✓ | ✓ | ✓ |
 | ~~`version`~~ | Integer | **任何出口都不返回** | | |
 
 **为什么大厅反而要返回地址**：陪诊员接单前必须知道「去哪儿」，否则列表对他毫无决策价值。
@@ -88,6 +92,18 @@ M4 和 M3 一样，权限不是一个注解就能说完的，而是**三段式**
 该看的人看不到该看的信息；陪诊员上门对接、家属核对就诊人也会失去依据。
 **脱敏的边界是「不相关的第三方」与「列表这类可能被旁人一眼扫到的场景」，不是「凡出现姓名就打码」。**
 新增订单相关出口时按同一把尺子选口径：列表 / 大厅脱敏，详情（已过归属校验）给全名。
+
+**V3.1 新增的五个履约字段为什么三套口径都返回**：它们描述的是「这笔单现在等得怎么样」，
+家属在列表页和详情页必须看到同一个结论，大厅里的陪诊员看到的也必须一致。
+三套口径各写一遍必然分叉。
+
+⚠️ **它们只在「待接单」时有意义**，因此 `OrderVO` 在装配时强制收敛：
+
+- 非 `PENDING` 时 `fulfillmentRisk` 恒为 `NORMAL`、`waitMinutes` 恒为 `0`、`canUrge` 恒为 `false`；
+- 已被接走或已取消的订单继续挂一条「等待时间较长 / 需要人工介入」，是在提示一件已经结束的事；
+- `waitMinutes` **不落库**，每次装配现算，钳制规则见 `TimeUtil.elapsedMinutes`；
+- `canUrge` 只表达「此刻点了会不会被拒」，冷却期与次数上限在服务端判定，
+  所以前端拿不到也不需要 —— **前端隐藏按钮不是安全边界**。
 
 **为什么 `version` 不返回**：它是乐观锁内部字段。对外暴露只会诱导客户端自己传一个版本来「保证」接单成功，
 而正确做法是让服务端读当前版本。数据库里 `version` 的变化由端到端脚本直接查库验证，不经过接口。
@@ -211,6 +227,8 @@ M4 和 M3 一样，权限不是一个注解就能说完的，而是**三段式**
 | 10 | GET | `/api/order/{id}/timeline` | 已登录（须为相关方） | 状态流转时间线 |
 | 11 | POST | `/api/order/{id}/fee-items` | COMPANION（本单陪诊员） | 录入费用明细（ADR-0009） |
 | 12 | GET | `/api/order/{id}/fee-items` | 已登录（须为相关方） | 费用明细与分组合计（ADR-0009） |
+| 13 | POST | `/api/order/{id}/urge` | FAMILY（本单下单人） | 催促接单（V3.1） |
+| 14 | GET | `/api/order/{id}/fulfillment` | 已登录（须为相关方） | 履约详情：风险等级 + 事件流水（V3.1） |
 
 > **路径顺序**：`/hall` 必须注册在 `/{id}` 之前，否则 `hall` 会被当成订单 ID 解析。
 
@@ -768,6 +786,114 @@ WHERE id = ?
 - **`fromStatus` 刻意不下发**：前端渲染时间线只需要「这一步是什么状态、谁在什么时候做的、备注是什么」，
   上一步是什么状态是由上一条记录表达出来的。多下发一个字段就等于多一个前端可能渲染错的地方。
 - 打卡节点（M5）计划合并进时间线，前端统一渲染。
+
+---
+
+## 11. 家属催单（V3.1 · T3）
+
+`POST /api/order/{id}/urge`　权限：`FAMILY`，且须为**本单下单人**
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|:--:|---|
+| `remark` | String | 否 | 催单备注。写入前过 `ComplianceCheckUtil` 词表（`3007` 同一份）；留空记默认文案 |
+
+### 响应
+
+```json
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "orderId": 1001,
+    "urgeCount": 1,
+    "lastUrgeAt": "2026-10-17 10:20:00",
+    "nextUrgeAvailableAt": "2026-10-17 10:30:00"
+  }
+}
+```
+
+`nextUrgeAvailableAt` 在「已达次数上限」时为 `null`，前端据此不再显示按钮。
+
+### 错误场景
+
+| code | 触发条件 |
+|---|---|
+| 3001 | 订单不存在 |
+| 3004 | 不是本单下单人（在状态 / 风险判定**之前**返回，且不触碰写库） |
+| 3007 | 备注命中医疗建议词表 |
+| 3008 | 非 `PENDING`，或履约风险未达「较高（`URGENT`）」 |
+| 3009 | 条件更新返回 0 行 —— 冷却期内 / 已达 `urge-max-times` / 并发下已被抢先 |
+
+### 实现要点
+
+- **资格判定与计数自增合并为同一条条件 UPDATE**（`.eq(status, PENDING).ge(risk, URGENT).lt(urge_count, max)` 加上冷却期条件），
+  不做「先查后写」。先查后写在两个家属同时点下会双双通过校验、计数只自增一次，
+  冷却期形同虚设。
+- **`rows = 0` 统一报 3009**，不对外区分「被抢 / 冷却 / 超限」——
+  这三种情况对家属是同一件事（现在还催不了），区分开只会泄露并发细节却帮不上忙。
+- 只广播给 `auditStatus = APPROVED` **且** `workStatus = AVAILABLE` 的陪诊员：
+  推给休息中或离线的人，他接不了单又被打扰，只会更快地关掉接单开关。
+- 无可接收人时**不报错、不留半截状态**：订单风险事实已经落库，
+  站内信发不出去只影响触达，不影响计数。
+
+---
+
+## 12. 履约详情（V3.1 · T4）
+
+`GET /api/order/{id}/fulfillment`　权限：已登录，且须为该订单相关方
+
+可见性与订单详情**完全一致**（下单家属 / 接单陪诊员 / 就诊老人 / 管理员，其余 `3004`）。
+不为履约另写一套可见性规则：同一笔订单出现两套权限规则，迟早会有人在其中一套上漏掉边界。
+
+### 响应
+
+```json
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "orderId": 1001,
+    "orderNo": "NL20261017000001",
+    "status": "PENDING",
+    "statusLabel": "待接单",
+    "fulfillmentRisk": "URGENT",
+    "fulfillmentRiskLabel": "履约风险较高",
+    "waitMinutes": 45,
+    "urgeCount": 1,
+    "canUrge": true,
+    "nextUrgeAvailableAt": "2026-10-17 10:30:00",
+    "events": [
+      { "eventType": "ORDER_CREATED", "eventLabel": "订单创建", "toRisk": "NORMAL", "toRiskLabel": "正常等待",
+        "triggerSource": "SYSTEM", "operatorRole": "SYSTEM", "operateTime": "2026-10-17 09:30:00" },
+      { "eventType": "FULFILLMENT_URGENT", "eventLabel": "履约风险升高",
+        "fromRisk": "WARNING", "fromRiskLabel": "等待时间较长",
+        "toRisk": "URGENT", "toRiskLabel": "履约风险较高",
+        "triggerSource": "SYSTEM", "operatorRole": "SYSTEM", "operateTime": "2026-10-17 10:00:00" }
+    ]
+  }
+}
+```
+
+### 错误场景
+
+| code | 触发条件 |
+|---|---|
+| 3001 | 订单不存在 |
+| 3004 | 不是该订单的相关方 |
+
+### 实现要点
+
+- **事件流按 `operate_time asc, id asc` 升序**，从「订单创建」到当前。
+  排序由两处共同保证：SQL 的 `ORDER BY` 走索引，装配层的 `sorted` 兜住「升序属于这个 VO 的契约」——
+  将来有人改了查询条件，时间线的因果顺序不会跟着失效。同秒事件以 `id` 兜底，顺序不跳动。
+- **无事件时返回空数组，不返回 `null`**：前端直接 `.length` 即可，不必判空。
+- `nextUrgeAvailableAt` 为 `null` 的三种情况：不可催（非待接单 / 风险不足）、
+  已达次数上限、**从未催过单**（没有冷却窗口）。
+- 中文文案全部由枚举翻译（`FulfillmentRisk#getLabel` / `FulfillmentEventType#labelOf`），装配处不拼串。
+- 履约服务本身**不做鉴权**：鉴权归 `OrderService#requireInvolved`。
+  这是为了避开循环依赖 —— `OrderService` 建单时要请履约服务登记事件，履约服务不能反过来依赖订单服务。
 
 ---
 
