@@ -1,7 +1,7 @@
 package org.company.nianglin.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.company.nianglin.config.FulfillmentProperties;
 import org.company.nianglin.constant.FulfillmentEventType;
 import org.company.nianglin.constant.FulfillmentRisk;
@@ -25,7 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -70,7 +70,8 @@ class FulfillmentServiceScanTest {
     private MessageService messageService;
 
     /** 抓取扫描实际传给 Mapper 的分页大小 */
-    private final AtomicLong capturedPageSize = new AtomicLong();
+    private final AtomicReference<LambdaQueryWrapper<CompanionOrder>> capturedWrapper =
+            new AtomicReference<>();
 
     private FulfillmentProperties properties;
     private FulfillmentService fulfillmentService;
@@ -222,9 +223,33 @@ class FulfillmentServiceScanTest {
 
         fulfillmentService.scanAndEscalate();
 
-        // 用 Answer 抓取分页参数：BaseMapper#selectPage 是泛型方法，
-        // ArgumentCaptor 在这条签名上推不出类型。
-        assertEquals(7L, capturedPageSize.get());
+        // 断言 LIMIT 真的进了 SQL，而不是只断言「传了个分页对象」。
+        // 上一版走 selectPage，而 MybatisPlusConfig 把分页插件的 maxLimit 写死 100，
+        // 于是 scan-batch 配成 200 也会被静默截到 100 —— 配置形同虚设，
+        // 而这条断言只检查分页对象，所以它一直是绿的。
+        assertTrue(capturedWrapper.get().getCustomSqlSegment().contains("LIMIT 7"),
+                "LIMIT 必须真的进 SQL：" + capturedWrapper.get().getCustomSqlSegment());
+    }
+
+    @Test
+    @DisplayName("回归 · 候选集只取 PENDING：已接单的订单等再久也不参与扫描")
+    void candidatesShouldBeRestrictedToPending() {
+        // 这条断言存在的理由：夹具是直接把 mock 候选注入的，不看查询条件，
+        // 所以删掉候选查询里的 .eq(status, PENDING) 之后整组扫描单测依然全绿。
+        // 已接单的订单再挂「需要人工介入」，是在向家属展示一条已经不成立的告警。
+        givenCandidates();
+
+        fulfillmentService.scanAndEscalate();
+
+        LambdaQueryWrapper<CompanionOrder> wrapper = capturedWrapper.get();
+        // ⚠️ 必须先渲染一次 SQL：MyBatis-Plus 是惰性的，
+        // getParamNameValuePairs() 在渲染之前拿到的是空 map（曾因此误判为「没绑定 PENDING」）
+        String sql = wrapper.getCustomSqlSegment();
+        assertTrue(wrapper.getParamNameValuePairs().containsValue(OrderStatus.PENDING.name()),
+                "候选集必须绑定 PENDING：" + sql + " params=" + wrapper.getParamNameValuePairs());
+        assertTrue(sql.contains("status"), "候选集必须限定订单状态：" + sql);
+        assertTrue(sql.contains("create_time"),
+                "候选集还必须按下单时间排序，等得最久的先处理：" + sql);
     }
 
     /* ================================================================== */
@@ -269,14 +294,11 @@ class FulfillmentServiceScanTest {
     /* 测试夹具                                                            */
     /* ================================================================== */
 
+    @SuppressWarnings("unchecked")
     private void givenCandidates(CompanionOrder... orders) {
-        given(orderMapper.selectPage(any(Page.class), any())).willAnswer(invocation -> {
-            Page<?> requested = invocation.getArgument(0);
-            capturedPageSize.set(requested.getSize());
-            Page<CompanionOrder> page = new Page<>(1L, requested.getSize());
-            page.setRecords(List.of(orders));
-            page.setTotal(orders.length);
-            return page;
+        given(orderMapper.selectList(any())).willAnswer(invocation -> {
+            capturedWrapper.set((LambdaQueryWrapper<CompanionOrder>) invocation.getArgument(0));
+            return List.of(orders);
         });
     }
 

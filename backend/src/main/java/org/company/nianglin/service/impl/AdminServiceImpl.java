@@ -29,9 +29,9 @@ import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.CertificateItem;
 import org.company.nianglin.dto.ComplaintHandleDTO;
-import org.company.nianglin.dto.OrderReassignDTO;
 import org.company.nianglin.dto.FulfillmentRiskQuery;
 import org.company.nianglin.dto.OperLogQuery;
+import org.company.nianglin.dto.OrderReassignDTO;
 import org.company.nianglin.dto.ResetPasswordDTO;
 import org.company.nianglin.dto.UserDisableDTO;
 import org.company.nianglin.dto.UserEnableDTO;
@@ -39,10 +39,10 @@ import org.company.nianglin.entity.AdminOperLog;
 import org.company.nianglin.entity.CompanionAuditRecord;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
-import org.company.nianglin.entity.OrderFulfillmentEvent;
-import org.company.nianglin.entity.OrderRejectLog;
 import org.company.nianglin.entity.Complaint;
 import org.company.nianglin.entity.ElderProfile;
+import org.company.nianglin.entity.OrderFulfillmentEvent;
+import org.company.nianglin.entity.OrderRejectLog;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.AdminOperLogMapper;
@@ -50,8 +50,8 @@ import org.company.nianglin.mapper.AdminReadMapper;
 import org.company.nianglin.mapper.CompanionAuditRecordMapper;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
-import org.company.nianglin.mapper.OrderFulfillmentEventMapper;
 import org.company.nianglin.mapper.ComplaintMapper;
+import org.company.nianglin.mapper.OrderFulfillmentEventMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
 import org.company.nianglin.mapper.OrderRejectLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
@@ -659,7 +659,7 @@ public class AdminServiceImpl implements AdminService {
         // 分组计数整表跑一次（不带 risk 筛选）：四张卡必须显示整口径数字，
         // 管理员一按等级筛选，卡片跟着变就没有参考价值了
         List<Map<String, Object>> rows =
-                adminReadMapper.selectFulfillmentRiskCounts(fulfillmentScopeStatus());
+                adminReadMapper.selectFulfillmentRiskCounts(FULFILLMENT_SCOPE_STATUS);
         return FulfillmentSummaryVO.of(rows);
     }
 
@@ -668,7 +668,7 @@ public class AdminServiceImpl implements AdminService {
         FulfillmentRisk risk = parseRiskFilter(query.getRisk());
 
         LambdaQueryWrapper<CompanionOrder> wrapper = Wrappers.<CompanionOrder>lambdaQuery()
-                .eq(CompanionOrder::getStatus, fulfillmentScopeStatus());
+                .eq(CompanionOrder::getStatus, FULFILLMENT_SCOPE_STATUS);
         if (risk != null) {
             wrapper.eq(CompanionOrder::getFulfillmentRisk, risk.name());
         }
@@ -687,9 +687,7 @@ public class AdminServiceImpl implements AdminService {
      * 拆成两处各写各的，最后会得到「卡片显示 5 单、列表只有 4 行」这种
      * 没人能解释的对不上账。</p>
      */
-    private static String fulfillmentScopeStatus() {
-        return OrderStatus.PENDING.name();
-    }
+    private static final String FULFILLMENT_SCOPE_STATUS = OrderStatus.PENDING.name();
 
     /** 解析风险等级筛选；缺省返回 {@code null} 表示全部，非法值 {@code 400} 不静默忽略 */
     private FulfillmentRisk parseRiskFilter(String raw) {
@@ -789,13 +787,15 @@ public class AdminServiceImpl implements AdminService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ReassignResultVO reassign(Long id, OrderReassignDTO dto) {
-        String reason = normalizeReassignReason(dto.getReason());
-
         // ① 订单存在
         CompanionOrder order = orderMapper.selectById(id);
         if (order == null) {
             throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
         }
+        // 理由的合规校验排在订单存在之后（spec §2.7「前置校验顺序固定」以 ① 打头）：
+        // 「订单不存在 + 理由含违禁词」应当报 3001（订单没了，查订单这件事没意义），
+        // 而不是先被 6003 拦下 —— 后者会让调用方误以为是自己那句话有问题。
+        String reason = normalizeReassignReason(dto.getReason());
         // ② 只处理「待接单且尚无接单人」的订单
         boolean pending = OrderStatus.PENDING.name().equals(order.getStatus());
         if (!pending || order.getCompanionId() != null) {
@@ -856,7 +856,15 @@ public class AdminServiceImpl implements AdminService {
      * 前两条是纯读，后两条才碰档案与拒单表。</p>
      */
     private CompanionProfile requireReassignableCompanion(Long companionId, Long orderId) {
-        CompanionProfile target = companionProfileMapper.selectById(companionId);
+        // ⚠️ companionId 的口径是**用户 ID**（OrderReassignDTO / docs/api/08-admin.md /
+        // 前端 fulfillment.vue 传的都是 sys_user.id），而 companion_profile 的主键 id
+        // 是**档案 ID**，两者是不同的 ID 空间 —— 种子数据里 profile.id=601 对应 user_id=301。
+        // 用 selectById 会拿 301 去查档案主键：查不到就是 2007；更糟的是两个空间撞号时
+        // 会把订单改派给完全不相干的人。全仓其余档案查询一律走 CompanionProfile::getUserId，
+        // 这里必须同口径，否则就是那个唯一的不一致。
+        CompanionProfile target = companionProfileMapper.selectOne(
+                Wrappers.<CompanionProfile>lambdaQuery()
+                        .eq(CompanionProfile::getUserId, companionId));
         if (target == null) {
             throw new BusinessException(ResultCode.COMPANION_NOT_FOUND);
         }
@@ -924,22 +932,28 @@ public class AdminServiceImpl implements AdminService {
     private void notifyReassign(CompanionOrder order, CompanionProfile target, Long fromCompanionId) {
         Long orderId = order.getId();
 
-        Map<String, Object> familyParams = new HashMap<>(4);
-        familyParams.put("orderNo", order.getOrderNo());
-        familyParams.put("audience", "FAMILY");
-        messageService.send(order.getFamilyId(), MessageType.ORDER_REASSIGNED, orderId, familyParams);
-
-        Map<String, Object> targetParams = new HashMap<>(4);
-        targetParams.put("orderNo", order.getOrderNo());
-        targetParams.put("audience", "COMPANION");
-        messageService.send(target.getUserId(), MessageType.ORDER_REASSIGNED, orderId, targetParams);
+        messageService.send(order.getFamilyId(), MessageType.ORDER_REASSIGNED, orderId,
+                reassignParams(order, "FAMILY"));
+        messageService.send(target.getUserId(), MessageType.ORDER_REASSIGNED, orderId,
+                reassignParams(order, "COMPANION"));
 
         if (fromCompanionId != null && !fromCompanionId.equals(target.getUserId())) {
-            Map<String, Object> formerParams = new HashMap<>(4);
-            formerParams.put("orderNo", order.getOrderNo());
-            formerParams.put("audience", "FORMER_COMPANION");
-            messageService.send(fromCompanionId, MessageType.ORDER_REASSIGNED, orderId, formerParams);
+            messageService.send(fromCompanionId, MessageType.ORDER_REASSIGNED, orderId,
+                    reassignParams(order, "FORMER_COMPANION"));
         }
+    }
+
+    /**
+     * 改派通知的模板参数：三方只有 {@code audience} 不同，其余占位符一样。
+     *
+     * <p>三段各写一遍的话，改模板字段时要记得改三处 ——
+     * 漏掉一处就会发出一封缺占位符的站内信，而那封信没人会告诉你。</p>
+     */
+    private static Map<String, Object> reassignParams(CompanionOrder order, String audience) {
+        Map<String, Object> params = new HashMap<>(4);
+        params.put("orderNo", order.getOrderNo());
+        params.put("audience", audience);
+        return params;
     }
 
     /* ================================================================== */

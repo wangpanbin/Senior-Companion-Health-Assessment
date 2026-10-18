@@ -164,9 +164,18 @@ public final class MessageTemplateUtil {
             case ORDER_CREATED, ORDER_ACCEPTED, ORDER_PROGRESS, ORDER_COMPLETED, ORDER_CANCELLED,
                     REVIEW_REPLIED, REVIEW_INVALIDATED ->
                     "/family?orderId=" + bizId;
-            // 履约类消息一律跳订单详情：家属看风险、陪诊员看大厅指向的那一单
-            case FULFILLMENT_WARNING, FULFILLMENT_URGENT, ORDER_URGED, ORDER_REASSIGNED ->
-                    "/order/" + bizId;
+            // 履约类消息统一指向**路由表里真实存在**的跳点，不新增路由：
+            // 家属侧的等级通知落在订单详情（family/order/:id），
+            // 陪诊员侧没有订单详情路由，退到他自己的订单列表（companion/order）。
+            // ⚠️ 此前这里写的是 "/order/" + bizId，而 routes.js 里根本没有 /order/:id
+            // （订单详情是 family/order/:id），点进去只会落到 404。
+            // 已知简化：ORDER_REASSIGNED 有家属 / 目标陪诊员 / 原陪诊员三类接收方，
+            // 单一静态路径无法按接收方分流，此处按「家属是主要责任方」取订单详情；
+            // 陪诊员侧目前从消息中心进入（message.vue 统一走 MessageDetail，
+            // 不按 linkUrl 导航），详见该文件 openItem 的注释。
+            case FULFILLMENT_WARNING, FULFILLMENT_URGENT, ORDER_REASSIGNED ->
+                    "/family/order/" + bizId;
+            case ORDER_URGED -> "/companion/order";
             case AUDIT_RESULT -> "/profile/companion";
             case MEDICATION_REMIND -> "/family?elderId=" + bizId;
             case COMPLAINT_SUBMITTED, REVIEW_APPEAL_SUBMITTED -> "/admin?complaintId=" + bizId;
