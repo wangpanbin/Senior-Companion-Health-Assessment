@@ -1,7 +1,7 @@
 <script setup>
 /** M13 分页会话栏；管理员检索与业务会话列表共享呈现，不共享写权限。 */
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { NlEmpty, NlSkeleton } from '@/components'
+import { NlAvatar, NlEmpty, NlSkeleton } from '@/components'
 import { listAdminChatOrders, listConversations } from '@/api/chat'
 import { useChatUnread } from '@/composables/useChatUnread'
 import { formatDateTime } from '@/utils/format'
@@ -53,6 +53,17 @@ function refresh() {
   load()
   refreshUnread()
 }
+/** 会话项首字头像：peerName 已脱敏（李*军），取首字不影响隐私口径。 */
+const initialOf = (item) =>
+  (props.admin ? item.companionName || item.familyName : item.peerName || '沟').slice(0, 1)
+const titleOf = (item) =>
+  props.admin
+    ? `${item.familyName || '家属'} · ${item.companionName || '陪诊员'}`
+    : item.peerName || '对方'
+const timeOf = (item) =>
+  formatDateTime(
+    props.admin ? item.lastMessageTime : item.lastMessage?.createTime || item.visitTime
+  )
 defineExpose({ refresh })
 onMounted(load)
 onBeforeUnmount(() => {
@@ -103,32 +114,25 @@ onBeforeUnmount(() => {
           :aria-current="String(selectedId) === String(item.orderId) ? 'true' : undefined"
           @click="emit('select', item.orderId)"
         >
-          <div class="chat-conversations__row">
-            <strong>
+          <NlAvatar class="chat-conversations__avatar" :fallback="initialOf(item)" :size="40" tone="primary" />
+          <div class="chat-conversations__main">
+            <div class="chat-conversations__row">
+              <strong class="chat-conversations__name">{{ titleOf(item) }}</strong>
+              <el-badge v-if="!admin && item.unreadCount" :value="item.unreadCount" :max="99" />
+            </div>
+            <div class="chat-conversations__row chat-conversations__sub">
+              <span class="chat-conversations__order">{{ item.orderNo }}</span>
+              <time class="chat-conversations__time">{{ timeOf(item) }}</time>
+            </div>
+            <span class="chat-conversations__place">{{ item.hospital }} · {{ item.orderStatusLabel }}</span>
+            <span class="chat-conversations__preview">
               {{
                 admin
-                  ? `${item.familyName || '家属'} · ${item.companionName || '陪诊员'}`
-                  : item.peerName || '对方'
+                  ? `${item.messageCount || 0} 条沟通记录`
+                  : item.lastMessage?.preview || '暂无消息，点击开始沟通'
               }}
-            </strong>
-            <el-badge v-if="!admin && item.unreadCount" :value="item.unreadCount" :max="99" />
+            </span>
           </div>
-          <span>{{ item.hospital }} · {{ item.orderStatusLabel }}</span>
-          <span class="chat-conversations__preview">
-            {{
-              admin
-                ? `${item.messageCount || 0} 条沟通记录`
-                : item.lastMessage?.preview || '暂无消息，点击开始沟通'
-            }}
-          </span>
-          <span class="nl-caption">{{ item.orderNo }}</span>
-          <time class="nl-caption">
-            {{
-              formatDateTime(
-                admin ? item.lastMessageTime : item.lastMessage?.createTime || item.visitTime
-              )
-            }}
-          </time>
         </button>
       </li>
     </ul>
@@ -152,6 +156,7 @@ onBeforeUnmount(() => {
   background: var(--nl-bg-card);
   border: 1px solid var(--nl-border);
   border-radius: var(--nl-radius-card);
+  box-shadow: $nl-shadow-card;
   &__header,
   &__row,
   &__search {
@@ -173,8 +178,8 @@ onBeforeUnmount(() => {
   }
   &__item {
     display: flex;
-    flex-direction: column;
-    gap: var(--nl-space-2);
+    gap: var(--nl-space-3);
+    align-items: flex-start;
     width: 100%;
     min-height: var(--nl-touch-min);
     padding: var(--nl-space-3);
@@ -185,28 +190,74 @@ onBeforeUnmount(() => {
     background: transparent;
     border: 0;
     border-bottom: 1px solid var(--nl-divider);
+    border-radius: var(--nl-radius-card);
     cursor: pointer;
     overflow-wrap: anywhere;
-    &.is-selected,
-    &:hover {
+
+    &.is-selected {
       background: var(--nl-primary-ghost);
+      /* 选中态用左侧主色竖条标记，比单纯换底色更容易在长列表里定位 */
+      box-shadow: inset 3px 0 0 var(--nl-primary);
+    }
+    &:hover:not(.is-selected) {
+      background: var(--nl-bg-sunken);
     }
     &:focus-visible {
       outline: 2px solid var(--nl-primary);
       outline-offset: -2px;
     }
-    strong {
-      color: var(--nl-text-1);
-    }
+  }
+  &__avatar {
+    flex-shrink: 0;
+  }
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
   }
   &__row {
-    align-self: stretch;
+    display: flex;
+    gap: var(--nl-space-2);
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  &__name {
+    overflow: hidden;
+    color: var(--nl-text-1);
+    font-size: var(--nl-font-h3);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* 订单号与时间退到末行并弱化：扫列表时先看姓名与预览 */
+  &__sub {
+    font-size: var(--nl-font-caption);
+  }
+  &__order {
+    overflow: hidden;
+    color: var(--nl-text-3);
+    font-family: var(--nl-font-num);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__time {
+    flex-shrink: 0;
+    color: var(--nl-text-3);
+  }
+  &__place {
+    overflow: hidden;
+    color: var(--nl-primary-text);
+    font-size: var(--nl-font-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   &__preview {
     display: -webkit-box;
+    overflow: hidden;
+    color: var(--nl-text-2);
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
-    overflow: hidden;
   }
 }
 </style>

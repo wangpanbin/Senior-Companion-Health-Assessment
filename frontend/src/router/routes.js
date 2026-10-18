@@ -58,17 +58,33 @@ export const routes = [
     component: MobileLayout,
     children: [
       // ---------- M13 订单沟通 ----------
+      // wide: true —— 聊天室是三栏（会话列表 / 聊天 / 订单信息面板），
+      // 需要 NlDesktopShell 的 1440px 宽档；见 variables.scss
+      // $nl-desktop-content-chat 的说明。
       {
         path: 'chat',
         name: 'ChatSessions',
         component: () => import('@/views/chat/session-list.vue'),
-        meta: { title: '订单沟通', icon: 'ChatDotRound', roles: ['FAMILY', 'COMPANION'], module: 'M13', code: 'M-28' }
+        meta: {
+          title: '订单沟通',
+          icon: 'ChatDotRound',
+          roles: ['FAMILY', 'COMPANION'],
+          module: 'M13',
+          code: 'M-28',
+          wide: true
+        }
       },
       {
         path: 'chat/:orderId',
         name: 'ChatRoom',
         component: () => import('@/views/chat/room.vue'),
-        meta: { title: '订单沟通', roles: ['FAMILY', 'COMPANION', 'ELDER'], module: 'M13', code: 'M-27' }
+        meta: {
+          title: '订单沟通',
+          roles: ['FAMILY', 'COMPANION', 'ELDER'],
+          module: 'M13',
+          code: 'M-27',
+          wide: true
+        }
       },
       // ---------- 老人端 ELDER ----------
       {

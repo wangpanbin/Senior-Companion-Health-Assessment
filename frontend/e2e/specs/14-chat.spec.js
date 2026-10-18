@@ -225,3 +225,99 @@ test.describe('订单沟通导航层可达性（入口回归）', () => {
     await expect(page.getByLabel('消息内容')).toBeEnabled()
   })
 })
+
+test.describe('订单聊天室信息面板（2026-10 UI 重构）', () => {
+  test.use({ storageState: authFile('fam001'), viewport: { width: 1280, height: 900 } })
+
+  /**
+   * 导航层纪律：本 describe 里的用例**一律不许 goto 聊天室**，
+   * 只能从界面点进去 —— 否则「面板根本没挂载」这类缺陷对它们全盲。
+   */
+  test('从订单列表点进去能看到陪诊员与订单信息面板', async ({ page }) => {
+    await page.goto(ROUTES.familyOrder)
+    const btn = page.getByRole('button', { name: '联系对方', exact: true }).first()
+    await expect(btn, '已接单的订单应出现「联系对方」').toBeVisible()
+    await btn.click()
+    await page.waitForURL(/\/chat\/\d+$/, { timeout: 15000 })
+
+    const panel = page.locator('.order-info').first()
+    await expect(panel, '≥1280 应常驻右侧订单信息面板').toBeVisible()
+
+    // 就诊概览：医院 / 科室来自订单详情
+    await expect(panel.locator('.order-info__section').first()).toContainText('医院科室')
+    // 服务进度块即使无打卡也要有标题（要么进度条，要么「尚未开始服务」）
+    await expect(panel).toContainText('服务进度')
+    // 陪诊员块只在已接单订单出现
+    await expect(panel.locator('.order-info__companion')).toBeVisible()
+    await expect(panel).toContainText('资质')
+  })
+
+  test('陪诊员姓名在头部与信息面板一致，不出现脱敏名并存', async ({ page }) => {
+    await page.goto(ROUTES.familyOrder)
+    await page.getByRole('button', { name: '联系对方', exact: true }).first().click()
+    await page.waitForURL(/\/chat\/\d+$/, { timeout: 15000 })
+
+    // ⚠️ 先等陪诊员块渲染出来再读文本。textContent() 是立即读取、不等渲染的，
+    //   订单详情还没回来时头部显示的是占位「订单沟通」，直接读会拿到占位值并
+    //   误报「姓名不一致」。
+    const companionName = page.locator('.order-info__companion .order-info__person-name').first()
+    await expect(companionName, '陪诊员块应先渲染出来').toBeVisible({ timeout: 15000 })
+    const panelName = (await companionName.textContent())?.trim()
+
+    const headerName = (await page.locator('.chat-panel__name').first().textContent())?.trim()
+
+    expect(panelName, '面板陪诊员姓名不应为空').toBeTruthy()
+    expect(headerName, '头部姓名不应为空').toBeTruthy()
+    // 聊天接口的 peerName 是脱敏的（李*军），头部若仍在用它就会与面板不一致。
+    expect(headerName, '头部与信息面板的陪诊员姓名应一致').toBe(panelName)
+    expect(headerName, '不应显示聊天接口的脱敏名').not.toMatch(/\*/)
+  })
+
+  test('免责声明在任何布局下都可见', async ({ page }) => {
+    await page.goto(ROUTES.familyOrder)
+    await page.getByRole('button', { name: '联系对方', exact: true }).first().click()
+    await page.waitForURL(/\/chat\/\d+$/, { timeout: 15000 })
+    await expect(page.getByText('不做诊断').first()).toBeVisible()
+  })
+
+  test('图片与视频是两个独立按钮，accept 互不重叠', async ({ page }) => {
+    await page.goto(ROUTES.familyOrder)
+    await page.getByRole('button', { name: '联系对方', exact: true }).first().click()
+    await page.waitForURL(/\/chat\/\d+$/, { timeout: 15000 })
+
+    const image = page.locator('input[type=file][aria-label="选择聊天图片"]')
+    const video = page.locator('input[type=file][aria-label="选择聊天视频"]')
+    await expect(image, '图片按钮应有独立的隐藏 input').toHaveCount(1)
+    await expect(video, '视频按钮应有独立的隐藏 input').toHaveCount(1)
+
+    const imageAccept = await image.getAttribute('accept')
+    const videoAccept = await video.getAttribute('accept')
+    expect(imageAccept, '图片按钮不应接受视频').not.toContain('video')
+    expect(videoAccept, '视频按钮应只接受 MP4').toBe('video/mp4')
+
+    // 两个可见按钮文案各自独立，不再是合并的「图片 / 视频」
+    await expect(page.getByRole('button', { name: '图片', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: '视频', exact: true })).toBeVisible()
+  })
+
+  test('窄屏降级为折叠卡：默认收起且可展开', async ({ page }) => {
+    await page.setViewportSize({ width: 420, height: 900 })
+    await page.goto(ROUTES.familyOrder)
+    await page.getByRole('button', { name: '联系对方', exact: true }).first().click()
+    await page.waitForURL(/\/chat\/\d+$/, { timeout: 15000 })
+
+    const fold = page.locator('.chat-room__fold')
+    await expect(fold, '<1280 应出现折叠信息卡').toBeVisible()
+    await expect(fold, '折叠卡应默认收起').not.toHaveAttribute('open', '')
+
+    // 收起态也要能一眼看到「到哪一步了」。摘要头要等订单详情回来才有值。
+    await expect(
+      fold.locator('.order-info__summary-percent'),
+      '收起态应显示进度百分比'
+    ).toHaveText(/^\d+%$/, { timeout: 15000 })
+
+    await fold.locator('summary').click()
+    await expect(fold, '点击标题后应展开').toHaveAttribute('open', '')
+    await expect(fold.locator('.order-info').nth(1)).toContainText('服务进度')
+  })
+})

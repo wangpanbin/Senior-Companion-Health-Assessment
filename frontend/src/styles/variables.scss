@@ -148,6 +148,12 @@ $nl-phone-height: 844px;
 $nl-desktop-content-width: 720px;
 $nl-desktop-content-wide: 1120px;
 
+// 聊天页专用宽档（2026-10 聊天室三栏）：M13 订单沟通要同时放下
+// 「会话列表 / 聊天 / 订单信息面板」三栏，1120px 会把聊天列压到 ~450px
+// （改造前两栏时聊天列是 701px），等于为了加信息反而把主功能做窄。
+// 仅在 route.meta.wide === true 时生效，其余页面维持 1120px 不变。
+$nl-desktop-content-chat: 1440px;
+
 // ≥1280 双栏时卡片的最小并排宽度：不足则自动换行回通栏，避免窄卡片挤压
 $nl-desktop-col-min: 420px;
 

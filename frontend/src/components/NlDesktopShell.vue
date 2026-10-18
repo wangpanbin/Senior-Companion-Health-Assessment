@@ -47,6 +47,15 @@ const props = defineProps({
 
 const route = useRoute()
 
+/**
+ * 是否启用「宽档」内容区（M13 聊天室三栏，1440px）。
+ *
+ * ⚠️ 宽度唯一真源仍然是本组件的 `__content`（ADR-0007 Q11），view 里
+ *    永远不要写 max-width。页面要更宽，只在这里加一档，由路由 meta 开启。
+ *    默认 false —— 未标记的页面像素级不变。
+ */
+const wide = computed(() => route.meta?.wide === true)
+
 /** 顶栏标题：直接取上游约定的 route.meta.title，不再另起一套命名 */
 const title = computed(() => route.meta?.title || '')
 
@@ -76,7 +85,7 @@ function goBack() {
 <template>
   <div class="nl-desktop-shell">
     <header class="nl-desktop-shell__topbar">
-      <div class="nl-desktop-shell__inner">
+      <div :class="['nl-desktop-shell__inner', { 'nl-desktop-shell__inner--wide': wide }]">
         <div class="nl-desktop-shell__left">
           <button
             v-if="showBack"
@@ -108,7 +117,7 @@ function goBack() {
     </header>
 
     <main class="nl-desktop-shell__body">
-      <div class="nl-desktop-shell__content">
+      <div :class="['nl-desktop-shell__content', { 'nl-desktop-shell__content--wide': wide }]">
         <NlMobileOnlyNotice v-if="mobileOnly" :route-title="title" />
         <slot v-else />
       </div>
@@ -272,6 +281,17 @@ function goBack() {
       flex: 1 1 calc(50% - #{$nl-space-5} / 2);
       min-width: $nl-desktop-col-min;
     }
+  }
+
+  /* 宽档（M13 聊天室三栏）：与内层顶栏一起放宽并保持同宽对齐。
+     `margin: 0 auto` 已在 __content 上，1280–1440 之间视口会自然留白居中，
+     不会溢出。 */
+  .nl-desktop-shell .nl-desktop-shell__inner--wide {
+    max-width: $nl-desktop-content-chat;
+  }
+
+  .nl-desktop-shell .nl-desktop-shell__content--wide {
+    max-width: $nl-desktop-content-chat;
   }
 }
 </style>

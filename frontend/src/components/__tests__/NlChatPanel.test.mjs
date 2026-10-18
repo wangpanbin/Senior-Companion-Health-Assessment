@@ -28,7 +28,11 @@ vi.mock('@/api/file', () => ({ uploadFile: vi.fn() }))
 vi.mock('@/components', () => ({
   NlEmpty: { props: ['title'], template: '<div>{{ title }}</div>' },
   NlSkeleton: { template: '<div>加载中</div>' },
-  NlNoticeBar: { template: '<div><slot /></div>' }
+  NlNoticeBar: { template: '<div><slot /></div>' },
+  NlAvatar: {
+    props: ['fallback', 'size', 'tone'],
+    template: '<span class="nl-avatar-stub">{{ fallback }}</span>'
+  }
 }))
 const stubs = {
   ElButton: {
@@ -50,6 +54,16 @@ async function render(props = {}) {
   wrapper = mount(NlChatPanel, { props: { orderId: '1', ...props }, global: { stubs } })
   await flushPromises()
   return wrapper
+}
+/** 按 accept 定位图片 / 视频两个独立 input（拆按钮后不再是单个 input）。 */
+function fileInput(kind) {
+  const accept = kind === 'image' ? 'image/jpeg,image/png,image/webp' : 'video/mp4'
+  return wrapper.get(`input[type=file][accept="${accept}"]`)
+}
+async function pick(kind, file) {
+  const input = fileInput(kind)
+  Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+  await input.trigger('change')
 }
 function deferred() {
   let resolve
@@ -135,10 +149,7 @@ describe('M13 发送与只读', () => {
       fileUrl: '/uploads/test.mp4'
     })
     await render()
-    const file = new File(['mp4'], 'test.mp4', { type: 'video/mp4' })
-    const input = wrapper.get('input[type=file]')
-    Object.defineProperty(input.element, 'files', { value: [file] })
-    await input.trigger('change')
+    await pick('video', new File(['mp4'], 'test.mp4', { type: 'video/mp4' }))
     await wrapper.get('textarea').setValue('现场记录')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -147,7 +158,7 @@ describe('M13 发送与只读', () => {
     expect(wrapper.get('textarea').element.value).toBe('现场记录')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(uploadFile).toHaveBeenLastCalledWith(file, 'CHAT')
+    expect(uploadFile).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'test.mp4' }), 'CHAT')
     expect(sendMessage).toHaveBeenCalledWith('1', {
       msgType: 'VIDEO',
       fileId: 'chat-file',
@@ -175,14 +186,74 @@ describe('M13 发送与只读', () => {
   it('does not submit media if upload response lacks fileId', async () => {
     uploadFile.mockResolvedValue({})
     await render()
-    const input = wrapper.get('input[type=file]')
-    Object.defineProperty(input.element, 'files', {
-      value: [new File(['png'], 'test.png', { type: 'image/png' })]
-    })
-    await input.trigger('change')
+    await pick('image', new File(['png'], 'test.png', { type: 'image/png' }))
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(sendMessage).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('test.png')
+  })
+})
+
+describe('M13 界面重构', () => {
+  it('splits image and video into two independent inputs with disjoint accept lists', async () => {
+    await render()
+    expect(wrapper.findAll('input[type=file]')).toHaveLength(2)
+    expect(fileInput('image').attributes('accept')).toBe('image/jpeg,image/png,image/webp')
+    expect(fileInput('video').attributes('accept')).toBe('video/mp4')
+    // 各自有独立按钮，且都有可访问名。
+    expect(wrapper.find('input[type=file][accept="image/jpeg,image/png,image/webp"]').exists()).toBe(true)
+    expect(wrapper.get('input[aria-label="选择聊天图片"]').exists()).toBe(true)
+    expect(wrapper.get('input[aria-label="选择聊天视频"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('图片')
+    expect(wrapper.text()).toContain('视频')
+  })
+
+  it('allows selecting the same file name twice in a row after clearing', async () => {
+    await render()
+    const file = new File(['png'], 'same.png', { type: 'image/png' })
+    await pick('image', file)
+    await flushPromises()
+    expect(wrapper.text()).toContain('same.png')
+    // 移除附件后必须清空 input.value，否则同名文件第二次不会触发 change。
+    await wrapper.find('.chat-panel__attachment button').trigger('click')
+    await flushPromises()
+    expect(fileInput('image').element.value).toBe('')
+    expect(fileInput('video').element.value).toBe('')
+    await pick('image', file)
+    await flushPromises()
+    expect(wrapper.text()).toContain('same.png')
+  })
+
+  it('uses the unmasked peer name when the order info supplies one', async () => {
+    await render({ peerName: '黄建军' })
+    expect(wrapper.find('.chat-panel__header').text()).toContain('黄建军')
+    // 聊天接口的脱敏名不得再出现在界面上，否则同屏会看到「黄*涛 / 黄建军」并存。
+    getHistory.mockResolvedValue({
+      records: [],
+      hasMore: false,
+      myRole: 'FAMILY',
+      peerName: '黄*涛'
+    })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.chat-panel__header').text()).not.toContain('黄*涛')
+  })
+
+  it('falls back to the chat peer name when no order peer name is available', async () => {
+    // 陪诊员端拿不到家属全名（订单详情只返回陪诊员与老人），此时必须回落到聊天接口。
+    getHistory.mockResolvedValue({
+      records: [],
+      hasMore: false,
+      myRole: 'COMPANION',
+      peerName: '王*芳'
+    })
+    user.role = 'COMPANION'
+    await render()
+    expect(wrapper.find('.chat-panel__header').text()).toContain('王*芳')
+  })
+
+  it('always keeps the compliance notice visible', async () => {
+    await render({ peerName: '黄建军' })
+    expect(wrapper.text()).toContain('不做诊断')
+    expect(wrapper.text()).toContain('120')
   })
 })
