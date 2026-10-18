@@ -46,6 +46,7 @@
 | `companion_order` | `idx_visit_time` | 普通 | `visit_time` | 按就诊时间范围查询 |
 | `companion_order` | `idx_payment_status` | 普通 | `payment_status` | 结算状态筛选（线下对账） |
 | `companion_order` | `idx_create_time` | 普通 | `create_time` | 时间倒序分页 / 按日统计 |
+| `companion_order` | `idx_risk_status_time` | 普通 | `fulfillment_risk`, `status`, `create_time` | 风险扫描候选集筛选 + 风险中心分组计数与列表排序（V3.1） |
 | `order_status_log` | `idx_order_time` | 普通 | `order_id`, `operate_time` | 订单时间线按时间正序 |
 | `order_status_log` | `idx_to_status` | 普通 | `to_status` | 统计各状态到达量（漏斗） |
 | `order_status_log` | `idx_operator` | 普通 | `operator_id` | 按操作人追溯 |
@@ -58,6 +59,8 @@
 | `companion_track` | `idx_companion_id` | 普通 | `companion_id` | 查某陪诊员的全部相关记录 |
 | `order_fee_item` | `idx_order_type` | 普通 | `order_id`, `item_type` | 按订单取明细 + 按类型分账（家属看代垫、平台看服务费） |
 | `order_fee_item` | `idx_occurred_at` | 普通 | `occurred_at` | 支撑业务查询条件 |
+| `order_fulfillment_event` | `idx_order_time` | 普通 | `order_id`, `operate_time` | 订单时间线按时间正序 |
+| `order_fulfillment_event` | `idx_event_time` | 普通 | `event_type`, `operate_time` | 按事件类型做运营统计，如本月催单次数（V3.1） |
 | `medicine_dict` | `idx_name` | 普通 | `name` | 档案按姓名检索 |
 | `medicine_dict` | `idx_trade_name` | 普通 | `trade_name` | 支撑业务查询条件 |
 | `medicine_dict` | `idx_dosage_form` | 普通 | `dosage_form` | 支撑业务查询条件 |

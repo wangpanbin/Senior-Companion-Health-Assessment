@@ -36,7 +36,8 @@ DOMAINS = [
     ("二、老人档案与陪诊员资质域", ["elder_profile", "family_elder_relation",
                                     "companion_audit_record", "companion_profile"]),
     ("三、陪诊订单与执行域（系统核心）", ["companion_order", "order_status_log", "order_reject_log",
-                                          "order_checkin", "companion_track", "order_fee_item"]),
+                                          "order_checkin", "companion_track", "order_fee_item",
+                                          "order_fulfillment_event"]),
     ("四、用药管理域", ["medicine_dict", "medication_plan", "medication_task"]),
     ("五、评价、投诉与消息域", ["order_review", "complaint", "internal_message",
                                    "chat_message", "chat_read_cursor"]),
@@ -47,7 +48,7 @@ MODULE_OF = {
     "admin_oper_log": "M9", "elder_profile": "M3", "family_elder_relation": "M3",
     "companion_audit_record": "M9", "companion_profile": "M3/M9",
     "companion_order": "M4", "order_status_log": "M4", "order_reject_log": "M4",
-    "order_fee_item": "M4",
+    "order_fee_item": "M4", "order_fulfillment_event": "M4/M9",
     "order_checkin": "M5", "companion_track": "M5", "medicine_dict": "M6",
     "medication_plan": "M6", "medication_task": "M6", "order_review": "M7",
     "complaint": "M7", "internal_message": "M8", "chat_message": "M13", "chat_read_cursor": "M13",
@@ -65,6 +66,7 @@ TABLE_CN = {
     "medication_plan": "用药计划表", "medication_task": "每日服药任务表",
     "order_review": "订单评价表", "complaint": "投诉表", "internal_message": "站内信表",
     "chat_message": "订单聊天消息表（会话=订单）", "chat_read_cursor": "订单聊天已读游标表",
+    "order_fulfillment_event": "订单履约事件流水表（V3.1，只增不改，与 order_status_log 语义不同）",
 }
 
 # 表间逻辑关系（用于 ER 图与关系说明；不做物理外键，见索引文档）
@@ -78,6 +80,8 @@ RELATIONS = [
     ("elder_profile", "family_elder_relation", "||--o{", "elder_id", "老人被绑定"),
     ("companion_order", "order_status_log", "||--o{", "order_id", "状态流转留痕"),
     ("companion_order", "order_fee_item", "||--o{", "order_id", "费用明细（代垫/服务费分账）"),
+    ("companion_order", "order_fulfillment_event", "||--o{", "order_id",
+     "履约事件流水（V3.1；风险升级不改 status，事件只能落本表）"),
     ("companion_order", "order_checkin", "||--o{", "order_id", "打卡记录"),
     ("companion_order", "companion_track", "||--o{", "order_id", "轨迹点"),
     ("companion_order", "order_review", "||--o|", "order_id", "一单一评"),
@@ -93,6 +97,13 @@ RELATIONS = [
 ]
 
 # ---------------------------------------------------------------- 解析
+# V6 起「增列 / 加索引」改用 information_schema 守卫的 ALTER TABLE 动态 DDL，
+# 写在单引号字符串字面量里（内层引号成对转义为 ''），CREATE TABLE 那一遍解析不到，
+# 必须单独再过一遍，否则 docs/db 会漏掉 companion_order 的 V3.1 三列与 idx_risk_status_time。
+ALTER_GUARD = re.compile(r"'(ALTER TABLE\b.*?)'\s*,\s*'DO 0'", re.S)
+ALTER_HEAD = re.compile(r"ALTER TABLE\s+`(\w+)`\s+ADD\s+(COLUMN|INDEX|UNIQUE INDEX)\s+(.*)$", re.S)
+
+
 def parse_ddl(text):
     tables = []
     pattern = re.compile(
@@ -135,6 +146,55 @@ def parse_ddl(text):
             pending = ""
         tables.append({"table": table, "comment": tc.group(1) if tc else "",
                        "cols": cols, "indexes": indexes})
+    return tables
+
+
+def parse_alter(text, tables):
+    """把守卫式 ALTER TABLE 里的 ADD COLUMN / ADD INDEX 合并进已解析的表。
+
+    幂等：列名 / 索引名已存在则跳过，因此同一段 SQL 被重复拼接也只生效一次。
+    """
+    by_name = {t["table"]: t for t in tables}
+    for raw in ALTER_GUARD.findall(text):
+        stmt = raw.replace("''", "'").strip()
+        m = ALTER_HEAD.match(stmt)
+        if not m:
+            continue
+        tname, kind, rest = m.group(1), m.group(2).upper(), m.group(3)
+        t = by_name.get(tname)
+        if t is None:
+            continue
+        if "COLUMN" in kind:
+            cm = re.match(r"`(\w+)`\s+([A-Za-z]+(?:\([^)]*\))?)\s*(.*)$", rest, re.S)
+            if not cm:
+                continue
+            cname = cm.group(1)
+            if any(c["name"] == cname for c in t["cols"]):
+                continue
+            ctail = cm.group(3)
+            ccm = re.search(r"COMMENT\s+'((?:[^']|'')*)'", ctail)
+            dm = re.search(r"\bDEFAULT\s+('(?:[^']*)'|[^\s,]+)", ctail, re.I)
+            t["cols"].append({
+                "name": cname,
+                "type": cm.group(2),
+                "not_null": "NOT NULL" in ctail.upper(),
+                "default": dm.group(1) if dm else "",
+                "comment": ccm.group(1).replace("''", "'") if ccm else "",
+                "auto": False,
+            })
+        else:
+            im = re.match(r"`(\w+)`\s*\(([^)]*)\)", rest, re.S)
+            if not im:
+                continue
+            iname = im.group(1)
+            if any(ix["name"] == iname for ix in t["indexes"]):
+                continue
+            t["indexes"].append({
+                "kind": "UNIQUE" if "UNIQUE" in kind else "NORMAL",
+                "name": iname,
+                "cols": re.findall(r"`(\w+)`", im.group(2)),
+                "note": "",
+            })
     return tables
 
 
@@ -246,9 +306,10 @@ def doc_readme(tables, counts):
     L.append("| V3 | `V3__seed_boundary.sql` | 边界场景补充（已取消订单 / 一星差评 / 已解绑关系） | 纯追加，id 段与 V2 不重叠 |")
     L.append("| V4 | `V4__order_fee_item.sql` | 订单费用明细表（ADR-0009） | 纯增量建表 |")
     L.append("| V5 | `V5__chat_message.sql` | 订单聊天消息与已读游标（ADR-0011） | 纯增量建表 |")
+    L.append("| V6 | `V6__order_fulfillment.sql` | 履约事件流水表 + `companion_order` 增列与索引（ADR-0012） | 纯增量；`information_schema` 守卫可重复执行 |")
     L.append("")
     L.append("> **已执行的脚本不得再改**：`validate-on-migrate: true` 会校验 checksum，")
-    L.append("> 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5…）。")
+    L.append("> 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5、V6…）。")
     L.append("")
     L.append("**操作命令**（在 `backend/` 下执行）：")
     L.append("")
@@ -491,6 +552,8 @@ def doc_index(tables, counts):
         "uk_order_user": "一订单一用户一条已读游标（幂等 upsert）",
         "idx_receiver_type": "按类型筛选消息",
         "idx_biz": "",
+        "idx_risk_status_time": "风险扫描候选集筛选 + 风险中心分组计数与列表排序（V3.1）",
+        "idx_event_time": "按事件类型做运营统计，如本月催单次数（V3.1）",
     }
     for domain, names in DOMAINS:
         for name in names:
@@ -595,7 +658,7 @@ def doc_seed(tables, counts):
     total = sum(counts.get(t["table"], 0) for t in tables)
     L.append("共 %d 张表、当前运行库 **%s** 行；下表行数是生成文档时的**运行库快照**（含 E2E 产生的业务数据）。" % (len(tables), format(total, ",")))
     L.append("")
-    L.append("V2 种子覆盖 V1 的 20 张业务表，每张 ≥30 行；V4/V5 增量表只建表、不预置种子，")
+    L.append("V2 种子覆盖 V1 的 20 张业务表，每张 ≥30 行；V4/V5/V6 增量表只建表、不预置种子，")
     L.append("订单聊天消息等运行期数据由用户操作产生，行数为 0 不是数据缺失。")
     L.append("")
     L.append("| 表 | 中文名 | 行数 | 说明 |")
@@ -623,6 +686,7 @@ def doc_seed(tables, counts):
         "internal_message": "72 条 + V3 补 3 条；9 种消息类型（原每类 8 条）；已读 25 / 未读 50",
         "chat_message": "V5 不预置；行数为运行期订单聊天快照（M13 测试/演示产生）",
         "chat_read_cursor": "V5 不预置；每订单每用户最多一条，行数为运行期已读上报快照",
+        "order_fulfillment_event": "V6 不预置；行数为运行期履约事件流水快照（V3.1 联调产生）",
     }
     for domain, names in DOMAINS:
         for name in names:
@@ -724,7 +788,7 @@ def main():
     for path in sql_files:
         with open(path, "r", encoding="utf-8") as f:
             text += f.read() + "\n"
-    tables = parse_ddl(text)
+    tables = parse_alter(text, parse_ddl(text))
 
     if mode == "counts":
         lines = []
