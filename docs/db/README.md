@@ -9,7 +9,7 @@
 |---|---|
 | `README.md` | 本文：设计约定、表清单、Flyway 用法 |
 | `01-ER图.md` | 分域 ER 图（mermaid）、核心关系说明、订单状态机 |
-| `02-数据字典.md` | 23 张表逐字段字典（类型 / 可空 / 默认值 / 说明） |
+| `02-数据字典.md` | 24 张表逐字段字典（类型 / 可空 / 默认值 / 说明） |
 | `03-索引设计与EXPLAIN.md` | 索引清单、设计理由、EXPLAIN 实测结论 |
 | `04-种子数据说明.md` | 数据规模、边界场景覆盖、内置账号、加密脱敏 |
 
@@ -40,33 +40,34 @@
 
 ## 三、表清单
 
-共 **23** 张表，当前运行库合计 **5,458** 行（行数为文档生成时的库内快照）。
+共 **24** 张表，当前运行库合计 **5,960** 行（行数为文档生成时的库内快照）。
 
 | # | 表名 | 中文名 | 模块 | 字段数 | 索引数 | 种子行数 |
 |---|---|---|---|---|---|---|
 | 1 | `sys_user` | 用户主表（四类角色共用） | M2/M3 | 16 | 6 | 123 |
-| 2 | `sys_login_log` | 登录日志表（只增不改） | M2 | 12 | 4 | 2809 |
+| 2 | `sys_login_log` | 登录日志表（只增不改） | M2 | 12 | 4 | 3263 |
 | 3 | `sys_dict` | 数据字典表 | M0 | 11 | 3 | 45 |
-| 4 | `sys_file` | 附件统一登记表 | M0/M3 | 15 | 4 | 95 |
+| 4 | `sys_file` | 附件统一登记表 | M0/M3 | 15 | 4 | 114 |
 | 5 | `admin_oper_log` | 管理员操作日志表（只增不改不删） | M9 | 17 | 5 | 47 |
 | 6 | `elder_profile` | 老人档案表 | M3 | 20 | 6 | 32 |
 | 7 | `family_elder_relation` | 家属-老人绑定关系表 | M3 | 12 | 4 | 31 |
 | 8 | `companion_audit_record` | 陪诊员资质申请记录表 | M9 | 17 | 4 | 34 |
 | 9 | `companion_profile` | 陪诊员业务资料表 | M3/M9 | 25 | 6 | 60 |
-| 10 | `companion_order` | 陪诊订单主表 | M4 | 30 | 10 | 64 |
+| 10 | `companion_order` | 陪诊订单主表 | M4 | 33 | 11 | 64 |
 | 11 | `order_status_log` | 订单状态流转日志表（只增不改） | M4 | 13 | 4 | 253 |
 | 12 | `order_reject_log` | 陪诊员拒单记录表 | M4 | 8 | 3 | 36 |
 | 13 | `order_checkin` | 陪诊打卡记录表 | M5 | 16 | 4 | 273 |
 | 14 | `companion_track` | 陪诊轨迹点表 | M5 | 12 | 3 | 545 |
 | 15 | `order_fee_item` | 订单费用明细表（代垫/服务费分账，ADR-0009） | M4 | 9 | 3 | 2 |
-| 16 | `medicine_dict` | 药品字典表 | M6 | 16 | 5 | 61 |
-| 17 | `medication_plan` | 用药计划表 | M6 | 16 | 5 | 66 |
-| 18 | `medication_task` | 每日服药任务表 | M6 | 19 | 6 | 588 |
-| 19 | `order_review` | 订单评价表 | M7 | 16 | 6 | 31 |
-| 20 | `complaint` | 投诉表 | M7 | 18 | 6 | 32 |
-| 21 | `internal_message` | 站内信表 | M8 | 15 | 5 | 231 |
-| 22 | `chat_message` | 订单聊天消息表（会话=订单） | M13 | 12 | 3 | 0 |
-| 23 | `chat_read_cursor` | 订单聊天已读游标表 | M13 | 8 | 2 | 0 |
+| 16 | `order_fulfillment_event` | 订单履约事件流水表（V3.1，只增不改，与 order_status_log 语义不同） | M4/M9 | 13 | 3 | 29 |
+| 17 | `medicine_dict` | 药品字典表 | M6 | 16 | 5 | 61 |
+| 18 | `medication_plan` | 用药计划表 | M6 | 16 | 5 | 66 |
+| 19 | `medication_task` | 每日服药任务表 | M6 | 19 | 6 | 588 |
+| 20 | `order_review` | 订单评价表 | M7 | 16 | 6 | 31 |
+| 21 | `complaint` | 投诉表 | M7 | 18 | 6 | 32 |
+| 22 | `internal_message` | 站内信表 | M8 | 15 | 5 | 231 |
+| 23 | `chat_message` | 订单聊天消息表（会话=订单） | M13 | 12 | 3 | 0 |
+| 24 | `chat_read_cursor` | 订单聊天已读游标表 | M13 | 8 | 2 | 0 |
 
 > 索引数含主键索引。
 
@@ -89,9 +90,10 @@ classpath 的 `db/migration/`：
 | V3 | `V3__seed_boundary.sql` | 边界场景补充（已取消订单 / 一星差评 / 已解绑关系） | 纯追加，id 段与 V2 不重叠 |
 | V4 | `V4__order_fee_item.sql` | 订单费用明细表（ADR-0009） | 纯增量建表 |
 | V5 | `V5__chat_message.sql` | 订单聊天消息与已读游标（ADR-0011） | 纯增量建表 |
+| V6 | `V6__order_fulfillment.sql` | 履约事件流水表 + `companion_order` 增列与索引（ADR-0012） | 纯增量；`information_schema` 守卫可重复执行 |
 
 > **已执行的脚本不得再改**：`validate-on-migrate: true` 会校验 checksum，
-> 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5…）。
+> 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5、V6…）。
 
 **操作命令**（在 `backend/` 下执行）：
 

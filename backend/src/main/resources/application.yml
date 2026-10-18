@@ -106,7 +106,6 @@ nianglin:
   # 风险等级由「订单已等待多少分钟」判定，判定逻辑在 FulfillmentRiskEvaluator（纯函数）。
   # ⚠️ 三个阈值必须严格递增，否则应用启动失败（FulfillmentRiskEvaluator#validateThresholds）；
   #    这是刻意的：反向配置（如 紧急 10 / 预警 30）会表现为「先紧急后预警」。
-
   #    没人能解释，且要等到事故现场才发现。
   # 阈值已于 2026-10-17 由产品确认：预警线 10 分钟（URGENT 30 / MANUAL_REQUIRED 120 同步沿用）。
   fulfillment:
@@ -122,7 +121,9 @@ nianglin:
     urge-max-times: 3
     # 风险扫描任务总开关；关掉后 @Scheduled 方法不注册（压测 / 排查时用）
     scheduler-enabled: true
-    # 单轮扫描的候选订单上限；超出部分留给下一轮，避免一轮跑太久超过锁 TTL
+    # 单轮扫描的候选订单上限；超出部分留给下一轮，避免一轮跑太久超过锁 TTL。
+  # ⚠️ 这个上限刻意绕开分页插件（走 selectList + last("LIMIT n)") 而非 selectPage），
+  #    因为 maxLimit 写死 100，走 selectPage 会被静默截断、配置失效。
     scan-batch: 200
     # 扫描间隔（毫秒），默认 5 分钟
     scheduler-interval-ms: 300000

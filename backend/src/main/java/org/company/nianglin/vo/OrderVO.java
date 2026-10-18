@@ -119,8 +119,9 @@ public class OrderVO {
     @Schema(description = "累计催单次数", example = "1")
     private Integer urgeCount;
 
-    @Schema(description = "前端据此决定是否展示「催促接单」按钮。"
-            + "**这不是安全边界** —— 服务端仍会二次校验状态、风险、冷却期与次数上限")
+    @Schema(description = "前端据此决定是否展示「催促接单」按钮；"
+            + "已计入状态、风险等级、冷却期与次数上限四道门槛。"
+            + "**这不是安全边界** —— 服务端仍会二次校验")
     private Boolean canUrge;
 
     @Schema(description = "服务费（两位小数字符串）", example = "128.00")
@@ -246,11 +247,64 @@ public class OrderVO {
                 // 家属看到「等待 300 分钟」会以为订单坏了
                 .setWaitMinutes(pending ? waitMinutes(o) : 0)
                 .setUrgeCount(o.getUrgeCount() == null ? 0 : o.getUrgeCount())
-                // canUrge 只表达「此刻点了会不会被拒」，不表达「点了就会成功」：
-                // 冷却期与次数上限在服务端判定，前端拿不到也不需要
+                // canUrge 只表达「此刻点了会不会被拒」：状态与风险两道门槛在这里判，
+                // 冷却期与次数上限两道在 applyUrgeGate 里补（阈值在配置上，工厂方法拿不到）
                 .setCanUrge(pending && visible.atLeast(FulfillmentRisk.URGENT))
                 .setFee(money(o.getFee()))
                 .setCreateTime(o.getCreateTime());
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 催单资格门槛                                                        */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * 催单的两道数量门槛（次数上限 / 冷却间隔）。
+     *
+     * <p>它们来自配置（{@code nianglin.fulfillment.urge-*}）而不是订单行，
+     * 所以不能由 {@link #base} 直接判 —— 出参对象也不该知道自己的阈值
+     * 从哪个配置源读。改由 Service 层装配后经 {@link #applyUrgeGate} 回填。</p>
+     *
+     * @param maxTimes        单笔订单累计催单次数上限
+     * @param cooldownMinutes 两次催单之间的最小间隔（分钟）
+     */
+    public record UrgeGate(int maxTimes, int cooldownMinutes) {
+
+        /**
+         * 此刻点下去会不会被服务端拒掉。
+         *
+         * <p>与服务端 {@code FulfillmentServiceImpl#urge} 的条件更新同口径：
+         * 次数用尽、或距上次催单还没到冷却期，都判为不可催。</p>
+         */
+        public boolean allows(CompanionOrder o, LocalDateTime now) {
+            int used = o.getUrgeCount() == null ? 0 : o.getUrgeCount();
+            if (used >= maxTimes) {
+                return false;
+            }
+            return o.getLastUrgeAt() == null
+                    || !now.isBefore(o.getLastUrgeAt().plusMinutes(cooldownMinutes));
+        }
+    }
+
+    /**
+     * 用门槛收敛 {@code canUrge}：已计冷却期与次数上限的两道门。
+     *
+     * <p>{@code canUrge} 的契约是「此刻点了会不会被拒」（spec §3.3）。
+     * 不做这次回填的话，家属在第 3 次之后仍会看到一个可点的按钮，
+     * 点下去必然吃 {@code 3009} —— 这不是防御性编程的冗余，
+     * 是让按钮在说谎。</p>
+     *
+     * <p>管理端（{@code AdminServiceImpl}）不回填：订单管理页不展示催单按钮，
+     * 它的 {@code canUrge} 没有消费方。</p>
+     *
+     * @param source 同一笔订单的实体快照（需要 {@code urgeCount} 与 {@code lastUrgeAt}）
+     * @param gate   门槛；传 {@code null} 表示不收敛（例如调用方拿不到配置）
+     */
+    public OrderVO applyUrgeGate(CompanionOrder source, UrgeGate gate) {
+        if (gate != null && source != null && Boolean.TRUE.equals(this.canUrge)) {
+            this.canUrge = gate.allows(source, LocalDateTime.now());
+        }
+        return this;
     }
 
     /** 库里为 NULL 视为 NORMAL —— V6 之前的订单没有这一列值 */

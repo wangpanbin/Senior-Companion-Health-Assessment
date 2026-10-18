@@ -1,7 +1,6 @@
 package org.company.nianglin.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.ResultCode;
@@ -81,14 +80,19 @@ public class FulfillmentServiceImpl implements FulfillmentService {
 
         // 候选集：已经等到预警线以上的待接单订单。
         // 按下单时间升序 —— 等得最久的先处理，也让批次上限优先覆盖最危险的那批。
-        List<CompanionOrder> candidates = orderMapper.selectPage(
-                new Page<>(1L, properties.getScanBatch()),
+        // ⚠️ 这里用 selectList + last("LIMIT n") 而不是 selectPage：
+        // MybatisPlusConfig 把分页插件的 maxLimit 写死成 100，走 selectPage 时
+        // scan-batch 配成 200 / 500 也会被静默截到 100，「单轮扫描候选上限」
+        // 就成了一个骗人的配置项 —— 而这类配置漂移不会让任何测试变红。
+        // 扫描不需要总数，selectList 还省掉一次 COUNT。
+        // n 是 int，拼进 SQL 不构成注入；Math.max 兜住配成 0 / 负数的误配。
+        List<CompanionOrder> candidates = orderMapper.selectList(
                 Wrappers.<CompanionOrder>lambdaQuery()
                         .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name())
                         .le(CompanionOrder::getCreateTime,
                                 now.minusMinutes(properties.getWarningMinutes()))
-                        .orderByAsc(CompanionOrder::getCreateTime))
-                .getRecords();
+                        .orderByAsc(CompanionOrder::getCreateTime)
+                        .last("LIMIT " + Math.max(1, properties.getScanBatch())));
 
         if (candidates.isEmpty()) {
             return 0;
@@ -208,6 +212,11 @@ public class FulfillmentServiceImpl implements FulfillmentService {
             throw new BusinessException(ResultCode.ORDER_URGE_TOO_FREQUENT);
         }
 
+        // newCount 只用于**回给调用方的展示值与「下次可催时间」的推算**，
+        // 不参与判定：并发下它可能与库里的真实值差 1（另一次请求先跑完了），
+        // 但库里的计数是 SQL 侧自增出来的，而 maxTimes 的把关也在 WHERE 里。
+        // 所以这里用预读值 +1 是安全的 —— 与上面「不能用预读值落库」是两件事：
+        // 落库要精确，展示容忍偏差。
         int newCount = (order.getUrgeCount() == null ? 0 : order.getUrgeCount()) + 1;
         writeEvent(orderId, FulfillmentEventType.USER_URGED, current, current,
                 TriggerSource.USER, me.userId(), RoleConstants.FAMILY, remark);
@@ -298,31 +307,6 @@ public class FulfillmentServiceImpl implements FulfillmentService {
     /* 内部工具                                                            */
     /* ================================================================== */
 
-    /**
-     * 风险等级 → 事件类型。
-     *
-     * <p>{@link FulfillmentRisk#NORMAL} 落到 {@code MANUAL_REQUIRED} 是「退回正常」，
-     * 那条路径不该由扫描触发（扫描只升不降），但真发生时也需要一条可追溯的记录，
-     * 所以仍返回 {@code MANUAL_REQUIRED} 之外的一个合法值而不是 {@code null}。</p>
-     */
-    /**
-     * 风险等级 → 风险类事件类型。
-     *
-     * <p>{@code NORMAL} 不属于「风险升高」，理论上不该进来 —— 但扫描只对
-     * 「应有等级高于当前等级」的订单动手，而 NORMAL 是最低档，
-     * 永远不会高于任何等级，因此这条分支不可达。{@code default} 兜住它，
-     * 是为了脏数据（库里存了枚举之外的值、{@code of} 返回 null）不至于 NPE，
-     * <b>不是</b>「NORMAL 也要记一条需要人工介入的事件」。</p>
-     */
-    /**
-     * 风险等级 → 风险类事件类型。
-     *
-     * <p>{@code NORMAL} 不属于「风险升高」，理论上不该进来 —— 但扫描只对
-     * 「应有等级高于当前等级」的订单动手，而 NORMAL 是最低档，
-     * 永远不会高于任何等级，因此这条分支不可达。{@code default} 兜住它，
-     * 是为了脏数据（库里存了枚举之外的值、{@code of} 返回 null）不至于 NPE，
-     * <b>不是</b>「NORMAL 也要记一条需要人工介入的事件」。</p>
-     */
     /**
      * 风险等级 → 风险类事件类型。
      *

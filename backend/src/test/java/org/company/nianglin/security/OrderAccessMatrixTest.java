@@ -292,6 +292,34 @@ class OrderAccessMatrixTest {
                 .andExpect(jsonPath("$.code").value(ResultCode.ORDER_NO_PERMISSION.getCode()));
     }
 
+    /* ============ 催单端点的角色门禁（V3.1 · spec §7.3） ============ */
+
+    /**
+     * 催单是<b>家属</b>的动作。管理员能读任意订单、能强制改派，
+     * 但「代家属催单」不在其职责里 —— 管理员催单会让陪诊员收到一条来源不明的
+     * 催促通知，而审计里也说不清是谁点的。
+     *
+     * <p>这条用例存在的理由：端点挂着 {@code hasRole('FAMILY')}，
+     * 但 {@code @PreAuthorize} 一旦被人改成 {@code isAuthenticated()}，
+     * 管理员就能代催，而当时没有任何一条测试会红。</p>
+     */
+    @ParameterizedTest(name = "催单 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ADMIN, RoleConstants.COMPANION, RoleConstants.ELDER})
+    @DisplayName("催单 · 非家属角色一律 403（管理员代催、陪诊员自己催、老人催都不行）")
+    void nonFamilyShouldNotUrge(String role) throws Exception {
+        long userId = switch (role) {
+            case RoleConstants.ADMIN -> ADMIN_ID;
+            case RoleConstants.COMPANION -> COMPANION_APPROVED;
+            default -> ELDER_OWNER;
+        };
+        mockMvc.perform(post("/api/order/{id}/urge", PENDING_ORDER)
+                        .header(AUTH_HEADER, token(userId, role))
+                        .contentType(JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
     @Test
     @DisplayName("归属 · 管理员读任意订单 → 200（纠纷处理需要）")
     void adminShouldReadAnyOrder() throws Exception {

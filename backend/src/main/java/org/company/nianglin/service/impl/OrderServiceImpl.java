@@ -385,12 +385,20 @@ public class OrderServiceImpl implements OrderService {
      * 自由文本 → SQL 字符串字面量。
      *
      * <p>MyBatis-Plus 的排序只接受列名（{@code SFunction}），{@code last()} 是唯一能把
-     * 表达式放进 ORDER BY 的口子，而它不接绑定参数，所以档案文本必须在 Java 侧转义。
-     * 单引号翻倍是 SQL 标准写法，与 {@code sql_mode} 无关；这里用不到反斜杠转义，
-     * 因为 {@code LOCATE} 没有通配符语义。</p>
+     * 表达式放进 ORDER BY 的口子，而它不接绑定参数，所以档案文本必须在 Java 侧转义。</p>
+     *
+     * <p><b>反斜杠必须翻倍，不能因为「LOCATE 没有通配符语义」就跳过</b>：
+     * MySQL 默认 {@code sql_mode}（未开 {@code NO_BACKSLASH_ESCAPES}）下，
+     * {@code \} 是<b>字符串字面量层面</b>的转义符，与外层函数是什么无关。
+     * 一个以 {@code \} 结尾的 {@code service_area}（如 {@code 海淀区\}）
+     * 会吃掉闭引号，生成的 SQL 直接语法错误，而 {@code last()} 不接绑定参数，
+     * 等于陪诊员自助填的档案文本直通数据库。</p>
+     *
+     * <p>顺序固定为「先反斜杠、后单引号」：反斜杠自身是待转义字符之一，
+     * 混着做两次替换时无法保证不互相吃掉。</p>
      */
     private static String sqlStringLiteral(String raw) {
-        return "'" + raw.replace("'", "''") + "'";
+        return "'" + raw.replace("\\", "\\\\").replace("'", "''") + "'";
     }
 
 
@@ -408,7 +416,8 @@ public class OrderServiceImpl implements OrderService {
                 elder == null ? null : elder.getName(),
                 elder == null ? null : ageOf(elder),
                 companionName,
-                readPhotoList(order.getServicePhotos()));
+                readPhotoList(order.getServicePhotos()))
+                .applyUrgeGate(order, urgeGate());
     }
 
     /* ================================================================== */
@@ -873,12 +882,19 @@ public class OrderServiceImpl implements OrderService {
             Integer age = elder == null ? null : ageOf(elder);
             String companionName = order.getCompanionId() == null
                     ? null : companionNames.get(order.getCompanionId());
-            return withAddress
+            return (withAddress
                     ? OrderVO.ofHall(order, elderName, age, companionName)
-                    : OrderVO.ofList(order, elderName, age, companionName);
+                    : OrderVO.ofList(order, elderName, age, companionName))
+                    .applyUrgeGate(order, urgeGate());
         }).toList();
 
         return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getPages(), list);
+    }
+
+    /** 催单门槛：两个阈值都来自 {@code nianglin.fulfillment.urge-*}，装配时读一次即可 */
+    private OrderVO.UrgeGate urgeGate() {
+        return new OrderVO.UrgeGate(fulfillmentProperties.getUrgeMaxTimes(),
+                fulfillmentProperties.getUrgeCooldownMinutes());
     }
 
     /**

@@ -275,6 +275,24 @@ class HallSortTest {
     }
 
     @Test
+    @DisplayName("档案自由文本里的反斜杠被翻倍（MySQL 默认 sql_mode 下 '\\' 是字面量转义符）")
+    void freeTextBackslashShouldBeEscaped() {
+        // 「海淀区\」原样拼进字面量会变成 '海淀区\' —— 反斜杠吃掉闭引号，
+        // 生成的 SQL 直接语法错误。而 last() 不接绑定参数，
+        // 等于陪诊员自助填的 service_area 直通数据库。
+        // 上一版注释写「LOCATE 没有通配符语义所以用不到反斜杠转义」是错的：
+        // 转义发生在字符串字面量层面，与外层函数是什么无关。
+        stubCompanionProfile(AuditStatus.APPROVED, "海淀区\\", null);
+        stubHallQuery();
+
+        orderService.hall(new OrderHallQuery());
+
+        String sql = hallSql();
+        assertTrue(sql.contains("LOCATE('海淀区\\\\', hospital) > 0"),
+                "反斜杠必须翻倍后再进字面量：" + sql);
+    }
+
+    @Test
     @DisplayName("服务区域与可服务时段都为空时不产出匹配排序键（空不等于匹配一切）")
     void blankAreaShouldNotTreatEveryOrderAsMatched() {
         stubCompanionProfile(AuditStatus.APPROVED, "   ", null);

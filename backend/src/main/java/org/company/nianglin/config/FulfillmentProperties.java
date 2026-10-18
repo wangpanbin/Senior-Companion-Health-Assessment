@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
  *
  * <h3>为什么单独一个 Properties 类而不是各处 {@code @Value}</h3>
  *
- * <p>本版有 9 个配置键，会被扫描任务、催单服务、大厅查询分别读取。
+ * <p>本版有 10 个配置键，会被扫描任务、催单服务、大厅查询分别读取。
  * 散落的 {@code @Value} 会让「阈值到底是多少」变成一次全局搜索，
  * 而且启动期校验拿不到完整视图。这里集中一处，并由
  * {@link FulfillmentRiskEvaluator#validateThresholds} 在启动时校验顺序。</p>

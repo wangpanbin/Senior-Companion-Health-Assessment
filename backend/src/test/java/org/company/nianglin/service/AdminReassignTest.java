@@ -81,6 +81,8 @@ class AdminReassignTest {
     private static final Long ADMIN_ID = 1L;
     private static final Long FAMILY_ID = 300L;
     private static final Long TARGET_ID = 302L;
+    /** 目标陪诊员的档案主键，与 {@link #TARGET_ID}（用户 ID）刻意不是同一个数 */
+    private static final Long TARGET_PROFILE_PK = 602L;
     private static final String REASON = "原陪诊员临时有事无法前往，已协调另一位陪诊员接单";
 
     @Mock
@@ -134,7 +136,7 @@ class AdminReassignTest {
     @DisplayName("正常改派：条件更新 + 事件 + 审计 + 家属与目标两方通知")
     void reassignShouldSucceedAndWriteEverything() {
         given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
-        given(companionProfileMapper.selectById(TARGET_ID)).willReturn(targetProfile());
+        given(companionProfileMapper.selectOne(any())).willReturn(targetProfile());
         given(orderRejectLogMapper.selectCount(any())).willReturn(0L);
         given(orderMapper.update(any(), any(LambdaUpdateWrapper.class))).willReturn(1);
 
@@ -157,7 +159,7 @@ class AdminReassignTest {
     @DisplayName("正常改派：审计的 before / after 记的是陪诊员，不是订单状态")
     void reassignShouldLogCompanionBeforeAfter() {
         given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
-        given(companionProfileMapper.selectById(TARGET_ID)).willReturn(targetProfile());
+        given(companionProfileMapper.selectOne(any())).willReturn(targetProfile());
         given(orderRejectLogMapper.selectCount(any())).willReturn(0L);
         given(orderMapper.update(any(), any(LambdaUpdateWrapper.class))).willReturn(1);
 
@@ -216,7 +218,7 @@ class AdminReassignTest {
     @DisplayName("目标陪诊员不存在 → 2007")
     void reassignShouldRejectMissingTarget() {
         given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
-        given(companionProfileMapper.selectById(TARGET_ID)).willReturn(null);
+        given(companionProfileMapper.selectOne(any())).willReturn(null);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.reassign(ORDER_ID, reassignDto()));
@@ -231,7 +233,7 @@ class AdminReassignTest {
         given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
         CompanionProfile target = targetProfile();
         target.setAuditStatus(auditStatus);
-        given(companionProfileMapper.selectById(TARGET_ID)).willReturn(target);
+        given(companionProfileMapper.selectOne(any())).willReturn(target);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.reassign(ORDER_ID, reassignDto()));
@@ -246,7 +248,7 @@ class AdminReassignTest {
         given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
         CompanionProfile target = targetProfile();
         target.setWorkStatus(workStatus);
-        given(companionProfileMapper.selectById(TARGET_ID)).willReturn(target);
+        given(companionProfileMapper.selectOne(any())).willReturn(target);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.reassign(ORDER_ID, reassignDto()));
@@ -258,7 +260,7 @@ class AdminReassignTest {
     @DisplayName("目标曾拒过该单 → 3010（再指派回去只会被再拒一次）")
     void reassignShouldRejectTargetWhoRejected() {
         given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
-        given(companionProfileMapper.selectById(TARGET_ID)).willReturn(targetProfile());
+        given(companionProfileMapper.selectOne(any())).willReturn(targetProfile());
         given(orderRejectLogMapper.selectCount(any())).willReturn(1L);
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -276,7 +278,7 @@ class AdminReassignTest {
     @DisplayName("改派不改订单状态：更新语句里没有 status 的 set")
     void reassignShouldNotChangeOrderStatus() {
         given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
-        given(companionProfileMapper.selectById(TARGET_ID)).willReturn(targetProfile());
+        given(companionProfileMapper.selectOne(any())).willReturn(targetProfile());
         given(orderRejectLogMapper.selectCount(any())).willReturn(0L);
         given(orderMapper.update(any(), any(LambdaUpdateWrapper.class))).willReturn(1);
 
@@ -294,7 +296,7 @@ class AdminReassignTest {
     @DisplayName("与抢单竞争失败（条件更新 0 行）→ 3010，且不留事件、不发通知、不写审计")
     void reassignShouldFailCleanlyWhenClaimLost() {
         given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
-        given(companionProfileMapper.selectById(TARGET_ID)).willReturn(targetProfile());
+        given(companionProfileMapper.selectOne(any())).willReturn(targetProfile());
         given(orderRejectLogMapper.selectCount(any())).willReturn(0L);
         given(orderMapper.update(any(), any(LambdaUpdateWrapper.class))).willReturn(0);
 
@@ -312,17 +314,56 @@ class AdminReassignTest {
     /* ================================================================== */
 
     @Test
-    @DisplayName("理由命中医疗建议词表 → 3007，且不写任何数据")
+    @DisplayName("理由命中医疗建议词表 → 6003（CONTENT_SENSITIVE），且不写任何数据")
     void reassignShouldRejectMedicalReason() {
-        // 理由合规校验排在查单之前：不合规的理由无论订单是否存在都不该落库，
-        // 因此这里刻意不给 orderMapper 打桩，验证它根本没被查到
+        // 顺序按 spec §2.7「前置校验顺序固定」：① 订单存在先过，才轮到理由的合规校验。
+        // 上一版把合规校验排在查单之前，于是「订单不存在 + 违禁理由」会报 6003 ——
+        // 调用方会以为是自己那句话有问题，而实际问题是不存在的订单。code-review 已判定为违规。
+        given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
+
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.reassign(ORDER_ID,
                         new OrderReassignDTO().setCompanionId(TARGET_ID)
                                 .setReason("建议服用两片降压药后再前往医院")));
 
         assertEquals(ResultCode.CONTENT_SENSITIVE.getCode(), ex.getCode());
+        // 拒绝发生在任何落库动作之前：订单没被改、没写事件、没写审计、没发通知
         verify(orderMapper, never()).update(any(), any(LambdaUpdateWrapper.class));
+        verify(companionProfileMapper, never()).selectOne(any());
+    }
+
+    /* ================================================================== */
+    /* 回归：V3.1 code-review 发现的两处缺陷                                */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("回归 · 目标陪诊员按**用户 ID** 定位，不是档案主键（id=602 / user_id=302）")
+    void reassignShouldLocateCompanionByUserIdNotProfilePk() {
+        given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
+        given(companionProfileMapper.selectOne(any())).willReturn(targetProfile());
+        given(orderRejectLogMapper.selectCount(any())).willReturn(0L);
+        given(orderMapper.update(any(), any(LambdaUpdateWrapper.class))).willReturn(1);
+
+        ReassignResultVO vo = service.reassign(ORDER_ID, reassignDto());
+
+        assertEquals(TARGET_ID, vo.getToCompanionId(),
+                "落库的必须是 user_id：companion_order.companion_id 存的就是用户 ID");
+        verify(companionProfileMapper, never()).selectById(any());
+    }
+
+    @Test
+    @DisplayName("回归 · 订单不存在时先报 3001，理由含违禁词也不越级报 6003")
+    void missingOrderShouldWinOverSensitiveReason() {
+        given(orderMapper.selectById(ORDER_ID)).willReturn(null);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.reassign(ORDER_ID,
+                        new OrderReassignDTO().setCompanionId(TARGET_ID)
+                                .setReason("建议服用两片降压药后再前往医院")));
+
+        assertEquals(ResultCode.ORDER_NOT_FOUND.getCode(), ex.getCode(),
+                "spec §2.7 的前置校验顺序以「① 订单存在」打头，6003 不得抢先");
+        verify(companionProfileMapper, never()).selectOne(any());
     }
 
     @Test
@@ -370,6 +411,10 @@ class AdminReassignTest {
 
     private CompanionProfile targetProfile() {
         CompanionProfile profile = new CompanionProfile();
+        // 主键与 userId 刻意不是同一个数（种子数据里 profile.id=602 对应 user_id=302）：
+        // 契约上 companionId 是**用户 ID**，按档案主键去查就会落空，
+        // 两个空间一旦撞号还会把订单改派给完全不相干的人。
+        profile.setId(TARGET_PROFILE_PK);
         profile.setUserId(TARGET_ID);
         profile.setRealName("李四军");
         profile.setAuditStatus(AuditStatus.APPROVED.name());

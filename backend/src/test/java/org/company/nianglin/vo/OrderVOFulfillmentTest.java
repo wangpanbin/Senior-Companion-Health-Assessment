@@ -88,6 +88,71 @@ class OrderVOFulfillmentTest {
         assertNotNull(vo.getFulfillmentRiskLabel());
     }
 
+    /* ================================================================ */
+    /* canUrge 的两道数量门槛（V3.1 code-review 发现）                     */
+    /* ================================================================ */
+
+    @Test
+    @DisplayName("canUrge · 催单次数已达上限 → 按钮必须收起来（否则点了必吃 3009）")
+    void canUrgeShouldBeFalseWhenMaxTimesReached() {
+        CompanionOrder order = order(OrderStatus.PENDING.name(), FulfillmentRisk.URGENT, 3, 45);
+
+        OrderVO vo = OrderVO.ofList(order, "王*福", 82, null)
+                .applyUrgeGate(order, new OrderVO.UrgeGate(3, 10));
+
+        assertFalse(vo.getCanUrge(),
+                "第 3 次之后还显示按钮，等于让按钮说谎：点下去服务端必然回 3009");
+        assertEquals(3, vo.getUrgeCount(), "累计次数照样如实返回，前端可以自己提示");
+    }
+
+    @Test
+    @DisplayName("canUrge · 冷却期内 → 按钮必须收起来")
+    void canUrgeShouldBeFalseDuringCooldown() {
+        CompanionOrder order = order(OrderStatus.PENDING.name(), FulfillmentRisk.URGENT, 1, 45);
+        order.setLastUrgeAt(LocalDateTime.now().minusMinutes(3));
+
+        OrderVO vo = OrderVO.ofList(order, "王*福", 82, null)
+                .applyUrgeGate(order, new OrderVO.UrgeGate(3, 10));
+
+        assertFalse(vo.getCanUrge(), "距上次催单 3 分钟，冷却期是 10 分钟");
+    }
+
+    @Test
+    @DisplayName("canUrge · 冷却期已过且未超限 → 仍可催（门槛不能收得过紧）")
+    void canUrgeShouldStayTrueAfterCooldown() {
+        CompanionOrder order = order(OrderStatus.PENDING.name(), FulfillmentRisk.URGENT, 1, 45);
+        order.setLastUrgeAt(LocalDateTime.now().minusMinutes(30));
+
+        OrderVO vo = OrderVO.ofList(order, "王*福", 82, null)
+                .applyUrgeGate(order, new OrderVO.UrgeGate(3, 10));
+
+        assertTrue(vo.getCanUrge());
+    }
+
+    @Test
+    @DisplayName("canUrge · 从未催过（lastUrgeAt 为 NULL）→ 不受冷却期影响")
+    void canUrgeShouldIgnoreCooldownWhenNeverUrged() {
+        CompanionOrder order = order(OrderStatus.PENDING.name(), FulfillmentRisk.URGENT, 0, 45);
+        order.setLastUrgeAt(null);
+
+        OrderVO vo = OrderVO.ofList(order, "王*福", 82, null)
+                .applyUrgeGate(order, new OrderVO.UrgeGate(3, 10));
+
+        assertTrue(vo.getCanUrge());
+    }
+
+    @Test
+    @DisplayName("canUrge · 门槛为 null 时不收敛（装配缺口不该把按钮误关）")
+    void nullGateShouldNotClobberCanUrge() {
+        CompanionOrder order = order(OrderStatus.PENDING.name(), FulfillmentRisk.URGENT, 3, 45);
+
+        OrderVO vo = OrderVO.ofList(order, "王*福", 82, null).applyUrgeGate(order, null);
+
+        assertTrue(vo.getCanUrge());
+    }
+
+    /* ================================================================ */
+
     @Test
     @DisplayName("催单次数为 NULL 时返回 0，不返回 null")
     void nullUrgeCountShouldBecomeZero() {

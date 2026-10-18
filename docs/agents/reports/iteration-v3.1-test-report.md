@@ -129,6 +129,10 @@
 | 4 | 既有 E2E 套件基线从 166 涨到 176，工单里的数字未同步 | 无 | 已在本报告注明 |
 | 5 | `FulfillmentEventType.MATCHING_STARTED` 与 `ADMIN_COORDINATED` 目前无生产写入点 | 低 | 枚举值是 spec §3.5 列的八种之一，本期只落了六种；V3.2 若引入「开始匹配」事件再启用 |
 | 6 | 前端三档风险色调 SCSS 在四处重复 | 低 | 可抽成 SCSS partial，但四处所属组件分属不同模块，强行抽会引入跨模块耦合 |
+| 7 | `AdminReassignTest` 的 `@DisplayName` 仍写「→ 3007」，断言已是 `CONTENT_SENSITIVE(6003)` | 低 | **仅记录未修**：该测试文件不在本轮文档侧改动范围。文档侧（javdoc / 前端注释 / E2E 断言 / 接口文档四处）已按 §八 同步为 6003，仅剩这处 `@DisplayName` 描述滞后，会让读用例名的人以为断言的是 3007 |
+| 8 | `tools/scan_bad_chars.py` 的 docstring 用法示例仍写旧文件名 `tools/tmp_scan_bad.py` | 低 | **仅记录未修**：该脚本不在 `docs/` 下、不在本轮改动范围。照着示例敲命令会报「文件不存在」，脚本本体功能正常 |
+| 9 | `FulfillmentProperties` 类注释称「本版有 9 个配置键」，实为 **10** 个（多一个 `scan-batch`） | 低 | **仅记录未修**：Java 文件不在本轮改动范围。`docs/spec/V3.1-fulfillment-spec.md` §4.4 的配置表已补齐到 10 项，与字段数对齐 |
+| 10 | `nianglin.fulfillment.scan-batch` 当前为 `200`，spec §4.4 按此记录 | 低 | 若后续修复分页插件静默截断导致该配置失效的问题，取值可能调整，改动时需同步回 spec §4.4 |
 
 ---
 
@@ -156,3 +160,4 @@
 | Playwright JSON 结果 | `reports/playwright/results.json` |
 | 数据回滚校验 | 每次 E2E 结束自动输出（见 §4.1） |
 | 新增 E2E 用例 | `frontend/e2e/specs/15-fulfillment.spec.js` |
+| 数据库设计文档 | `docs/db/*.md`（由 `backend/sql/tools/gen_db_docs.py render` 生成，已随 V6 重新生成） |
