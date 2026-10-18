@@ -1,6 +1,6 @@
 """扫描仓库内本轮新增/修改的源码文件，找出 U+FFFD 损坏字符并报告所在行。
 
-用法：python tools/tmp_scan_bad.py [目录]
+用法：python tools/scan_bad_chars.py [目录]
 只读，不修改。
 """
 import io
