@@ -1,7 +1,16 @@
 <script setup>
-/** M13 共享聊天室（业务端 / 仲裁查看器）；路由切换清理草稿、附件与异步结果。 */
+/**
+ * M13 共享聊天室（业务端 / 仲裁查看器）；路由切换清理草稿、附件与异步结果。
+ *
+ * ## 姓名口径
+ *
+ * 头部优先用父组件从订单详情取到的 `peerName`（全名），无值时才回落到
+ * 聊天接口的 `metadata.peerName`（脱敏，如「李*军」）。两者同屏出现
+ * 「黄*涛 / 黄建军」会自相矛盾，所以只要拿得到全名就以它为准。
+ * 陪诊员端拿不到家属全名（订单详情只返回陪诊员与老人），故保留回落。
+ */
 import { computed, onBeforeUnmount, ref, shallowRef, toRef, watch } from 'vue'
-import { NlEmpty, NlNoticeBar, NlSkeleton } from '@/components'
+import { NlAvatar, NlEmpty, NlNoticeBar, NlSkeleton } from '@/components'
 import { useUserStore } from '@/store/modules/user'
 import { useChatMessages } from '@/composables/useChatMessages'
 import { sendMessage } from '@/api/chat'
@@ -10,9 +19,17 @@ import { chatTextLength, validateChatFile } from '@/utils/chat'
 import NlMessageBubble from './NlMessageBubble.vue'
 import NlChatVideo from './NlChatVideo.vue'
 
+/** 两个按钮各自的 accept 白名单：用户不可能选错类型。 */
+const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp'
+const VIDEO_ACCEPT = 'video/mp4'
+
 const props = defineProps({
   orderId: { type: [String, Number], required: true },
-  readOnly: { type: Boolean, default: false }
+  readOnly: { type: Boolean, default: false },
+  /** 订单详情口径的对方全名；不传则回落到聊天接口的脱敏名。 */
+  peerName: { type: String, default: '' },
+  /** 对方全名首字，用于对方气泡的头像；不传则用角色文案首字。 */
+  senderName: { type: String, default: '' }
 })
 const emit = defineEmits(['read', 'sent'])
 const user = useUserStore()
@@ -48,7 +65,8 @@ const draft = ref('')
 const file = shallowRef(null)
 const preview = ref('')
 const uploaded = shallowRef(null)
-const fileInput = ref(null)
+const imageInput = ref(null)
+const videoInput = ref(null)
 const uploading = ref(false)
 const sending = ref(false)
 const sendError = ref('')
@@ -62,6 +80,12 @@ const sendable = computed(
     length.value <= 1000 &&
     (!!draft.value.trim() || !!file.value)
 )
+
+/** 头部显示名：订单详情全名优先，其次聊天接口的脱敏名。 */
+const displayName = computed(() => props.peerName || metadata.value.peerName || '')
+const initial = computed(() => (displayName.value || '沟').slice(0, 1))
+/** 气泡头像首字：只在拿得到全名时透传，否则由气泡自己用角色文案兜底。 */
+const senderName = computed(() => props.senderName || '')
 let generation = 0
 
 function clearFile() {
@@ -69,7 +93,10 @@ function clearFile() {
   preview.value = ''
   file.value = null
   uploaded.value = null
-  if (fileInput.value) fileInput.value.value = ''
+  // ⚠️ 两个 input 都要清：否则「先传图片、再传视频」时未清的那个 input
+  //    保留了旧值，同名文件第二次选择不会触发 change 事件。
+  if (imageInput.value) imageInput.value.value = ''
+  if (videoInput.value) videoInput.value.value = ''
 }
 function chooseFile(event) {
   if (busy.value) return
@@ -85,6 +112,14 @@ function chooseFile(event) {
   file.value = chosen
   preview.value = URL.createObjectURL(chosen)
   sendError.value = ''
+}
+function chooseImage() {
+  if (busy.value || !ready.value) return
+  imageInput.value?.click()
+}
+function chooseVideo() {
+  if (busy.value || !ready.value) return
+  videoInput.value?.click()
 }
 async function send() {
   if (!sendable.value) return
@@ -151,11 +186,17 @@ onBeforeUnmount(() => {
 <template>
   <section class="chat-panel" aria-label="订单沟通">
     <header class="chat-panel__header">
-      <div>
-        <h2 class="nl-h2">{{ metadata.peerName || '订单沟通' }}</h2>
-        <p class="nl-caption nl-text-muted">订单 #{{ orderId }} · {{ statusText }}</p>
+      <div class="chat-panel__identity">
+        <NlAvatar :fallback="initial" :size="44" tone="inverse" />
+        <div class="chat-panel__identity-text">
+          <h2 class="chat-panel__name">{{ displayName || '订单沟通' }}</h2>
+          <p class="chat-panel__meta">
+            <span class="chat-panel__dot" :class="`is-${status}`" aria-hidden="true" />
+            订单 #{{ orderId }} · {{ statusText }}
+          </p>
+        </div>
       </div>
-      <el-button text :loading="syncing" @click="refresh">刷新记录</el-button>
+      <el-button class="chat-panel__refresh" text :loading="syncing" @click="refresh">刷新记录</el-button>
     </header>
     <NlNoticeBar tone="warning">不做诊断、不开药方，紧急情况请拨打 120。</NlNoticeBar>
     <NlNoticeBar v-if="!canWrite" class="chat-panel__readonly">
@@ -206,6 +247,7 @@ onBeforeUnmount(() => {
           :key="message.messageId"
           :message="message"
           :mine="String(message.senderId) === String(user.userInfo?.id)"
+          :sender-name="senderName"
         />
       </div>
       <el-button v-if="!atBottom" class="chat-panel__latest" plain @click="scrollToBottom">
@@ -236,21 +278,33 @@ onBeforeUnmount(() => {
       />
       <div class="chat-panel__tools">
         <input
-          ref="fileInput"
+          ref="imageInput"
           type="file"
-          accept="image/jpeg,image/png,image/webp,video/mp4"
-          aria-label="选择聊天附件"
+          :accept="IMAGE_ACCEPT"
+          aria-label="选择聊天图片"
           hidden
           :disabled="!ready || busy"
           @change="chooseFile"
         />
-        <el-button :disabled="!ready || busy" @click="fileInput?.click()">图片 / 视频</el-button>
-        <span :class="['nl-caption', { 'chat-panel__error': length > 1000 }]">
+        <input
+          ref="videoInput"
+          type="file"
+          :accept="VIDEO_ACCEPT"
+          aria-label="选择聊天视频"
+          hidden
+          :disabled="!ready || busy"
+          @change="chooseFile"
+        />
+        <span :class="['nl-caption', 'chat-panel__hint', { 'chat-panel__error': length > 1000 }]">
           {{ length }}/1000 · 附件 ≤50MB
         </span>
-        <el-button native-type="submit" type="primary" :loading="busy" :disabled="!sendable">
-          {{ uploading ? '上传中' : sending ? '发送中' : sendError ? '重试发送' : '发送' }}
-        </el-button>
+        <div class="chat-panel__actions">
+          <el-button :disabled="!ready || busy" @click="chooseImage">图片</el-button>
+          <el-button :disabled="!ready || busy" @click="chooseVideo">视频</el-button>
+          <el-button native-type="submit" type="primary" :loading="busy" :disabled="!sendable">
+            {{ uploading ? '上传中' : sending ? '发送中' : sendError ? '重试发送' : '发送' }}
+          </el-button>
+        </div>
       </div>
       <p v-if="sendError" class="chat-panel__error" role="alert">{{ sendError }}</p>
     </form>
@@ -268,17 +322,73 @@ onBeforeUnmount(() => {
   background: var(--nl-bg-card);
   border: 1px solid var(--nl-border);
   border-radius: var(--nl-radius-card);
-  &__header,
-  &__tools {
+  box-shadow: $nl-shadow-card;
+
+  /* ---------- 主色渐变头部：承载对方姓名 / 订单号 / 连接状态 ---------- */
+  &__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--nl-space-2);
-    flex-wrap: wrap;
+    gap: var(--nl-space-3);
+    padding: var(--nl-space-3) var(--nl-space-4);
+    margin: calc(-1 * var(--nl-space-4)) calc(-1 * var(--nl-space-4)) 0;
+    background: var(--nl-primary-gradient);
+    border-radius: var(--nl-radius-card) var(--nl-radius-card) 0 0;
   }
-  &__header h2,
-  &__header p {
+  &__identity {
+    display: flex;
+    gap: var(--nl-space-3);
+    align-items: center;
+    min-width: 0;
+  }
+  &__identity-text {
+    min-width: 0;
+  }
+  &__name {
     margin: 0;
+    overflow: hidden;
+    color: var(--nl-text-inverse);
+    font-size: var(--nl-font-h2);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__meta {
+    display: flex;
+    gap: var(--nl-space-1);
+    align-items: center;
+    margin: 0;
+    color: var(--nl-text-inverse);
+    font-size: var(--nl-font-caption);
+    /* 渐变底上的白字要压一档透明度才不刺眼，仍满足 AA（≥4.5:1）。 */
+    opacity: 0.92;
+  }
+  &__dot {
+    width: 6px;
+    height: 6px;
+    background: #fff;
+    border-radius: 50%;
+
+    &.is-open {
+      background: #7ef0b0;
+    }
+    &.is-connecting {
+      background: #ffe08a;
+    }
+    &.is-closed,
+    &.is-exhausted {
+      background: #ffc2bd;
+    }
+  }
+  /* 头部内的按钮在深底上要反色，否则 Element Plus 的默认文字色会看不见。 */
+  &__refresh {
+    flex-shrink: 0;
+    color: var(--nl-text-inverse);
+
+    &:hover {
+      color: var(--nl-text-inverse);
+      background: rgb(255 255 255 / 16%);
+    }
   }
   &__readonly {
     font-size: var(--nl-font-body);
@@ -301,6 +411,27 @@ onBeforeUnmount(() => {
     display: flex;
     flex-direction: column;
     gap: var(--nl-space-2);
+  }
+  /* 说明文字靠左；图片 / 视频 / 发送构成右下角动作组，按钮间留固定一档间距。 */
+  &__tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--nl-space-2) var(--nl-space-3);
+    flex-wrap: wrap;
+  }
+  &__hint {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  &__actions {
+    display: flex;
+    /* 固定 16px 间距替代原先 space-between 摊开的大空隙：既不成团，也不显松散。 */
+    gap: var(--nl-space-4);
+    align-items: center;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    margin-left: auto;
   }
   &__tools .el-button {
     min-height: var(--nl-touch-min);

@@ -103,6 +103,11 @@ function handleImageError() {
     background: var(--nl-neutral-chip);
   }
 
+  /* 反色底（主色渐变头部）上的头像：半透明白底 + 白字 */
+  &.is-inverse {
+    background: rgb(255 255 255 / 22%);
+  }
+
   &.is-primary .nl-avatar__text {
     color: var(--nl-primary-text);
   }
@@ -123,6 +128,9 @@ function handleImageError() {
   }
   &.is-neutral .nl-avatar__text {
     color: var(--nl-text-2);
+  }
+  &.is-inverse .nl-avatar__text {
+    color: var(--nl-text-inverse);
   }
 }
 </style>
