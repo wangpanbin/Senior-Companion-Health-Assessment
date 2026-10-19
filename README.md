@@ -129,12 +129,16 @@ Run/Debug Configurations → Environment variables：
 
 ```bash
 cd backend
-mvn clean compile                 # 编译
-mvn spring-boot:run               # 启动，默认 8080
+mvn clean compile                                   # 编译
+# ⚠️ 必须先激活 profile：密钥类配置在共享配置里无默认值，不激活会「缺失即启动失败」
+#   PowerShell：  $env:SPRING_PROFILES_ACTIVE = 'dev'
+#   IDEA：        Run 配置 → Environment variables → SPRING_PROFILES_ACTIVE=dev
+mvn -Dspring-boot.run.profiles=dev spring-boot:run  # 启动，默认 8080
 ```
 
 - 健康检查：`GET http://localhost:8080/api/health`
 - 接口文档：`http://localhost:8080/doc.html`
+- 生产部署：必须显式 `SPRING_PROFILES_ACTIVE=prod` 并注入 `JWT_SECRET` / `ID_CARD_AES_KEY` / `DEFAULT_RESET_PASSWORD` / `REDIS_PASSWORD`，缺失即启动失败（见 `docs/security/`）
 
 ### 前端
 

@@ -1,6 +1,7 @@
 package org.company.nianglin.config;
 
 import lombok.RequiredArgsConstructor;
+import org.company.nianglin.constant.CorsConstants;
 import org.company.nianglin.security.ElderReadOnlyInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -27,7 +28,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     private final ElderReadOnlyInterceptor elderReadOnlyInterceptor;
 
-    @Value("${nianglin.cors.allowed-origins:http://localhost:5141,http://127.0.0.1:5141}")
+    @Value("${nianglin.cors.allowed-origins:" + CorsConstants.DEFAULT_ALLOWED_ORIGINS + "}")
     private String[] allowedOrigins;
 
     @Value("${nianglin.file.upload-dir:./uploads}")

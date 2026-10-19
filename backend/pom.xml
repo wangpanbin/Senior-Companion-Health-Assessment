@@ -202,6 +202,26 @@
             </plugin>
 
             <!--
+                测试固定走 dev profile。
+
+                为什么需要：application.yml 的 `spring.profiles.active` 已刻意改为
+                `${SPRING_PROFILES_ACTIVE:}`（生产漏配 profile 必须启动失败），
+                而 12 个 @SpringBootTest 类没有 @ActiveProfiles —— 历史上靠
+                「默认 profile = dev」拿到 application-dev.yml 的 MySQL/Redis/密钥。
+                现在把这份依赖显式钉在构建里：测试 JVM 注入 spring.profiles.active=dev，
+                等价于原行为，且不依赖任何环境变量。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <spring.profiles.active>dev</spring.profiles.active>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+
+            <!--
                 JaCoCo 覆盖率门禁（PLAN_BACKEND.md §4 横切测试 / §8 M12）。
 
                 · prepare-agent：给 surefire 注入 jacoco agent，产出 jacoco.exec

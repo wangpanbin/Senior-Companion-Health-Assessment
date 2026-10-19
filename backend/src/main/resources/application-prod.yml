@@ -20,7 +20,8 @@ spring:
       host: ${REDIS_HOST:redis}
       port: ${REDIS_PORT:6379}
       database: ${REDIS_DATABASE:0}
-      password: ${REDIS_PASSWORD:}
+      # 生产 Redis 必须有口令：不再给空串兜底，未注入 REDIS_PASSWORD 即启动失败
+      password: ${REDIS_PASSWORD}
       timeout: 3000ms
       lettuce:
         pool:
@@ -54,3 +55,16 @@ logging:
   level:
     root: warn
     org.company.nianglin: info
+
+# --------------------------------------------------------------------------
+# CORS：生产必须显式指定真实前端域名（逗号分隔多个），由环境变量
+# CORS_ALLOWED_ORIGINS 注入。这里给出一个占位域名而非本机白名单，
+# 目的是「fail-closed」：占位域名不会命中任何真实来源，未正确配置时表现为
+# 跨域全拒，绝不会静默回落到本机 localhost 放行。
+#
+# 与 SecurityConfig / WebMvcConfig 的 @Value 兜底值不同：兜底值（CorsConstants）只在
+# 「既无配置、也无环境变量」时生效，生产正常不会走到，两处引用同一常量保持一致。
+# --------------------------------------------------------------------------
+nianglin:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://nianglin.example.com}

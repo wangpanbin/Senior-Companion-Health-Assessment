@@ -19,7 +19,11 @@ spring:
   application:
     name: nianglin
   profiles:
-    active: dev
+    # ⚠️ 刻意**不给默认值**：留 `dev` 兜底会让漏配的生产直接以开发配置启动
+    #    （SQL 明文日志 + 接口文档全开 + 开发默认密钥生效，三条高危同时落地）。
+    #    任何环境都必须显式指定 —— 生产用 SPRING_PROFILES_ACTIVE=prod，
+    #    本机开发由 application-dev.yml 提供兜底，不含"凭空默认 dev"。
+    active: ${SPRING_PROFILES_ACTIVE:}
   jackson:
     # ⚠️ date-format 只作用于旧的 java.util.Date，对 LocalDateTime / LocalDate **无效**。
     #    本项目实体统一用 LocalDateTime，其输出格式由 config/JacksonConfig.java 显式注册，
@@ -87,9 +91,10 @@ knife4j:
 # 业务自定义配置
 # ==========================================================================
 nianglin:
-  # JWT（M2 实现；生产环境必须用环境变量覆盖 secret）
+  # JWT（M2 实现）。签名密钥一律由环境变量 JWT_SECRET 注入，缺失即启动失败；
+  # 开发环境的兜底值只在 application-dev.yml 里给，绝不出现在共享配置中。
   jwt:
-    secret: ${JWT_SECRET:nianglin-dev-secret-key-please-change-in-production-0123456789}
+    secret: ${JWT_SECRET}
     # access token 有效期（分钟）
     expire-minutes: 120
     # refresh token 有效期（天）
@@ -122,8 +127,8 @@ nianglin:
     # 风险扫描任务总开关；关掉后 @Scheduled 方法不注册（压测 / 排查时用）
     scheduler-enabled: true
     # 单轮扫描的候选订单上限；超出部分留给下一轮，避免一轮跑太久超过锁 TTL。
-  # ⚠️ 这个上限刻意绕开分页插件（走 selectList + last("LIMIT n)") 而非 selectPage），
-  #    因为 maxLimit 写死 100，走 selectPage 会被静默截断、配置失效。
+    # ⚠️ 这个上限刻意绕开分页插件（走 selectList + last("LIMIT n)") 而非 selectPage），
+    #    因为 maxLimit 写死 100，走 selectPage 会被静默截断、配置失效。
     scan-batch: 200
     # 扫描间隔（毫秒），默认 5 分钟
     scheduler-interval-ms: 300000
@@ -168,5 +173,9 @@ nianglin:
     # 验证码有效期（秒）
     captcha-expire-seconds: 300
     # 身份证号等 PII 字段的 AES 加密密钥（任意长度，内部 SHA-256 派生为 AES-256）
-    # ⚠️ 生产环境必须用环境变量覆盖；一旦更换密钥，已落库的密文将无法解密
-    id-card-key: ${ID_CARD_AES_KEY:nianglin-dev-id-card-key-please-change-in-production}
+    # ⚠️ 一律由环境变量 ID_CARD_AES_KEY 注入，缺失即启动失败；开发兜底值只在 application-dev.yml。
+    #    一旦更换密钥，已落库的密文将无法解密 —— 换密钥必须配套数据迁移脚本。
+    id-card-key: ${ID_CARD_AES_KEY}
+    # 管理员「重置密码」后置入的默认口令；一律由环境变量 DEFAULT_RESET_PASSWORD 注入。
+    # 不再在源码里留硬编码兜底（历史上 `Nl@123456` 会随代码分发到生产）。
+    default-password: ${DEFAULT_RESET_PASSWORD}

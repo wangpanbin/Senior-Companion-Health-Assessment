@@ -140,7 +140,9 @@ public class AdminController {
 
     @Operation(summary = "重置密码",
             description = "重置为默认密码并置「需强制改密」，同时使旧令牌立即失效。"
-                    + "响应返回默认密码供管理员电话告知用户；绝不返回原密码（库里是 BCrypt，本就不可逆）")
+                    + "响应只回传「重置成功 + 需首次改密」，不回传默认口令"
+                    + "（默认口令由部署配置 DEFAULT_RESET_PASSWORD 决定，不随响应下发）；"
+                    + "绝不返回原密码（库里是 BCrypt，本就不可逆）")
     @PostMapping("/user/{id}/reset-password")
     public Result<ResetPasswordResultVO> resetPassword(
             @Parameter(description = "用户 ID", example = "10099") @PathVariable("id") Long id,

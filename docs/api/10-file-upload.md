@@ -18,6 +18,9 @@
    避免路径穿越与同名覆盖。
 5. **老人账号（ELDER）不能上传**：本端点是写接口，`ElderReadOnlyInterceptor` 对 `/api/**` 的非 GET 请求
    默认拒绝 ELDER。因此**不需要**再写一道 ELDER 专属拦截。
+6. **证件类原始 URL 禁止直连**：`bizType=COMPANION_CERT` 的 `/uploads` 原始 URL 已被
+   服务端守卫（`UploadAccessGuardFilter`）禁止直连，预览 / 下载改走受控端点
+   `GET /api/file/cert`（见 §2）。照片 / 头像 / 聊天媒体不受影响，仍可 `<img>` 直连。
 
 ---
 
@@ -47,6 +50,7 @@
 | # | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|---|
 | 1 | POST | `/api/file/upload` | FAMILY / COMPANION / ADMIN | 通用文件上传（multipart） |
+| 2 | GET | `/api/file/cert` | 上传人本人 / ADMIN | 受控读取资质证件（原始 URL 已禁直连） |
 
 ---
 
@@ -116,6 +120,46 @@ curl -X POST http://127.0.0.1:8080/api/file/upload \
 
 ---
 
+## 2. 读取资质证件（受控）
+
+`GET /api/file/cert?url=/uploads/202609/xxx.jpg`　权限：**上传人本人 或 管理员**（其余 403）
+
+资质证件（`bizType=COMPANION_CERT`）含身份证等强 PII，其 `/uploads` 原始 URL 已被
+服务端守卫（`UploadAccessGuardFilter`）**禁止直连**：未认证或非本人直连原始 URL 一律 `403`。
+证件预览 / 下载必须经本端点读取二进制流。
+
+### 请求
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `url` | String | ✓ | 上传接口返回的证件原始 URL（形如 `/uploads/202609/xxx.jpg`） |
+
+### 响应
+
+成功时直接返回文件二进制流，响应头：
+
+| 头 | 值 | 说明 |
+|---|---|---|
+| `Content-Type` | 落库的真实 MIME | 非法值兜底为 `application/octet-stream` |
+| `Content-Disposition` | `inline; filename="原名"` | 原名按 UTF-8 编码 |
+| `X-Content-Type-Options` | `nosniff` | 禁止浏览器 MIME 嗅探 |
+
+### 错误场景
+
+| code | HTTP | 场景 |
+|---|---|---|
+| `400` | 200 | `url` 缺失 / 不以 `/uploads/` 开头 |
+| `403` | 200 | 文件不属于受控证件（头像 / 打卡照片 / 聊天媒体）；或调用者既非上传人也非管理员 |
+| `404` | 200 | 该 URL 无 `sys_file` 登记，或证件文件已不在磁盘 |
+| `401` / `403` | 401 / 403 | 未登录 / 未认证（`@PreAuthorize("isAuthenticated()")` 由 Spring Security 直接返回） |
+
+> ⚠️ **失败关闭（deny-by-default）**：`UploadAccessGuardFilter` 对 `/uploads/**` 的 `GET/HEAD`
+> 采用失败关闭 —— **查不到 `sys_file` 登记（未登记 / 记录被逻辑删除）的文件同样 `403`**，
+> 避免「删掉登记即可让证件重新公开直连」。因此**所有需要公开直连的文件都必须经上传接口登记**，
+> 不要手工往 `uploads/` 目录拷文件。
+
+---
+
 ## 三、验收标准
 
 - [ ] 用 `COMPANION_CERT` 上传一张 jpg → 返回 `fileId` / `url` / `size`，磁盘与 `sys_file` 均有记录
@@ -124,6 +168,9 @@ curl -X POST http://127.0.0.1:8080/api/file/upload \
 - [ ] 上传 11 MB 文件 → `400`「文件超过 10 MB 上限」
 - [ ] ELDER 账号调用 → `403`
 - [ ] 文件大小 / 类型 / 上传人写入 `sys_file`，`url` 可直接访问
+- [ ] 未认证直连证件原始 URL → `403`；经 `GET /api/file/cert`（本人 / 管理员）→ `200` 二进制流
+- [ ] 他人经 `GET /api/file/cert` 读取不属于自己的证件 → `403`
+- [ ] 头像 / 打卡照片 / 聊天媒体 `<img>` 直连不受影响（`200`）
 
 ---
 
@@ -132,3 +179,4 @@ curl -X POST http://127.0.0.1:8080/api/file/upload \
 | 版本 | 日期 | 变更内容 |
 |---|---|---|
 | v0.1.0 | 2026-09-17 | 首版：补录已实现但此前未进 `docs/api/` 的通用上传端点（端点、`bizType` 白名单、错误场景、验收标准） |
+| v0.2.0 | 2026-10-18 | 新增 `GET /api/file/cert` 受控证件读取端点（§2）；补「证件类原始 URL 禁止直连」与「失败关闭」安全边界 |

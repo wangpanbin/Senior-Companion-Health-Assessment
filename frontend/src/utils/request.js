@@ -20,6 +20,22 @@ import { getToken, getRefreshToken, setToken, clearAuth } from '@/utils/auth'
 const SUCCESS_CODE = 200
 const UNAUTHORIZED_CODE = 401
 
+/** blob 响应里夹带的 JSON envelope —— 后端业务错误在 blob 模式下仍是 HTTP 200 + JSON */
+function isJsonBlob(body) {
+  return (
+    body instanceof Blob && typeof body.type === 'string' && body.type.includes('application/json')
+  )
+}
+
+/** 尝试把 JSON blob 读成对象；非 JSON / 解析失败返回 null */
+async function readJsonBlob(blob) {
+  try {
+    return JSON.parse(await blob.text())
+  } catch {
+    return null
+  }
+}
+
 const service = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 15000,
@@ -54,6 +70,22 @@ service.interceptors.response.use(
   (response) => {
     const body = response.data
 
+    // blob 响应（如受控证件下载）：后端业务错误仍是 HTTP 200 + JSON envelope，
+    // 此时 body 是 type=application/json 的 Blob，若直接透传会被当成二进制流，
+    // 错误提示将被静默吞掉。这里解析后按统一结构处理。
+    if (isJsonBlob(body)) {
+      return readJsonBlob(body).then((parsed) => {
+        if (!parsed || typeof parsed.code === 'undefined' || parsed.code === SUCCESS_CODE) {
+          return body
+        }
+        ElMessage.closeAll()
+        ElMessage.error(parsed.message || '操作失败')
+        return Promise.reject(
+          Object.assign(new Error(parsed.message || '操作失败'), { code: parsed.code })
+        )
+      })
+    }
+
     // 非统一结构（如文件下载流）直接透传
     if (!body || typeof body.code === 'undefined') {
       return body
@@ -78,7 +110,16 @@ service.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    const { status, data } = response
+    const { status } = response
+    // 错误响应也可能以 blob 返回（如 responseType: 'blob' 的受控下载端点），
+    // 需先解析出 JSON envelope 才能拿到 message / code
+    let data = response.data
+    if (isJsonBlob(data)) {
+      const parsed = await readJsonBlob(data)
+      if (parsed) {
+        data = parsed
+      }
+    }
     const message = data?.message
 
     /* ---------- 401：登录失效 ---------- */

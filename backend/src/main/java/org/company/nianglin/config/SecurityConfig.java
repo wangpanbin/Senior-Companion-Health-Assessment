@@ -2,10 +2,12 @@ package org.company.nianglin.config;
 
 import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
+import org.company.nianglin.constant.CorsConstants;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.security.JwtAuthenticationFilter;
 import org.company.nianglin.security.RestAccessDeniedHandler;
 import org.company.nianglin.security.RestAuthenticationEntryPoint;
+import org.company.nianglin.security.UploadAccessGuardFilter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -79,7 +81,7 @@ public class SecurityConfig {
      * 以前这个值被硬编码在这里，改 {@code WebMvcConfig} 或改配置文件都看不出效果，
      * 排查时极易被带偏（曾据此误判成「vite 代理没转发 WebSocket」）。</p>
      */
-    @Value("${nianglin.cors.allowed-origins:http://localhost:5141,http://127.0.0.1:5141}")
+    @Value("${nianglin.cors.allowed-origins:" + CorsConstants.DEFAULT_ALLOWED_ORIGINS + "}")
     private String[] allowedOrigins;
 
     /** 无需登录即可访问的白名单 */
@@ -98,7 +100,9 @@ public class SecurityConfig {
             // 令牌走 query 参数（与 /ws/progress 同一套做法），
             // 由 MessageSseController 在订阅时校验 JWT，无效令牌直接关闭通道
             "/sse/**",
-            // 上传文件的静态访问（打卡照片、投诉证据）
+            // 上传文件的静态访问：整体免登录以支持 <img> 直连（打卡照片 / 头像 / 聊天媒体）。
+            // 资质证件（bizType=COMPANION_CERT）不在其中 —— 由 UploadAccessGuardFilter
+            // 在过滤链上单独拦截，改走鉴权端点 GET /api/file/cert，避免 URL 泄露后被未认证者访问
             "/uploads/**",
             // 接口文档相关（dev 环境；prod 由 knife4j.enable=false 关闭）
             "/doc.html",
@@ -111,6 +115,7 @@ public class SecurityConfig {
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final UploadAccessGuardFilter uploadAccessGuardFilter;
     private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
     private final RestAccessDeniedHandler restAccessDeniedHandler;
 
@@ -137,6 +142,19 @@ public class SecurityConfig {
     @Bean
     public FilterRegistrationBean<JwtAuthenticationFilter> jwtFilterRegistration(JwtAuthenticationFilter filter) {
         FilterRegistrationBean<JwtAuthenticationFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    /**
+     * 阻止 {@link UploadAccessGuardFilter} 被 Servlet 容器二次注册（与 JWT 过滤器同理）。
+     *
+     * <p>它是 {@code @Component}，若不显式禁用，容器会在 {@code /*} 上再跑一遍，
+     * 与安全链内的实例重复执行。唯一入口应是通过 {@code addFilterAfter} 挂到安全链上。</p>
+     */
+    @Bean
+    public FilterRegistrationBean<UploadAccessGuardFilter> uploadGuardFilterRegistration(UploadAccessGuardFilter filter) {
+        FilterRegistrationBean<UploadAccessGuardFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }
@@ -176,7 +194,10 @@ public class SecurityConfig {
                         // 不在这里堆路径规则 —— 路径规则一多就必然有人漏配，而漏配的那条就是漏洞
                         .anyRequest().authenticated())
                 // JWT 过滤器必须在用户名密码过滤器之前，否则先 401 再认证就晚了
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // 上传目录守卫紧随 JWT 过滤器：对 /uploads/** 中的证件类文件直接 403，
+                // 其余业务类型放行（详见 UploadAccessGuardFilter 的 javadoc）
+                .addFilterAfter(uploadAccessGuardFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 
