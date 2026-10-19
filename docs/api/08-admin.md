@@ -307,14 +307,15 @@
 {
   "code": 200,
   "message": "密码已重置为默认密码，请提醒用户首次登录后修改",
-  "data": { "defaultPassword": "********" }
+  "data": { "userId": 10099, "needChangePassword": true }
 }
 ```
 
 ### 实现要点
 
-- 默认密码同样 BCrypt 加密入库。
+- 默认密码由部署配置 `nianglin.security.default-password`（环境变量 `DEFAULT_RESET_PASSWORD`）决定，同样 BCrypt 加密入库。
 - **强制用户下次登录后必须改密**（`need_change_password = 1`）。
+- ⚠️ 响应**只回传**「重置成功 + 需首次改密」，**不回传默认口令**——它是同一套部署内所有被重置账号共用的固定串，放进响应体等于二次扩散；管理员按既定初始口令告知用户即可。
 - ⚠️ 本接口**绝不返回**原密码（数据库里是 BCrypt 哈希，本就不可逆）。
 - 写 `admin_oper_log`：`RESET_PASSWORD`。
 

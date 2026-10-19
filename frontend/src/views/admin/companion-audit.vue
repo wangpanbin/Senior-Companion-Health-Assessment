@@ -10,11 +10,12 @@
  * 注意：资质状态的 PENDING 是「待审核」，因此 NlStatusChip 必须传 scope="audit"，
  * 否则会错误地显示成订单语义的「待接单」。
  */
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
 import { useResponsive } from '@/composables/useResponsive'
 import { listAuditApplications, getAuditDetail, auditCompanion } from '@/api/admin'
+import { fetchCertObjectUrl } from '@/api/file'
 import { formatDateTime } from '@/utils/format'
 
 const tab = ref('PENDING')
@@ -65,6 +66,13 @@ const reviewVisible = ref(false)
 const reviewItem = ref(null)
 const reviewFiles = ref([])
 const rejectReason = ref('')
+/** 证件预览用的 blob URL 集合，关闭弹窗 / 卸载时统一回收，避免内存泄漏 */
+const certObjectUrls = []
+
+function revokeCertUrls() {
+  certObjectUrls.forEach((u) => URL.revokeObjectURL(u))
+  certObjectUrls.length = 0
+}
 
 async function openReview(item) {
   try {
@@ -73,8 +81,24 @@ async function openReview(item) {
     const detail = await getAuditDetail(item.id)
     reviewItem.value = detail
     rejectReason.value = detail?.rejectReason || ''
-    reviewFiles.value = (detail?.certificates || []).map((c) => ({ name: c.name, url: c.url }))
+    const certs = detail?.certificates || []
+    // 证件原始 /uploads URL 已被服务端守卫拦截（未认证直连 403），
+    // 因此先占位、再经受控端点逐个取 blob 并回填
+    reviewFiles.value = certs.map((c) => ({ name: c.name, url: '' }))
     reviewVisible.value = true
+    await Promise.all(
+      certs.map(async (c, i) => {
+        if (!c.url) return
+        try {
+          const objectUrl = await fetchCertObjectUrl(c.url)
+          certObjectUrls.push(objectUrl)
+          reviewFiles.value[i].url = objectUrl
+        } catch {
+          // 无权限 / 文件缺失：request.js 拦截器已解析 blob 中的业务错误并弹出提示，
+          // 这里仅保留占位图标，不阻断审核流程
+        }
+      })
+    )
   } catch {
     // 拦截器已提示，无需重复弹
   }
@@ -134,6 +158,7 @@ const emptyText = computed(() =>
 const { isXs } = useResponsive()
 
 onMounted(loadList)
+onBeforeUnmount(revokeCertUrls)
 </script>
 
 <template>
@@ -198,6 +223,7 @@ onMounted(loadList)
     width="640px"
     :fullscreen="isXs"
     align-center
+    @closed="revokeCertUrls"
   >
     <div v-if="reviewItem" class="audit-dialog">
       <section class="audit-dialog__row">

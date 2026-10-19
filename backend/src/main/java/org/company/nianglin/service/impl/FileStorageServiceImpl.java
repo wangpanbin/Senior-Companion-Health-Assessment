@@ -1,5 +1,6 @@
 package org.company.nianglin.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.ResultCode;
@@ -21,6 +22,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -123,6 +125,35 @@ public class FileStorageServiceImpl implements FileStorageService {
 
         log.info("文件已上传 | bizType={} | bizId={} | size={} | ext={}", bizType, bizId, file.getSize(), ext);
         return FileUploadVO.of(record);
+    }
+
+    @Override
+    public CertContent loadCert(String url, Long requesterId, boolean isAdmin) {
+        if (url == null || !url.startsWith("/uploads/")) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "证件地址不合法");
+        }
+        SysFile file = sysFileMapper.selectOne(new LambdaQueryWrapper<SysFile>()
+                .eq(SysFile::getUrl, url)
+                .last("limit 1"));
+        if (file == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "证件不存在");
+        }
+        // 只有资质证件走受控端点；头像 / 打卡照片 / 聊天媒体仍由 /uploads 公开直连
+        if (!FileBizType.COMPANION_CERT.name().equals(file.getBizType())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "该文件不属于受控证件");
+        }
+        // 授权口径：上传人本人或管理员（资质审核需要查看证件），其余一律拒绝
+        if (!isAdmin && !Objects.equals(requesterId, file.getUploaderId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权查看该证件");
+        }
+        Path path = file.getStorePath() == null ? null : Paths.get(file.getStorePath());
+        if (path == null || !Files.exists(path)) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "证件文件已不存在");
+        }
+        String contentType = file.getContentType() == null ? "application/octet-stream" : file.getContentType();
+        String originName = file.getOriginName() == null ? file.getStoredName() : file.getOriginName();
+        log.info("受控读取证件 | fileId={} | requesterId={} | admin={}", file.getFileId(), requesterId, isAdmin);
+        return new CertContent(path, contentType, originName);
     }
 
     /**

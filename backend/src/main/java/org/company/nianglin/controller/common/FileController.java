@@ -12,14 +12,22 @@ import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.FileStorageService;
 import org.company.nianglin.vo.FileUploadVO;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
 import java.util.StringJoiner;
 
 /**
@@ -82,5 +90,35 @@ public class FileController {
             joiner.add(t.name());
         }
         return joiner.toString();
+    }
+
+    @Operation(summary = "读取资质证件（受控）",
+            description = "资质证件（bizType=COMPANION_CERT）的原始 URL 已被 /uploads 守卫拦截，"
+                    + "只能经本端点读取。仅上传人本人或管理员可访问；其余业务类型（头像 / 打卡照片 / 聊天媒体）"
+                    + "仍走 /uploads 公开直连，无需本端点")
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/cert")
+    public ResponseEntity<Resource> downloadCert(@RequestParam("url") String url) {
+        boolean admin = RoleConstants.ADMIN.equals(SecurityUtils.currentRole());
+        FileStorageService.CertContent content =
+                fileStorageService.loadCert(url, SecurityUtils.currentUserId(), admin);
+        Resource resource = new FileSystemResource(content.path());
+        ContentDisposition disposition = ContentDisposition.inline()
+                .filename(content.originName(), StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .contentType(resolveMediaType(content.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(resource);
+    }
+
+    /** 按落库的真实 MIME 构造响应类型，非法值兜底为二进制流 */
+    private static MediaType resolveMediaType(String contentType) {
+        try {
+            return MediaType.parseMediaType(contentType);
+        } catch (InvalidMediaTypeException e) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
     }
 }

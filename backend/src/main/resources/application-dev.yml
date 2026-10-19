@@ -93,3 +93,19 @@ logging:
 nianglin:
   cors:
     allowed-origins: http://localhost:[*],http://127.0.0.1:[*]
+
+  # ------------------------------------------------------------------
+  # 开发环境的密钥兜底值（仅本机 / 测试用）
+  #
+  # 为什么放在 dev 而不是 application.yml：密钥类配置在共享配置里**不给默认值**，
+  # 缺失即启动失败（见 application.yml 的 nianglin.jwt / nianglin.security）。
+  # 只有显式激活 dev profile 才会拿到这里的兜底串 —— 生产漏配 profile 不会再静默
+  # 用开发密钥启动，而是直接起不来。测试（无 @ActiveProfiles）由 pom.xml 的
+  # surefire `spring.profiles.active=dev` 固定到本 profile，行为与历史一致。
+  # ------------------------------------------------------------------
+  jwt:
+    secret: ${JWT_SECRET:nianglin-dev-secret-key-please-change-in-production-0123456789}
+
+  security:
+    id-card-key: ${ID_CARD_AES_KEY:nianglin-dev-id-card-key-please-change-in-production}
+    default-password: ${DEFAULT_RESET_PASSWORD:Nl@123456}

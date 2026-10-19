@@ -7,11 +7,14 @@ import lombok.experimental.Accessors;
 /**
  * 重置密码结果（{@code docs/api/08-admin.md} §7）。
  *
- * <p>返回默认密码是为了让管理员在电话里直接念给用户 —— 这是实际的业务场景
- * （老人家属来电说「密码忘了」）。默认密码是固定值、且被强制要求首次登录后修改，
- * 因此在这里返回它不构成新的泄露面。</p>
+ * <p><b>刻意不回传默认口令</b>：默认口令由部署配置
+ * （{@code nianglin.security.default-password} / 环境变量 {@code DEFAULT_RESET_PASSWORD}）决定，
+ * 是「同一套部署内所有被重置账号共用」的固定串。把它放进管理员接口的响应体（以及由此产生的
+ * 访问日志 / 前端调试记录）等于把该口令二次扩散；而它本就是固定值，管理员按既定初始口令
+ * 告知用户即可，不需要接口回传。</p>
  *
- * <p><b>绝不返回原密码</b>：库里是 BCrypt 哈希，本就不可逆。</p>
+ * <p>因此本 VO 只回传「重置成功 + 已被置为需强制改密」这两个事实。
+ * <b>绝不返回原密码</b>：库里是 BCrypt 哈希，本就不可逆。</p>
  *
  * @author 银龄伴诊团队
  * @since M9
@@ -24,18 +27,12 @@ public class ResetPasswordResultVO {
     @Schema(description = "用户 ID", example = "10099")
     private Long userId;
 
-    @Schema(description = "重置后的默认密码，需提醒用户首次登录后立即修改。"
-            + "实际值由 nianglin.security.default-password 配置决定，"
-            + "生产环境通过环境变量注入，不随代码分发", example = "********")
-    private String defaultPassword;
-
-    @Schema(description = "是否已置为需强制改密", example = "true")
+    @Schema(description = "是否已置为需强制改密（首次登录必须改密）", example = "true")
     private Boolean needChangePassword;
 
-    public static ResetPasswordResultVO of(Long userId, String defaultPassword) {
+    public static ResetPasswordResultVO of(Long userId) {
         return new ResetPasswordResultVO()
                 .setUserId(userId)
-                .setDefaultPassword(defaultPassword)
                 .setNeedChangePassword(Boolean.TRUE);
     }
 }

@@ -3,7 +3,9 @@ package org.company.nianglin.security;
 import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 /**
@@ -28,6 +30,23 @@ public class SecurityProperties {
     private static final int MIN_ID_CARD_KEY_LENGTH = 16;
 
     /**
+     * 已知的开发兜底串 —— 与 {@code application-dev.yml} 的默认值逐字一致。
+     *
+     * <p>非 dev / test profile 下若仍出现这些串，说明密钥<b>未被环境变量覆盖</b>
+     * （或被误设成开发值），此时直接拒绝启动：避免生产以公开的默认密钥运行
+     * （见安全评估报告 F-02）。dev / test 显式使用兜底串是设计允许的，故不拦。</p>
+     */
+    private static final String DEV_DEFAULT_ID_CARD_KEY =
+            "nianglin-dev-id-card-key-please-change-in-production";
+
+    /** 已知的开发兜底口令 —— 与 {@code application-dev.yml} 的默认值逐字一致 */
+    private static final String DEV_DEFAULT_RESET_PASSWORD = "Nl@123456";
+
+    /** 判定当前是否处于开发 / 测试 profile（这两者允许使用 dev 兜底串） */
+    @Autowired
+    private Environment environment;
+
+    /**
      * 登录失败几次后锁定，默认 5。
      */
     private int loginFailThreshold = 5;
@@ -50,11 +69,12 @@ public class SecurityProperties {
      * 安全性由「首次登录强制修改」（{@code need_change_password = 1}）保证，
      * 而不是由口令本身的复杂度。</p>
      *
-     * <p><b>投产前必须用环境变量 {@code DEFAULT_RESET_PASSWORD} 覆盖</b> ——
-     * 留默认值等于把一个「所有用户初始口令相同」的值带到生产。
-     * 这里的默认值只是开发期的合规占位串（AGENTS.md §0.1）。</p>
+     * <p><b>值一律由环境变量 {@code DEFAULT_RESET_PASSWORD} 注入</b>（绑定
+     * {@code application.yml} 的 {@code nianglin.security.default-password}）。
+     * 这里<b>不再留硬编码兜底</b> —— 否则一个「所有用户初始口令相同」的值会随代码
+     * 分发到生产。开发 / 测试的兜底值只在 {@code application-dev.yml} 里给。</p>
      */
-    private String defaultPassword = "Nl@123456";
+    private String defaultPassword;
 
     /**
      * 身份证号等 PII 字段的 AES 加密密钥。
@@ -89,7 +109,39 @@ public class SecurityProperties {
                     "nianglin.security.id-card-key 长度不足 " + MIN_ID_CARD_KEY_LENGTH
                             + " 字符（AES 派生密钥需要足够随机度），当前长度=" + idCardKey.length());
         }
+        if (defaultPassword == null || defaultPassword.isBlank()) {
+            throw new IllegalStateException(
+                    "未配置 nianglin.security.default-password（环境变量 DEFAULT_RESET_PASSWORD），"
+                            + "管理员重置密码将无法置入默认口令");
+        }
+        // 非 dev / test profile 下拒绝已知的开发兜底串：防止「长度够就放行」把公开默认密钥
+        // 带进生产（F-02）。dev / test 显式使用兜底串是设计允许的，故仅在其它 profile 拦截。
+        if (!isDevLikeProfile()) {
+            if (DEV_DEFAULT_ID_CARD_KEY.equals(idCardKey)) {
+                throw new IllegalStateException(
+                        "nianglin.security.id-card-key 仍是开发兜底串（来自 application-dev.yml），"
+                                + "说明生产 profile 未注入 ID_CARD_AES_KEY —— 拒绝以公开默认密钥启动");
+            }
+            if (DEV_DEFAULT_RESET_PASSWORD.equals(defaultPassword)) {
+                throw new IllegalStateException(
+                        "nianglin.security.default-password 仍是开发兜底串（Nl@123456），"
+                                + "说明生产 profile 未注入 DEFAULT_RESET_PASSWORD —— 拒绝以示例口令启动");
+            }
+        }
         log.info("SecurityProperties 校验通过 | idCardKey 长度={}", idCardKey.length());
+    }
+
+    /** 当前激活 profile 含 {@code dev} 或 {@code test} 时返回 {@code true} */
+    private boolean isDevLikeProfile() {
+        if (environment == null) {
+            return false;
+        }
+        for (String profile : environment.getActiveProfiles()) {
+            if ("dev".equals(profile) || "test".equals(profile)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

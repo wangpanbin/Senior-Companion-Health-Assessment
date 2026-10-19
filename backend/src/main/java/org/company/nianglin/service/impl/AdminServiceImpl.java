@@ -420,7 +420,8 @@ public class AdminServiceImpl implements AdminService {
                 null, null, dto.getRemark().trim());
 
         log.info("用户密码已重置 | userId={} | adminId={}", id, SecurityUtils.currentUserId());
-        return ResetPasswordResultVO.of(id, securityProperties.getDefaultPassword());
+        // 只回传「已重置 + 需强制改密」；默认口令由部署配置决定，不回传（见 ResetPasswordResultVO javadoc）
+        return ResetPasswordResultVO.of(id);
     }
 
     /* ================================================================== */
