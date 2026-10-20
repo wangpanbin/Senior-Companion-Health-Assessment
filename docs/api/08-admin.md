@@ -103,6 +103,12 @@
 | 14 | GET | `/api/admin/fulfillment/summary` | ADMIN | 履约风险四档计数（V3.1） |
 | 15 | GET | `/api/admin/fulfillment/risk-list` | ADMIN | 风险订单列表（V3.1） |
 | 16 | POST | `/api/admin/order/{id}/reassign` | ADMIN | 改派陪诊员（V3.1） |
+| 17 | GET | `/api/admin/operations/overview` | ADMIN | 平台运营概览（V3.5） |
+| 18 | GET | `/api/admin/operations/exceptions` | ADMIN | 异常中心（V3.5） |
+| 19 | GET | `/api/admin/operations/trend` | ADMIN | 运营趋势（V3.5） |
+| 20 | GET | `/api/admin/operations/health` | ADMIN | 平台健康度（V3.5） |
+| 21 | GET | `/api/admin/operations/gap` | ADMIN | 供给时段缺口分析（V3.6） |
+| 22 | GET | `/api/admin/operations/effect` | ADMIN | 干预效果对比（V3.6） |
 
 ---
 
@@ -707,3 +713,295 @@
 - [ ] 日志页支持按时间区间 + 操作类型筛选，结果正确
 - [ ] 用户列表手机号已脱敏
 - [ ] 投诉状态只能正向流转，回退返回 `409`
+
+---
+
+## 17. 平台运营概览（V3.5）
+
+`GET /api/admin/operations/overview`　权限：**ADMIN**
+
+### 请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `startDate` | String | 否 | `yyyy-MM-dd`，闭区间，默认最近 30 天 |
+| `endDate` | String | 否 | `yyyy-MM-dd`，闭区间，默认今天 |
+
+### 响应
+
+```json
+{
+  "code": 200, "message": "操作成功",
+  "data": {
+    "periodStart": "2026-09-21", "periodEnd": "2026-10-20",
+    "todayOrderCount": 128,
+    "completedOrderCount": 113,
+    "inServiceCount": 9,
+    "pendingCount": 6,
+    "fulfillmentRate": "96.40%",
+    "avgAcceptMinutes": 6,
+    "complaintRate": "1.20%",
+    "averageScore": "4.82"
+  }
+}
+```
+
+| 字段 | 口径 |
+|---|---|
+| `todayOrderCount` | 今日新增订单数 |
+| `completedOrderCount` | 区间内完成（`COMPLETED` + `REVIEWED`） |
+| `inServiceCount` | 区间内服务中（`IN_SERVICE`） |
+| `pendingCount` | 区间内待接单（`PENDING`） |
+| `fulfillmentRate` | **履约率** = `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)` |
+| `avgAcceptMinutes` | 平均接单时间（分钟，**整数**）；无已接单订单时 `0` |
+| `complaintRate` | 投诉率 = 投诉订单数 / 区间订单数 |
+| `averageScore` | 平均评分（两位小数字符串） |
+
+---
+
+## 18. 异常中心（V3.5）
+
+`GET /api/admin/operations/exceptions`　权限：**ADMIN**
+
+### 响应
+
+```json
+{
+  "code": 200, "message": "操作成功",
+  "data": {
+    "total": 16,
+    "items": [
+      { "type": "MANUAL_REQUIRED", "typeLabel": "需人工介入订单", "count": 3,
+        "level": "DANGER", "linkUrl": "/admin/fulfillment", "referenceId": null,
+        "description": "履约风险已达人工介入阈值，需要管理员协调" },
+      { "type": "MATCH_WARNING", "typeLabel": "超匹配预警时间订单", "count": 6,
+        "level": "WARNING", "linkUrl": "/admin/fulfillment", "referenceId": null,
+        "description": "等待时间超过预警阈值，系统正在扩大匹配范围" },
+      { "type": "COMPANION_COMPLAINT_RATE", "typeLabel": "投诉率异常陪诊员", "count": 2,
+        "level": "WARNING", "linkUrl": "/admin/complaint", "referenceId": null,
+        "description": "回溯期内投诉率超过阈值，需关注服务质量" },
+      { "type": "MEDICATION_MISSED", "typeLabel": "用药漏服异常", "count": 5,
+        "level": "WARNING", "linkUrl": "/admin/order", "referenceId": 1019,
+        "description": "区间内漏服任务数超过阈值，最近一条见最近订单" }
+    ]
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `total` | 四类异常的数量之和 |
+| `items[].type` | `MANUAL_REQUIRED` / `MATCH_WARNING` / `COMPANION_COMPLAINT_RATE` / `MEDICATION_MISSED` |
+| `items[].typeLabel` | 中文名 |
+| `items[].count` | 数量 |
+| `items[].level` | `DANGER` / `WARNING` / `INFO` |
+| `items[].linkUrl` | **真实存在**的处理页路由（前端**直接用这个值跳转**，不要自己拼） |
+| `items[].referenceId` | 可选定位 ID（如最近异常订单 ID）；无则 `null` |
+| `items[].description` | 一句话说明 |
+
+### 同源铁律（决策 5.1）
+
+前两项的数量**必须等于** V3.1 的 `/api/admin/fulfillment/summary`：
+
+| 异常 | 对应字段 |
+|---|---|
+| 需人工介入订单 | `manualRequired` |
+| 超匹配预警时间订单 | `warning + urgent` |
+
+异常中心**聚合** V3.1 的风险中心，**不另建一套风险判定** ——
+两套判定必然漂移（这正是 V3.2 在用药三桶上踩过的坑）。
+该同源关系由 `OperationsExceptionParityTest` 锁死。
+
+### 可达性（决策 5.4）
+
+每个 `linkUrl` 都必须指向**真实存在**的前端路由。
+「看到了但处理不了」是本版最典型的假绿 —— E2E 逐个点开验证。
+
+---
+
+## 19. 运营趋势（V3.5）
+
+`GET /api/admin/operations/trend`　权限：**ADMIN**
+
+### 请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `dimension` | String | 否 | `ORDER` / `COMPANION_ACTIVE` / `FULFILLMENT_RATE` / `COMPLAINT` / `REVIEW` / `MEDICATION`；缺省 `ORDER`；非法值 `400` |
+| `range` | String | 否 | `TODAY` / `LAST_7D` / `LAST_30D` / `CUSTOM`；缺省 `LAST_30D`；非法值 `400` |
+| `startDate` / `endDate` | String | 否 | `range = CUSTOM` 时必填；闭区间，上限 366 天（超限 `9002`） |
+
+### 响应
+
+```json
+{
+  "code": 200, "message": "操作成功",
+  "data": {
+    "dimension": "ORDER", "range": "LAST_7D", "granularity": "DAY",
+    "periodStart": "2026-10-14", "periodEnd": "2026-10-20",
+    "categories": ["2026-10-14", "2026-10-15"],
+    "series": [ { "name": "订单量", "data": [12.00, 9.00] } ]
+  }
+}
+```
+
+- `categories` 与每条 `series.data` 的长度**严格一致**，**无数据的桶补 0**
+  （ECharts 遇到长度不齐的数据不报错，只是折线图静默跳段 —— 最难查的一类假绿）。
+- 六条维度的口径全部登记在指标字典（`docs/spec/metric-dictionary.md`）。
+
+---
+
+## 20. 平台健康度（V3.5）
+
+`GET /api/admin/operations/health`　权限：**ADMIN**
+
+### 响应
+
+```json
+{
+  "code": 200, "message": "操作成功",
+  "data": {
+    "fulfillmentRate": "96.40%",
+    "avgAcceptMinutes": "6",
+    "completionRate": "88.20%",
+    "complaintRate": "1.20%",
+    "averageScore": "4.82",
+    "activeCompanionCount": 24
+  }
+}
+```
+
+**六个并列指标，不给合成分**（决策 5.2）：
+
+| 字段 | 含义 |
+|---|---|
+| `fulfillmentRate` | 履约率 |
+| `avgAcceptMinutes` | 接单速度（分钟，**字符串**） |
+| `completionRate` | 完成率（**按时**：完成时间不晚于就诊时间 + 履约时长窗口） |
+| `complaintRate` | 投诉率 |
+| `averageScore` | 平均评分 |
+| `activeCompanionCount` | 活跃陪诊员数 |
+
+> ⚠️ **同名不同型**：概览的 `avgAcceptMinutes` 是 Integer，本接口的是 String。
+> 前端**不要**写一个通用的取值函数。
+>
+> ⚠️ **禁止**出现「AI 平台健康指数 96」这类无法解释的数 ——
+> 除非将来存在明确的书面计算公式并登记进指标字典。
+
+### 错误码（四个端点共用）
+
+| 码 | 含义 |
+|---|---|
+| 400 | `dimension` / `range` 取值非法 |
+| 401 | 未登录 |
+| 403 | 非管理员 |
+| 9002 | 统计区间不合法（超 366 天或起止颠倒） |
+
+---
+
+## 21. 供给时段缺口分析（V3.6）
+
+`GET /api/admin/operations/gap`　权限：**ADMIN**
+
+### 请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `range` | String | 否 | `LAST_7D` / `LAST_30D`（缺省 `LAST_30D`）/ `CUSTOM`；非法值 `400` |
+| `startDate` / `endDate` | String | 否 | `range = CUSTOM` 时必填；闭区间，上限 366 天（超限 `9002`） |
+
+### 响应
+
+```json
+{
+  "code": 200, "message": "操作成功",
+  "data": {
+    "periodStart": "2026-09-21", "periodEnd": "2026-10-20",
+    "total": 168,
+    "companionsWithoutSlots": 7,
+    "items": [
+      { "weekday": 6, "hour": 14, "pendingUnaccepted": 3, "availableCompanions": 1, "gap": 2 }
+    ]
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `total` | 返回的桶数（7 天 × 24 小时 = 168，**空桶也返回**） |
+| `companionsWithoutSlots` | **没有可解析可服务时段**的陪诊员数（不参与供给统计，如实披露数据质量） |
+| `items[].weekday` | 1=周一 … 7=周日 |
+| `items[].hour` | 0–23 |
+| `items[].pendingUnaccepted` | 该时段内下单但至今无人接的订单数（`PENDING`，按 `visit_time` 落桶） |
+| `items[].availableCompanions` | 该时段**可服务**的陪诊员数（按其可服务时段分桶） |
+| `items[].gap` | `pendingUnaccepted − availableCompanions`（**> 0 即为缺口**） |
+
+### 三条口径规则
+
+1. **桶的粒度固定为「周内第几天 × 小时」**，与查询区间的长度无关 ——
+   只有这样，「这一周和上一周的同一时段」才可比（迭代计划 §47 的闭环数据基础）。
+2. **同一陪诊员在多个时段各计 1 次，但每个桶里只计 1 次**（不是按单数计）。
+3. **供给数按「可服务时段」分桶**，不是按「当前 AVAILABLE 的总人数」——
+   后者会让每个桶的供给数都一样，指标没有信息量。
+   没能解析出时段的陪诊员**不进任何桶**，并由 `companionsWithoutSlots` 如实披露。
+
+> 这正是迭代计划 §47 那个闭环的数据基础：
+> 「订单无人接 → 统计发现 14:00–16:00 陪诊员数量不足 → 管理员调整排班 → 下一周期重新统计 → 履约率提升」。
+
+---
+
+## 22. 干预效果对比（V3.6）
+
+`GET /api/admin/operations/effect`　权限：**ADMIN**
+
+### 请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `metric` | String | 是 | 指标 key，**必须已在计算器注册表里**；未注册 `400` |
+| `from` / `to` | String | 是 | **后**一期的区间（闭区间，上限 366 天 → `9002`） |
+| `compareFrom` / `compareTo` | String | 否 | **前**一期的区间；不传时自动取「与后一期等长、紧邻其前」的区间 |
+
+### 响应
+
+```json
+{
+  "code": 200, "message": "操作成功",
+  "data": {
+    "metric": "operations.fulfillment_rate",
+    "metricName": "履约率",
+    "current":  { "from": "2026-10-01", "to": "2026-10-15", "value": "96.40%" },
+    "previous": { "from": "2026-09-16", "to": "2026-09-30", "value": "92.10%" },
+    "delta": "+4.30%"
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `metric` | 指标 key |
+| `metricName` | 指标中文名（**从指标字典取**，不另写一份名表） |
+| `current` / `previous` | 两期的区间与取值 |
+| `delta` | 差值（带正负号）；两值格式不同（如 `%` vs 计数）时返回 `"—"` |
+
+### 同口径铁律（决策 6.2）
+
+两期数值由**同一个计算器**算两遍得到 ——
+用两个各写一遍的公式对比，比出来的差值可能全是公式差异。
+
+未注册的指标 key 返回 `400`（**不许「猜一个算法算出来」**）。
+
+---
+
+## 23. 端点 ↔ 指标机器面（V3.6）
+
+V3.6 起，「哪个端点返回了哪些指标」由
+`backend/src/main/resources/metrics/endpoints.yml` 声明，
+并由 `MetricEndpointContractTest` 做**三条双向校验**：
+
+1. yml 里声明的端点**必须真实存在**（反射扫描所有 `@RestController` 的映射方法）；
+2. yml 里声明的指标**必须在指标字典里**；
+3. 指标字典里每条指标声明的端点**必须在 yml 里出现**。
+
+指标字典的「人读面」与「机器面」是否逐条一致，由
+`tools/check_metric_dict_parity.py` 机械校验（不一致即非零退出）。

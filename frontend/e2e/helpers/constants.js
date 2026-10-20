@@ -94,6 +94,8 @@ export const ROUTES = {
   adminOperLog: '/admin/oper-log',
   /** V3.1 履约风险中心（W-10） */
   adminFulfillment: '/admin/fulfillment',
+  /** V3.5 平台运营驾驶舱（W-11） */
+  adminOperations: '/admin/operations',
   chatSessions: '/chat',
   chatRoom: (orderId) => `/chat/${orderId}`,
   adminChatViewer: '/admin/chat',

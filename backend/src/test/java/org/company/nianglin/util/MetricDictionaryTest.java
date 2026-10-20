@@ -248,6 +248,98 @@ class MetricDictionaryTest {
     }
 
     /* ================================================================== */
+    /* 5 · V3.5 平台运营驾驶舱                                              */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("指标字典覆盖了 V3.5 驾驶舱的五个 VO 及其嵌套类")
+    void dictionaryShouldCoverV3_5OperationsVos() {
+        Set<String> declared = new HashSet<>();
+        for (MetricDictionary.VoSpec spec : dictionary.vos()) {
+            declared.add(spec.className());
+        }
+        assertTrue(declared.contains("OperationsOverviewVO"));
+        assertTrue(declared.contains("OperationsExceptionVO"));
+        assertTrue(declared.contains("OperationsExceptionItemVO"));
+        assertTrue(declared.contains("OperationsTrendVO"));
+        assertTrue(declared.contains("OperationsTrendVO$Series"));
+        assertTrue(declared.contains("OperationsHealthVO"));
+    }
+
+    @Test
+    @DisplayName("V3.5 的四个驾驶舱端点都在字典里登记过")
+    void v3_5EndpointsShouldAllBeRegistered() {
+        Set<String> registered = new HashSet<>();
+        for (MetricDictionary.Metric metric : dictionary.metrics()) {
+            registered.addAll(metric.endpoints());
+        }
+        for (String endpoint : List.of(
+                "GET /api/admin/operations/overview",
+                "GET /api/admin/operations/exceptions",
+                "GET /api/admin/operations/trend",
+                "GET /api/admin/operations/health")) {
+            assertTrue(registered.contains(endpoint),
+                    "端点 " + endpoint + " 没有在指标字典里登记 —— 新指标必须先进字典");
+        }
+    }
+
+    @Test
+    @DisplayName("V3.5 的运营指标全部登记（14 条核心指标 + 趋势序列值）")
+    void v3_5ShouldRegisterAllFourteenOperationsMetrics() {
+        for (String key : List.of(
+                "operations.today_order_count",
+                "operations.completed_order_count",
+                "operations.in_service_count",
+                "operations.pending_count",
+                "operations.fulfillment_rate",
+                "operations.completion_rate",
+                "operations.avg_accept_minutes",
+                "operations.complaint_rate",
+                "operations.average_score",
+                "operations.active_companion_count",
+                "operations.exception_manual_required_count",
+                "operations.exception_match_warning_count",
+                "operations.exception_complaint_rate_count",
+                "operations.exception_medication_missed_count",
+                // 与 companion.trend.series_value 同范式：趋势序列本身也是指标，
+                // 否则趋势端点会在字典里留下一个没有口径的出口
+                "operations.trend.series_value")) {
+            assertNotNull(dictionary.find(key), "指标 " + key + " 没有在字典里登记");
+        }
+    }
+
+    @Test
+    @DisplayName("「履约率」与「完成率（按时）」必须是两个不同指标（偏差 D-3.5-1）")
+    void fulfillmentRateAndCompletionRateShouldBeTwoDifferentMetrics() {
+        MetricDictionary.Metric fulfillment = dictionary.find("operations.fulfillment_rate");
+        MetricDictionary.Metric completion = dictionary.find("operations.completion_rate");
+        assertNotNull(fulfillment, "履约率必须在字典里登记");
+        assertNotNull(completion, "完成率（按时）必须在字典里登记");
+        // 同一个指标挂两个名字，就是「口径分裂」的另一种形态
+        assertFalse(fulfillment.formula().equals(completion.formula()),
+                "履约率与完成率（按时）的公式必须不同 —— 两个名字一个数是禁止的");
+        // 履约率在概览与健康度两个出口出现，必须登记在同一条指标下
+        assertTrue(fulfillment.bindings().size() >= 2,
+                "履约率是同一个指标的两个出口（概览 / 健康度），应登记在同一条指标下");
+    }
+
+    @Test
+    @DisplayName("V3.5 的四条异常计数指标都绑定到异常条目的 count 字段")
+    void v3_5ExceptionMetricsShouldBindToItemCount() {
+        for (String key : List.of(
+                "operations.exception_manual_required_count",
+                "operations.exception_match_warning_count",
+                "operations.exception_complaint_rate_count",
+                "operations.exception_medication_missed_count")) {
+            MetricDictionary.Metric metric = dictionary.find(key);
+            assertNotNull(metric, key + " 没有登记");
+            assertTrue(metric.bindings().stream()
+                            .anyMatch(b -> b.vo().equals("OperationsExceptionItemVO") && b.field().equals("count")),
+                    key + " 必须绑定到 OperationsExceptionItemVO#count");
+        }
+    }
+
+    /* ================================================================== */
     /* 工具                                                                */
     /* ================================================================== */
 

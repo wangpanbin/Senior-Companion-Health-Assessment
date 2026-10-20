@@ -527,6 +527,20 @@ export const routes = [
         meta: { title: '沟通记录', icon: 'ChatDotRound', roles: ['ADMIN'], module: 'M13', code: 'W-09' }
       },
       {
+        // V3.5 平台运营驾驶舱：概览 / 异常中心 / 趋势 / 平台健康度
+        // code 沿用后台 W-xx 序号（W-01 ~ W-10 已占用）
+        path: 'operations',
+        name: 'AdminOperations',
+        component: () => import('@/views/admin/operations.vue'),
+        meta: {
+          title: '运营驾驶舱',
+          icon: 'Odometer',
+          roles: ['ADMIN'],
+          module: 'M10',
+          code: 'W-11'
+        }
+      },
+      {
         path: 'fulfillment',
         name: 'AdminFulfillment',
         component: () => import('@/views/admin/fulfillment.vue'),

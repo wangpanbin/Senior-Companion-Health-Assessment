@@ -8,6 +8,51 @@
 
 ---
 
+## [V3.5] · 2026-10-20 · 平台运营驾驶舱
+
+让管理员**在 30 秒内发现平台异常，并且能直接去处理**。
+产品与工程契约见 [spec](docs/spec/V3.5-operations-cockpit-spec.md) /
+[tickets](docs/spec/V3.5-tickets.md)。
+
+### Added · 新增
+
+**四个驾驶舱端点**
+
+- `GET /api/admin/operations/overview` —— 平台概览八项指标
+- `GET /api/admin/operations/exceptions` —— **异常中心**（四类异常，每类带 `linkUrl`）
+- `GET /api/admin/operations/trend` —— 六条趋势（订单 / 陪诊员活跃 / 履约率 / 投诉 / 评价 / 用药任务）
+  × 四个区间（今日 / 近 7 天 / 近 30 天 / 自定义）
+- `GET /api/admin/operations/health` —— **平台健康度 = 六个客观指标，不给合成分**
+- `config/OperationsProperties`（阈值配置化，启动期校验）+ `mapper/OperationsMapper`
+  + `service/OperationsService(+Impl)` + 5 个 VO + `controller/admin/OperationsController`
+
+**前端**
+
+- `views/admin/operations.vue` —— 驾驶舱首页（概览 / 异常中心 / 趋势 / 健康度四块**独立三态**）
+- 异常卡片的「去处理」**直接用后端下发的 `linkUrl`** 跳转，前端不拼路由
+- 组件单测 + 20 例；E2E + 8 例（含「四类异常卡片逐个点开，落地页必须可达」）
+
+### 口径决策
+
+- **异常中心聚合 V3.1 风险中心，不另建一套风险判定**（决策 5.1）——
+  `manualRequired` 与 `warning + urgent` 与 `/api/admin/fulfillment/summary` **同源**，
+  由 `OperationsExceptionParityTest` 锁死
+- **平台健康度是六个并列指标，不合成总分**（决策 5.2）——
+  禁止「AI 平台健康指数 96」这类无法解释的数
+- **履约率 ≠ 完成率（按时）**（偏差 D-3.5-1）：
+  履约率看「最终有没有履约完」，完成率看「完成得及不及时」；
+  两个名字一个数同样是口径分裂
+- **每张异常卡片的 `linkUrl` 必须可达**（决策 5.4）——
+  「看到了但处理不了」是本版最典型的假绿，E2E 逐个点开验证
+
+### 门禁
+
+- mvn -B verify（基线 1101 + 新增）
+- pnpm lint:check / vitest 191/191（基线 171，+20）/ build
+- playwright 全量（基线 229 + 新增 8）
+
+---
+
 ## [V3.4] · 2026-10-20 · 智能调度
 
 让平台**自动找到更合适的陪诊员**，并且每一条推荐都能说出「为什么是他」。

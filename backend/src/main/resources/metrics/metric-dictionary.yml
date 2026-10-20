@@ -13,7 +13,7 @@
 #   5. vos 段声明每个 VO 的字段构成：出现在 bindings 里的是指标，
 #      出现在 structural 里的是结构字段 —— 两边都没有的字段会让测试变红。
 
-version: 3
+version: 4
 updatedAt: "2026-10-20"
 
 metrics:
@@ -533,6 +533,217 @@ metrics:
       - vo: CompanionMatchVO
         field: ratingScore
 
+  # ==================== 平台运营驾驶舱（V3.5） ====================
+  # 区间口径：统计区间默认 30 天、最多 366 天、闭区间；
+  # ⚠️ 订单类指标一律按 companion_order.create_time 过滤（与 M10 统计模块同一时间字段）；
+  #    ⚠️ 「履约率」与「完成率（按时）」是两个指标，不是同一个数挂两个名字（tickets 偏差 D-3.5-1）。
+  - key: operations.today_order_count
+    name: 今日订单数
+    scope: 平台今日新增的陪诊订单数（不随统计区间浮动）
+    period: 当天（按 create_time 精确匹配；「今日」边界由应用侧按本地时区计算，不依赖数据库时区）
+    source: companion_order(create_time, deleted)
+    formula: "COUNT(create_time >= 今日零点 AND create_time < 次日零点)"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/overview"
+    bindings:
+      - vo: OperationsOverviewVO
+        field: todayOrderCount
+
+  - key: operations.completed_order_count
+    name: 区间完成订单数
+    scope: 统计区间内创建的陪诊订单中，当前状态为「已完成」的订单数
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: companion_order(status, create_time)
+    formula: "COUNT(status IN ('COMPLETED','REVIEWED'))"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/overview"
+    bindings:
+      - vo: OperationsOverviewVO
+        field: completedOrderCount
+
+  - key: operations.in_service_count
+    name: 区间服务中订单数
+    scope: 统计区间内创建的陪诊订单中，当前状态为「服务中」的订单数
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: companion_order(status, create_time)
+    formula: "COUNT(status = 'IN_SERVICE')"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/overview"
+    bindings:
+      - vo: OperationsOverviewVO
+        field: inServiceCount
+
+  - key: operations.pending_count
+    name: 区间待接单订单数
+    scope: 统计区间内创建的陪诊订单中，当前状态为「待接单」的订单数
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: companion_order(status, create_time)
+    formula: "COUNT(status = 'PENDING')"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/overview"
+    bindings:
+      - vo: OperationsOverviewVO
+        field: pendingCount
+
+  - key: operations.fulfillment_rate
+    name: 履约率
+    scope: 统计区间内最终履约（完成）的订单占「完成 + 取消」的比例
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: companion_order(status, create_time)
+    formula: "(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)；分母为 0 时记 0.00%"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/overview"
+      - "GET /api/admin/operations/health"
+    bindings:
+      - vo: OperationsOverviewVO
+        field: fulfillmentRate
+      - vo: OperationsHealthVO
+        field: fulfillmentRate
+
+  - key: operations.completion_rate
+    name: 完成率（按时）
+    scope: 已完成订单里「没有超时」的比例；与履约率是两个不同指标
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: companion_order(status, visit_time, finish_time, create_time)
+    formula: "按时完成单数 / 已完成单数；按时 = finish_time <= visit_time + nianglin.operations.fulfillment-window-minutes（默认 240 分钟）；分母为 0 时记 0.00%"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/health"
+    bindings:
+      - vo: OperationsHealthVO
+        field: completionRate
+
+  - key: operations.avg_accept_minutes
+    name: 平均接单时间
+    scope: 统计区间内已接单订单从下单到接单的耗时均值
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: companion_order(create_time, accept_time)
+    formula: "AVG(TIMESTAMPDIFF(MINUTE, create_time, accept_time))，仅 accept_time 非空；无已接单订单时记 0"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/overview"
+      - "GET /api/admin/operations/health"
+    bindings:
+      - vo: OperationsOverviewVO
+        field: avgAcceptMinutes
+      - vo: OperationsHealthVO
+        field: avgAcceptMinutes
+
+  - key: operations.complaint_rate
+    name: 投诉率
+    scope: 统计区间内被投诉的订单占区间订单总数的比例
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: complaint(order_id, create_time) + companion_order(create_time)
+    formula: "投诉订单数 / 区间订单数；投诉订单数 = COUNT(DISTINCT complaint.order_id)（同一单多次投诉只算一单）；分母为 0 时记 0.00%"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/overview"
+      - "GET /api/admin/operations/health"
+    bindings:
+      - vo: OperationsOverviewVO
+        field: complaintRate
+      - vo: OperationsHealthVO
+        field: complaintRate
+
+  - key: operations.average_score
+    name: 平均评分
+    scope: 统计区间内有效评价的平均分
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: order_review(score, is_valid, create_time)
+    formula: "AVG(score)，仅 is_valid = 1；无有效评价时记 0.00"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/overview"
+      - "GET /api/admin/operations/health"
+    bindings:
+      - vo: OperationsOverviewVO
+        field: averageScore
+      - vo: OperationsHealthVO
+        field: averageScore
+
+  - key: operations.active_companion_count
+    name: 活跃陪诊员数
+    scope: 统计区间内接过单的陪诊员人数（去重）
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: companion_order(companion_id, create_time)
+    formula: "COUNT(DISTINCT companion_id)，companion_id 非空"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/health"
+    bindings:
+      - vo: OperationsHealthVO
+        field: activeCompanionCount
+
+  - key: operations.exception_manual_required_count
+    name: 需人工介入订单数
+    scope: 异常中心第一项：履约风险已达人工介入阈值的待接单订单数
+    period: 当前状态（不随统计区间浮动）
+    source: companion_order(fulfillment_risk, status)
+    formula: "<b>复用 V3.1 的判定结果</b>：AdminService#fulfillmentSummary 的 manualRequired（fulfillment_risk = 'MANUAL_REQUIRED' 且 status = 'PENDING'），不另建一套风险判定"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/exceptions"
+    bindings:
+      - vo: OperationsExceptionItemVO
+        field: count
+
+  - key: operations.exception_match_warning_count
+    name: 超匹配预警时间订单数
+    scope: 异常中心第二项：等待时间超过预警阈值、仍在扩大匹配范围的待接单订单数
+    period: 当前状态（不随统计区间浮动）
+    source: companion_order(fulfillment_risk, status)
+    formula: "<b>复用 V3.1 的判定结果</b>：AdminService#fulfillmentSummary 的 warning + urgent（fulfillment_risk IN ('WARNING','URGENT') 且 status = 'PENDING'），不另建一套风险判定"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/exceptions"
+    bindings:
+      - vo: OperationsExceptionItemVO
+        field: count
+
+  - key: operations.exception_complaint_rate_count
+    name: 投诉率异常陪诊员数
+    scope: 异常中心第三项：回溯期内投诉率超过阈值的陪诊员人数
+    period: 回溯期（默认 30 天，由 nianglin.operations.complaint-lookback-days 配置）
+    source: complaint(target_user_id, target_role, create_time) + companion_order(companion_id, create_time)
+    formula: "COUNT(陪诊员 WHERE 接单量 >= nianglin.operations.complaint-min-orders（默认 3）AND 投诉订单数 / 接单数 > nianglin.operations.complaint-rate-threshold（默认 0.20）)"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/exceptions"
+    bindings:
+      - vo: OperationsExceptionItemVO
+        field: count
+
+  - key: operations.exception_medication_missed_count
+    name: 用药漏服异常数
+    scope: 异常中心第四项：统计区间内的漏服服药任务数
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: medication_task(status, was_missed, plan_time)
+    formula: "COUNT(bucket = 'MISSED')，bucket 由 MedicationBucketSql.CASE_BUCKET 唯一裁定（status = 'MISSED' 或 was_missed = 1），与服药日历同源"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/exceptions"
+    bindings:
+      - vo: OperationsExceptionItemVO
+        field: count
+
+  - key: operations.trend.series_value
+    name: 趋势序列值
+    scope: 平台运营驾驶舱在统计区间内按天分桶的指标序列
+    period: 统计区间（默认 30 天、最多 366 天、闭区间；固定 DAY 粒度）
+    source: companion_order(create_time, status, companion_id) + complaint(create_time) + order_review(create_time) + medication_task(plan_time)
+    formula: "按 dimension 取值：ORDER=当日订单数 / COMPANION_ACTIVE=当日活跃陪诊员数 / FULFILLMENT_RATE=当日履约率(%) / COMPLAINT=当日投诉订单数 / REVIEW=当日评价条数 / MEDICATION=当日用药任务数；无数据的桶补 0"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/admin/operations/trend"
+    bindings:
+      - vo: OperationsTrendVO$Series
+        field: data
+
 vos:
   - class: ElderHealthOverviewVO
     structural:
@@ -650,3 +861,39 @@ vos:
       - companionName
       - reasons
       - notes
+
+  - class: OperationsOverviewVO
+    structural:
+      - periodStart
+      - periodEnd
+
+  - class: OperationsExceptionVO
+    structural:
+      - total
+      - items
+
+  - class: OperationsExceptionItemVO
+    structural:
+      - type
+      - typeLabel
+      - level
+      - linkUrl
+      - referenceId
+      - description
+
+  - class: OperationsTrendVO
+    structural:
+      - dimension
+      - range
+      - granularity
+      - periodStart
+      - periodEnd
+      - categories
+      - series
+
+  - class: OperationsTrendVO$Series
+    structural:
+      - name
+
+  - class: OperationsHealthVO
+    structural: []
