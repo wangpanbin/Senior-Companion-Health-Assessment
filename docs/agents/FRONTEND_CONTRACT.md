@@ -436,9 +436,10 @@ onBeforeUnmount(() => polling?.stop())
 | `/companion/execute/:id` | `companion/execute.vue` | COMPANION |
 | `/companion/order` | `companion/order-list.vue` | COMPANION |
 | `/companion/income` | `companion/income.vue` | COMPANION |
+| `/companion/workbench` | `companion/workbench.vue` | COMPANION（**V3.3** 陪诊员工作台；运营指标 / 趋势 / 服务画像 / 收入摘要四块） |
 | `/companion/message` | `companion/message.vue` | COMPANION |
 | `/profile` | `profile/index.vue` | 全角色共用 |
-| `/admin/*`（8 页） | `admin/*.vue` | ADMIN |
+| `/admin/*`（9 页） | `admin/*.vue` | ADMIN（其中 `/admin/operations` 是 **V3.5** 运营驾驶舱：概览 / 异常中心 / 趋势 / 健康度 / 供给缺口 / 干预效果） |
 
 ⚠️ **`elder/message.vue` 与 `family/message.vue` 没有被任何路由引用（死文件），不要动它们。**
 消息页只有一份：`companion/message.vue`，且它被 3 个角色共用 → **必须按当前登录角色渲染**（读 `useUserStore().role`）。
