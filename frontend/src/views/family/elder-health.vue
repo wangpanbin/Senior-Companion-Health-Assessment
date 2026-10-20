@@ -34,6 +34,8 @@ const timelineLoading = ref(false)
 const timelineError = ref(false)
 const hasMore = ref(false)
 const nextCursor = ref(null)
+/** 后端告知「触及取数上限、这段时间没全给」——必须如实显示，不能让人以为看到的就是全部 */
+const truncated = ref(false)
 
 const isEmptyTimeline = computed(
   () => !timelineLoading.value && !timelineError.value && !items.value.length
@@ -60,12 +62,14 @@ async function loadTimeline(cursor) {
     items.value = cursor ? [...items.value, ...records] : records
     hasMore.value = data?.hasMore === true
     nextCursor.value = data?.nextCursor || null
+    truncated.value = data?.truncated === true
     timelineError.value = false
   } catch {
     if (!cursor) {
       items.value = []
       hasMore.value = false
       nextCursor.value = null
+      truncated.value = false
     }
     timelineError.value = true
   } finally {
@@ -202,6 +206,10 @@ watch(elderId, () => {
             </li>
           </ul>
 
+          <p v-if="truncated" class="nl-caption nl-text-weak trunc-note">
+            记录较多，仅显示最近部分
+          </p>
+
           <div v-if="hasMore" class="more">
             <el-button plain round size="small" :loading="timelineLoading" @click="loadMore">
               加载更多
@@ -257,7 +265,7 @@ watch(elderId, () => {
 }
 
 .metric__k {
-  font-size: var(--nl-font-caption);
+  font-size: var(--nl-font-body);
   color: var(--nl-text-2);
 }
 
@@ -319,7 +327,7 @@ watch(elderId, () => {
   }
 
   &.is-message {
-    border-left-color: var(--nl-text-3);
+    border-left-color: var(--nl-text-2);
   }
 }
 
@@ -331,13 +339,13 @@ watch(elderId, () => {
 }
 
 .event__cat {
-  font-size: var(--nl-font-caption);
+  font-size: var(--nl-font-body);
   color: var(--nl-text-2);
 }
 
 .event__time {
-  font-size: var(--nl-font-caption);
-  color: var(--nl-text-3);
+  font-size: var(--nl-font-body);
+  color: var(--nl-text-2);
 }
 
 .event__title {
@@ -347,13 +355,13 @@ watch(elderId, () => {
 
 .event__flag {
   margin-left: var(--nl-space-2);
-  font-size: var(--nl-font-micro);
+  font-size: var(--nl-font-body);
   color: var(--nl-warning);
 }
 
 .event__detail {
   margin-top: 2px;
-  font-size: var(--nl-font-caption);
+  font-size: var(--nl-font-body);
   color: var(--nl-text-2);
 }
 
@@ -361,5 +369,10 @@ watch(elderId, () => {
   display: flex;
   justify-content: center;
   padding-top: var(--nl-space-3);
+}
+
+.trunc-note {
+  margin-top: var(--nl-space-2);
+  text-align: center;
 }
 </style>

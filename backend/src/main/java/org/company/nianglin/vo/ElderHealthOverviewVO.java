@@ -41,6 +41,9 @@ public class ElderHealthOverviewVO {
     @Schema(description = "用药统计")
     private Medication medication;
 
+    @Schema(description = "今日用药计数（不随统计区间浮动）")
+    private MedicationTodayVO todayMedication;
+
     @Schema(description = "待处理事项；无待办时为空数组")
     private List<HealthPendingItemVO> pendingItems = new ArrayList<>();
 

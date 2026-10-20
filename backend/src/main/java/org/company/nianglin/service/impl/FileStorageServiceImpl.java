@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.FileBizType;
+import org.company.nianglin.constant.UploadPathLayout;
 import org.company.nianglin.entity.SysFile;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.SysFileMapper;
@@ -21,7 +22,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -58,11 +58,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class FileStorageServiceImpl implements FileStorageService {
 
-    private static final DateTimeFormatter MONTH_DIR_FORMAT = DateTimeFormatter.ofPattern("yyyyMM");
-
     /** 识别文件头所需的最少字节数（WebP 需要看到第 12 字节） */
     private static final int MIN_HEADER_BYTES = 12;
-
     /** 非聊天业务的单文件上限（servlet 提额后由代码守住的 10MB 防线） */
     private static final long DEFAULT_MAX_BYTES = 10L * 1024 * 1024;
 
@@ -94,7 +91,7 @@ public class FileStorageServiceImpl implements FileStorageService {
             if (ext == null || ("mp4".equals(ext) && FileBizType.of(bizType) != FileBizType.CHAT)) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "文件类型不允许（mp4 仅限订单聊天）");
             }
-            monthDir = LocalDateTime.now().format(MONTH_DIR_FORMAT);
+            monthDir = UploadPathLayout.monthDir(LocalDateTime.now());
             storedName = UUID.randomUUID().toString().replace("-", "") + "." + ext;
             target = Paths.get(uploadDir, monthDir).resolve(storedName);
             // 目录必须先于输出流创建：newOutputStream 不会自动建父目录，
@@ -113,7 +110,7 @@ public class FileStorageServiceImpl implements FileStorageService {
         record.setFileId("f_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16));
         record.setOriginName(clearable(file.getOriginalFilename()));
         record.setStoredName(storedName);
-        record.setUrl("/uploads/" + monthDir + "/" + storedName);
+        record.setUrl(UploadPathLayout.url(monthDir, storedName));
         record.setStorePath(uploadDir + "/" + monthDir + "/" + storedName);
         record.setSize(file.getSize());
         record.setExt(ext);

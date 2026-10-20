@@ -34,7 +34,7 @@ class DateRangeQueryTest {
 
     @Test
     @DisplayName("不传任何日期 → 最近 30 天（含今天）")
-    void shouldDefaultToLastThirtyDays() {
+    void defaultRangeShouldBeLastThirtyDays() {
         DateRange range = new DateRangeQuery().toRange();
 
         assertEquals(LocalDate.now(), range.end());
@@ -43,7 +43,7 @@ class DateRangeQueryTest {
 
     @Test
     @DisplayName("只传开始日 → 从该日到今天")
-    void shouldUseStartDateAndFallBackToToday() {
+    void startDateShouldBeUsedAndEndShouldFallBackToToday() {
         LocalDate start = LocalDate.now().minusDays(6);
         DateRangeQuery query = new DateRangeQuery();
         query.setStartDate(start.format(DATE));
@@ -57,7 +57,7 @@ class DateRangeQueryTest {
 
     @Test
     @DisplayName("只传结束日 → 结束日往前推 30 天")
-    void shouldFallBackToThirtyDaysBeforeEndDate() {
+    void endDateShouldFallBackToThirtyDaysBefore() {
         LocalDate end = LocalDate.now().minusDays(10);
         DateRangeQuery query = new DateRangeQuery();
         query.setEndDate(end.format(DATE));

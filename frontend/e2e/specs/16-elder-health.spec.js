@@ -260,6 +260,14 @@ test.describe('V3.2 · 越权矩阵', () => {
         expect(item.type, '老人端不应出现待评价').not.toBe('ORDER_TO_REVIEW')
         expect(item.type, '老人端不应出现履约风险').not.toBe('FULFILLMENT_RISK')
       }
+
+      // 「今日用药」与「区间用药统计」必须都在，且是两份不同的口径 ——
+      // 老人端的「今日已服药」必须用今天这一份，不能拿区间口径冒充
+      expect(data?.todayMedication, '老人端概览必须带今日用药').toBeTruthy()
+      expect(typeof data.todayMedication.total).toBe('number')
+      expect(typeof data.todayMedication.taken).toBe('number')
+      expect(data?.medication, '老人端概览必须带区间用药统计').toBeTruthy()
+      expect(typeof data.medication.total).toBe('number')
     } finally {
       await dispose()
     }

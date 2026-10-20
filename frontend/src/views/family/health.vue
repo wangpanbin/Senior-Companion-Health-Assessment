@@ -159,7 +159,7 @@ onMounted(loadSummary)
 }
 
 .stat__k {
-  font-size: var(--nl-font-caption);
+  font-size: var(--nl-font-body);
   color: var(--nl-text-2);
 }
 

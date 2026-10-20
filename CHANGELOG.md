@@ -55,6 +55,20 @@
   该路径根本不是上传产物（上传一律写进 `/uploads/{yyyyMM}/{uuid}.{ext}`），收窄守卫范围到落盘布局后
   **证件保护一点没弱化**，6 条 E2E 复绿
 
+**code-review（Standards + Spec 双轴）后的修正**：
+
+- 老人端「今日已服药 / 还有 N 次没吃」原先用的是**统计区间**口径（30 天的数字被说成「今天」）→
+  新增 `MedicationTodayVO`（当天口径三桶），概览增 `todayMedication` 字段
+- 指标字典的「双向校验」对**未登记的新 VO 失效**（`vos` 段是人工维护的清单）→ 增加第三层
+  「可达性」校验：从已登记的 VO 沿字段类型走，凡被接口带出去的 VO 必须登记
+- 时间线**订单类未受 200 条上限约束**（200 单能产出 1000 条事件）且响应无截断标记 →
+  改按事件条数封顶，新增 `truncated` 标志，前端如实提示「记录较多，仅显示最近部分」
+- 三页的内容型文字用 `--nl-text-3`（白底 2.62:1，低于 4.5:1）与 caption / micro 档
+  （老人模式 15px / 12.5px，低于 18px 基线）→ 分别提到 `--nl-text-2` 与 `--nl-font-body`
+- 上传落盘布局被写了两遍（落盘服务与守卫各一份）→ 新增 `constant/UploadPathLayout` 作单一真源
+- 新增测试的方法名不符合 `methodNameShouldXxx` → 15 处订正
+- **E2E 条数订正**：本版新增实为 **13 条**（此前写的 20 条把 `auth.setup` 的 7 条登录用例也算进去了）
+
 ### Changed · 变更
 
 - `StatisticsQuery` 改为继承 `DateRangeQuery`（区间判定只写一份）；`DateRangeQuery` **不用链式 setter**
@@ -73,7 +87,7 @@
 
 - 后端新增 **86 条**用例（902 → 988，全量 **988 / 988** 全绿）
 - 前端新增 **17 条**单元测试（122 → 139，全量 **139 / 139** 全绿）
-- Playwright：新增 **20 条**（`e2e/specs/16-elder-health.spec.js`），全量 **204 / 204** 全绿，夹具回滚校验通过
+- Playwright：新增 **13 条**（`e2e/specs/16-elder-health.spec.js`），全量 **210 / 210** 全绿，夹具回滚校验通过
 - 反向验证：删掉 `MedicationBucket.of` 的 MISSED 分支 → 真库 parity 测试报 `expected: <576> but was: <342>` 后复绿
 
 ### Compliance · 合规

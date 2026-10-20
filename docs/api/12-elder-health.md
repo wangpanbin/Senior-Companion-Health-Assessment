@@ -174,6 +174,7 @@ bucket = TAKEN    其余
       "pending": 1,
       "completionRate": "90.00%"
     },
+    "todayMedication": { "total": 3, "taken": 2, "missed": 0, "pending": 1 },
     "pendingItems": [
       {
         "type": "ORDER_WAITING",
@@ -208,6 +209,8 @@ bucket = TAKEN    其余
 |---|---|
 | `visit.orderCount` | 区间内 `status IN ('COMPLETED','REVIEWED')` 的订单数（按 `visit_time` 落在区间） |
 | `visit.companionCount` | 区间内服务过这位老人的陪诊员人数（去重） |
+| `medication.*` | **统计区间**口径的三桶与完成率 |
+| `todayMedication.*` | **当天**口径的三桶（按 `plan_date = 今天` 精确匹配，**不随统计区间浮动**）。<br>老人端的「今日已服药 / 还有 N 次没吃」用的是这一份 —— 用区间口径冒充会让家属/老人看到 30 天的数字被说成「今天」 |
 | `medication.completionRate` | `taken / total`；`total = 0` 时返回 `"0.00%"`（不是 `NaN%`） |
 | `medication.*` | 三桶划分见 §1.2，恒有 `taken + missed + pending == total` |
 
@@ -258,6 +261,7 @@ bucket = TAKEN    其余
     "range": { "startDate": "2026-09-21", "endDate": "2026-10-20", "days": 30 },
     "hasMore": true,
     "nextCursor": "MjAyNi0xMC0yMFQxMDowMDowMHwxMjM=",
+    "truncated": false,
     "items": [
       {
         "eventId": "MEDICATION:60003",
@@ -292,6 +296,8 @@ bucket = TAKEN    其余
 - 排序：`occurredAt` 降序，同一时刻按 `eventId` 升序（稳定）
 - 游标：`base64(occurredAt|eventId)`，翻页与排序共用同一套比较器，不会漏条或重复
 - `hasMore`：多取一条再裁剪
+- `truncated`：任一类别触及取数上限（每类 200 条）时为 `true` —— **表示这段时间的记录没有全部返回**，
+  前端必须如实提示，不能让用户以为看到的就是全部
 
 **实现要点**
 
@@ -339,7 +345,7 @@ bucket = TAKEN    其余
 | 项 | 家属端 | 老人端 |
 |---|---|---|
 | 事件范围 | 四类全有 | 订单 / 打卡 / 用药 |
-| `MESSAGE` | 含订单进度提醒 | **不含** —— 那是发给家属的站内信（`receiver_id` 是家属） |
+| `MESSAGE` | 含订单进度提醒 | **不含订单进度提醒** —— 那是发给家属的站内信（`receiver_id` 是家属）。<br>**仍会有 `MESSAGE` 分类**，但只含发给老人本人的**用药提醒**（`MEDICATION_REMIND`） |
 | 订单事件链接 | `/family/order/{id}` | **不返回** —— 老人端暂无订单详情页 |
 | 待处理事项 | 四类 | 只有「今日待服任务」 |
 

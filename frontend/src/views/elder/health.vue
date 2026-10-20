@@ -31,6 +31,8 @@ const timelineLoading = ref(false)
 const timelineError = ref(false)
 const hasMore = ref(false)
 const nextCursor = ref(null)
+/** 后端告知「触及取数上限、这段时间没全给」——必须如实显示，不能让人以为看到的就是全部 */
+const truncated = ref(false)
 
 const isEmptyTimeline = computed(
   () => !timelineLoading.value && !timelineError.value && !items.value.length
@@ -57,12 +59,14 @@ async function loadTimeline(cursor) {
     items.value = cursor ? [...items.value, ...records] : records
     hasMore.value = data?.hasMore === true
     nextCursor.value = data?.nextCursor || null
+    truncated.value = data?.truncated === true
     timelineError.value = false
   } catch {
     if (!cursor) {
       items.value = []
       hasMore.value = false
       nextCursor.value = null
+      truncated.value = false
     }
     timelineError.value = true
   } finally {
@@ -104,10 +108,10 @@ onMounted(() => {
       <!-- 今日用药：老人端最重要的一个数 -->
       <section class="pad">
         <div class="today">
-          <span class="today__v is-num">{{ overview.medication?.taken ?? 0 }}</span>
+          <span class="today__v is-num">{{ overview.todayMedication?.taken ?? 0 }}</span>
           <span class="today__k">今日已服药</span>
-          <span v-if="(overview.medication?.pending ?? 0) > 0" class="today__pending">
-            还有 {{ overview.medication.pending }} 次没吃
+          <span v-if="(overview.todayMedication?.pending ?? 0) > 0" class="today__pending">
+            还有 {{ overview.todayMedication.pending }} 次没吃
           </span>
         </div>
       </section>
@@ -180,6 +184,10 @@ onMounted(() => {
               <span class="event__time is-num" :title="e.occurredAt">{{ eventTimeText(e.occurredAt) }}</span>
             </li>
           </ul>
+
+          <p v-if="truncated" class="event__detail trunc-note">
+            记录较多，仅显示最近部分
+          </p>
 
           <div v-if="hasMore" class="more">
             <el-button plain round size="small" :loading="timelineLoading" @click="loadMore">
@@ -336,13 +344,18 @@ onMounted(() => {
 }
 
 .event__time {
-  font-size: var(--nl-font-caption);
-  color: var(--nl-text-3);
+  font-size: var(--nl-font-body);
+  color: var(--nl-text-2);
 }
 
 .more {
   display: flex;
   justify-content: center;
   padding-top: var(--nl-space-3);
+}
+
+.trunc-note {
+  margin-top: var(--nl-space-2);
+  text-align: center;
 }
 </style>

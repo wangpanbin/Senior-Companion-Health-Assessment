@@ -22,10 +22,19 @@
    ↓
 才允许出现在任何 VO 里
    ↓
-MetricDictionaryTest 双向核对：字典里的字段必须真的存在，VO 里的字段必须真的登记过
+MetricDictionaryTest 三层核对：
+   ① 字典 → VO：字典里写的字段必须真的存在
+   ② VO → 字典：VO 里的每个字段要么是指标、要么被声明为结构字段
+   ③ 可达性：被健康接口暴露出来的 VO（含 List<X> 这种泛型参数里的）
+      必须出现在字典里 —— 这一条堵住「新增一个 VO 直接用，没人登记就溜过去」
 ```
 
 任何一边单独改动，测试立刻变红。
+
+> 第 ③ 条是补进来的：原先只有 ①②，而 `vos` 段本身就是**人工维护的清单** ——
+> 新增一个 VO（比如待处理事项的 `HealthPendingItemVO`）只要不往清单里写，
+> ①② 都碰不到它，「双向校验」就漏了。现在改成从已登记的 VO 出发**沿字段类型走**，
+> 凡是被接口带出去的 VO 都必须登记。
 
 **V3.3 / V3.5 只能「登记」不能「新定义」**——它们的新指标要先进这份表；
 V3.6 退化为校验与补全（roadmap §7.1-3）。
@@ -72,6 +81,7 @@ V3.6 退化为校验与补全（roadmap §7.1-3）。
 | `elder.medication.completion_rate` | 用药完成率 | 统计区间内的服药完成率；分母含漏服与待服 | 统计区间 | 同上 | `taken / total`；`total = 0` 时 `0.00%` | 1 |
 | `elder.today.total` | 今日用药任务总数 | 该老人今日的服药任务总数 | **当天**（按 `plan_date` 精确匹配，不随统计区间浮动） | 同上 | `COUNT(*)` | 1 |
 | `elder.today.taken` | 今日已服数量 | 该老人今日已服且从未漏过的任务数 | 当天 | 同上 | `COUNT(bucket = 'TAKEN')` | 1 |
+| `elder.today.missed` | 今日漏服数量 | 该老人今日漏服的任务数（含漏服后补记） | 当天 | 同上 | `COUNT(bucket = 'MISSED')` | 1 |
 | `elder.today.pending` | 今日待服数量 | 该老人今日尚未确认的任务数 | 当天 | 同上 | `COUNT(bucket = 'PENDING')` | 1 |
 
 #### 三桶的唯一定义（`MedicationBucket`）
@@ -97,6 +107,7 @@ bucket = TAKEN    其余
 | 指标 key | 名称 | 统计范围 | 统计时间 | 数据来源 | 计算公式 | 口径版本 |
 |---|---|---|---|---|---|---|
 | `elder.summary.pending_item_count` | 待处理事项条数 | 该老人当前需要家属处理的事项**类别**数（不是事项条数） | 当前状态（不受统计区间影响） | `medication_task(status)` + `companion_order(status, fulfillment_risk)` | `COUNT(满足任一待处理判定的类别)`：今日待服 / 待接单订单 / 待评价订单 / 高风险订单 | 1 |
+| `elder.pending_item.count` | 单类待处理事项数量 | 某**一类**待处理事项的数量（同一时刻只出现一条该类事项） | 当前状态 | `medication_task(status)` 或 `companion_order(status, fulfillment_risk)`，按 `type` 判定 | 按 `type` 分别统计：`MEDICATION_PENDING` 今日待服 / `ORDER_WAITING` 待接单 / `ORDER_TO_REVIEW` 待评价 / `FULFILLMENT_RISK` 高风险 | 1 |
 
 > 「类别数」而不是「条数」：家属关心的是「有几件事要办」，
 > 不是「有 12 次服药没确认」。同一类事情合并成一项。

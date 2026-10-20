@@ -36,6 +36,7 @@ import org.company.nianglin.vo.ElderHealthOverviewVO;
 import org.company.nianglin.vo.FamilyHealthSummaryVO;
 import org.company.nianglin.vo.HealthPendingItemVO;
 import org.company.nianglin.vo.HealthTimelineVO;
+import org.company.nianglin.vo.MedicationTodayVO;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -144,11 +145,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
             Map<String, Object> visit = visits.get(elderId);
             Map<String, Object> wait = pending.get(elderId);
 
-            FamilyHealthSummaryVO.TodayMedication today =
-                    new FamilyHealthSummaryVO.TodayMedication()
-                            .setTotal(toInt(med == null ? null : med.get("total")))
-                            .setTaken(toInt(med == null ? null : med.get("taken")))
-                            .setPending(toInt(med == null ? null : med.get("pending")));
+            MedicationTodayVO today = todayMedication(med);
 
             summaries.add(new FamilyHealthSummaryVO()
                     .setElderId(elderId)
@@ -230,8 +227,25 @@ public class ElderHealthServiceImpl implements ElderHealthService {
                 .setRange(rangeInfo(range))
                 .setVisit(visitInfo)
                 .setMedication(medicationInfo)
+                .setTodayMedication(todayMedication(todayMedication))
                 .setPendingItems(pendingItems(elderId, pending, todayMedication, selfMode))
                 .setTimelinePreview(previewItems(elder, range, selfMode));
+    }
+
+    /**
+     * 把「今日用药」的一行聚合成 VO。
+     *
+     * <p>「今日」按 {@code plan_date = 今天} 精确匹配，<b>不随统计区间浮动</b> ——
+     * 「本月用药完成率」与「今天吃了 2 次」是两个维度。
+     * 老人端的「今日已服药 / 还有 N 次没吃」必须用这一份，
+     * 用区间口径的 {@code medication.taken} 会把 30 天的数字说成「今天」。</p>
+     */
+    private MedicationTodayVO todayMedication(Map<String, Object> row) {
+        return new MedicationTodayVO()
+                .setTotal(toInt(row == null ? null : row.get("total")))
+                .setTaken(toInt(row == null ? null : row.get("taken")))
+                .setMissed(toInt(row == null ? null : row.get("missed")))
+                .setPending(toInt(row == null ? null : row.get("pending")));
     }
 
     /* ================================================================== */
@@ -255,7 +269,8 @@ public class ElderHealthServiceImpl implements ElderHealthService {
         DateRange range = query == null ? new DateRangeQuery().toRange() : query.toRange();
         Set<HealthTimelineCategory> categories = parseCategories(query == null ? null : query.getCategories());
 
-        List<TimelineEvent> events = collectEvents(elder, range, categories, selfMode);
+        CollectedEvents collected = collectEvents(elder, range, categories, selfMode);
+        List<TimelineEvent> events = collected.events();
         events.sort(EVENT_ORDER);
 
         int limit = query == null || query.getLimit() == null ? DEFAULT_LIMIT : query.getLimit();
@@ -280,6 +295,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
                 .setRange(rangeInfo(range))
                 .setHasMore(hasMore)
                 .setNextCursor(nextCursor)
+                .setTruncated(collected.truncated())
                 .setItems(pageItems.stream().map(this::toItem).toList());
     }
 
@@ -288,29 +304,43 @@ public class ElderHealthServiceImpl implements ElderHealthService {
      *
      * <p>订单是<b>唯一入口</b>：打卡与消息都靠订单 ID 集合定位到这位老人
      * （那两张表都没有老人 ID），所以只查一次订单。</p>
+     *
+     * <p><b>每类事件封顶 {@value #MAX_EVENTS_PER_CATEGORY} 条</b>，超出的部分
+     * 会被丢弃并置 {@code truncated = true} —— 宁可明确告诉调用方「这里被截断了」，
+     * 也不能让调用方以为看到的就是全部。</p>
      */
-    private List<TimelineEvent> collectEvents(ElderProfile elder, DateRange range,
-                                               Set<HealthTimelineCategory> categories, boolean selfMode) {
+    private CollectedEvents collectEvents(ElderProfile elder, DateRange range,
+                                          Set<HealthTimelineCategory> categories, boolean selfMode) {
         List<TimelineEvent> events = new ArrayList<>();
+        boolean truncated = false;
         Long elderId = elder.getId();
 
         List<CompanionOrder> orders = elderOrders(elderId, range);
         List<Long> orderIds = orders.stream().map(CompanionOrder::getId).toList();
 
         if (categories.contains(HealthTimelineCategory.ORDER)) {
-            orderEvents(events, orders, range, selfMode);
-            reviewEvents(events, orderIds, range, selfMode);
+            // 订单一类的事件数是「单数 × 每单最多 5 条」，不能只按订单数封顶 ——
+            // 200 单能产出 1000 条事件。这里按<b>事件条数</b>封顶。
+            List<TimelineEvent> orderEvents = new ArrayList<>();
+            orderEvents(orderEvents, orders, range, selfMode);
+            reviewEvents(orderEvents, orderIds, range, selfMode);
+            if (orderEvents.size() > MAX_EVENTS_PER_CATEGORY) {
+                truncated = true;
+                orderEvents.sort(EVENT_ORDER);
+                orderEvents = new ArrayList<>(orderEvents.subList(0, MAX_EVENTS_PER_CATEGORY));
+            }
+            events.addAll(orderEvents);
         }
         if (categories.contains(HealthTimelineCategory.CHECKIN)) {
-            checkinEvents(events, orderIds, range);
+            truncated |= checkinEvents(events, orderIds, range) >= MAX_EVENTS_PER_CATEGORY;
         }
         if (categories.contains(HealthTimelineCategory.MEDICATION)) {
-            medicationEvents(events, elderId, range);
+            truncated |= medicationEvents(events, elderId, range) >= MAX_EVENTS_PER_CATEGORY;
         }
         if (categories.contains(HealthTimelineCategory.MESSAGE)) {
-            messageEvents(events, elder, orderIds, range, selfMode);
+            truncated |= messageEvents(events, elder, orderIds, range, selfMode) >= MAX_EVENTS_PER_CATEGORY;
         }
-        return events;
+        return new CollectedEvents(events, truncated);
     }
 
     /** 该老人参与、且与区间沾边的订单 */
@@ -340,9 +370,9 @@ public class ElderHealthServiceImpl implements ElderHealthService {
     }
 
     /** 评价完成事件 */
-    private void reviewEvents(List<TimelineEvent> events, List<Long> orderIds, DateRange range, boolean selfMode) {
+    private int reviewEvents(List<TimelineEvent> events, List<Long> orderIds, DateRange range, boolean selfMode) {
         if (orderIds.isEmpty()) {
-            return;
+            return 0;
         }
         List<OrderReview> reviews = orderReviewMapper.selectList(Wrappers.<OrderReview>lambdaQuery()
                 .in(OrderReview::getOrderId, orderIds)
@@ -364,12 +394,13 @@ public class ElderHealthServiceImpl implements ElderHealthService {
                     null,
                     orderLink(review.getOrderId(), selfMode)));
         }
+        return reviews.size();
     }
 
     /** 陪诊打卡事件 */
-    private void checkinEvents(List<TimelineEvent> events, List<Long> orderIds, DateRange range) {
+    private int checkinEvents(List<TimelineEvent> events, List<Long> orderIds, DateRange range) {
         if (orderIds.isEmpty()) {
-            return;
+            return 0;
         }
         List<OrderCheckin> checkins = orderCheckinMapper.selectList(Wrappers.<OrderCheckin>lambdaQuery()
                 .in(OrderCheckin::getOrderId, orderIds)
@@ -395,10 +426,11 @@ public class ElderHealthServiceImpl implements ElderHealthService {
                     null,
                     null));
         }
+        return checkins.size();
     }
 
     /** 用药事件：已服按确认时间、漏服按计划时间；待服不是事件（它属于待处理事项） */
-    private void medicationEvents(List<TimelineEvent> events, Long elderId, DateRange range) {
+    private int medicationEvents(List<TimelineEvent> events, Long elderId, DateRange range) {
         List<MedicationTask> tasks = medicationTaskMapper.selectList(Wrappers.<MedicationTask>lambdaQuery()
                 .eq(MedicationTask::getElderId, elderId)
                 .ge(MedicationTask::getPlanTime, range.startTime())
@@ -429,14 +461,15 @@ public class ElderHealthServiceImpl implements ElderHealthService {
                     task.getId(),
                     "/elder/medication"));
         }
+        return tasks.size();
     }
 
     /** 站内信事件：只取发给当前读者本人的进度与用药提醒 */
-    private void messageEvents(List<TimelineEvent> events, ElderProfile elder, List<Long> orderIds,
-                               DateRange range, boolean selfMode) {
+    private int messageEvents(List<TimelineEvent> events, ElderProfile elder, List<Long> orderIds,
+                              DateRange range, boolean selfMode) {
         Long receiverId = selfMode ? elder.getUserId() : SecurityUtils.currentUserId();
         if (receiverId == null) {
-            return;
+            return 0;
         }
         List<String> types = selfMode ? ELDER_MESSAGE_TYPES : FAMILY_MESSAGE_TYPES;
         List<InternalMessage> messages = internalMessageMapper.selectList(Wrappers.<InternalMessage>lambdaQuery()
@@ -467,6 +500,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
                     null,
                     orderMessage ? orderLink(message.getBizId(), selfMode) : "/elder/medication"));
         }
+        return messages.size();
     }
 
     /* ================================================================== */
@@ -526,7 +560,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
     }
 
     /** 待处理事项条数：与 {@link #pendingItems} 同源，保证首页角标与详情一致 */
-    private int pendingItemCount(Map<String, Object> pending, FamilyHealthSummaryVO.TodayMedication today) {
+    private int pendingItemCount(Map<String, Object> pending, MedicationTodayVO today) {
         int count = 0;
         if (today != null && today.getPending() != null && today.getPending() > 0) {
             count++;
@@ -552,10 +586,11 @@ public class ElderHealthServiceImpl implements ElderHealthService {
 
     /** 时间线预览（概览里的「最近发生了什么」） */
     private List<HealthTimelineVO.Item> previewItems(ElderProfile elder, DateRange range, boolean selfMode) {
-        List<TimelineEvent> events = collectEvents(elder, range,
+        CollectedEvents collected = collectEvents(elder, range,
                 Set.of(HealthTimelineCategory.ORDER, HealthTimelineCategory.CHECKIN,
                         HealthTimelineCategory.MEDICATION, HealthTimelineCategory.MESSAGE),
                 selfMode);
+        List<TimelineEvent> events = collected.events();
         events.sort(EVENT_ORDER);
         return events.stream().limit(PREVIEW_LIMIT).map(this::toItem).toList();
     }
@@ -770,6 +805,16 @@ public class ElderHealthServiceImpl implements ElderHealthService {
     private record TimelineEvent(String eventId, LocalDateTime occurredAt, String category, String type,
                                   String typeLabel, String title, String detail, Boolean abnormal,
                                   Long orderId, Long medicationTaskId, String linkUrl) {
+    }
+
+    /**
+     * 一次事件收集的结果：事件列表 + 是否发生截断。
+     *
+     * @param events    收集到的事件（已按每类上限裁剪）
+     * @param truncated 任一类别触到取数上限 —— 调用方必须把这件事告诉用户，
+     *                   否则「看到的就是全部」会变成一个假象
+     */
+    private record CollectedEvents(List<TimelineEvent> events, boolean truncated) {
     }
 
     /** 事件排序：时间倒序 → eventId 升序 */

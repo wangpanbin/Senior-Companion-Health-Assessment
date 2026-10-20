@@ -49,6 +49,10 @@ public class HealthTimelineVO {
     @Schema(description = "下一页游标；没有更多时为 null", example = "MjAyNi0xMC0yMFQxMDowMDowMHwxMjM=")
     private String nextCursor;
 
+    @Schema(description = "是否因触及取数上限而被截断；为 true 时说明这段时间的记录没有全部返回",
+            example = "false")
+    private Boolean truncated;
+
     @Schema(description = "事件列表，按发生时间倒序；无数据时为空数组")
     private List<Item> items = new ArrayList<>();
 

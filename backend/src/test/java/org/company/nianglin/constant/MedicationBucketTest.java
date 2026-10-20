@@ -59,7 +59,7 @@ class MedicationBucketTest {
                 "PENDING, true,  MISSED",
         })
         @DisplayName("状态组合 → 桶")
-        void shouldBucketByStatusAndWasMissed(String status, boolean wasMissed, MedicationBucket expected) {
+        void statusAndWasMissedShouldDecideBucket(String status, boolean wasMissed, MedicationBucket expected) {
             assertSame(expected, MedicationBucket.of(status, wasMissed));
         }
 
@@ -70,7 +70,7 @@ class MedicationBucketTest {
                 "PENDING, PENDING",
         })
         @DisplayName("wasMissed 为 null 按未漏服处理")
-        void shouldTreatNullWasMissedAsNotMissed(String status, MedicationBucket expected) {
+        void nullWasMissedShouldBeTreatedAsNotMissed(String status, MedicationBucket expected) {
             assertSame(expected, MedicationBucket.of(status, null));
         }
     }
@@ -87,13 +87,13 @@ class MedicationBucketTest {
         @NullAndEmptySource
         @ValueSource(strings = {"UNKNOWN", "taken", "MISSED "})
         @DisplayName("状态值越界 → 兜底已服，不抛异常")
-        void shouldFallbackToTakenForDirtyStatus(String status) {
+        void dirtyStatusShouldFallbackToTaken(String status) {
             assertSame(MedicationBucket.TAKEN, MedicationBucket.of(status, false));
         }
 
         @Test
         @DisplayName("status 与 wasMissed 都为 null → 兜底已服")
-        void shouldFallbackWhenEverythingIsNull() {
+        void nullStatusAndFlagShouldFallbackToTaken() {
             assertSame(MedicationBucket.TAKEN, MedicationBucket.of(null, null));
         }
     }

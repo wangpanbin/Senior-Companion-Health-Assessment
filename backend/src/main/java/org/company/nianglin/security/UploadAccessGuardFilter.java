@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.FileBizType;
+import org.company.nianglin.constant.UploadPathLayout;
 import org.company.nianglin.entity.SysFile;
 import org.company.nianglin.mapper.SysFileMapper;
 import org.springframework.http.HttpHeaders;
@@ -21,7 +22,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * 上传目录访问守卫：拦截对资质证件（{@code bizType=COMPANION_CERT}）原始 URL 的直连。
@@ -64,16 +64,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class UploadAccessGuardFilter extends OncePerRequestFilter {
 
-    private static final String UPLOAD_PREFIX = "/uploads/";
-
-    /**
-     * 上传产物的落盘目录形状：{@code /uploads/{yyyyMM}/{uuid}.{ext}}。
-     *
-     * <p>见 {@code FileStorageServiceImpl}：所有上传（含全部证件）都写进
-     * {@code ./uploads/{yyyyMM}/}，{@code sys_file.url} 也是 {@code /uploads/{yyyyMM}/{storedName}}。
-     * 所以<b>只有这个形状下的路径才可能是上传产物</b>。</p>
-     */
-    private static final Pattern MONTH_DIR_PATTERN = Pattern.compile("^\\d{6}/");
+    private static final String UPLOAD_PREFIX = UploadPathLayout.URL_PREFIX;
 
     /** 仅静态资源读取方法需要守卫 */
     private static final Set<String> GUARDED_METHODS = Set.of("GET", "HEAD");
@@ -116,8 +107,7 @@ public class UploadAccessGuardFilter extends OncePerRequestFilter {
         //
         // 失败关闭的前提是「这个路径可能是上传产物」；不在落盘布局里的路径
         // （如 /uploads/avatar/default.png）不可能是证件，放行不损失任何安全性。
-        String rest = uri.substring(UPLOAD_PREFIX.length());
-        if (!MONTH_DIR_PATTERN.matcher(rest).find()) {
+        if (!UploadPathLayout.isUploadPath(uri)) {
             filterChain.doFilter(request, response);
             return;
         }

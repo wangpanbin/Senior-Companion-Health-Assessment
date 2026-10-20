@@ -8,7 +8,11 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,13 +31,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>指标口径漂移最常见的路径是「先在某个 VO 里加了个字段，回头忘了登记口径」——
  * 于是这个数字只有实现的人知道它是怎么算的，家属端和管理端各自理解成不同的东西。</p>
  *
- * <p>本测试做两件事，缺一不可：</p>
+ * <p>本测试做三件事，缺一不可：</p>
  * <ol>
  *   <li><b>字典 → VO</b>：字典里声明的每个绑定，VO 里必须真的有这个字段
  *       （防止「字典写了，代码没实现」）；</li>
  *   <li><b>VO → 字典</b>：VO 里的每个字段，要么是已登记的指标，
  *       要么在 {@code vos} 段被声明为结构字段
- *       （防止「代码加了，字典没登记」）。</li>
+ *       （防止「代码加了，字典没登记」）；</li>
+ *   <li><b>可达性</b>：被健康接口暴露出来的 VO（含泛型参数里的）
+ *       <b>必须</b>出现在字典里 —— 这一条堵住了「新增一个 VO 直接用，没人登记就溜过去」，
+ *       因为 {@code vos} 段本身就是人工维护的清单，光靠它自己守不住自己。</li>
  * </ol>
  *
  * <p>再加上「每条指标必须写全五要素」——
@@ -137,18 +144,6 @@ class MetricDictionaryTest {
     }
 
     @Test
-    @DisplayName("指标字典覆盖了 V3.2 的三个核心 VO")
-    void dictionaryShouldCoverCoreV3_2Vos() {
-        Set<String> declared = new HashSet<>();
-        for (MetricDictionary.VoSpec spec : dictionary.vos()) {
-            declared.add(spec.className());
-        }
-        assertTrue(declared.contains(ElderHealthOverviewVO.class.getSimpleName()));
-        assertTrue(declared.contains(FamilyHealthSummaryVO.class.getSimpleName()));
-        assertTrue(declared.contains(HealthTimelineVO.class.getSimpleName()));
-    }
-
-    @Test
     @DisplayName("结构字段声明里不能有字典中不存在的字段（防写错字段名）")
     void structuralDeclarationsShouldAllExist() {
         for (MetricDictionary.VoSpec spec : dictionary.vos()) {
@@ -162,8 +157,80 @@ class MetricDictionaryTest {
     }
 
     /* ================================================================== */
+    /* 4 · 可达性：被接口暴露的 VO 必须登记                                   */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("被健康接口暴露出来的 VO（含泛型参数）必须登记在字典里")
+    void everyReachableVoShouldBeRegistered() {
+        Set<String> declared = new HashSet<>();
+        for (MetricDictionary.VoSpec spec : dictionary.vos()) {
+            declared.add(spec.className());
+        }
+
+        Deque<String> queue = new ArrayDeque<>(declared);
+        Set<String> visited = new HashSet<>();
+        while (!queue.isEmpty()) {
+            String name = queue.poll();
+            if (!visited.add(name)) {
+                continue;
+            }
+            Class<?> vo = resolve(name);
+            if (vo == null) {
+                continue;
+            }
+            for (Field field : vo.getDeclaredFields()) {
+                for (Class<?> referenced : referencedVoTypes(field)) {
+                    String key = simpleNameOf(referenced);
+                    assertTrue(declared.contains(key),
+                            "VO " + name + " 的字段 " + field.getName()
+                                    + " 暴露了未登记的 VO " + key
+                                    + " —— 它会随接口一起返回，口径必须登记");
+                    queue.add(key);
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("指标字典覆盖了 V3.2 的三个核心 VO")
+    void dictionaryShouldCoverCoreV3_2Vos() {
+        Set<String> declared = new HashSet<>();
+        for (MetricDictionary.VoSpec spec : dictionary.vos()) {
+            declared.add(spec.className());
+        }
+        assertTrue(declared.contains(ElderHealthOverviewVO.class.getSimpleName()));
+        assertTrue(declared.contains(FamilyHealthSummaryVO.class.getSimpleName()));
+        assertTrue(declared.contains(HealthTimelineVO.class.getSimpleName()));
+    }
+
+    /* ================================================================== */
     /* 工具                                                                */
     /* ================================================================== */
+
+    /** 取字段类型里引用到的 vo 包下的类（含 {@code List<HealthPendingItemVO>} 这种泛型参数） */
+    private List<Class<?>> referencedVoTypes(Field field) {
+        List<Class<?>> result = new ArrayList<>();
+        collectVoTypes(field.getType(), result);
+        for (Type generic : field.getGenericType() instanceof ParameterizedType pt
+                ? pt.getActualTypeArguments() : new Type[0]) {
+            if (generic instanceof Class<?> raw) {
+                collectVoTypes(raw, result);
+            }
+        }
+        return result;
+    }
+
+    private void collectVoTypes(Class<?> type, List<Class<?>> out) {
+        if (type.getName().startsWith(MetricDictionary.VO_PACKAGE)) {
+            out.add(type);
+        }
+    }
+
+    /** 二进制名里的包前缀去掉；嵌套类保留 {@code Outer$Inner} 形式 */
+    private String simpleNameOf(Class<?> type) {
+        return type.getName().substring(MetricDictionary.VO_PACKAGE.length());
+    }
 
     private Class<?> resolve(String simpleName) {
         try {

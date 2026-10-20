@@ -30,7 +30,7 @@ public class FamilyHealthSummaryVO {
     private String relationLabel;
 
     @Schema(description = "今日用药")
-    private TodayMedication todayMedication;
+    private MedicationTodayVO todayMedication;
 
     @Schema(description = "近期已完成陪诊次数", example = "1")
     private Integer recentVisitCount;
@@ -40,20 +40,4 @@ public class FamilyHealthSummaryVO {
 
     @Schema(description = "最近一次就诊时间", example = "2026-10-16 09:30:00")
     private LocalDateTime lastActivityAt;
-
-    /** 今日用药计数 */
-    @Data
-    @Accessors(chain = true)
-    @Schema(description = "今日用药计数")
-    public static class TodayMedication {
-
-        @Schema(description = "今日任务总数", example = "3")
-        private Integer total;
-
-        @Schema(description = "今日已服数量", example = "2")
-        private Integer taken;
-
-        @Schema(description = "今日待服数量", example = "1")
-        private Integer pending;
-    }
 }

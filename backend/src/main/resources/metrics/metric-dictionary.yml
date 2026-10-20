@@ -125,15 +125,17 @@ metrics:
 
   - key: elder.today.total
     name: 今日用药任务总数
-    scope: 家庭健康协同首页里，该老人今日的服药任务总数
+    scope: 该老人今日的服药任务总数
     period: 当天（按 plan_date 精确匹配，不随统计区间浮动）
     source: medication_task(elder_id, plan_date, status, was_missed)
     formula: "COUNT(*)"
     caliberVersion: 1
     endpoints:
       - "GET /api/family/health/summary"
+      - "GET /api/family/elder/{elderId}/health/overview"
+      - "GET /api/elder/health/overview"
     bindings:
-      - vo: FamilyHealthSummaryVO$TodayMedication
+      - vo: MedicationTodayVO
         field: total
 
   - key: elder.today.taken
@@ -145,8 +147,10 @@ metrics:
     caliberVersion: 1
     endpoints:
       - "GET /api/family/health/summary"
+      - "GET /api/family/elder/{elderId}/health/overview"
+      - "GET /api/elder/health/overview"
     bindings:
-      - vo: FamilyHealthSummaryVO$TodayMedication
+      - vo: MedicationTodayVO
         field: taken
 
   - key: elder.today.pending
@@ -158,9 +162,26 @@ metrics:
     caliberVersion: 1
     endpoints:
       - "GET /api/family/health/summary"
+      - "GET /api/family/elder/{elderId}/health/overview"
+      - "GET /api/elder/health/overview"
     bindings:
-      - vo: FamilyHealthSummaryVO$TodayMedication
+      - vo: MedicationTodayVO
         field: pending
+
+  - key: elder.today.missed
+    name: 今日漏服数量
+    scope: 该老人今日漏服的服药任务数（含漏服后补记）
+    period: 当天
+    source: medication_task(elder_id, plan_date, status, was_missed)
+    formula: "COUNT(bucket = 'MISSED')，即 status = 'MISSED' 或 was_missed = 1"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/health/summary"
+      - "GET /api/family/elder/{elderId}/health/overview"
+      - "GET /api/elder/health/overview"
+    bindings:
+      - vo: MedicationTodayVO
+        field: missed
 
   # ==================== 待处理 ====================
   - key: elder.summary.pending_item_count
@@ -176,6 +197,19 @@ metrics:
       - vo: FamilyHealthSummaryVO
         field: pendingItemCount
 
+  - key: elder.pending_item.count
+    name: 单类待处理事项数量
+    scope: 某<b>一类</b>待处理事项的数量（同一时刻只出现一条该类事项）
+    period: 当前状态（不受统计区间影响）
+    source: medication_task(status) 或 companion_order(status, fulfillment_risk)，按 type 判定
+    formula: "按 type 分别统计：MEDICATION_PENDING 今日待服 / ORDER_WAITING 待接单 / ORDER_TO_REVIEW 待评价 / FULFILLMENT_RISK 高风险"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/elder/{elderId}/health/overview"
+    bindings:
+      - vo: HealthPendingItemVO
+        field: count
+
 vos:
   - class: ElderHealthOverviewVO
     structural:
@@ -183,6 +217,7 @@ vos:
       - range
       - visit
       - medication
+      - todayMedication
       - pendingItems
       - timelinePreview
 
@@ -210,9 +245,14 @@ vos:
       - todayMedication
       - lastActivityAt
 
-  - class: FamilyHealthSummaryVO$TodayMedication
+  - class: MedicationTodayVO
     structural: []
 
+  - class: HealthPendingItemVO
+    structural:
+      - type
+      - typeLabel
+      - linkUrl
   - class: HealthTimelineVO
     structural:
       - elderId
@@ -220,6 +260,7 @@ vos:
       - range
       - hasMore
       - nextCursor
+      - truncated
       - items
 
   - class: HealthTimelineVO$Range

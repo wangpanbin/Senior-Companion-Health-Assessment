@@ -148,13 +148,34 @@ class ElderHealthServiceTest {
 
         @Test
         @DisplayName("越权访问他人老人 → 归属校验的 2006 直接抛出，Service 不吞")
-        void shouldPropagateAccessError() {
+        void accessErrorShouldPropagate() {
             given(elderService.requireAccessible(ELDER_ID))
                     .willThrow(new BusinessException(ResultCode.NO_PERMISSION_FOR_ELDER));
 
             BusinessException e = assertThrows(BusinessException.class,
                     () -> service.overview(ELDER_ID, new DateRangeQuery()));
             assertEquals(ResultCode.NO_PERMISSION_FOR_ELDER.getCode(), e.getCode());
+        }
+
+        @Test
+        @DisplayName("「今日用药」是当天口径，不是统计区间口径")
+        void todayMedicationShouldNotUseRangeCaliber() {
+            stubEverythingElseEmpty();
+            given(elderService.requireAccessible(ELDER_ID)).willReturn(elder());
+            // 区间口径：30 天里已服 27 次
+            given(healthReadMapper.selectMedicationBucketsByElder(anyCollection(), any(), any()))
+                    .willReturn(List.of(row("total", 30, "taken", 27, "missed", 2, "pending", 1)));
+            // 今日口径：今天已服 2 次
+            given(healthReadMapper.selectTodayMedicationByElder(anyCollection(), any()))
+                    .willReturn(List.of(row("total", 3, "taken", 2, "missed", 0, "pending", 1)));
+
+            ElderHealthOverviewVO overview = service.overview(ELDER_ID, new DateRangeQuery());
+
+            assertEquals(27, overview.getMedication().getTaken(), "区间口径的已服数");
+            assertEquals(2, overview.getTodayMedication().getTaken(),
+                    "「今日已服药」必须用当天口径，不能拿区间口径冒充");
+            assertEquals(3, overview.getTodayMedication().getTotal());
+            assertEquals(1, overview.getTodayMedication().getPending());
         }
     }
 
@@ -217,7 +238,7 @@ class ElderHealthServiceTest {
 
         @Test
         @DisplayName("limit 截断 + hasMore + nextCursor，翻页不重复")
-        void shouldPaginateWithCursor() {
+        void timelineShouldPaginateWithCursor() {
             stubEverythingElseEmpty();
             given(elderService.requireAccessible(ELDER_ID)).willReturn(elder());
 
@@ -247,7 +268,7 @@ class ElderHealthServiceTest {
 
         @Test
         @DisplayName("没有数据时返回空数组，不返回 null、不报错")
-        void shouldReturnEmptyArrayWhenNoData() {
+        void emptyDataShouldReturnEmptyArray() {
             given(elderService.requireAccessible(ELDER_ID)).willReturn(elder());
             stubEverythingElseEmpty();
 
@@ -261,7 +282,7 @@ class ElderHealthServiceTest {
 
         @Test
         @DisplayName("categories 过滤：只保留选中的分类")
-        void shouldFilterByCategories() {
+        void categoriesShouldFilterEvents() {
             stubEverythingElseEmpty();
             given(elderService.requireAccessible(ELDER_ID)).willReturn(elder());
 
@@ -284,7 +305,7 @@ class ElderHealthServiceTest {
         @ParameterizedTest(name = "非法 categories={0} → 400")
         @ValueSource(strings = {"NOT_A_CATEGORY", "ORDER,XXX"})
         @DisplayName("非法分类取值 → 400（不静默降级）")
-        void shouldRejectIllegalCategories(String categories) {
+        void illegalCategoriesShouldBeRejected(String categories) {
             given(elderService.requireAccessible(ELDER_ID)).willReturn(elder());
 
             HealthTimelineQuery query = new HealthTimelineQuery();
@@ -297,7 +318,7 @@ class ElderHealthServiceTest {
 
         @Test
         @DisplayName("非法游标 → 400")
-        void shouldRejectIllegalCursor() {
+        void illegalCursorShouldBeRejected() {
             given(elderService.requireAccessible(ELDER_ID)).willReturn(elder());
             stubEverythingElseEmpty();
 
@@ -307,6 +328,39 @@ class ElderHealthServiceTest {
             BusinessException e = assertThrows(BusinessException.class,
                     () -> service.timeline(ELDER_ID, query));
             assertEquals(ResultCode.PARAM_ERROR.getCode(), e.getCode());
+        }
+
+        @Test
+        @DisplayName("事件触到取数上限 → truncated = true（不许让调用方以为看到的就是全部）")
+        void truncatedShouldBeTrueWhenCapReached() {
+            stubEverythingElseEmpty();
+            given(elderService.requireAccessible(ELDER_ID)).willReturn(elder());
+
+            List<MedicationTask> tasks = new ArrayList<>();
+            for (int i = 0; i < 200; i++) {
+                MedicationTask task = new MedicationTask();
+                task.setId(60000L + i);
+                task.setStatus("TAKEN");
+                task.setPlanTime(LocalDateTime.now().minusMinutes(i));
+                task.setConfirmTime(LocalDateTime.now().minusMinutes(i));
+                tasks.add(task);
+            }
+            given(medicationTaskMapper.selectList(any())).willReturn(tasks);
+
+            HealthTimelineVO timeline = service.timeline(ELDER_ID, new HealthTimelineQuery());
+
+            assertTrue(timeline.getTruncated(), "触到取数上限必须如实告知调用方");
+        }
+
+        @Test
+        @DisplayName("事件没触到上限 → truncated = false")
+        void truncatedShouldBeFalseWhenBelowCap() {
+            stubEverythingElseEmpty();
+            given(elderService.requireAccessible(ELDER_ID)).willReturn(elder());
+
+            HealthTimelineVO timeline = service.timeline(ELDER_ID, new HealthTimelineQuery());
+
+            assertFalse(timeline.getTruncated(), "没触顶就不该报截断");
         }
     }
 
@@ -320,7 +374,7 @@ class ElderHealthServiceTest {
 
         @Test
         @DisplayName("没有绑定老人 → 空列表（不报错、不返回 null）")
-        void shouldReturnEmptyListWhenNoElder() {
+        void noElderShouldReturnEmptyList() {
             given(healthReadMapper.selectFamilyElders(FAMILY_ID)).willReturn(List.of());
 
             assertTrue(service.familySummary().isEmpty());
@@ -329,7 +383,7 @@ class ElderHealthServiceTest {
 
         @Test
         @DisplayName("多位老人各自一栏，姓名脱敏，待处理条数与概览同源")
-        void shouldSummarizeEachElderSeparately() {
+        void eachElderShouldBeSummarizedSeparately() {
             given(healthReadMapper.selectFamilyElders(FAMILY_ID)).willReturn(List.of(
                     row("elderId", 301L, "name", "张三丰", "gender", "MALE", "relation", "SON"),
                     row("elderId", 302L, "name", "李四", "gender", "FEMALE", "relation", "DAUGHTER")));
@@ -358,7 +412,7 @@ class ElderHealthServiceTest {
 
         @Test
         @DisplayName("只统计当前家属名下的老人")
-        void shouldOnlyIncludeCurrentFamilyElders() {
+        void onlyCurrentFamilyEldersShouldBeIncluded() {
             given(healthReadMapper.selectFamilyElders(FAMILY_ID)).willReturn(List.of(
                     row("elderId", 301L, "name", "张三丰", "relation", "SON")));
             given(healthReadMapper.selectTodayMedicationByElder(anyCollection(), any())).willReturn(List.of());
