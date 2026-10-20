@@ -1,6 +1,6 @@
 # 指标字典 · 人读面
 
-> **版本**：v1.0 · 2026-10-20
+> **版本**：v1.1 · 2026-10-20
 > **机器面**：[`backend/src/main/resources/metrics/metric-dictionary.yml`](../../backend/src/main/resources/metrics/metric-dictionary.yml)（`MetricDictionary` 加载，`MetricDictionaryTest` 双向校验）
 > **上游依据**：[`V3.x-roadmap-spec.md`](./V3.x-roadmap-spec.md) §4.2 决策 2.6、§4.6 决策 6.1 / 6.3 · [`迭代计划.md`](../../plans/迭代计划.md) §48 / §49
 > **不在本文件范围**：各版的具体接口契约（见 `docs/api/`）· 订单状态机语义（见 ADR-0010）
@@ -113,6 +113,54 @@ bucket = TAKEN    其余
 > 不是「有 12 次服药没确认」。同一类事情合并成一项。
 > 概览页的 `pendingItems` 列表长度与本指标**恒等** —— 首页角标与详情不能对不上。
 
+
+### 2.4 陪诊员工作台（V3.3）
+
+> ⚠️ 本节指标**分两套口径**：带「区间」的是统计区间内，带「累计」的是历史累计。
+> 字段名自带口径（`total` 前缀 = 累计），接口契约见
+> [`docs/api/09-statistics-export.md` §8](../api/09-statistics-export.md)。
+
+#### 区间口径
+
+| 指标 key | 名称 | 统计范围 | 统计时间 | 数据来源 | 计算公式 | 口径版本 |
+|---|---|---|---|---|---|---|
+| `companion.workbench.completed_order_count` | 区间完成单数 | 当前陪诊员在统计区间内「已完成」的陪诊订单数 | 统计区间 | `companion_order(companion_id, status, visit_time)` | `COUNT(status IN ('COMPLETED','REVIEWED'))` | 1 |
+| `companion.workbench.service_duration` | 区间服务时长（分钟） | 当前陪诊员在统计区间内「已完成」订单的服务时长合计 | 统计区间 | `companion_order(companion_id, status, start_time, finish_time)` | `SUM(TIMESTAMPDIFF(MINUTE, start_time, finish_time))`，仅两端均非空 | 1 |
+| `companion.workbench.completion_rate` | 区间完成率 | 当前陪诊员在统计区间内的完成率 | 统计区间 | `companion_order(companion_id, status, visit_time)` | `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)`，**拒单不计入分母** | 1 |
+| `companion.workbench.period_income` | 区间收入 | 当前陪诊员在统计区间内「已完成」订单的结算金额合计 | 统计区间 | `companion_order(companion_id, status, fee, actual_fee, visit_time)` | `SUM(COALESCE(actual_fee, fee))` | 1 |
+| `companion.trend.series_value` | 趋势序列值 | 当前陪诊员在统计区间内按天/周/月分桶的指标序列 | 统计区间 | `companion_order` + `order_review` | 按 `dimension` 取 ORDER=完成单数 / INCOME=区间收入 / RATING=有效评价平均分（**按条数加权**） | 1 |
+| `companion.income.order_amount` | 区间订单金额 | 区间内「已完成」订单的合同服务费合计 | 统计区间 | `companion_order(companion_id, fee, status, visit_time)` | `SUM(fee)` | 1 |
+| `companion.income.actual_income` | 区间实际收入 | 区间内「已完成」订单的结算金额合计 | 统计区间 | `companion_order(companion_id, fee, actual_fee, status, visit_time)` | `SUM(COALESCE(actual_fee, fee))` | 1 |
+| `companion.income.unsettled_amount` | 区间待结算金额 | 区间内「已完成」且未线下结算的金额合计 | 统计区间 | `companion_order(..., payment_status)` | `SUM(COALESCE(actual_fee, fee)) WHERE payment_status = 'UNPAID'` | 1 |
+| `companion.income.settled_amount` | 区间已结算金额 | 区间内「已完成」且已线下结算的金额合计 | 统计区间 | `companion_order(..., payment_status)` | `SUM(COALESCE(actual_fee, fee)) WHERE payment_status = 'SETTLED'` | 1 |
+| `companion.income.advance_total` | 区间代垫合计 | 区间内「已完成」订单上代垫的费用合计 | 统计区间 | `order_fee_item(item_type, amount)` JOIN `companion_order` | `SUM(amount) WHERE item_type = 'ADVANCE'` | 1 |
+| `companion.income.service_total` | 区间服务费合计 | 区间内「已完成」订单上记账的服务费合计 | 统计区间 | `order_fee_item(item_type, amount)` JOIN `companion_order` | `SUM(amount) WHERE item_type = 'SERVICE'` | 1 |
+
+#### 累计口径
+
+| 指标 key | 名称 | 统计范围 | 统计时间 | 数据来源 | 计算公式 | 口径版本 |
+|---|---|---|---|---|---|---|
+| `companion.average_score` | 平均评分 | 当前陪诊员的历史累计平均评分 | 历史累计 | `companion_profile(score, user_id)` | `companion_profile.score`（评价提交时于事务内刷新，**不重算**） | 1 |
+| `companion.profile.total_completed_order_count` | 累计完成单数 | 当前陪诊员历史累计「已完成」的陪诊订单数 | 历史累计 | `companion_order(companion_id, status)` | `COUNT(status IN ('COMPLETED','REVIEWED'))` | 1 |
+| `companion.profile.total_served_elder_count` | 累计服务老人数 | 当前陪诊员历史累计服务过的不同老人数 | 历史累计 | `companion_order(companion_id, elder_id, status)` | `COUNT(DISTINCT elder_id WHERE status IN ('COMPLETED','REVIEWED'))` | 1 |
+| `companion.profile.punctuality_rate` | 累计准时率 | 当前陪诊员历史累计的准时到院比例 | 历史累计 | `order_checkin(node, checkin_time)` JOIN `companion_order(visit_time, accept_time)` | 分子=有 `ARRIVE` 打卡且 `checkin_time <= visit_time` 的订单数；分母=已接单订单数；**无打卡视为不准时** | 1 |
+| `companion.profile.total_completion_rate` | 累计完成率 | 当前陪诊员历史累计的完成率 | 历史累计 | `companion_order(companion_id, status)` | `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)` | 1 |
+| `companion.profile.total_service_duration` | 累计服务时长（分钟） | 当前陪诊员历史累计「已完成」订单的服务时长合计 | 历史累计 | `companion_order(companion_id, status, start_time, finish_time)` | `SUM(TIMESTAMPDIFF(MINUTE, start_time, finish_time))` | 1 |
+| `companion.profile.expertise_order_count` | 擅长服务单数 | 当前陪诊员在某科室上「已完成」的订单数 | 历史累计 | `companion_order(companion_id, department, status)` | `COUNT(*) GROUP BY department`；**样本 < 5 单的科室不展示**，最多 TOP 5 | 1 |
+
+#### 两条容易踩的坑
+
+1. **区间按 `visit_time` 过滤，不是 `create_time`。**
+   `elder.visit.order_count`（V3.2 家属端）与 `companion.workbench.completed_order_count`
+   （本版陪诊员端）数的是**同一批已完成订单**，两端必须用同一个时间字段 ——
+   否则决策 6.2「同一指标只有一个口径」就破了。
+
+2. **`companion.profile.order_count` 不读。**
+   该字段只在建档时置 0（`CompanionServiceImpl`），运行期没有任何代码维护它 ——
+   只有种子脚本 `V3__seed_boundary.sql` 手工同步过。读它会得到一个永远是 0 的数。
+   所以累计完成单数一律从 `companion_order` 现算。
+   （`companion_profile.score` 不一样：它在评价提交时于事务内刷新，是维护得住的，所以沿用。）
+
 ---
 
 ## 三、区间约定（所有指标共用）
@@ -135,6 +183,8 @@ bucket = TAKEN    其余
 | 日期 | 版本 | 变更 | 影响 |
 |---|---|---|---|
 | 2026-10-20 | v1.0 | 首次建立。登记 V3.2 的 12 条指标 | — |
+| 2026-10-20 | v1.1 | 登记 V3.3 陪诊员工作台的 18 条指标（区间 11 条 + 累计 7 条） | `companion_profile.order_count` 不再作为来源（运行期无人维护），累计完成单数改从 `companion_order` 现算 |
+| 2026-10-20 | v1.1 | 登记 V3.3 陪诊员工作台的 18 条指标（区间 11 条 + 累计 7 条） | `companion_profile.order_count` 不再作为来源（运行期无人维护），累计完成单数改从 `companion_order` 现算 |
 
 > 口径变更 = 改公式 + 升 `caliberVersion` + 在本表留一行。
 > **不改写历史数据**（V3.6 范围外条款）。

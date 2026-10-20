@@ -1,20 +1,34 @@
 <script setup>
 /**
- * 陪诊员·我的收入（M-21 · design.md §1.2 P1）
+ * 陪诊员·我的收入（M-21 · design.md §1.2 P1 · V3.3 改造）
  *
- * 后端没有专门的「收入」接口，复用 listMyOrders 列表：
- *   - 循环分页（size=100，按 pages 翻完）拉全量订单；
- *   - 只统计 COMPLETED / REVIEWED（不含进行中状态）；
- *   - 列表已直接返回 paymentStatus / paymentStatusLabel / actualFee，
- *     结算状态与金额直接取列表字段，不再逐单 getOrder（去 N+1）；
- *   - 合规红线：一期只有线上记账 + 线下结算，严禁「在线支付 / 提现 / 原路退回」字样。
+ * V3.3 起本页分两段数据源，口径各归其位：
+ *
+ *   1) **区间 KPI**（区间收入 / 已结算 / 待结算）
+ *      来自 GET /statistics/companion/me/income —— 口径由后端统一计算，
+ *      前端只做展示（roadmap 决策 G8「前端统计零自行计算」）。
+ *      页面明示当前统计区间（响应里的 periodStart / periodEnd）。
+ *
+ *   2) **账单明细**（每单一条：医院 / 就诊人 / 金额 / 结算状态 / 记账面板）
+ *      走既有 GET /order（listMyOrders）。这一段是**账单**，不是统计指标，
+ *      金额与结算状态直接取订单自带的 actualFee / fee / paymentStatus /
+ *      paymentStatusLabel 字段。
+ *
+ * 合规红线：一期只有线上记账 + 线下结算，严禁「在线支付 / 提现 / 原路退回」字样。
  */
 import { ref, computed, onMounted } from 'vue'
 import { NlPageShell, NlAppTabBar, NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlNoticeBar } from '@/components'
 import OrderFeeItems from '@/components/OrderFeeItems.vue'
 import { listMyOrders } from '@/api/order'
+import { getCompanionWorkbenchIncome } from '@/api/statistics'
 import { formatMoney, formatDate } from '@/utils/format'
 
+/* ============ 区间统计（后端口径） ============ */
+const statsLoading = ref(true)
+const statsError = ref(false)
+const stats = ref(null)
+
+/* ============ 账单明细 ============ */
 const loading = ref(true)
 /** R4：收入账单加载失败（与「暂无已完成订单」区分） */
 const loadError = ref(false)
@@ -22,24 +36,36 @@ const bills = ref([])
 /** 当前展开记账面板的订单 ID（ADR-0009：陪诊员在收入页直接补记代垫/服务费） */
 const expandedId = ref(null)
 
-/**
- * 单笔有效金额：优先 actualFee（结算金额，NON_NULL 未结算时可能缺失），
- * 缺失时回退到 always-present 的 fee（合同服务费），不凭空造数字。
- */
-const effectiveAmount = (b) => {
-  const v = b.actualFee != null ? b.actualFee : b.fee
-  return Number(v) || 0
-}
+/** KPI 三张卡：数值全部取自后端，前端不参与任何汇总 */
+const kpiCards = computed(() => {
+  const s = stats.value
+  if (!s) return []
+  return [
+    { key: 'income', label: '区间收入', value: formatMoney(s.actualIncome) },
+    { key: 'settled', label: '已结算', value: formatMoney(s.settledAmount), tone: 'success' },
+    { key: 'unsettled', label: '待结算', value: formatMoney(s.unsettledAmount), tone: 'primary' }
+  ]
+})
 
-const totalIncome = computed(() =>
-  bills.value.reduce((sum, b) => sum + effectiveAmount(b), 0)
-)
-const settledIncome = computed(() =>
-  bills.value
-    .filter((b) => b.paymentStatus === 'SETTLED')
-    .reduce((sum, b) => sum + effectiveAmount(b), 0)
-)
-const unsettledIncome = computed(() => totalIncome.value - settledIncome.value)
+/** 当前统计区间文案（取后端返回的区间，前端不自己算日期） */
+const periodText = computed(() => {
+  const s = stats.value
+  if (!s || !s.periodStart || !s.periodEnd) return ''
+  return `统计区间 ${s.periodStart} ~ ${s.periodEnd}`
+})
+
+async function loadStats() {
+  statsLoading.value = true
+  try {
+    stats.value = await getCompanionWorkbenchIncome()
+    statsError.value = false
+  } catch {
+    stats.value = null
+    statsError.value = true
+  } finally {
+    statsLoading.value = false
+  }
+}
 
 async function loadIncome() {
   loading.value = true
@@ -57,10 +83,12 @@ async function loadIncome() {
       page += 1
     }
 
-    // 2) 已完成 / 已评价 才计入收入（不含进行中状态）
-    const done = all.filter(
-      (o) => o.status === 'COMPLETED' || o.status === 'REVIEWED'
-    )
+    // 2) 只挑「已完成 / 已评价」作为账单条目（这是账单挑选，不是金额统计；
+    //    金额口径一律走后端，这里不累加任何金额）
+    const done = []
+    for (const o of all) {
+      if (o.status === 'COMPLETED' || o.status === 'REVIEWED') done.push(o)
+    }
     bills.value = done
     loadError.value = false
     // 结算状态 / 金额直接来自列表字段 paymentStatus / actualFee，无需再逐单 getOrder（去 N+1）
@@ -72,7 +100,10 @@ async function loadIncome() {
   }
 }
 
-onMounted(loadIncome)
+onMounted(() => {
+  loadStats()
+  loadIncome()
+})
 </script>
 
 <template>
@@ -81,74 +112,88 @@ onMounted(loadIncome)
       一期为线上记账 + 线下结算，金额以管理员结算为准。
     </NlNoticeBar>
 
-    <NlSkeleton v-if="loading" :count="3" class="pad" />
+    <!-- ============ 区间 KPI（后端口径，前端只展示） ============ -->
+    <section class="kpi">
+      <NlSkeleton v-if="statsLoading" :count="3" class="pad" />
 
-    <NlEmpty
-      v-else-if="loadError"
-      type="network"
-      title="收入账单加载失败"
-      action-text="重试"
-      @action="loadIncome"
-    />
+      <div v-else-if="statsError" class="pad">
+        <NlEmpty
+          type="network"
+          title="收入统计加载失败"
+          description="账单明细不受影响，可单独重试统计口径"
+          action-text="重试"
+          @action="loadStats"
+        />
+      </div>
 
-    <NlEmpty
-      v-else-if="!bills.length"
-      type="empty"
-      title="暂无收入"
-      description="完成订单后，服务费将在这里结算展示"
-    />
-
-    <template v-else>
-      <!-- KPI -->
-      <section class="kpi">
-        <div class="kpi__card">
-          <div class="kpi__label">累计收入</div>
-          <div class="kpi__val is-num">{{ formatMoney(totalIncome.toFixed(2)) }}</div>
+      <div v-else class="kpi__cards">
+        <div
+          v-for="k in kpiCards"
+          :key="k.key"
+          :class="['kpi__card', k.tone && `kpi__card--${k.tone}`]"
+        >
+          <div class="kpi__label">{{ k.label }}</div>
+          <div class="kpi__val is-num">{{ k.value }}</div>
         </div>
-        <div class="kpi__card kpi__card--success">
-          <div class="kpi__label">已结算</div>
-          <div class="kpi__val is-num">{{ formatMoney(settledIncome.toFixed(2)) }}</div>
-        </div>
-        <div class="kpi__card kpi__card--primary">
-          <div class="kpi__label">未结算</div>
-          <div class="kpi__val is-num">{{ formatMoney(unsettledIncome.toFixed(2)) }}</div>
-        </div>
-      </section>
+      </div>
+    </section>
 
-      <!-- 账单 -->
-      <NlCard title="收入明细" plain>
-        <ul class="bills">
-          <li v-for="b in bills" :key="b.id" class="bill">
-            <div class="bill__date is-num">{{ formatDate(b.createTime) }}</div>
-            <div class="bill__body">
-              <div class="nl-h3 bill__hosp">{{ b.hospital }}</div>
-              <div class="nl-caption nl-text-muted">
-                就诊人：{{ b.elderName || '—' }}
-                <NlStatusChip
-                  scope="payment"
-                  :status="b.paymentStatus"
-                  :text="b.paymentStatusLabel"
-                  class="bill__pay"
-                />
-              </div>
+    <p v-if="periodText" class="kpi__range nl-caption nl-text-muted">{{ periodText }}</p>
+
+    <!-- ============ 账单明细（账单，不是统计指标） ============ -->
+    <NlCard title="收入明细" plain>
+      <p class="nl-caption nl-text-muted bill-note">
+        明细为全部已完成订单；上方金额为统计区间口径。
+      </p>
+
+      <NlSkeleton v-if="loading" :count="3" />
+
+      <NlEmpty
+        v-else-if="loadError"
+        type="network"
+        title="收入账单加载失败"
+        action-text="重试"
+        @action="loadIncome"
+      />
+
+      <NlEmpty
+        v-else-if="!bills.length"
+        type="empty"
+        title="暂无收入"
+        description="完成订单后，服务费将在这里结算展示"
+      />
+
+      <ul v-else class="bills">
+        <li v-for="b in bills" :key="b.id" class="bill">
+          <div class="bill__date is-num">{{ formatDate(b.createTime) }}</div>
+          <div class="bill__body">
+            <div class="nl-h3 bill__hosp">{{ b.hospital }}</div>
+            <div class="nl-caption nl-text-muted">
+              就诊人：{{ b.elderName || '—' }}
+              <NlStatusChip
+                scope="payment"
+                :status="b.paymentStatus"
+                :text="b.paymentStatusLabel"
+                class="bill__pay"
+              />
             </div>
-            <div class="bill__fee is-num">{{ formatMoney(b.actualFee != null ? b.actualFee : b.fee) }}</div>
-            <el-button
-              link
-              type="primary"
-              class="bill__toggle"
-              @click="expandedId = expandedId === b.id ? null : b.id"
-            >
-              {{ expandedId === b.id ? '收起' : '记账' }}
-            </el-button>
-          </li>
-          <!-- 记账面板（ADR-0009）：完成后可补记代垫/服务费，保存后刷新收入金额 -->
-          <li v-if="expandedId" class="bill bill--expanded">
-            <OrderFeeItems :order-id="expandedId" editable @changed="loadIncome" />
-          </li>
-        </ul>
-      </NlCard>
-    </template>
+          </div>
+          <div class="bill__fee is-num">{{ formatMoney(b.actualFee != null ? b.actualFee : b.fee) }}</div>
+          <el-button
+            link
+            type="primary"
+            class="bill__toggle"
+            @click="expandedId = expandedId === b.id ? null : b.id"
+          >
+            {{ expandedId === b.id ? '收起' : '记账' }}
+          </el-button>
+        </li>
+        <!-- 记账面板（ADR-0009）：完成后可补记代垫/服务费，保存后刷新收入金额 -->
+        <li v-if="expandedId" class="bill bill--expanded">
+          <OrderFeeItems :order-id="expandedId" editable @changed="loadIncome" />
+        </li>
+      </ul>
+    </NlCard>
 
     <template #tabbar>
       <NlAppTabBar />
@@ -164,10 +209,13 @@ onMounted(loadIncome)
 }
 
 .kpi {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--nl-space-3);
-  padding: 0 var(--nl-gutter);
+  &__cards {
+    display: grid;
+    /* auto-fit + minmax(120px)：375px 窄屏下两列并排，不横向溢出 */
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--nl-space-3);
+    padding: 0 var(--nl-gutter);
+  }
 
   &__card {
     padding: var(--nl-space-3);
@@ -197,6 +245,14 @@ onMounted(loadIncome)
     font-weight: 700;
     color: var(--nl-text-1);
   }
+
+  &__range {
+    padding: var(--nl-space-2) var(--nl-gutter) 0;
+  }
+}
+
+.bill-note {
+  margin: 0 0 var(--nl-space-2);
 }
 
 .bills {

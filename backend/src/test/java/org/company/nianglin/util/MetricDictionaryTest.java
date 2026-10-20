@@ -204,6 +204,49 @@ class MetricDictionaryTest {
         assertTrue(declared.contains(HealthTimelineVO.class.getSimpleName()));
     }
 
+    @Test
+    @DisplayName("指标字典覆盖了 V3.3 陪诊员工作台的六个 VO")
+    void dictionaryShouldCoverV3_3CompanionWorkbenchVos() {
+        Set<String> declared = new HashSet<>();
+        for (MetricDictionary.VoSpec spec : dictionary.vos()) {
+            declared.add(spec.className());
+        }
+        // 概览 / 趋势（含嵌套 Series）/ 画像 / 擅长标签 / 收入中心
+        assertTrue(declared.contains("CompanionWorkbenchOverviewVO"));
+        assertTrue(declared.contains("CompanionTrendVO"));
+        assertTrue(declared.contains("CompanionTrendVO$Series"));
+        assertTrue(declared.contains("CompanionServiceProfileVO"));
+        assertTrue(declared.contains("CompanionExpertiseVO"));
+        assertTrue(declared.contains("CompanionIncomeVO"));
+    }
+
+    @Test
+    @DisplayName("V3.3 的每个工作台端点都在字典里登记过（不新定义，只登记）")
+    void v3_3EndpointsShouldAllBeRegistered() {
+        Set<String> registered = new HashSet<>();
+        for (MetricDictionary.Metric metric : dictionary.metrics()) {
+            registered.addAll(metric.endpoints());
+        }
+        for (String endpoint : List.of(
+                "GET /api/statistics/companion/me",
+                "GET /api/statistics/companion/me/trend",
+                "GET /api/statistics/companion/me/profile",
+                "GET /api/statistics/companion/me/income")) {
+            assertTrue(registered.contains(endpoint),
+                    "端点 " + endpoint + " 没有在指标字典里登记 —— 新指标必须先进字典");
+        }
+    }
+
+    @Test
+    @DisplayName("同一指标的多个出口必须写同一个公式（决策 6.2：只有一个口径）")
+    void sameIndicatorShouldShareOneFormula() {
+        // 平均评分在概览与画像两个出口出现，公式必须一致
+        MetricDictionary.Metric score = dictionary.find("companion.average_score");
+        assertNotNull(score, "平均评分必须在字典里登记");
+        assertTrue(score.bindings().size() >= 2,
+                "平均评分是同一个指标的两个出口（概览 / 画像），应登记在同一条指标下");
+    }
+
     /* ================================================================== */
     /* 工具                                                                */
     /* ================================================================== */

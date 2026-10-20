@@ -304,6 +304,20 @@ export const routes = [
 
       // ---------- 陪诊员端 COMPANION ----------
       {
+        // V3.3 陪诊员工作台：经营指标 / 趋势 / 服务画像 / 收入摘要
+        // code 用 M-32（M-22 已被「我的 /profile」占用）
+        path: 'companion/workbench',
+        name: 'CompanionWorkbench',
+        component: () => import('@/views/companion/workbench.vue'),
+        meta: {
+          title: '工作台',
+          icon: 'DataBoard',
+          roles: ['COMPANION'],
+          module: 'M4',
+          code: 'M-32'
+        }
+      },
+      {
         path: 'companion/hall',
         name: 'CompanionHall',
         component: () => import('@/views/companion/hall.vue'),

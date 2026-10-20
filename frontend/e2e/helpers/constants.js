@@ -75,6 +75,8 @@ export const ROUTES = {
   companionEntry: '/companion/entry',
   companionOrder: '/companion/order',
   companionIncome: '/companion/income',
+  /** V3.3 陪诊员工作台（经营指标 / 趋势 / 服务画像 / 收入摘要） */
+  companionWorkbench: '/companion/workbench',
   companionMessage: '/companion/message',
   companionExecute: (id) => `/companion/execute/${id}`,
   familyOrderDetail: (id) => `/family/order/${id}`,
