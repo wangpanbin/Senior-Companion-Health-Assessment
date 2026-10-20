@@ -8,6 +8,7 @@
 export * as healthApi from './health'
 export * as authApi from './auth'
 export * as userApi from './user'
+export * as elderHealthApi from './elderHealth'
 export * as orderApi from './order'
 export * as executionApi from './execution'
 export * as medicationApi from './medication'

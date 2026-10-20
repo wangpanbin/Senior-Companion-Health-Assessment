@@ -20,7 +20,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Bell,
-  Calendar, ChatDotRound, FirstAidKit as Med, Clock, Plus
+  Calendar, ChatDotRound, FirstAidKit as Med, Clock, Plus, TrendCharts
 } from '@element-plus/icons-vue'
 import {
   NlPhoneShell, NlDesktopShell, NlAppTabBar, NlCard, NlAvatar, NlStatusChip,
@@ -135,6 +135,7 @@ async function refreshUnread() {
 /* ---------------- 导航 ---------------- */
 const quickEntries = [
   { key: 'order',   icon: Calendar,     label: '预约挂号', tone: 'primary', path: '/family/order/step1' },
+  { key: 'health',  icon: TrendCharts,  label: '家庭健康', tone: 'primary', path: '/family/health' },
   { key: 'chat',    icon: ChatDotRound, label: '订单沟通', tone: 'info',    path: '/chat' },
   { key: 'med',     icon: Med,          label: '用药计划', tone: 'success', path: '/family/medication' },
   { key: 'track',   icon: Clock,        label: '进度查看', tone: 'warning', path: '/family/order' }

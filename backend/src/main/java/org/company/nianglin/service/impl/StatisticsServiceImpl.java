@@ -3,6 +3,7 @@ package org.company.nianglin.service.impl;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.company.nianglin.common.DateRange;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.CompanionRankMetric;
 import org.company.nianglin.constant.OrderStatus;
@@ -10,6 +11,7 @@ import org.company.nianglin.constant.PaymentStatus;
 import org.company.nianglin.constant.StatisticsGranularity;
 import org.company.nianglin.dto.AdminOrderQuery;
 import org.company.nianglin.dto.AdminUserQuery;
+import org.company.nianglin.dto.DateRangeQuery;
 import org.company.nianglin.dto.StatisticsQuery;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.ElderProfile;
@@ -40,8 +42,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -61,12 +61,6 @@ import java.util.TreeMap;
 @Service
 @RequiredArgsConstructor
 public class StatisticsServiceImpl implements StatisticsService {
-
-    /** 默认统计区间长度：最近 30 天（含今天） */
-    private static final int DEFAULT_RANGE_DAYS = 30;
-
-    /** 区间上限：366 天（文档 §一），超过返回 9002 */
-    private static final long MAX_RANGE_DAYS = 366;
 
     /** 排行默认与最大条数 */
     private static final int DEFAULT_RANK_LIMIT = 10;
@@ -504,49 +498,16 @@ public class StatisticsServiceImpl implements StatisticsService {
     /* 内部：区间与粒度                                                    */
     /* ================================================================== */
 
-    /** 统计区间（闭区间） */
-    private record DateRange(LocalDate start, LocalDate end) {
-
-        LocalDateTime startTime() {
-            return start.atStartOfDay();
-        }
-
-        /** 结束日折算成当天最后一秒，保证「含当天」 */
-        LocalDateTime endTime() {
-            return end.atTime(23, 59, 59);
-        }
-
-        long days() {
-            return ChronoUnit.DAYS.between(start, end) + 1;
-        }
-    }
-
     /**
      * 解析统计区间。
      *
-     * <p>三个容易错的地方都在这里收口：默认最近 30 天、起止颠倒、超过 366 天。
-     * 把它们散到每个接口里各写一遍，迟早在某一个接口上漏掉 ——
-     * 而「区间反了」在 SQL 层不会报错，只会静默返回空数据。</p>
+     * <p>V3.2 起统一走 {@link DateRangeQuery#toRange()}：默认最近 30 天、起止颠倒、
+     * 超过 366 天这三个判定只写一份，本模块与 V3.2 / V3.3 / V3.5 共用，
+     * 避免「同一个指标在不同角色端有不同的可查区间」——
+     * 那是口径分裂最常见的表现形式。</p>
      */
     private DateRange range(StatisticsQuery query) {
-        LocalDate today = LocalDate.now();
-        LocalDate end = query == null ? null : parseDate(query.getEndDate(), "结束日期");
-        LocalDate start = query == null ? null : parseDate(query.getStartDate(), "开始日期");
-        if (end == null) {
-            end = today;
-        }
-        if (start == null) {
-            start = end.minusDays(DEFAULT_RANGE_DAYS - 1L);
-        }
-        if (start.isAfter(end)) {
-            throw new BusinessException(ResultCode.STAT_RANGE_INVALID, "开始日期不能晚于结束日期");
-        }
-        DateRange range = new DateRange(start, end);
-        if (range.days() > MAX_RANGE_DAYS) {
-            throw new BusinessException(ResultCode.STAT_RANGE_INVALID,
-                    "统计区间不能超过 " + MAX_RANGE_DAYS + " 天，请缩小范围");
-        }
-        return range;
+        return (query == null ? new DateRangeQuery() : query).toRange();
     }
 
     private StatisticsGranularity granularity(StatisticsQuery query) {
@@ -666,17 +627,6 @@ public class StatisticsServiceImpl implements StatisticsService {
                     : LocalDate.parse(text);
         } catch (Exception e) {
             return null;
-        }
-    }
-
-    private static LocalDate parseDate(String value, String field) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            return LocalDate.parse(value.trim());
-        } catch (DateTimeParseException e) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, field + " 格式应为 yyyy-MM-dd");
         }
     }
 

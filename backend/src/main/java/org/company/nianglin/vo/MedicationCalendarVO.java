@@ -3,7 +3,7 @@ package org.company.nianglin.vo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
-import org.company.nianglin.constant.MedicationTaskStatus;
+import org.company.nianglin.constant.MedicationBucket;
 import org.company.nianglin.util.MaskUtil;
 
 import java.math.BigDecimal;
@@ -30,7 +30,12 @@ import java.util.Map;
  * 且 {@code takenCount + missedCount + pendingCount == totalCount} ——
  * 三个桶必须构成一个<b>划分</b>，每条任务恰好落进一个桶。</p>
  *
- * <p>划分规则（顺序不能调）：</p>
+ * <p>划分规则由 {@link MedicationBucket#of(String, Boolean)} 定义，
+ * 本类只负责计数，不自带判定分支。SQL 侧复用
+ * {@code MedicationBucketSql.CASE_BUCKET}，两侧由
+ * {@code MedicationBucketParityTest} 锁死。</p>
+ *
+ * <p>规则（顺序不能调）：</p>
  * <ol>
  *   <li>{@code status = MISSED} 或 {@code was_missed = 1} → <b>漏服</b>。
  *       前者是「一直没吃被扫描判成漏服」，后者是「漏了之后被补记」
@@ -46,7 +51,7 @@ import java.util.Map;
  * 于是真实漏服（占绝大多数）一条都不进统计，反而只有补记的那几条被算成漏服，
  * 统计口径与事实正好相反；更直接的症状是
  * {@code taken + missed + pending < total}，数字自己就对不上账。
- * 现在两个条件取并集，划分重新闭合。</p>
+ * 现在两个条件取并集，划分重新闭合（V3.2 起该规则收进 {@link MedicationBucket}）。</p>
  *
  * @author 银龄伴诊团队
  * @since M6
@@ -126,17 +131,12 @@ public class MedicationCalendarVO {
         int pending = 0;
         for (MedicationTaskVO task : list) {
             total++;
-            // 三个桶的判定顺序 = 划分的优先级，不能调换：
-            // 「曾经漏服」优先于「当前状态」，否则补记过的任务会被算进「已服」，
-            // 漏服率立刻被稀释。
-            String status = task.getStatus();
-            boolean wasMissed = Boolean.TRUE.equals(task.getWasMissed());
-            if (wasMissed || MedicationTaskStatus.MISSED.name().equals(status)) {
-                missed++;
-            } else if (MedicationTaskStatus.PENDING.name().equals(status)) {
-                pending++;
-            } else {
-                taken++;
+            // 三桶判定交给 MedicationBucket（唯一真源），这里不再自带判定分支 ——
+            // 曾经两边各写一套，导致 M10 的统计与本页口径对不上（V3.2 修正）。
+            switch (MedicationBucket.of(task.getStatus(), task.getWasMissed())) {
+                case MISSED -> missed++;
+                case PENDING -> pending++;
+                case TAKEN -> taken++;
             }
             if (task.getPlanTime() != null) {
                 LocalDate date = task.getPlanTime().toLocalDate();

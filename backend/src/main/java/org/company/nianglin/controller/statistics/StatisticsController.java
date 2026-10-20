@@ -88,7 +88,8 @@ public class StatisticsController {
 
     @Operation(summary = "漏服率统计",
             description = "三条序列：任务总数 / 已服用 / 漏服，并附区间汇总。"
-                    + "漏服口径为 was_missed = 1（含漏服后补记），与服药日历一致")
+                    + "三桶口径（已服 / 漏服 / 待服）以 MedicationBucket 为唯一真源："
+                    + "漏服 = status=MISSED 或 was_missed=1（含漏服后补记），与服药日历完全一致")
     @GetMapping("/medication-missed")
     public Result<MedicationMissedVO> medicationMissed(@Valid StatisticsQuery query) {
         return Result.success(statisticsService.medicationMissed(query));

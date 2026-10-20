@@ -3,6 +3,7 @@ package org.company.nianglin.mapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.company.nianglin.constant.MedicationBucketSql;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -157,24 +158,38 @@ public interface StatisticsMapper {
     /**
      * 按天统计服药任务（漏服率图表的数据源）。
      *
-     * <p>{@code missed} 取 {@code was_missed = 1} 而不是 {@code status = 'MISSED'}：
-     * 漏了之后补记的任务状态会变成「已服」，若按状态统计，
-     * 家属会看到「一条漏服都没有」而漏服率却不是 0 ——
-     * 数字与列表互相矛盾，是这类统计最容易被质疑的地方
-     * （与 {@code MedicationCalendarVO} 的口径保持一致）。</p>
+     * <h3>三桶判定只出现一次</h3>
+     *
+     * <p>内层子查询用 {@link MedicationBucketSql#CASE_BUCKET} 算出 {@code bucket}，
+     * 外层再从<b>同一个</b> {@code bucket} 派生 taken / missed / pending 三个计数。
+     * 判定文本全 SQL 只出现一次，所以三个桶不可能彼此打架 ——
+     * 恒有 {@code taken + missed + pending == total}。</p>
+     *
+     * <p>⚠️ V3.2 之前这里写的是 {@code taken = status='TAKEN'}、
+     * {@code missed = was_missed = 1}，与 M6 服药日历的口径<b>并不一致</b>：
+     * 漏服扫描只写 {@code status = 'MISSED'}、从不写 {@code was_missed}，
+     * 于是那批任务在本查询里<b>既不 taken 也不 missed</b>，
+     * 而补记过的任务（{@code status='TAKEN'} 且 {@code was_missed=1}）又被重复计入。
+     * 那句「与服药日历口径保持一致」的注释是错的，现已由
+     * {@code MedicationBucket} 统一裁定。</p>
      *
      * @param elderId 可选，只看某位老人
-     * @return 每行形如 {@code {d: 2026-09-15, total: 50, taken: 46, missed: 4}}
+     * @return 每行形如 {@code {d: 2026-09-15, total: 50, taken: 46, missed: 4, pending: 0}}
      */
     @Select("""
             <script>
-            SELECT DATE_FORMAT(plan_time, '%Y-%m-%d') AS d,
-                   COUNT(*) AS total,
-                   SUM(CASE WHEN status = 'TAKEN' THEN 1 ELSE 0 END) AS taken,
-                   SUM(CASE WHEN was_missed = 1 THEN 1 ELSE 0 END) AS missed
-            FROM medication_task
-            WHERE deleted = 0 AND plan_time BETWEEN #{start} AND #{end}
-            <if test="elderId != null">AND elder_id = #{elderId}</if>
+            SELECT d, COUNT(*) AS total,
+                   SUM(CASE WHEN bucket = 'TAKEN' THEN 1 ELSE 0 END) AS taken,
+                   SUM(CASE WHEN bucket = 'MISSED' THEN 1 ELSE 0 END) AS missed,
+                   SUM(CASE WHEN bucket = 'PENDING' THEN 1 ELSE 0 END) AS pending
+            FROM (
+              SELECT DATE_FORMAT(plan_time, '%Y-%m-%d') AS d,
+            """ + MedicationBucketSql.CASE_BUCKET + """
+              AS bucket
+              FROM medication_task
+              WHERE deleted = 0 AND plan_time BETWEEN #{start} AND #{end}
+              <if test="elderId != null">AND elder_id = #{elderId}</if>
+            ) t
             GROUP BY d
             </script>
             """)

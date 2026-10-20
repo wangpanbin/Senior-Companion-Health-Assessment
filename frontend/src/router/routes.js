@@ -124,6 +124,20 @@ export const routes = [
           code: 'M-14'
         }
       },
+      {
+        // V3.2 老人健康协同中心 · 老人端
+        // 老人只能看自己，所以这条路由不接受任何 elderId 入参（服务端从登录态取）。
+        path: 'elder/health',
+        name: 'ElderHealth',
+        component: () => import('@/views/elder/health.vue'),
+        meta: {
+          title: '我的健康',
+          icon: 'Compass',
+          roles: ['ELDER'],
+          module: 'M3',
+          code: 'M-31'
+        }
+      },
 
       // ---------- 家属端 FAMILY ----------
       {
@@ -161,6 +175,32 @@ export const routes = [
           module: 'M3',
           elderlyHidden: true,
           code: 'M-19'
+        }
+      },
+      {
+        // V3.2 老人健康协同中心 · 家属端首页（每位老人一栏摘要）
+        path: 'family/health',
+        name: 'FamilyHealth',
+        component: () => import('@/views/family/health.vue'),
+        meta: {
+          title: '家庭健康',
+          icon: 'TrendCharts',
+          roles: ['FAMILY'],
+          module: 'M3',
+          code: 'M-29'
+        }
+      },
+      {
+        // V3.2 某位老人的健康中心（概览 + 用药汇总 + 健康时间线）
+        path: 'family/elder/:id/health',
+        name: 'FamilyElderHealth',
+        component: () => import('@/views/family/elder-health.vue'),
+        meta: {
+          title: '健康中心',
+          roles: ['FAMILY'],
+          module: 'M3',
+          elderlyHidden: true,
+          code: 'M-30'
         }
       },
       {

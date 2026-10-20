@@ -406,6 +406,11 @@ key   : nianglin:lock:medication:daily
 
 - `summary.missedRate` 是本模块的量化指标，用于答辩展示「漏服率从 X% 降到 Y%」。
 - 日历数据必须与 `SELECT * FROM medication_task WHERE elder_id=? AND plan_time BETWEEN ? AND ?` 逐条一致。
+- **三桶划分以 `MedicationBucket` 为唯一真源**（V3.2 起）：漏服 = `status='MISSED'` **或** `was_missed=1`；
+  待服 = `status='PENDING'`；其余已服。三个桶构成划分，恒有 `taken + missed + pending == total`。
+  判定规则与 SQL 表达式分别由 `MedicationBucket.of(...)` 与 `MedicationBucketSql.CASE_BUCKET` 承载，
+  两侧由 `MedicationBucketParityTest`（结构层）与 `StatisticsMapperMedicationFixTest`（真库层）锁死。
+  详见 [ADR-0014](../adr/0014-medication-bucket-single-source.md)。
 
 ---
 

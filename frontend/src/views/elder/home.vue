@@ -166,6 +166,24 @@ function goMedication() {
       </div>
     </NlCard>
 
+    <!-- ==================== 我的健康（V3.2 老人健康协同中心） ==================== -->
+    <NlCard>
+      <template #title>
+        <div class="block-head">
+          <span class="nl-h2">我的健康</span>
+        </div>
+      </template>
+      <el-button
+        type="primary"
+        size="large"
+        round
+        class="elder-home__health-btn"
+        @click="router.push('/elder/health')"
+      >
+        看看我的健康记录
+      </el-button>
+    </NlCard>
+
     <!-- ==================== 今日服药提醒 ==================== -->
     <NlCard>
       <template #title>

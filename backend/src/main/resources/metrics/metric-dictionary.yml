@@ -1,0 +1,244 @@
+# 指标字典 · 机器面
+#
+# 人读面：docs/spec/metric-dictionary.md（两者必须同步，测试只校验本文件）
+# 加载器：org.company.nianglin.util.MetricDictionary
+# 校验：backend/src/test/java/org/company/nianglin/util/MetricDictionaryTest.java
+#
+# 规则（AGENTS.md §2.7 错误码纪律的同源约束）：
+#   1. 任何指标必须先在这里登记，才允许出现在 VO 里；
+#   2. 每条指标必须写全五要素：统计范围 / 统计时间 / 数据来源 / 计算公式 / 名称；
+#   3. bindings 指向「哪个 VO 的哪个字段」，测试会双向核对；
+#   4. 口径变更 = 改公式 + 升 caliberVersion + 在人读面变更记录留一行，
+#      **不改写历史数据**；
+#   5. vos 段声明每个 VO 的字段构成：出现在 bindings 里的是指标，
+#      出现在 structural 里的是结构字段 —— 两边都没有的字段会让测试变红。
+
+version: 1
+updatedAt: "2026-10-20"
+
+metrics:
+  # ==================== 就医 ====================
+  - key: elder.visit.order_count
+    name: 就医次数
+    scope: 单个老人档案在统计区间内「已完成」的陪诊订单数
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: companion_order(elder_id, status, visit_time)
+    formula: "COUNT(status IN ('COMPLETED','REVIEWED'))"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/elder/{elderId}/health/overview"
+    bindings:
+      - vo: ElderHealthOverviewVO$Visit
+        field: orderCount
+
+  - key: elder.visit.companion_count
+    name: 陪诊人数
+    scope: 统计区间内服务过这位老人的陪诊员人数（去重）
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: companion_order(elder_id, status, companion_id)
+    formula: "COUNT(DISTINCT companion_id WHERE status IN ('COMPLETED','REVIEWED'))"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/elder/{elderId}/health/overview"
+    bindings:
+      - vo: ElderHealthOverviewVO$Visit
+        field: companionCount
+
+  - key: elder.summary.recent_visit_count
+    name: 近期就医次数
+    scope: 家庭健康协同首页里，该老人在统计区间内已完成的陪诊订单数
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: companion_order(elder_id, status, visit_time)
+    formula: "COUNT(status IN ('COMPLETED','REVIEWED'))"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/health/summary"
+    bindings:
+      - vo: FamilyHealthSummaryVO
+        field: recentVisitCount
+
+  # ==================== 用药 ====================
+  - key: elder.medication.total
+    name: 区间内用药任务总数
+    scope: 单个老人档案在统计区间内的服药任务总数（三桶的分母）
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: medication_task(elder_id, plan_date, status, was_missed)
+    formula: "COUNT(*)"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/elder/{elderId}/health/overview"
+    bindings:
+      - vo: ElderHealthOverviewVO$Medication
+        field: total
+
+  - key: elder.medication.taken
+    name: 已服数量
+    scope: 统计区间内「已服且从未漏过」的服药任务数
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: medication_task(elder_id, plan_date, status, was_missed)
+    formula: "COUNT(bucket = 'TAKEN')，bucket 由 MedicationBucket.of(status, was_missed) 唯一裁定"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/elder/{elderId}/health/overview"
+    bindings:
+      - vo: ElderHealthOverviewVO$Medication
+        field: taken
+
+  - key: elder.medication.missed
+    name: 漏服数量
+    scope: 统计区间内漏服的服药任务数（含漏服后补记的记录）
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: medication_task(elder_id, plan_date, status, was_missed)
+    formula: "COUNT(bucket = 'MISSED')，即 status = 'MISSED' 或 was_missed = 1"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/elder/{elderId}/health/overview"
+    bindings:
+      - vo: ElderHealthOverviewVO$Medication
+        field: missed
+
+  - key: elder.medication.pending
+    name: 待服数量
+    scope: 统计区间内尚未确认的服药任务数
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: medication_task(elder_id, plan_date, status)
+    formula: "COUNT(bucket = 'PENDING')，即 status = 'PENDING' 且从未漏过"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/elder/{elderId}/health/overview"
+    bindings:
+      - vo: ElderHealthOverviewVO$Medication
+        field: pending
+
+  - key: elder.medication.completion_rate
+    name: 用药完成率
+    scope: 统计区间内的服药完成率；分母含漏服与待服
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: medication_task(elder_id, plan_date, status, was_missed)
+    formula: "taken / total；total = 0 时返回 0.00%"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/elder/{elderId}/health/overview"
+    bindings:
+      - vo: ElderHealthOverviewVO$Medication
+        field: completionRate
+
+  - key: elder.today.total
+    name: 今日用药任务总数
+    scope: 家庭健康协同首页里，该老人今日的服药任务总数
+    period: 当天（按 plan_date 精确匹配，不随统计区间浮动）
+    source: medication_task(elder_id, plan_date, status, was_missed)
+    formula: "COUNT(*)"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/health/summary"
+    bindings:
+      - vo: FamilyHealthSummaryVO$TodayMedication
+        field: total
+
+  - key: elder.today.taken
+    name: 今日已服数量
+    scope: 该老人今日已服且从未漏过的服药任务数
+    period: 当天
+    source: medication_task(elder_id, plan_date, status, was_missed)
+    formula: "COUNT(bucket = 'TAKEN')"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/health/summary"
+    bindings:
+      - vo: FamilyHealthSummaryVO$TodayMedication
+        field: taken
+
+  - key: elder.today.pending
+    name: 今日待服数量
+    scope: 该老人今日尚未确认的服药任务数
+    period: 当天
+    source: medication_task(elder_id, plan_date, status)
+    formula: "COUNT(bucket = 'PENDING')"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/health/summary"
+    bindings:
+      - vo: FamilyHealthSummaryVO$TodayMedication
+        field: pending
+
+  # ==================== 待处理 ====================
+  - key: elder.summary.pending_item_count
+    name: 待处理事项条数
+    scope: 该老人当前需要家属处理的事项<b>类别</b>数（不是事项条数）
+    period: 当前状态（不受统计区间影响）
+    source: medication_task(status) + companion_order(status, fulfillment_risk)
+    formula: "COUNT(满足任一待处理判定的类别)：今日待服 / 待接单订单 / 待评价订单 / 高风险订单"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/health/summary"
+    bindings:
+      - vo: FamilyHealthSummaryVO
+        field: pendingItemCount
+
+vos:
+  - class: ElderHealthOverviewVO
+    structural:
+      - elder
+      - range
+      - visit
+      - medication
+      - pendingItems
+      - timelinePreview
+
+  - class: ElderHealthOverviewVO$Elder
+    structural:
+      - id
+      - name
+      - gender
+      - genderLabel
+      - age
+      - relationLabel
+
+  - class: ElderHealthOverviewVO$Visit
+    structural:
+      - lastVisitAt
+
+  - class: ElderHealthOverviewVO$Medication
+    structural: []
+
+  - class: FamilyHealthSummaryVO
+    structural:
+      - elderId
+      - elderName
+      - relationLabel
+      - todayMedication
+      - lastActivityAt
+
+  - class: FamilyHealthSummaryVO$TodayMedication
+    structural: []
+
+  - class: HealthTimelineVO
+    structural:
+      - elderId
+      - elderName
+      - range
+      - hasMore
+      - nextCursor
+      - items
+
+  - class: HealthTimelineVO$Range
+    structural:
+      - startDate
+      - endDate
+      - days
+
+  - class: HealthTimelineVO$Item
+    structural:
+      - eventId
+      - category
+      - categoryLabel
+      - type
+      - typeLabel
+      - occurredAt
+      - title
+      - detail
+      - abnormal
+      - orderId
+      - medicationTaskId
+      - linkUrl

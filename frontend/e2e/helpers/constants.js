@@ -23,6 +23,7 @@ export const SEED = {
   // 老人档案
   elderProfileBound: 401, // 张德海，绑定 fam001（user_id 201 = elder001）
   elderProfileUnbound: 431, // UNBOUND 边界样本
+  elderProfileOtherFamily: 402, // 李桂英，绑定 fam002（user_id 102）—— fam001 无权访问
   // 订单
   orderPending: 1001, // fam001 名下，PENDING
   orderReviewed: 1031, // fam001 名下，REVIEWED
@@ -61,6 +62,12 @@ export const ROUTES = {
   familyMedication: '/family/medication',
   familyMessage: '/family/message',
   familyOrder: '/family/order',
+  /** V3.2 家庭健康协同首页（每位老人一栏摘要） */
+  familyHealth: '/family/health',
+  /** V3.2 某位老人的健康中心（概览 + 用药汇总 + 健康时间线） */
+  familyElderHealth: (id) => `/family/elder/${id}/health`,
+  /** V3.2 老人端健康中心（只看自己） */
+  elderHealth: '/elder/health',
   orderStep1: '/family/order/step1',
   orderStep2: '/family/order/step2',
   orderStep3: '/family/order/step3',
