@@ -9,7 +9,7 @@
 |---|---|
 | `README.md` | 本文：设计约定、表清单、Flyway 用法 |
 | `01-ER图.md` | 分域 ER 图（mermaid）、核心关系说明、订单状态机 |
-| `02-数据字典.md` | 24 张表逐字段字典（类型 / 可空 / 默认值 / 说明） |
+| `02-数据字典.md` | 25 张表逐字段字典（类型 / 可空 / 默认值 / 说明） |
 | `03-索引设计与EXPLAIN.md` | 索引清单、设计理由、EXPLAIN 实测结论 |
 | `04-种子数据说明.md` | 数据规模、边界场景覆盖、内置账号、加密脱敏 |
 
@@ -91,9 +91,10 @@ classpath 的 `db/migration/`：
 | V4 | `V4__order_fee_item.sql` | 订单费用明细表（ADR-0009） | 纯增量建表 |
 | V5 | `V5__chat_message.sql` | 订单聊天消息与已读游标（ADR-0011） | 纯增量建表 |
 | V6 | `V6__order_fulfillment.sql` | 履约事件流水表 + `companion_order` 增列与索引（ADR-0012） | 纯增量；`information_schema` 守卫可重复执行 |
+| V7 | `V7__matching_structured.sql` | 智能调度结构化改造：`companion_available_slot` 建表 + `companion_profile` 增坐标与区域码 + `companion_order` 增区域码（ADR-0016） | 纯增量建表 + 可空增列 + backfill |
 
 > **已执行的脚本不得再改**：`validate-on-migrate: true` 会校验 checksum，
-> 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5、V6…）。
+> 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5、V6、V7…）。
 
 **操作命令**（在 `backend/` 下执行）：
 

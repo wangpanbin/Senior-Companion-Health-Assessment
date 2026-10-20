@@ -92,6 +92,9 @@
 | `chat_message` | `idx_sender` | 普通 | `sender_id`, `create_time` | 按发送人审计聊天记录 |
 | `chat_read_cursor` | `uk_order_user` | 唯一 | `order_id`, `user_id` | 一订单一用户一条已读游标（幂等 upsert） |
 
+| `companion_available_slot` | `idx_companion_weekday` | 普通 | `companion_id`, `weekday`, `deleted` | 匹配引擎的时间维度：按陪诊员 + 星期取可服务时段（V3.4） |
+| `companion_available_slot` | `idx_companion_id` | 普通 | `companion_id` | 按陪诊员取全部时段（时段为空时回退解析自由文本）（V3.4） |
+
 ## 二、关键设计决策
 
 ### 1. 订单大厅为什么单独加 `idx_status_visit`

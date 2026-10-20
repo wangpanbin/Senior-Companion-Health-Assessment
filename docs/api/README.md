@@ -346,6 +346,8 @@
 | 管理后台 `/api/admin/**` | — | — | — | 全部 |
 | 数据统计 `/api/statistics/**`（ADMIN 段） | — | — | — | 全部 |
 | 陪诊员工作台统计 `/api/statistics/companion/**` | — | — | **读（仅本人，companionId 入参被忽略）** | — |
+| 候选陪诊员推荐 `/api/order/{id}/recommend-companions` | — | **读（仅本单下单家属；他人 3004）** | — | — |
+| 运营驾驶舱 `/api/admin/operations/**` | — | — | — | 全部（概览 / 异常中心 / 趋势 / 健康度 / 供给缺口 / 干预效果） |
 
 图例：○ = 全部权限；读 = 仅 GET；读写 = 全部；— = 无权限。
 
@@ -561,4 +563,5 @@ M4 继续追加**订单状态机与相关方边界**：
 | v0.3.2 | 2026-09-19 | 登出语义由「按用户递增密码版本、全端下线」改为**按设备（`jti`）拉黑**（`AuthServiceImpl#logout`）；同步 §2.2 Token 规格、§2.5 参数 / 角色校验时序（补 ELDER 例外与正确错误码）、测试约定第 1 条与 `01-auth-user.md`；`pwd:version` 递增收敛为改密 / 管理员封禁 | — |
 | v0.4.0 | 2026-10-16 | **M13 订单聊天（二期扩围，[ADR-0011](../adr/0011-order-chat.md)）**：新增 [11-order-chat.md](./11-order-chat.md)；7xxx 段扩至 7003-7009；权限矩阵加「订单聊天」行；§九上传约定加 `CHAT` 类型（50MB / mp4 / 仅 FAMILY·COMPANION）；§6.3 标注 IM 红线二期变更 | — |
 | v0.5.0 | 2026-10-17 | **V3.1 履约保障**：新增错误码 `3008`（不可催单）/ `3009`（催单过于频繁）/ `3010`（不可改派）；`02-elder-family.md` §13 接单状态自助控制；`03-order.md` §11 催单、§12 履约详情、§3 大厅 `sortBy`；`08-admin.md` §14 风险计数、§15 风险列表、§16 改派；`07-message.md` 消息类型表补全（含 E4 三个遗漏项）；`OrderVO` 增五个履约只读字段 | — |
+| v0.7.0 | 2026-10-20 | **V3.3 – V3.6 四版迭代**（[总报告](../agents/reports/V3.3-V3.6-iteration-summary.md)）：<br>· **V3.3 陪诊员工作台** —— 新增 `GET /api/statistics/companion/me`、`/me/trend`、`/me/profile`、`/me/income`（仅 `COMPANION`，仅本人；`companionId` 入参被忽略）；`09-statistics-export.md` 新增 §8<br>· **V3.4 智能调度** —— 新增 `GET /api/order/{id}/recommend-companions`（仅下单家属，他人 `3004`）；`GET /api/order/hall?sortBy=` 开放 `DISTANCE` / `TIME_MATCH`（`INCOME` 仍 `400`）；`03-order.md` 新增 §12<br>· **V3.5 运营驾驶舱** —— 新增 `GET /api/admin/operations/overview`、`/exceptions`、`/trend`、`/health`（仅 `ADMIN`）；`08-admin.md` 新增 §17 – §20<br>· **V3.6 数据闭环** —— 新增 `GET /api/admin/operations/gap`、`/effect`（仅 `ADMIN`）；`08-admin.md` 新增 §21 – §23；新增端点↔指标机器面 `metrics/endpoints.yml` 与双向校验<br>**四版均零新增错误码**（复用 `200` / `400` / `401` / `403` / `3004` / `9002`） | — |
 | v0.6.0 | 2026-10-18 | **安全加固（SEC-2026-10-18-001）**：生产 profile 与密钥类配置改为「无默认值、缺失即启动失败」（`SPRING_PROFILES_ACTIVE` / `JWT_SECRET` / `ID_CARD_AES_KEY` / `DEFAULT_RESET_PASSWORD` / `REDIS_PASSWORD`，见 §十）；`08-admin.md` §7 重置密码响应**不再回传**默认口令 | — |
