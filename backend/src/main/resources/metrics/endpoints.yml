@@ -1,0 +1,133 @@
+# 端点 ↔ 指标 · 机器面
+#
+# 人读面：docs/spec/metric-dictionary.md（指标字典；两者必须同步）
+# 本文件：由 metrics/metric-dictionary.yml 反向生成（端点 → 它返回的指标 key）
+# 加载器：org.company.nianglin.util.MetricEndpointRegistry
+# 校验：backend/src/test/java/org/company/nianglin/util/MetricEndpointContractTest.java
+#
+# 规则（AGENTS.md §2.7 错误码纪律的同源约束）：
+#   1. 这里只登记**统计类端点**（返回有口径统计量的）；业务 CRUD 端点不进这张表；
+#   2. 这里的端点必须真实存在（反射扫描 @RestController 的映射注解）；
+#   3. 这里的指标必须在指标字典里；
+#   4. 指标字典里每条指标声明的端点，必须在这里出现；
+#   5. 一个端点返回的指标集合，与指标字典里声明的该端点指标集合**逐条相同** ——
+#      少写一条 = 有一个口径没被机器看见；多写一条 = 有一条口径是编的。
+#
+# 版本：1（V3.6 建立）
+
+version: 1
+endpoints:
+  - endpoint: "GET /api/family/elder/{elderId}/health/overview"
+    metrics:
+      - elder.visit.order_count
+      - elder.visit.companion_count
+      - elder.medication.total
+      - elder.medication.taken
+      - elder.medication.missed
+      - elder.medication.pending
+      - elder.medication.completion_rate
+      - elder.today.total
+      - elder.today.taken
+      - elder.today.pending
+      - elder.today.missed
+      - elder.pending_item.count
+  - endpoint: "GET /api/family/health/summary"
+    metrics:
+      - elder.summary.recent_visit_count
+      - elder.today.total
+      - elder.today.taken
+      - elder.today.pending
+      - elder.today.missed
+      - elder.summary.pending_item_count
+  - endpoint: "GET /api/elder/health/overview"
+    metrics:
+      - elder.today.total
+      - elder.today.taken
+      - elder.today.pending
+      - elder.today.missed
+  - endpoint: "GET /api/statistics/companion/me"
+    metrics:
+      - companion.workbench.completed_order_count
+      - companion.workbench.service_duration
+      - companion.workbench.completion_rate
+      - companion.workbench.period_income
+      - companion.average_score
+  - endpoint: "GET /api/admin/operations/effect"
+    metrics:
+      - companion.workbench.completion_rate
+      - operations.completed_order_count
+      - operations.fulfillment_rate
+      - operations.completion_rate
+      - operations.avg_accept_minutes
+      - operations.complaint_rate
+      - operations.average_score
+      - operations.active_companion_count
+      - operations.timeout_rate
+      - operations.manual_intervention_rate
+      - operations.reassign_rate
+      - operations.service_duration_minutes
+      - operations.companion_count
+      - operations.medication_task_count
+      - operations.medication_missed_rate
+  - endpoint: "GET /api/statistics/companion/me/income"
+    metrics:
+      - companion.workbench.period_income
+      - companion.income.order_amount
+      - companion.income.actual_income
+      - companion.income.unsettled_amount
+      - companion.income.settled_amount
+      - companion.income.advance_total
+      - companion.income.service_total
+  - endpoint: "GET /api/statistics/companion/me/profile"
+    metrics:
+      - companion.average_score
+      - companion.profile.total_completed_order_count
+      - companion.profile.total_served_elder_count
+      - companion.profile.punctuality_rate
+      - companion.profile.total_completion_rate
+      - companion.profile.total_service_duration
+      - companion.profile.expertise_order_count
+  - endpoint: "GET /api/statistics/companion/me/trend"
+    metrics:
+      - companion.trend.series_value
+  - endpoint: "GET /api/order/{id}/recommend-companions"
+    metrics:
+      - matching.total_score
+      - matching.region_score
+      - matching.time_score
+      - matching.distance_score
+      - matching.skill_score
+      - matching.rating_score
+  - endpoint: "GET /api/admin/operations/overview"
+    metrics:
+      - operations.today_order_count
+      - operations.completed_order_count
+      - operations.in_service_count
+      - operations.pending_count
+      - operations.fulfillment_rate
+      - operations.avg_accept_minutes
+      - operations.complaint_rate
+      - operations.average_score
+  - endpoint: "GET /api/admin/operations/health"
+    metrics:
+      - operations.fulfillment_rate
+      - operations.completion_rate
+      - operations.avg_accept_minutes
+      - operations.complaint_rate
+      - operations.average_score
+      - operations.active_companion_count
+  - endpoint: "GET /api/admin/operations/exceptions"
+    metrics:
+      - operations.exception_manual_required_count
+      - operations.exception_match_warning_count
+      - operations.exception_complaint_rate_count
+      - operations.exception_medication_missed_count
+  - endpoint: "GET /api/admin/operations/trend"
+    metrics:
+      - operations.trend.series_value
+  - endpoint: "GET /api/admin/operations/gap"
+    metrics:
+      - operations.gap.pending_unaccepted_count
+      - operations.gap.available_companion_count
+      - operations.gap.supply_gap
+      - operations.gap.companions_without_slots

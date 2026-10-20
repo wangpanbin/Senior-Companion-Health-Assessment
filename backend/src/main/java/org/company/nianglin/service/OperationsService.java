@@ -1,8 +1,12 @@
 package org.company.nianglin.service;
 
 import org.company.nianglin.dto.DateRangeQuery;
+import org.company.nianglin.dto.OperationsEffectQuery;
+import org.company.nianglin.dto.OperationsGapQuery;
 import org.company.nianglin.dto.OperationsTrendQuery;
+import org.company.nianglin.vo.OperationsEffectVO;
 import org.company.nianglin.vo.OperationsExceptionVO;
+import org.company.nianglin.vo.OperationsGapVO;
 import org.company.nianglin.vo.OperationsHealthVO;
 import org.company.nianglin.vo.OperationsOverviewVO;
 import org.company.nianglin.vo.OperationsTrendVO;
@@ -61,4 +65,26 @@ public interface OperationsService {
      * @return 健康度
      */
     OperationsHealthVO health(DateRangeQuery query);
+
+    /**
+     * 供给时段缺口分析（V3.6 · T4）。
+     *
+     * <p>桶固定「周内第几天 × 小时」= 168 个，<b>空桶也返回</b>。</p>
+     *
+     * @param query 区间入参（可空，缺省最近 30 天）
+     * @return 缺口表
+     * @throws org.company.nianglin.exception.BusinessException 区间档位非法（400）/ 区间不合法（9002）
+     */
+    OperationsGapVO gap(OperationsGapQuery query);
+
+    /**
+     * 干预效果对比（V3.6 · T5）。
+     *
+     * <p>两期由<b>同一个</b>指标计算器算两遍（决策 6.2）。</p>
+     *
+     * @param query 指标 + 两段区间
+     * @return 效果对比
+     * @throws org.company.nianglin.exception.BusinessException 指标未注册（400）/ 区间不合法（9002）
+     */
+    OperationsEffectVO effect(OperationsEffectQuery query);
 }

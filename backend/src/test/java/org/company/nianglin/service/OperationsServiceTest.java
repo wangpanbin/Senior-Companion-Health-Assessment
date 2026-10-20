@@ -6,6 +6,7 @@ import org.company.nianglin.dto.OperationsTrendQuery;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.OperationsMapper;
 import org.company.nianglin.service.impl.OperationsServiceImpl;
+import org.company.nianglin.service.support.metrics.MetricCalculatorRegistry;
 import org.company.nianglin.vo.FulfillmentSummaryVO;
 import org.company.nianglin.vo.OperationsExceptionItemVO;
 import org.company.nianglin.vo.OperationsExceptionVO;
@@ -67,6 +68,10 @@ class OperationsServiceTest {
     @Mock
     private AdminService adminService;
 
+    /** 指标计算器注册表（V3.6 · 效果对比用） */
+    @Mock
+    private MetricCalculatorRegistry metricCalculatorRegistry;
+
     /** 真实配置对象（默认值即工单里的默认值），便于按用例调阈值 */
     private final OperationsProperties properties = new OperationsProperties();
 
@@ -74,7 +79,7 @@ class OperationsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new OperationsServiceImpl(mapper, adminService, properties);
+        service = new OperationsServiceImpl(mapper, adminService, properties, metricCalculatorRegistry);
     }
 
     /* ================================================================== */

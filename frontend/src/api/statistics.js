@@ -141,6 +141,40 @@ export function getOperationsHealth() {
   return request({ url: '/admin/operations/health', method: 'get' })
 }
 
+/* ---------------- V3.6 数据闭环（ADMIN） ---------------- */
+
+/**
+ * 平台运营驾驶舱 · 供给时段缺口分析
+ *
+ * GET /api/admin/operations/gap?range=&startDate=&endDate=
+ * 入参：range（LAST_7D / LAST_30D / CUSTOM；CUSTOM 时必带 startDate / endDate）
+ * 出参：periodStart / periodEnd / total（固定 168 个桶 = 7 天 × 24 小时，空桶也返回）/
+ *      companionsWithoutSlots（没有可解析可服务时段的陪诊员数）/
+ *      items[]{ weekday, hour, pendingUnaccepted, availableCompanions, gap }
+ *
+ * ⚠️ 桶的粒度固定为「周内第几天 × 小时」，与查询区间的长度无关。
+ * ⚠️ 口径全部由后端算好，前端只做展示，不在本地重新分桶。
+ */
+export function getOperationsGap(params) {
+  return request({ url: '/admin/operations/gap', method: 'get', params })
+}
+
+/**
+ * 平台运营驾驶舱 · 干预效果对比
+ *
+ * GET /api/admin/operations/effect?metric=&from=&to=&compareFrom=&compareTo=
+ * 入参：metric（**必须是后端已注册的指标 key**，未注册后端返回 400）
+ *      from / to（后一期，闭区间）
+ *      compareFrom / compareTo（前一期；**不传时后端自动取「等长且紧邻其前」的区间**）
+ * 出参：metric / metricName / current{from,to,value} / previous{from,to,value} / delta
+ *
+ * ⚠️ 两期数值由后端同一个计算器算两遍得到，前端不做任何换算或二次计算。
+ * ⚠️ `delta` 原样展示（后端给什么显示什么，含正负号；两值格式不同时后端给 "—"）。
+ */
+export function getOperationsEffect(params) {
+  return request({ url: '/admin/operations/effect', method: 'get', params })
+}
+
 /* ---------------- Excel 导出 ---------------- */
 
 /**

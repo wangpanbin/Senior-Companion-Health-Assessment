@@ -5,18 +5,29 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.DateRange;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.config.OperationsProperties;
+import org.company.nianglin.constant.OperationsGapRange;
 import org.company.nianglin.constant.OperationsTrendDimension;
 import org.company.nianglin.constant.OperationsTrendRange;
 import org.company.nianglin.dto.DateRangeQuery;
+import org.company.nianglin.dto.OperationsEffectQuery;
+import org.company.nianglin.dto.OperationsGapQuery;
 import org.company.nianglin.dto.OperationsTrendQuery;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.OperationsMapper;
 import org.company.nianglin.service.AdminService;
 import org.company.nianglin.service.OperationsService;
+import org.company.nianglin.service.support.matching.LegacySlotParser;
+import org.company.nianglin.service.support.matching.MatchingCandidate;
+import org.company.nianglin.service.support.metrics.MetricCalculator;
+import org.company.nianglin.service.support.metrics.MetricCalculatorRegistry;
+import org.company.nianglin.service.support.metrics.MetricValues;
+import org.company.nianglin.util.MetricDictionary;
 import org.company.nianglin.vo.ChartDataVO;
 import org.company.nianglin.vo.FulfillmentSummaryVO;
+import org.company.nianglin.vo.OperationsEffectVO;
 import org.company.nianglin.vo.OperationsExceptionItemVO;
 import org.company.nianglin.vo.OperationsExceptionVO;
+import org.company.nianglin.vo.OperationsGapVO;
 import org.company.nianglin.vo.OperationsHealthVO;
 import org.company.nianglin.vo.OperationsOverviewVO;
 import org.company.nianglin.vo.OperationsTrendVO;
@@ -25,9 +36,17 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 /**
@@ -67,12 +86,22 @@ public class OperationsServiceImpl implements OperationsService {
     private static final String LINK_COMPLAINT = "/admin/complaint";
     private static final String LINK_ORDER = "/admin/order";
 
+    /** 桶的形状：7 天 × 24 小时（与统计区间长度无关） */
+    private static final int GAP_WEEKDAYS = 7;
+    private static final int GAP_HOURS = 24;
+
+    /** 指标字典（人读面的机器副本）：指标中文名只能从这里取，不另写一份名表 */
+    private static final MetricDictionary DICTIONARY = MetricDictionary.load();
+
     private final OperationsMapper operationsMapper;
 
     /** 复用 V3.1 的履约风险判定结果（决策 5.1） */
     private final AdminService adminService;
 
     private final OperationsProperties operationsProperties;
+
+    /** 指标计算器注册表（V3.6）：效果对比只认注册表里有的指标 */
+    private final MetricCalculatorRegistry metricCalculatorRegistry;
 
     /* ================================================================== */
     /* 1 · 概览                                                            */
@@ -381,8 +410,334 @@ public class OperationsServiceImpl implements OperationsService {
     }
 
     /* ================================================================== */
+    /* 5 · 供给时段缺口（V3.6 · T4）                                        */
+    /* ================================================================== */
+
+    @Override
+    public OperationsGapVO gap(OperationsGapQuery query) {
+        DateRange range = resolveGapRange(query);
+
+        /* ---------- ① 需求侧：至今无人接的订单，按就诊时间落桶 ---------- */
+        Map<String, Integer> pendingByBucket = new HashMap<>();
+        List<Map<String, Object>> pendingRows = operationsMapper.selectPendingOrderVisitTimes(
+                range.startTime(), range.endTime());
+        if (pendingRows != null) {
+            for (Map<String, Object> row : pendingRows) {
+                LocalDateTime visitTime = localDateTimeOf(row.get("visitTime"));
+                if (visitTime == null) {
+                    continue;
+                }
+                pendingByBucket.merge(
+                        bucketKey(visitTime.getDayOfWeek().getValue(), visitTime.getHour()), 1, Integer::sum);
+            }
+        }
+
+        /* ---------- ② 供给侧：可服务时段 → 每个桶里「能服务这一格的人」 ---------- */
+        Map<Long, List<MatchingCandidate.AvailableSlot>> structuredSlots = new LinkedHashMap<>();
+        List<Map<String, Object>> slotRows = operationsMapper.selectCompanionServiceSlots();
+        if (slotRows != null) {
+            for (Map<String, Object> row : slotRows) {
+                Long companionId = longOrNull(row.get("companionId"));
+                Integer weekday = intOrNull(row.get("weekday"));
+                LocalTime start = localTimeOf(row.get("startTime"));
+                LocalTime end = localTimeOf(row.get("endTime"));
+                if (companionId == null || weekday == null || start == null || end == null) {
+                    continue;
+                }
+                structuredSlots.computeIfAbsent(companionId, key -> new ArrayList<>())
+                        .add(new MatchingCandidate.AvailableSlot(weekday, start, end));
+            }
+        }
+
+        Map<Long, String> legacyTexts = new LinkedHashMap<>();
+        List<Map<String, Object>> profileRows = operationsMapper.selectCompanionAvailableTimes();
+        if (profileRows != null) {
+            for (Map<String, Object> row : profileRows) {
+                Long companionId = longOrNull(row.get("companionId"));
+                if (companionId == null) {
+                    continue;
+                }
+                Object text = row.get("availableTime");
+                legacyTexts.put(companionId, text == null ? null : String.valueOf(text));
+            }
+        }
+
+        // 桶 → 该桶可服务的陪诊员集合。用 Set 是为了「同一人在同一桶里只计 1 次」
+        Map<String, Set<Long>> supplyByBucket = new HashMap<>();
+        int companionsWithoutSlots = 0;
+
+        Set<Long> universe = new LinkedHashSet<>();
+        universe.addAll(structuredSlots.keySet());
+        universe.addAll(legacyTexts.keySet());
+        for (Long companionId : universe) {
+            List<MatchingCandidate.AvailableSlot> slots = structuredSlots.get(companionId);
+            if (slots == null || slots.isEmpty()) {
+                // 结构化表里没有 → 回退解析存量自由文本（V3.4 的回退路径）
+                slots = LegacySlotParser.parse(legacyTexts.get(companionId));
+            }
+            if (slots.isEmpty()) {
+                // 完全解析不出时段：不进任何桶，如实计数披露
+                companionsWithoutSlots++;
+                continue;
+            }
+            for (MatchingCandidate.AvailableSlot slot : slots) {
+                for (int hour : hoursOf(slot)) {
+                    supplyByBucket.computeIfAbsent(bucketKey(slot.weekday(), hour), key -> new HashSet<>())
+                            .add(companionId);
+                }
+            }
+        }
+
+        /* ---------- ③ 168 个桶逐个补齐（空桶也要有行） ---------- */
+        List<OperationsGapVO.Item> items = new ArrayList<>(GAP_WEEKDAYS * GAP_HOURS);
+        for (int weekday = 1; weekday <= GAP_WEEKDAYS; weekday++) {
+            for (int hour = 0; hour < GAP_HOURS; hour++) {
+                String key = bucketKey(weekday, hour);
+                int pending = pendingByBucket.getOrDefault(key, 0);
+                Set<Long> available = supplyByBucket.get(key);
+                int supply = available == null ? 0 : available.size();
+                items.add(new OperationsGapVO.Item()
+                        .setWeekday(weekday)
+                        .setHour(hour)
+                        .setPendingUnaccepted(pending)
+                        .setAvailableCompanions(supply)
+                        // 缺口 = 需求 − 供给；> 0 即为缺口（负数说明供给多于需求）
+                        .setGap(pending - supply));
+            }
+        }
+
+        return new OperationsGapVO()
+                .setPeriodStart(range.start().toString())
+                .setPeriodEnd(range.end().toString())
+                .setTotal(items.size())
+                .setCompanionsWithoutSlots(companionsWithoutSlots)
+                .setItems(items);
+    }
+
+    /* ================================================================== */
+    /* 6 · 干预效果对比（V3.6 · T5）                                        */
+    /* ================================================================== */
+
+    @Override
+    public OperationsEffectVO effect(OperationsEffectQuery query) {
+        String metricKey = query == null ? null : trimToNull(query.getMetric());
+        if (metricKey == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "指标 key 不能为空");
+        }
+        // 指标必须在注册表里：没注册的指标一律 400，绝不「猜一个算法算出来」
+        MetricCalculator calculator = metricCalculatorRegistry.find(metricKey);
+        if (calculator == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "指标未登记或不可计算：" + metricKey);
+        }
+
+        DateRange current = currentRange(query);
+        DateRange previous = previousRange(query, current);
+
+        // 两期由**同一个**计算器算两遍（决策 6.2）：不是两边各写一遍公式
+        String currentValue = calculator.calculate(current);
+        String previousValue = calculator.calculate(previous);
+
+        return new OperationsEffectVO()
+                .setMetric(metricKey)
+                .setMetricName(metricName(metricKey))
+                .setCurrent(period(current, currentValue))
+                .setPrevious(period(previous, previousValue))
+                .setDelta(MetricValues.delta(currentValue, previousValue));
+    }
+
+    /* ================================================================== */
     /* 内部工具                                                            */
     /* ================================================================== */
+
+    /**
+     * 缺口分析的区间：固定档位由服务端按「今天」推算，
+     * {@link OperationsGapRange#CUSTOM} 才读 {@code startDate} / {@code endDate}。
+     *
+     * @throws BusinessException 档位非法（400）
+     */
+    private DateRange resolveGapRange(OperationsGapQuery query) {
+        String raw = query == null ? null : query.getRange();
+        OperationsGapRange rangeType;
+        if (raw == null || raw.isBlank()) {
+            rangeType = OperationsGapRange.LAST_30D;
+        } else {
+            rangeType = OperationsGapRange.of(raw.trim());
+            if (rangeType == null) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "缺口分析区间档位不合法：" + raw);
+            }
+        }
+        LocalDate today = LocalDate.now();
+        return switch (rangeType) {
+            case LAST_7D -> new DateRange(today.minusDays(OperationsGapRange.LAST_7D.getDays() - 1L), today);
+            case LAST_30D -> new DateRange(today.minusDays(OperationsGapRange.LAST_30D.getDays() - 1L), today);
+            case CUSTOM -> (query == null ? new DateRangeQuery() : query).toRange();
+        };
+    }
+
+    /**
+     * 效果对比的「后一期」区间。
+     *
+     * <p>复用共享 DTO 的区间约定：默认最近 30 天、上限 366 天、闭区间；
+     * 格式不合法返回 400，起止颠倒或超上限返回 9002。</p>
+     */
+    private DateRange currentRange(OperationsEffectQuery query) {
+        DateRangeQuery rangeQuery = new DateRangeQuery();
+        rangeQuery.setStartDate(query == null ? null : query.getFrom());
+        rangeQuery.setEndDate(query == null ? null : query.getTo());
+        return rangeQuery.toRange();
+    }
+
+    /**
+     * 效果对比的「前一期」区间。
+     *
+     * <p>不传时自动取「与后一期<b>等长</b>、紧邻其前」的区间 ——
+     * 两期长度不等时，差值里就混进了「区间长度不同」这个因素，
+     * 那样的对比说明不了任何问题。</p>
+     *
+     * @throws BusinessException 只给了起止之一（400）/ 区间不合法（9002）
+     */
+    private DateRange previousRange(OperationsEffectQuery query, DateRange current) {
+        String compareFrom = query == null ? null : trimToNull(query.getCompareFrom());
+        String compareTo = query == null ? null : trimToNull(query.getCompareTo());
+        if ((compareFrom == null) != (compareTo == null)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "对比区间的起止日期必须同时提供或同时省略");
+        }
+        if (compareFrom != null) {
+            DateRangeQuery rangeQuery = new DateRangeQuery();
+            rangeQuery.setStartDate(compareFrom);
+            rangeQuery.setEndDate(compareTo);
+            return rangeQuery.toRange();
+        }
+        LocalDate end = current.start().minusDays(1L);
+        LocalDate start = end.minusDays(current.days() - 1L);
+        return new DateRange(start, end);
+    }
+
+    /** 指标中文名：只从指标字典取，不另写一份名表 */
+    private String metricName(String metricKey) {
+        MetricDictionary.Metric metric = DICTIONARY.find(metricKey);
+        return metric == null ? metricKey : metric.name();
+    }
+
+    /** 装配一期的取值 */
+    private OperationsEffectVO.Period period(DateRange range, String value) {
+        return new OperationsEffectVO.Period()
+                .setFrom(range.start().toString())
+                .setTo(range.end().toString())
+                .setValue(value);
+    }
+
+    /** 桶的键：{@code 周内第几天-小时} */
+    private static String bucketKey(int weekday, int hour) {
+        return weekday + "-" + hour;
+    }
+
+    /**
+     * 一个可服务时段覆盖了哪些「小时桶」。
+     *
+     * <p>判定规则：<b>整点落在时段内</b>（{@code start <= H:00 < end}）。
+     * 于是 {@code 08:00–18:00} 覆盖 8–17 时共 10 个桶。</p>
+     */
+    private static List<Integer> hoursOf(MatchingCandidate.AvailableSlot slot) {
+        List<Integer> hours = new ArrayList<>();
+        for (int hour = 0; hour < GAP_HOURS; hour++) {
+            LocalTime hourStart = LocalTime.of(hour, 0);
+            if (!hourStart.isBefore(slot.start()) && hourStart.isBefore(slot.end())) {
+                hours.add(hour);
+            }
+        }
+        return hours;
+    }
+
+    /** 解析查询结果里的时间；解析不了返回 {@code null}（跳过该行，不让整张表挂掉） */
+    private static LocalDateTime localDateTimeOf(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDateTime dateTime) {
+            return dateTime;
+        }
+        if (value instanceof java.util.Date date) {
+            return LocalDateTime.ofInstant(date.toInstant(), java.time.ZoneId.systemDefault());
+        }
+        String text = String.valueOf(value).trim();
+        if (text.length() > 19) {
+            text = text.substring(0, 19);
+        }
+        try {
+            return LocalDateTime.parse(text.replace(' ', 'T'));
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    /**
+     * 解析查询结果里的时刻。
+     *
+     * <p>MySQL 的 {@code TIME} 列允许 {@code 24:00:00}（表示「当天结束」），
+     * 而 {@code LocalTime} 表达不了 —— 这里折算成 {@code 23:59:59.999999999}，
+     * 于是 23 点这一格仍然被算进「可服务」里。</p>
+     */
+    private static LocalTime localTimeOf(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalTime time) {
+            return time;
+        }
+        if (value instanceof java.sql.Time time) {
+            return time.toLocalTime();
+        }
+        String text = String.valueOf(value).trim();
+        if ("24:00:00".equals(text) || "24:00".equals(text)) {
+            return LocalTime.MAX;
+        }
+        try {
+            return LocalTime.parse(text);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    /** 取长整型值；{@code null} 返回 {@code null}（区别于「取不到就记 0」） */
+    private static Long longOrNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** 取整型值；{@code null} 返回 {@code null} */
+    private static Integer intOrNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** 去空白；空白串视作 {@code null} */
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
 
     /** 区间：默认最近 30 天、上限 366 天、闭区间；非法区间抛 9002 */
     private DateRange range(DateRangeQuery query) {

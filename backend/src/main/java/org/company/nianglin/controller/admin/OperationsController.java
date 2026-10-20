@@ -8,9 +8,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.DateRangeQuery;
+import org.company.nianglin.dto.OperationsEffectQuery;
+import org.company.nianglin.dto.OperationsGapQuery;
 import org.company.nianglin.dto.OperationsTrendQuery;
 import org.company.nianglin.service.OperationsService;
+import org.company.nianglin.vo.OperationsEffectVO;
 import org.company.nianglin.vo.OperationsExceptionVO;
+import org.company.nianglin.vo.OperationsGapVO;
 import org.company.nianglin.vo.OperationsHealthVO;
 import org.company.nianglin.vo.OperationsOverviewVO;
 import org.company.nianglin.vo.OperationsTrendVO;
@@ -83,5 +87,29 @@ public class OperationsController {
     @GetMapping("/health")
     public Result<OperationsHealthVO> health(@Valid DateRangeQuery query) {
         return Result.success(operationsService.health(query));
+    }
+
+    @Operation(summary = "供给时段缺口分析",
+            description = "按「周内第几天 × 小时」分桶（固定 7×24 = 168 个桶，<b>空桶也返回</b>）："
+                    + "待接未接单数（按 visit_time 落桶）/ 该时段可服务的陪诊员数 / 缺口（需求 − 供给，> 0 即为缺口）。"
+                    + "供给数按陪诊员自己的<b>可服务时段</b>分桶（结构化表优先，存量自由文本回退解析），"
+                    + "同一陪诊员在同一桶里只计 1 次；"
+                    + "解析不出时段的陪诊员由 companionsWithoutSlots 如实披露，不混进分母。"
+                    + "区间 LAST_7D / LAST_30D / CUSTOM（此时读 startDate / endDate）")
+    @GetMapping("/gap")
+    public Result<OperationsGapVO> gap(@Valid OperationsGapQuery query) {
+        return Result.success(operationsService.gap(query));
+    }
+
+    @Operation(summary = "干预效果对比",
+            description = "同一指标在两期区间上的对比。<b>两期由同一个计算器算两遍</b>，"
+                    + "不会对比出「两个公式的差异」。"
+                    + "metric 必须是已登记且可计算的指标 key，否则 400（不会猜一个算法算出来）；"
+                    + "from / to 是后一期（默认最近 30 天、上限 366 天，否则 9002）；"
+                    + "compareFrom / compareTo 是前一期，不传时自动取「与后一期等长、紧邻其前」的区间；"
+                    + "delta 是差值（百分比指标为百分点），两侧格式不同时返回「—」")
+    @GetMapping("/effect")
+    public Result<OperationsEffectVO> effect(@Valid OperationsEffectQuery query) {
+        return Result.success(operationsService.effect(query));
     }
 }

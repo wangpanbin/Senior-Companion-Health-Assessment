@@ -249,6 +249,38 @@ bucket = TAKEN    其余
    留到 V3.6「指标字典校验与补全」时统一处理（见 `docs/spec/V3.6-tickets.md` T6）。
 
 
+
+### 2.7 数据闭环补登（V3.6）
+
+> V3.6 的第一张票是**校验与补全**指标字典（决策 2.8 已把字典从 V3.6 提前到 V3.2 建好）。
+> 下列指标是迭代计划 §48 清单里**此前缺失、但已有可算口径**的部分 ——
+> **只为已有业务事实补登记，不新造业务事实**。
+>
+> ⚠️ **本节的表格由 `tools/gen_metric_dict_human_v36.py` 从机器面直接生成**，
+> 不要手改 —— 手改就会与机器面漂移（V3.5 修过的那次真实漂移就是这么来的）。
+> 两边的 key 集合由 `tools/check_metric_dict_parity.py` 机械校验。
+
+#### 供给缺口分析
+
+| 指标 key | 名称 | 统计范围 | 统计时间 | 数据来源 | 计算公式 | 口径版本 |
+|---|---|---|---|---|---|---|
+| `operations.gap.pending_unaccepted_count` | 时段待接未接单数 | 统计区间内仍处于待接单的陪诊订单数，按周内第几天与小时分桶 | 统计区间（默认 30 天、最多 366 天、闭区间）；桶固定 7×24 = 168 个，与区间长度无关 | companion_order(status, visit_time) | COUNT(status = 'PENDING')，按 visit_time 的 ISO 周内序号（1=周一…7=周日）与小时落桶 | 1 |
+| `operations.gap.available_companion_count` | 时段可服务陪诊员数 | 该时段可服务的陪诊员人数（去重）：优先读结构化表 companion_available_slot，表里没有时回退解析存量自由文本 companion_profile.available_time | 当前可服务时段（按周模板统计，不随统计区间浮动） | companion_available_slot(companion_id, weekday, start_time, end_time) + companion_profile(user_id, available_time) | 同一陪诊员在同一桶内只计 1 次（按人计，不按单计）；整点落在时段内即算该小时可服务；完全解析不出时段的陪诊员不进任何桶（见 operations.gap.companions_without_slots） | 1 |
+| `operations.gap.supply_gap` | 时段供给缺口 | 该时段的待接未接单数减去可服务陪诊员数；大于 0 即为缺口 | 同 operations.gap.pending_unaccepted_count | companion_order + companion_available_slot | pendingUnaccepted − availableCompanions（可为负：供给多于待接量，不做截断） | 1 |
+| `operations.gap.companions_without_slots` | 无可解析可服务时段的陪诊员数 | 全部陪诊员中既没有结构化可服务时段、又无法从自由文本解析出时段的人数；这部分陪诊员不参与供给统计 | 当前状态（不随统计区间浮动） | companion_profile(user_id, available_time) + companion_available_slot(companion_id) | COUNT(陪诊员 WHERE 结构化时段为空 AND 自由文本解析结果为空) | 1 |
+
+#### 其它补登
+
+| 指标 key | 名称 | 统计范围 | 统计时间 | 数据来源 | 计算公式 | 口径版本 |
+|---|---|---|---|---|---|---|
+| `operations.timeout_rate` | 超时率 | 已完成订单中未在承诺时长内完成的单数占已完成单数的比例 | 统计区间（默认 30 天、最多 366 天、闭区间） | companion_order(status, visit_time, finish_time, create_time) | (已完成单数 − 按时完成单数) / 已完成单数；按时 = finish_time <= visit_time + nianglin.operations.fulfillment-window-minutes（默认 240 分钟）；分母为 0 时记 0.00% | 1 |
+| `operations.manual_intervention_rate` | 人工介入率 | 统计区间内订单中履约风险已达需人工介入的比例 | 统计区间（默认 30 天、最多 366 天、闭区间） | companion_order(fulfillment_risk, create_time) | COUNT(fulfillment_risk = 'MANUAL_REQUIRED') / 区间订单数；判定沿用 V3.1 的履约风险分级，不另建一套；分母为 0 时记 0.00% | 1 |
+| `operations.reassign_rate` | 改派率 | 统计区间内被管理员改派的订单占区间订单总数的比例 | 统计区间（默认 30 天、最多 366 天、闭区间） | admin_oper_log(oper_type, target_id, create_time) + companion_order(create_time) | COUNT(DISTINCT admin_oper_log.target_id WHERE oper_type = 'REASSIGN_ORDER') / 区间订单数；同一单被改派多次只算一单；注意分子按操作日志时间过滤、分母按下单时间过滤（订单表里没有被改派过的痕迹）；分母为 0 时记 0.00% | 1 |
+| `operations.service_duration_minutes` | 平均服务时长（分钟） | 统计区间内已完成订单的服务时长均值 | 统计区间（默认 30 天、最多 366 天、闭区间） | companion_order(status, start_time, finish_time, create_time) | AVG(TIMESTAMPDIFF(MINUTE, start_time, finish_time))，仅 COMPLETED + REVIEWED 且起止时间均非空；无数据时记 0.00 | 1 |
+| `operations.companion_count` | 区间陪诊员数 | 统计区间内服务过订单的陪诊员人数（去重）；与 operations.active_companion_count 同口径同实现（决策 6.2） | 统计区间（默认 30 天、最多 366 天、闭区间） | companion_order(companion_id, create_time) | COUNT(DISTINCT companion_id)，companion_id 非空 | 1 |
+| `operations.medication_task_count` | 区间用药任务数 | 统计区间内的服药任务总数（漏服率的分母） | 统计区间（默认 30 天、最多 366 天、闭区间） | medication_task(plan_time, status, was_missed) | COUNT(*)，三桶判定与 MedicationBucketSql.CASE_BUCKET 同源（ADR-0014） | 1 |
+| `operations.medication_missed_rate` | 漏服率 | 统计区间内漏服任务占用药任务总数的比例 | 统计区间（默认 30 天、最多 366 天、闭区间） | medication_task(plan_time, status, was_missed) | 漏服桶数 / 任务总数；漏服桶由 MedicationBucketSql.CASE_BUCKET 唯一裁定（status = 'MISSED' 或 was_missed = 1），与服药日历同源；分母为 0 时记 0.00% | 1 |
+
 ---
 
 ## 三、区间约定（所有指标共用）

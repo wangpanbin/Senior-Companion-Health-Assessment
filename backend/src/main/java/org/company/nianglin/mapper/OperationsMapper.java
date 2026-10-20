@@ -40,7 +40,11 @@ import java.util.Map;
 public interface OperationsMapper {
 
     /**
-     * 区间内的订单聚合（概览 / 健康度 / 趋势的数据源）。
+     * 区间内的订单聚合（概览 / 健康度 / 趋势 / V3.6 指标计算器族的数据源）。
+     *
+     * <p>⚠️ V3.6 起，本聚合同时供<b>指标计算器</b>使用（{@code service.support.metrics}），
+     * 因此「同一个指标在驾驶舱与效果对比里必须是同一个数」这件事，
+     * 由「两边都从这里取数」保证，而不是靠两边各写一遍公式。</p>
      *
      * @param start                    区间起点（含）
      * @param end                      区间终点（含）
@@ -50,7 +54,8 @@ public interface OperationsMapper {
      * @return 一行形如
      *         {@code {todayCount: 128, totalCount: 240, completedCount: 113,
      *         cancelledCount: 4, inServiceCount: 9, pendingCount: 6,
-     *         onTimeCompletedCount: 99, avgAcceptMinutes: 6, avgFinishDelayMinutes: 38}}；
+     *         onTimeCompletedCount: 99, avgAcceptMinutes: 6, avgFinishDelayMinutes: 38,
+     *         manualRequiredCount: 5, avgServiceDurationMinutes: 86.50}}；
      *         无数据时各计数为 0，均值为 {@code null}
      */
     @Select("""
@@ -68,7 +73,11 @@ public interface OperationsMapper {
                    ROUND(AVG(CASE WHEN accept_time IS NOT NULL
                                 THEN TIMESTAMPDIFF(MINUTE, create_time, accept_time) END)) AS avgAcceptMinutes,
                    ROUND(AVG(CASE WHEN finish_time IS NOT NULL AND visit_time IS NOT NULL
-                                THEN TIMESTAMPDIFF(MINUTE, visit_time, finish_time) END)) AS avgFinishDelayMinutes
+                                THEN TIMESTAMPDIFF(MINUTE, visit_time, finish_time) END)) AS avgFinishDelayMinutes,
+                   COALESCE(SUM(CASE WHEN fulfillment_risk = 'MANUAL_REQUIRED' THEN 1 ELSE 0 END), 0) AS manualRequiredCount,
+                   ROUND(AVG(CASE WHEN status IN ('COMPLETED', 'REVIEWED') AND start_time IS NOT NULL
+                                    AND finish_time IS NOT NULL
+                                THEN TIMESTAMPDIFF(MINUTE, start_time, finish_time) END), 2) AS avgServiceDurationMinutes
             FROM companion_order
             WHERE deleted = 0 AND create_time BETWEEN #{start} AND #{end}
             """)
@@ -297,4 +306,119 @@ public interface OperationsMapper {
     List<Map<String, Object>> selectRecentMissedOrders(@Param("start") LocalDateTime start,
                                                         @Param("end") LocalDateTime end,
                                                         @Param("limit") int limit);
+
+    /* ================================================================== */
+    /* V3.6 数据闭环                                                        */
+    /* ================================================================== */
+
+    /**
+     * 区间内的用药任务三桶聚合（用药任务数 / 漏服率的数据源）。
+     *
+     * <p>三桶判定<b>只出现一次</b>：内层子查询算出 {@code bucket}，
+     * 外层再从<b>同一个</b> {@code bucket} 派生 taken / missed / pending ——
+     * 恒有 {@code taken + missed + pending == total}，与服药日历同源
+     * （{@link MedicationBucketSql#CASE_BUCKET}，ADR-0014）。</p>
+     *
+     * @return 一行形如 {@code {total: 120, taken: 110, missed: 6, pending: 4}}
+     */
+    @Select("""
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(CASE WHEN bucket = 'TAKEN' THEN 1 ELSE 0 END), 0) AS taken,
+                   COALESCE(SUM(CASE WHEN bucket = 'MISSED' THEN 1 ELSE 0 END), 0) AS missed,
+                   COALESCE(SUM(CASE WHEN bucket = 'PENDING' THEN 1 ELSE 0 END), 0) AS pending
+            FROM (
+              SELECT
+            """ + MedicationBucketSql.CASE_BUCKET + """
+              AS bucket
+              FROM medication_task
+              WHERE deleted = 0 AND plan_time BETWEEN #{start} AND #{end}
+            ) t
+            """)
+    Map<String, Object> selectMedicationAggregates(@Param("start") LocalDateTime start,
+                                                    @Param("end") LocalDateTime end);
+
+    /**
+     * 区间内被管理员改派的订单数（改派率的数据源）。
+     *
+     * <p>分子取 {@code admin_oper_log} 里 {@code oper_type = 'REASSIGN_ORDER'}
+     * 的记录，<b>按订单去重</b>（同一单被改派多次只算一单）——
+     * 否则运营「多改派几次」就能把改派率刷上去。</p>
+     *
+     * <p>⚠️ 分子按<b>操作日志时间</b>过滤，分母（区间订单数）按<b>下单时间</b>过滤：
+     * 改派这件事本身只发生在操作日志里，订单表里没有「被改派过」的痕迹。
+     * 两个时间字段不同源这件事写在指标字典的公式里，不藏着。</p>
+     *
+     * @return 改派订单数；无改派记录时为 0
+     */
+    @Select("""
+            SELECT COUNT(DISTINCT target_id)
+            FROM admin_oper_log
+            WHERE deleted = 0 AND oper_type = 'REASSIGN_ORDER'
+              AND create_time BETWEEN #{start} AND #{end}
+            """)
+    Integer selectReassignedOrderCount(@Param("start") LocalDateTime start,
+                                        @Param("end") LocalDateTime end);
+
+    /**
+     * 区间内「至今无人接」的订单及其就诊时间（供给缺口分析的数据源）。
+     *
+     * <p>「无人接」= 当前状态仍是 {@code PENDING}（V3.6 · 偏差 D-3.6-1）。
+     * 桶按<b>就诊时间</b>落（{@code visit_time} 的周内第几天 × 小时），
+     * 而不是按下单时间 —— 运营要判断的是「这个时段有没有人接得住」，
+     * 关心的是订单<b>发生在哪个时段</b>。</p>
+     *
+     * @return 每行形如 {@code {id: 1007, visitTime: 2026-09-14 09:00:00}}
+     */
+    @Select("""
+            SELECT id, visit_time AS visitTime
+            FROM companion_order
+            WHERE deleted = 0 AND status = 'PENDING' AND visit_time IS NOT NULL
+              AND visit_time BETWEEN #{start} AND #{end}
+            """)
+    List<Map<String, Object>> selectPendingOrderVisitTimes(@Param("start") LocalDateTime start,
+                                                           @Param("end") LocalDateTime end);
+
+    /**
+     * 全部陪诊员的结构化可服务时段（供给缺口分析的数据源）。
+     *
+     * <p>只取结构化表；存量自由文本由 Service 侧用
+     * {@code LegacySlotParser} 回退解析（V3.4 的回退路径）。</p>
+     *
+     * <p>⚠️ <b>必须过滤资质与工作状态</b>：没通过审核的陪诊员接不了单，
+     * 休息 / 离线的陪诊员也不接新单。把他们算作「供给」会让缺口被低估 ——
+     * 平台会以为「这个时段有人」，而实际上没人会接。</p>
+     *
+     * @return 每行形如 {@code {companionId: 301, weekday: 1, startTime: "08:00:00", endTime: "18:00:00"}}
+     */
+    @Select("""
+            SELECT s.companion_id AS companionId, s.weekday,
+                   TIME_FORMAT(s.start_time, '%H:%i:%s') AS startTime,
+                   TIME_FORMAT(s.end_time, '%H:%i:%s') AS endTime
+            FROM companion_available_slot s
+            JOIN companion_profile p ON p.user_id = s.companion_id
+                                    AND p.deleted = 0
+                                    AND p.audit_status = 'APPROVED'
+                                    AND p.work_status = 'AVAILABLE'
+            WHERE s.deleted = 0
+            ORDER BY s.companion_id, s.weekday, s.start_time
+            """)
+    List<Map<String, Object>> selectCompanionServiceSlots();
+
+    /**
+     * 全部陪诊员的自由文本可服务时段（供给缺口分析的回退数据源）。
+     *
+     * <p>⚠️ 同样<b>必须过滤资质与工作状态</b>（理由见
+     * {@link #selectCompanionServiceSlots()}）。</p>
+     *
+     * @return 每行形如 {@code {companionId: 301, availableTime: "周一至周五 08:00-18:00"}}
+     */
+    @Select("""
+            SELECT user_id AS companionId, available_time AS availableTime
+            FROM companion_profile
+            WHERE deleted = 0
+              AND audit_status = 'APPROVED'
+              AND work_status = 'AVAILABLE'
+            ORDER BY user_id
+            """)
+    List<Map<String, Object>> selectCompanionAvailableTimes();
 }

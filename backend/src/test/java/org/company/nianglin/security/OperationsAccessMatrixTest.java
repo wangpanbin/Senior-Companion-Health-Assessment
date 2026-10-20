@@ -48,6 +48,10 @@ class OperationsAccessMatrixTest {
     private static final String API_TREND = "/api/admin/operations/trend";
     /** 健康度 */
     private static final String API_HEALTH = "/api/admin/operations/health";
+    /** 供给时段缺口分析（V3.6） */
+    private static final String API_GAP = "/api/admin/operations/gap";
+    /** 干预效果对比（V3.6） */
+    private static final String API_EFFECT = "/api/admin/operations/effect";
 
     @Autowired
     private MockMvc mockMvc;
@@ -143,7 +147,45 @@ class OperationsAccessMatrixTest {
     }
 
     /* ================================================================== */
-    /* 5 · 管理员侧：注解确实放行                                          */
+    /* 5 · V3.6 两个新端点同样只在管理端可见                              */
+    /* ================================================================== */
+
+    @ParameterizedTest(name = "供给缺口 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("供给缺口 · 非管理员看缺口分析 → 403")
+    void nonAdminShouldNotReadGap(String role) throws Exception {
+        mockMvc.perform(get(API_GAP).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("供给缺口 · 未登录 → 401")
+    void anonymousShouldGet401OnGap() throws Exception {
+        mockMvc.perform(get(API_GAP))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @ParameterizedTest(name = "干预效果 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("干预效果 · 非管理员看效果对比 → 403")
+    void nonAdminShouldNotReadEffect(String role) throws Exception {
+        mockMvc.perform(get(API_EFFECT).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("干预效果 · 未登录 → 401")
+    void anonymousShouldGet401OnEffect() throws Exception {
+        mockMvc.perform(get(API_EFFECT))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    /* ================================================================== */
+    /* 6 · 管理员侧：注解确实放行                                          */
     /* ================================================================== */
 
     @Test

@@ -8,6 +8,53 @@
 
 ---
 
+## [V3.6] · 2026-10-20 · 数据闭环
+
+让平台**通过数据持续提高服务质量**，而不是「统计完了就放着」。
+产品与工程契约见 [spec](docs/spec/V3.6-data-loop-spec.md) /
+[tickets](docs/spec/V3.6-tickets.md) /
+[ADR-0017](docs/adr/0017-metric-endpoint-machine-contract.md)。
+
+### Added · 新增
+
+**端点 ↔ 指标机器面**
+
+- `backend/src/main/resources/metrics/endpoints.yml` —— 声明「哪个端点返回了哪些指标」
+- `util/MetricEndpointRegistry` —— 加载器
+- `MetricEndpointContractTest` —— **三条双向校验**：
+  ① yml 里的端点必须真实存在（反射扫描所有 `@RestController`）
+  ② yml 里的指标必须在指标字典里
+  ③ 指标字典里每条指标的端点必须在 yml 里出现
+- `tools/check_metric_dict_parity.py` —— 指标字典**人读面 ↔ 机器面**逐条一致性校验
+
+**指标计算器注册表**
+
+- `service/support/metrics/MetricCalculator` + `MetricCalculatorRegistry`
+  —— **同一个指标 key 只能有一个实现**；未注册的指标在效果对比里返回 400
+
+**两个新端点**
+
+- `GET /api/admin/operations/gap` —— 供给时段缺口分析（「周内第几天 × 小时」分桶）
+- `GET /api/admin/operations/effect` —— 干预效果对比（同一指标两期值 + 差值）
+
+### 口径决策
+
+- **桶的粒度固定为「周内第几天 × 小时」**，与区间长度无关 ——
+  只有这样「这周和上周的同一时段」才可比（迭代计划 §47 的闭环数据基础）
+- **供给数按「可服务时段」分桶**，不是按「当前 AVAILABLE 总人数」——
+  后者每个桶都一样，指标没有信息量；
+  没能解析时段的陪诊员不进任何桶，并由 `companionsWithoutSlots` **如实披露**
+- **效果对比两侧走同一个计算器** —— 用两个公式对比，比出来的是公式差异
+- **同一指标跨端共用一份实现**（决策 6.2）—— 物理上只有一份，就不可能漂移
+
+### 门禁
+
+- mvn -B verify（基线 1162 + 新增）
+- pnpm lint:check / vitest / build
+- playwright 全量
+
+---
+
 ## [V3.5] · 2026-10-20 · 平台运营驾驶舱
 
 让管理员**在 30 秒内发现平台异常，并且能直接去处理**。

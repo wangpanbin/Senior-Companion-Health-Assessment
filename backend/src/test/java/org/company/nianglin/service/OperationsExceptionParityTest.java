@@ -4,6 +4,7 @@ import org.company.nianglin.config.OperationsProperties;
 import org.company.nianglin.dto.DateRangeQuery;
 import org.company.nianglin.mapper.OperationsMapper;
 import org.company.nianglin.service.impl.OperationsServiceImpl;
+import org.company.nianglin.service.support.metrics.MetricCalculatorRegistry;
 import org.company.nianglin.vo.FulfillmentSummaryVO;
 import org.company.nianglin.vo.OperationsExceptionItemVO;
 import org.company.nianglin.vo.OperationsExceptionVO;
@@ -71,7 +72,8 @@ class OperationsExceptionParityTest {
 
     @BeforeEach
     void setUp() {
-        service = new OperationsServiceImpl(mapper, adminService, properties);
+        service = new OperationsServiceImpl(mapper, adminService, properties,
+                new MetricCalculatorRegistry(List.of()));
         when(mapper.selectCompanionComplaintRates(any(), any())).thenReturn(List.of());
         when(mapper.selectMissedMedicationCount(any(), any())).thenReturn(0);
         when(mapper.selectRecentMissedOrders(any(), any(), anyInt())).thenReturn(List.of());
