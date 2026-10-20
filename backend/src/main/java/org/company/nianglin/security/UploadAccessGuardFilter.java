@@ -21,6 +21,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * 上传目录访问守卫：拦截对资质证件（{@code bizType=COMPANION_CERT}）原始 URL 的直连。
@@ -41,6 +42,12 @@ import java.util.Set;
  * 证件的原始 URL 就会重新变得可公开直连，收紧形同虚设。因此放行的条件是
  * 「<b>命中登记表且不是证件</b>」，而不是「不是证件」。</p>
  *
+ * <p><b>守卫范围 = 落盘布局</b>：只有 {@code /uploads/{yyyyMM}/} 下的路径才进入
+ * 失败关闭判定（上传一律写进这个形状，见 {@code FileStorageServiceImpl}）。
+ * 不在这个布局里的路径（如种子给全体用户填的占位头像
+ * {@code /uploads/avatar/default.png}，该文件从来就不存在）<b>不可能是证件</b>，
+ * 放行不损失任何安全性 —— 收窄之后，证件保护一点没弱化。</p>
+ *
  * <p>证件改由带鉴权的端点 {@code GET /api/file/cert?url=...} 供给（上传人本人或管理员），
  * 前端证件预览改走该端点取 blob URL。已登记的其余业务类型（头像 / 打卡照片 /
  * 聊天媒体）不受影响，仍按原路径公开访问。</p>
@@ -58,6 +65,15 @@ import java.util.Set;
 public class UploadAccessGuardFilter extends OncePerRequestFilter {
 
     private static final String UPLOAD_PREFIX = "/uploads/";
+
+    /**
+     * 上传产物的落盘目录形状：{@code /uploads/{yyyyMM}/{uuid}.{ext}}。
+     *
+     * <p>见 {@code FileStorageServiceImpl}：所有上传（含全部证件）都写进
+     * {@code ./uploads/{yyyyMM}/}，{@code sys_file.url} 也是 {@code /uploads/{yyyyMM}/{storedName}}。
+     * 所以<b>只有这个形状下的路径才可能是上传产物</b>。</p>
+     */
+    private static final Pattern MONTH_DIR_PATTERN = Pattern.compile("^\\d{6}/");
 
     /** 仅静态资源读取方法需要守卫 */
     private static final Set<String> GUARDED_METHODS = Set.of("GET", "HEAD");
@@ -85,6 +101,27 @@ public class UploadAccessGuardFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
+
+        // ⚠️ 守卫只管「上传产物」，不管同目录下的其它静态文件。
+        //
+        // 判据是落盘布局：上传一律写进 /uploads/{yyyyMM}/{uuid}.{ext}（见
+        // FileStorageServiceImpl），所以证件必然在这个形状里 —— 收窄到它，
+        // 证件保护一点没弱化。
+        //
+        // 收窄之前，凡是 /uploads/** 下查不到登记的文件一律 403（失败关闭），
+        // 于是种子给所有用户填的占位头像 /uploads/avatar/default.png
+        // （这个文件从来就不存在）也被当成证件挡掉 —— 老人端与「我的」页
+        // 因为要渲染 <img src=头像> 而稳定产生一条 403 console error，
+        // 把 6 条既有 E2E 打成红的。
+        //
+        // 失败关闭的前提是「这个路径可能是上传产物」；不在落盘布局里的路径
+        // （如 /uploads/avatar/default.png）不可能是证件，放行不损失任何安全性。
+        String rest = uri.substring(UPLOAD_PREFIX.length());
+        if (!MONTH_DIR_PATTERN.matcher(rest).find()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         String storedName = extractStoredName(uri);
         if (storedName == null) {
             filterChain.doFilter(request, response);
