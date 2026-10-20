@@ -11,9 +11,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.company.nianglin.common.PageQuery;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.config.FulfillmentProperties;
+import org.company.nianglin.config.MatchingProperties;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.MessageType;
@@ -41,6 +43,7 @@ import org.company.nianglin.mapper.OrderReadMapper;
 import org.company.nianglin.mapper.OrderRejectLogMapper;
 import org.company.nianglin.mapper.OrderStatusLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
+import org.company.nianglin.service.MatchingService;
 import org.company.nianglin.service.support.OrderTransitionService;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
@@ -50,6 +53,8 @@ import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderFeeItemService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.util.ComplianceCheckUtil;
+import org.company.nianglin.service.support.matching.MatchingWeights;
+import org.company.nianglin.service.support.matching.OrderMatchRank;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
@@ -72,6 +77,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -160,6 +167,10 @@ public class OrderServiceImpl implements OrderService {
     private final FulfillmentService fulfillmentService;
     /** 履约保障配置（V3.1 · T1）——大厅缺省排序键取自 nianglin.fulfillment.hall-default-sort */
     private final FulfillmentProperties fulfillmentProperties;
+    /** 智能调度（V3.4）——大厅五维加权排序与候选推荐 */
+    private final MatchingService matchingService;
+    /** 智能调度配置（V3.4 · T3）——大厅候选集上限等 */
+    private final MatchingProperties matchingProperties;
 
     /* ================================================================== */
     /* 1. 创建订单                                                         */
@@ -270,19 +281,26 @@ public class OrderServiceImpl implements OrderService {
     /* ================================================================== */
 
     /**
-     * 大厅排序键白名单：排序键 → 排序列（{@code ORDER BY} 片段，V3.1 · T8）。
+     * 大厅排序键白名单（V3.4）：排序键 → 排序维度。
      *
-     * <p>V3.1 <b>只开放 {@code RECOMMEND} 一种排序</b>。距离 / 时间匹配 / 收益优先
-     * 三个维度随 V3.4 的加权规则引擎一并开放 —— {@code service_area} /
-     * {@code available_time} 现在是自由文本，此时把四种排序写死，V3.4 必然推翻，
-     * 所以宁可只给一种，也不给一个注定要改的实现。</p>
+     * <p>V3.1 只开放 {@code RECOMMEND}（SQL 三级键），并把距离 / 时间匹配 / 收益优先
+     * 三个维度留给 V3.4 —— 理由是当时 {@code service_area} / {@code available_time}
+     * 还是自由文本，写死四种排序必然被推翻。</p>
      *
-     * <p>用映射表而不是 {@code if} / {@code switch} 分支：V3.4 加新维度时，
+     * <p>V3.4 换成真正的五维加权引擎，开放 {@code DISTANCE} / {@code TIME_MATCH}；
+     * {@code INCOME} <b>仍不开放</b> —— 没有真实结算金额口径（roadmap 决策 D8）。</p>
+     *
+     * <p>用映射表而不是 {@code if} / {@code switch} 分支：加新维度时，
      * 「白名单放行」与「排序实现」仍然是同一处改动，不会出现
      * 「放行了却没实现」这种半吊子状态。</p>
      */
-    private static final Map<String, Function<CompanionProfile, String>> HALL_SORTS = Map.of(
-            "RECOMMEND", OrderServiceImpl::recommendOrderBy);
+    /** 「按加权总分排」的伪维度名（总分不是五维之一） */
+    private static final String SORT_TOTAL = "TOTAL";
+
+    private static final Map<String, String> HALL_SORTS = Map.of(
+            "RECOMMEND", SORT_TOTAL,
+            "DISTANCE", MatchingWeights.DIMENSION_DISTANCE,
+            "TIME_MATCH", MatchingWeights.DIMENSION_TIME);
 
     @Override
     public PageResult<OrderVO> hall(OrderHallQuery query) {
@@ -297,7 +315,11 @@ public class OrderServiceImpl implements OrderService {
         LambdaQueryWrapper<CompanionOrder> wrapper = Wrappers.<CompanionOrder>lambdaQuery()
                 .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name())
                 // 就诊时间已过的单子不再挂在大厅上：家属没取消，但陪诊员也接不了了
-                .gt(CompanionOrder::getVisitTime, LocalDateTime.now());
+                .gt(CompanionOrder::getVisitTime, LocalDateTime.now())
+                // 截断前先按就诊时间排，保证「留下哪几条」是确定的
+                // （否则同一批订单每次刷新留下的候选都可能不同）
+                .orderByAsc(CompanionOrder::getVisitTime)
+                .orderByAsc(CompanionOrder::getId);
 
         List<Long> rejected = rejectedOrderIds(me.userId());
         if (!rejected.isEmpty()) {
@@ -312,10 +334,23 @@ public class OrderServiceImpl implements OrderService {
         }
         // 大厅按「就诊时间」筛，因为陪诊员是按住哪天有空来接单的
         applyDateRange(wrapper, CompanionOrder::getVisitTime, query.getStartDate(), query.getEndDate());
-        wrapper.last(HALL_SORTS.get(sortKey).apply(profile));
 
-        Page<CompanionOrder> page = orderMapper.selectPage(query.toMpPage(), wrapper);
-        return toVoPage(page, true);
+        // V3.4：候选集 → 五维打分 → 排序 → 内存分页。
+        //
+        // 为什么不写进 SQL 的 ORDER BY：① 距离要 Haversine，MySQL 无内置函数；
+        // ② 服务能力要按「我在这个科室做过多少单」归一化；
+        // ③ 「陪诊员无坐标 → 距离记 0 且不推断」需要一条分支 ——
+        //    而 SQL 里写 CASE 会让「没数据」与「坐标相同（距离 0）」落进同一个值。
+        List<CompanionOrder> candidates = orderMapper.selectList(wrapper);
+        int limit = matchingProperties.getHallCandidateLimit();
+        if (candidates.size() > limit) {
+            log.warn("大厅候选集超过上限，已按就诊时间截断 | companionId={} | 候选={} | 上限={}",
+                    me.userId(), candidates.size(), limit);
+            candidates = new ArrayList<>(candidates.subList(0, limit));
+        }
+
+        sortByMatch(candidates, profile, sortKey);
+        return paginate(candidates, query, true);
     }
 
     /**
@@ -333,74 +368,68 @@ public class OrderServiceImpl implements OrderService {
                         ? fulfillmentProperties.getHallDefaultSort().trim()
                         : "";
         String sortKey = raw.toUpperCase(Locale.ROOT);
-        if (!HALL_SORTS.containsKey(sortKey)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的排序维度："
-                    + (raw.isEmpty() ? "（空值）" : raw) + "；该维度将在后续版本开放，当前仅支持 "
-                    + String.join(" / ", HALL_SORTS.keySet()));
+        if (HALL_SORTS.containsKey(sortKey)) {
+            return sortKey;
         }
-        return sortKey;
+        // 收益优先单独给一句人话：它不是「还没做」，而是「没有可信的金额口径」
+        if ("INCOME".equals(sortKey)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "不支持的排序维度：INCOME；收益优先需要真实结算金额口径，本版未开放，当前仅支持 "
+                            + String.join(" / ", HALL_SORTS.keySet()));
+        }
+        throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的排序维度："
+                + (raw.isEmpty() ? "（空值）" : raw) + "；该维度将在后续版本开放，当前仅支持 "
+                + String.join(" / ", HALL_SORTS.keySet()));
     }
 
     /**
-     * 推荐序的三级排序键：就诊时间升序 → 服务区域匹配者优先 → ID 升序兜底。
+     * 按匹配分排序：主键（匹配分降序）→ 兜底键（就诊时间升序 → ID 升序）。
      *
-     * <p>ID 那一级不是冗余：同一就诊时间下若没有它，同一批数据在两页之间可能重排，
-     * 分页就不重不漏了。</p>
+     * <p>ID 那一级不是冗余：同一匹配分、同一就诊时间下若没有它，
+     * 同一批数据在两页之间可能重排，分页就不重不漏了。</p>
      */
-    private static String recommendOrderBy(CompanionProfile profile) {
-        return "ORDER BY visit_time ASC" + areaMatchRank(profile) + ", id ASC";
-    }
-
-    /**
-     * 「服务区域匹配者优先」这一级的排序列，命中排 0、未命中排 1。
-     *
-     * <p><b>包含式匹配，不做任何推断</b>：订单表没有独立的服务区域字段，因此拿订单的
-     * 医院名与地址去包含陪诊员档案里的服务区域 / 可服务时段，四个条件任一命中即算匹配。
-     * 用 {@code LOCATE} 而不是 {@code LIKE} —— LIKE 会把档案里的 {@code %} / {@code _}
-     * 当通配符，那等于替陪诊员猜了一个他没写过的范围。</p>
-     *
-     * <p>两栏皆空时返回空串：不产出这一级，而不是让「空」匹配一切。</p>
-     */
-    private static String areaMatchRank(CompanionProfile profile) {
-        List<String> conditions = new ArrayList<>();
-        appendMatchConditions(conditions, profile.getServiceArea());
-        appendMatchConditions(conditions, profile.getAvailableTime());
-        if (conditions.isEmpty()) {
-            return "";
-        }
-        return ", CASE WHEN " + String.join(" OR ", conditions) + " THEN 0 ELSE 1 END";
-    }
-
-    /** 一栏档案文本对应两个匹配条件：医院名、地址 */
-    private static void appendMatchConditions(List<String> conditions, String keyword) {
-        if (!StringUtils.hasText(keyword)) {
+    private void sortByMatch(List<CompanionOrder> candidates, CompanionProfile profile, String sortKey) {
+        if (candidates.size() <= 1) {
             return;
         }
-        String literal = sqlStringLiteral(keyword.trim());
-        conditions.add("LOCATE(" + literal + ", hospital) > 0");
-        conditions.add("LOCATE(" + literal + ", address) > 0");
+        Map<Long, OrderMatchRank> rankBy = new HashMap<>();
+        for (OrderMatchRank rank : matchingService.scoreOrders(profile, candidates)) {
+            rankBy.put(rank.orderId(), rank);
+        }
+        String dimension = HALL_SORTS.getOrDefault(sortKey, SORT_TOTAL);
+        Comparator<CompanionOrder> comparator = Comparator
+                .comparingDouble((CompanionOrder order) -> -matchScore(rankBy, order, dimension))
+                .thenComparing(CompanionOrder::getVisitTime, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(CompanionOrder::getId, Comparator.nullsLast(Comparator.naturalOrder()));
+        candidates.sort(comparator);
+    }
+
+    /** 取某个订单在指定排序维度上的得分 */
+    private static double matchScore(Map<Long, OrderMatchRank> rankBy, CompanionOrder order, String dimension) {
+        OrderMatchRank rank = rankBy.get(order.getId());
+        if (rank == null) {
+            return 0D;
+        }
+        return SORT_TOTAL.equals(dimension) ? rank.total() : rank.dimension(dimension);
     }
 
     /**
-     * 自由文本 → SQL 字符串字面量。
+     * 内存分页（V3.4 大厅）。
      *
-     * <p>MyBatis-Plus 的排序只接受列名（{@code SFunction}），{@code last()} 是唯一能把
-     * 表达式放进 ORDER BY 的口子，而它不接绑定参数，所以档案文本必须在 Java 侧转义。</p>
-     *
-     * <p><b>反斜杠必须翻倍，不能因为「LOCATE 没有通配符语义」就跳过</b>：
-     * MySQL 默认 {@code sql_mode}（未开 {@code NO_BACKSLASH_ESCAPES}）下，
-     * {@code \} 是<b>字符串字面量层面</b>的转义符，与外层函数是什么无关。
-     * 一个以 {@code \} 结尾的 {@code service_area}（如 {@code 海淀区\}）
-     * 会吃掉闭引号，生成的 SQL 直接语法错误，而 {@code last()} 不接绑定参数，
-     * 等于陪诊员自助填的档案文本直通数据库。</p>
-     *
-     * <p>顺序固定为「先反斜杠、后单引号」：反斜杠自身是待转义字符之一，
-     * 混着做两次替换时无法保证不互相吃掉。</p>
+     * <p>响应结构与 DB 分页<b>完全一致</b>：{@code total} 仍是「满足大厅筛选条件的
+     * 待接单订单数」，{@code pages} 仍是 {@code ceil(total / size)}。
+     * 变的只有「哪几条排在前面」。</p>
      */
-    private static String sqlStringLiteral(String raw) {
-        return "'" + raw.replace("\\", "\\\\").replace("'", "''") + "'";
+    private PageResult<OrderVO> paginate(List<CompanionOrder> all, PageQuery<?> query, boolean withAddress) {
+        long pageNo = query.normalizedPage();
+        long size = query.normalizedSize();
+        long total = all.size();
+        long pages = (total + size - 1) / size;
+        long from = Math.min(Math.max(0L, (pageNo - 1) * size), total);
+        long to = Math.min(from + size, total);
+        List<CompanionOrder> records = from >= to ? List.of() : all.subList((int) from, (int) to);
+        return new PageResult<>(total, pageNo, size, pages, toVoList(records, withAddress));
     }
-
 
     /* ================================================================== */
     /* 4. 订单详情                                                         */
@@ -864,6 +893,19 @@ public class OrderServiceImpl implements OrderService {
         if (records.isEmpty()) {
             return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getPages(), List.of());
         }
+        return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getPages(),
+                toVoList(records, withAddress));
+    }
+
+    /**
+     * 实体列表 → VO 列表（批量补老人姓名与陪诊员姓名，避免 N+1）。
+     *
+     * @param withAddress 是否返回地址（大厅需要，我的订单不需要）
+     */
+    private List<OrderVO> toVoList(List<CompanionOrder> records, boolean withAddress) {
+        if (records.isEmpty()) {
+            return List.of();
+        }
 
         Map<Long, ElderProfile> elders = loadElders(records.stream()
                 .map(CompanionOrder::getElderId)
@@ -888,7 +930,7 @@ public class OrderServiceImpl implements OrderService {
                     .applyUrgeGate(order, urgeGate());
         }).toList();
 
-        return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getPages(), list);
+        return list;
     }
 
     /** 催单门槛：两个阈值都来自 {@code nianglin.fulfillment.urge-*}，装配时读一次即可 */

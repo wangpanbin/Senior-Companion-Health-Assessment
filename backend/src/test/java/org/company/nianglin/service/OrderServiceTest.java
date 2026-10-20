@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.config.FulfillmentProperties;
+import org.company.nianglin.config.MatchingProperties;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
@@ -142,6 +143,10 @@ class OrderServiceTest {
     @Mock
     private FulfillmentService fulfillmentService;
 
+    /** 智能调度（V3.4）——大厅五维加权排序的打分来源 */
+    @Mock
+    private MatchingService matchingService;
+
     private OrderServiceImpl orderService;
 
     @BeforeEach
@@ -158,7 +163,8 @@ class OrderServiceTest {
         orderService = new OrderServiceImpl(orderMapper, statusLogMapper, rejectLogMapper,
                 elderProfileMapper, companionProfileMapper, sysUserMapper, orderReadMapper,
                 elderService, messageService, redisTemplate, new ObjectMapper(),
-                transitionService, orderFeeItemService, fulfillmentService, new FulfillmentProperties());
+                transitionService, orderFeeItemService, fulfillmentService, new FulfillmentProperties(),
+                matchingService, new MatchingProperties());
     }
 
     @AfterEach
@@ -450,7 +456,7 @@ class OrderServiceTest {
         BusinessException ex = assertThrows(BusinessException.class, () -> orderService.hall(new OrderHallQuery()));
 
         assertEquals(ResultCode.COMPANION_NOT_AUDITED.getCode(), ex.getCode());
-        verify(orderMapper, never()).selectPage(any(), any());
+        verify(orderMapper, never()).selectList(any());
     }
 
     @Test
@@ -460,12 +466,13 @@ class OrderServiceTest {
         given(companionProfileMapper.selectList(any()))
                 .willReturn(List.of(companionProfile(AuditStatus.APPROVED)));
         given(rejectLogMapper.selectList(any())).willReturn(List.of(rejectLog(9999L)));
-        given(orderMapper.selectPage(any(), any())).willReturn(pageOf(pendingOrder()));
+        // V3.4：大厅改为「候选集 → Java 侧打分 → 内存分页」，查库走 selectList
+        given(orderMapper.selectList(any())).willReturn(List.of(pendingOrder()));
         given(orderReadMapper.selectEldersIgnoringLogicDelete(any())).willReturn(List.of(elderProfile()));
 
         PageResult<OrderVO> result = orderService.hall(new OrderHallQuery());
 
-        LambdaQueryWrapper<CompanionOrder> wrapper = captureQueryWrapper();
+        LambdaQueryWrapper<CompanionOrder> wrapper = captureHallWrapper();
         String sql = wrapper.getSqlSegment();
         assertTrue(sql.contains("status"), sql);
         assertTrue(sql.contains("visit_time"), "大厅必须按就诊时间过滤掉已过期的单：" + sql);
@@ -486,11 +493,11 @@ class OrderServiceTest {
         given(companionProfileMapper.selectList(any()))
                 .willReturn(List.of(companionProfile(AuditStatus.APPROVED)));
         given(rejectLogMapper.selectList(any())).willReturn(List.of());
-        given(orderMapper.selectPage(any(), any())).willReturn(pageOf());
+        given(orderMapper.selectList(any())).willReturn(List.of());
 
         orderService.hall(new OrderHallQuery());
 
-        String sql = captureQueryWrapper().getSqlSegment();
+        String sql = captureHallWrapper().getSqlSegment();
         assertFalse(sql.toUpperCase().contains("NOT IN"), "空集合不能生成 NOT IN：" + sql);
     }
 
@@ -1050,6 +1057,16 @@ class OrderServiceTest {
     private LambdaQueryWrapper<CompanionOrder> captureQueryWrapper() {
         ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
         verify(orderMapper).selectPage(any(), captor.capture());
+        return captor.getValue();
+    }
+
+    /**
+     * 大厅链路的查询包装器（V3.4 起大厅走 {@code selectList} 而不是 {@code selectPage}）。
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private LambdaQueryWrapper<CompanionOrder> captureHallWrapper() {
+        ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper).selectList(captor.capture());
         return captor.getValue();
     }
 

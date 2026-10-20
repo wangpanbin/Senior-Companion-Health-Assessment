@@ -3,9 +3,12 @@
  * 接单大厅（M-10 · design.md §4 · PRD §4.1 陪诊员主旅程）
  *
  * 数据来源：
- *   - GET /order/hall        → listOrderHall（待接单订单）
+ *   - GET /order/hall        → listOrderHall（待接单订单，sortBy 决定排序维度）
  *   - POST /order/{id}/accept → acceptOrder（接单，乐观锁）
  *   - GET /user/companion/application → getMyCompanionApplication（资质状态）
+ *
+ * 排序口径（V3.4）：可选维度由后端白名单决定（RECOMMEND / DISTANCE / TIME_MATCH），
+ *   切换维度 = 重新向后端要数，前端不对已有数据自行排序。
  *
  * 资质门槛（重点）：
  *   - 仅 COMPANION 且资质 APPROVED 才能进大厅 / 接单；否则后端返回 2003。
@@ -46,6 +49,27 @@ const loading = ref(false)
 const hallError = ref(false)
 
 const filter = ref('all') // all / high
+
+/* ================================================================== *
+ * 大厅排序（V3.4 · T9）
+ *
+ * 可选维度由**后端白名单**决定：RECOMMEND / DISTANCE / TIME_MATCH。
+ * INCOME 本版仍不做 —— 后端对没有真实结算金额口径的维度返回 400，
+ * 所以前端干脆不提供该选项（给一个必然报错的选项比不给更糟）。
+ *
+ * 切换排序 = 重新向后端要数（把 sortBy 传给 listOrderHall），
+ * 前端绝不对已有数据自行排序 —— 那会把后端的五维加权口径直接作废。
+ * ================================================================== */
+const SORT_OPTIONS = [
+  { value: 'RECOMMEND', label: '推荐' },
+  { value: 'DISTANCE', label: '距离最近' },
+  { value: 'TIME_MATCH', label: '时间匹配' }
+]
+
+const sortBy = ref('RECOMMEND')
+/** 大厅当前一次性取一页（size 50）；排序切换时显式回到第 1 页 */
+const page = ref(1)
+const PAGE_SIZE = 50
 
 /* ================================================================== *
  * 接单状态自助开关（V3.1 · T0）
@@ -132,7 +156,11 @@ async function loadCert() {
 async function loadHall() {
   loading.value = true
   try {
-    const data = await listOrderHall({ page: 1, size: 50 })
+    const data = await listOrderHall({
+      page: page.value,
+      size: PAGE_SIZE,
+      sortBy: sortBy.value
+    })
     orders.value = data?.records || []
     total.value = data?.total || 0
     hallError.value = false
@@ -143,6 +171,14 @@ async function loadHall() {
   } finally {
     loading.value = false
   }
+}
+
+/** 切换排序维度：回到第 1 页并重新向后端要数（不在前端重排已有数据） */
+function switchSort(value) {
+  if (value === sortBy.value) return
+  sortBy.value = value
+  page.value = 1
+  loadHall()
 }
 
 async function grab(o) {
@@ -256,8 +292,19 @@ onMounted(async () => {
         </button>
       </div>
 
-      <!-- 排序（V3.1 · T8）：只开放推荐序，所以没有排序选择器，只留一句说明 -->
-      <p class="nl-caption nl-text-weak sort-note">按推荐顺序排列 · 更多排序方式后续开放</p>
+      <!-- 排序（V3.4 · T9）：维度由后端白名单决定；切换即重新向后端要数 -->
+      <div class="sort" role="group" aria-label="排序方式">
+        <button
+          v-for="opt in SORT_OPTIONS"
+          :key="opt.value"
+          type="button"
+          :class="['sort__btn', { 'is-active': sortBy === opt.value }]"
+          :aria-pressed="sortBy === opt.value"
+          @click="switchSort(opt.value)"
+        >
+          {{ opt.label }}
+        </button>
+      </div>
 
       <NlSkeleton v-if="loading" :count="3" class="list-pad" />
 
@@ -394,8 +441,19 @@ onMounted(async () => {
           </button>
         </div>
 
-        <!-- 排序（V3.1 · T8）：只开放推荐序，所以没有排序选择器，只留一句说明 -->
-        <p class="nl-caption nl-text-weak sort-note">按推荐顺序排列 · 更多排序方式后续开放</p>
+        <!-- 排序（V3.4 · T9）：维度由后端白名单决定；切换即重新向后端要数 -->
+        <div class="sort sort--desktop" role="group" aria-label="排序方式">
+          <button
+            v-for="opt in SORT_OPTIONS"
+            :key="opt.value"
+            type="button"
+            :class="['sort__btn', { 'is-active': sortBy === opt.value }]"
+            :aria-pressed="sortBy === opt.value"
+            @click="switchSort(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
 
         <NlSkeleton v-if="loading" :count="3" />
 
@@ -624,9 +682,35 @@ onMounted(async () => {
   text-align: center;
 }
 
-/* 排序说明：V3.1 只有推荐序，没有选择器可放，就占一行 */
-.sort-note {
-  margin: 0 var(--nl-gutter) var(--nl-space-3);
+/* 排序选择器（V3.4）：与「全部 / 高额」筛选条同一套药丸样式，
+   375px 窄屏下三个药丸并排也不横向溢出（文案短 + flex 换行兜底） */
+.sort {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nl-space-2);
+  padding: 0 var(--nl-gutter);
+  margin-bottom: var(--nl-space-3);
+
+  &__btn {
+    padding: 6px 14px;
+    font-size: var(--nl-font-caption);
+    font-weight: 500;
+    color: var(--nl-text-2);
+    background: var(--nl-bg-card);
+    border: 1px solid var(--nl-border);
+    border-radius: 999px;
+    cursor: pointer;
+
+    &.is-active {
+      color: var(--nl-text-inverse);
+      background: var(--nl-primary);
+      border-color: var(--nl-primary);
+    }
+  }
+
+  &--desktop {
+    padding: 0;
+  }
 }
 
 /* ==========================================================================

@@ -77,6 +77,8 @@ export const ROUTES = {
   companionIncome: '/companion/income',
   /** V3.3 陪诊员工作台（经营指标 / 趋势 / 服务画像 / 收入摘要） */
   companionWorkbench: '/companion/workbench',
+  /** V3.4 智能调度：家属订单详情（待接单订单 1001，页面会展示候选陪诊员推荐） */
+  familyOrderDetailPending: () => `/family/order/${SEED.orderPending}`,
   companionMessage: '/companion/message',
   companionExecute: (id) => `/companion/execute/${id}`,
   familyOrderDetail: (id) => `/family/order/${id}`,
@@ -104,3 +106,17 @@ export const MOBILE_ONLY_ROUTES = ['/profile', '/companion/entry']
 
 /** 合规红线文案 —— 药品字典 / 全站都不允许出现 */
 export const FORBIDDEN_MEDICAL_PHRASES = ['建议服用', '推荐剂量', '诊断为', '可能是']
+
+/**
+ * V3.4 大厅排序维度白名单（与后端一致）。
+ *
+ * ⚠️ INCOME **不在**其中 —— 本版没有真实结算金额口径，后端对 INCOME 仍返回 400。
+ *    前端不提供该选项，E2E 也不把它当成可用维度。
+ */
+export const HALL_SORT_BY = ['RECOMMEND', 'DISTANCE', 'TIME_MATCH']
+
+/**
+ * V3.4 候选推荐端点的路径（家属端）。
+ * 单独列出来是因为它是**新增端点**，越权矩阵要用它逐个账号打。
+ */
+export const RECOMMEND_COMPANIONS_PATH = (orderId) => `/order/${orderId}/recommend-companions`

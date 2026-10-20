@@ -22,12 +22,29 @@ export function listMyOrders(params) {
 /**
  * 待接单订单大厅（陪诊员）
  *
- * 可选 sortBy 白名单 V3.1 只放行 RECOMMEND，缺省取后端配置 nianglin.fulfillment.hall-default-sort；
- * 非法值（含 V3.4 才开放的距离 / 时间匹配 / 收益优先）后端返回 400 且不静默降级为推荐序，
- * 所以本页不传这个参数 —— 只有一个排序项时没有选择器，也就没有需要传的取值。
+ * 可选 sortBy 白名单 V3.4 开放 RECOMMEND / DISTANCE / TIME_MATCH，
+ * 缺省取后端配置 nianglin.fulfillment.hall-default-sort；
+ * INCOME 本版仍不做（没有真实结算金额口径），非法值后端返回 400 且不静默降级为推荐序。
+ *
+ * 响应结构零变更：data 仍是 { total, page, size, pages, records }。
+ * 排序一律由后端算 —— 前端不对已有数据自行重排，否则后端的五维口径会被作废。
  */
 export function listOrderHall(params) {
   return request({ url: '/order/hall', method: 'get', params })
+}
+
+/**
+ * 候选陪诊员推荐（V3.4 · T7）
+ * 对应文档：docs/api/03-order.md §12
+ *
+ * 仅家属可查，且必须是自己下的单（越权后端返回 3004）。
+ * 可选 limit（默认 10，上限 20）。
+ *
+ * ⚠️ 该端点只做「推荐」，**不产生任何订单状态变更** —— 接单权仍在陪诊员。
+ *    响应里的 companionName 是脱敏姓名，页面直接展示，不要再自行处理。
+ */
+export function recommendCompanions(orderId, params) {
+  return request({ url: `/order/${orderId}/recommend-companions`, method: 'get', params })
 }
 
 /** 订单详情 */

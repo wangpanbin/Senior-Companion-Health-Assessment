@@ -314,7 +314,9 @@ test.describe('V3.1 · 大厅单一推荐序', () => {
   test('未开放的排序维度返回 400，不静默降级为推荐序', async () => {
     const { ctx, dispose } = await apiAsAccount('comp001')
     try {
-      for (const sortBy of ['DISTANCE', 'TIME_MATCH', 'INCOME']) {
+      // V3.4 开放了 DISTANCE / TIME_MATCH（见 18-matching.spec.js），
+      // 这里只留**仍未开放**的收益优先 —— 它缺真实结算金额口径（roadmap 决策 D8）。
+      for (const sortBy of ['INCOME']) {
         const body = await (await ctx.get(`${API}/order/hall?sortBy=${sortBy}`)).json()
         expect(body.code, `sortBy=${sortBy} 必须 400`).toBe(400)
       }

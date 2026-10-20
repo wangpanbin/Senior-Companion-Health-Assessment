@@ -12,6 +12,7 @@
  *   GET /api/order/{id}                 详情（全名、地址、备注、结算状态、服务小结、照片）
  *   GET /api/order/{id}/timeline        状态流转日志（含操作人快照与备注）
  *   GET /api/execution/{orderId}/checkins  6 节点打卡记录
+ *   GET /api/order/{id}/recommend-companions  候选陪诊员推荐（V3.4，仅「待接单」时展示）
  *   WS  /ws/progress?token=&orderId=     打卡时实时推送
  *
  * ⚠️ 三处与骨架版的实质差异：
@@ -33,7 +34,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlPageShell, NlCard, NlStatusChip, NlTimeline, NlAvatar, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
 import OrderFeeItems from '@/components/OrderFeeItems.vue'
-import { getOrder, getOrderTimeline, cancelOrder, urgeOrder } from '@/api/order'
+import { getOrder, getOrderTimeline, cancelOrder, urgeOrder, recommendCompanions } from '@/api/order'
 import { listCheckins, connectProgressSocket } from '@/api/execution'
 import { getReviewByOrder } from '@/api/review'
 import { formatDateTime, CHECKIN_NODE_ORDER } from '@/utils/format'
@@ -58,6 +59,57 @@ const liveConnected = ref(false)
 /** V3.1：催单按钮的 in-flight 态，避免连点 */
 const urging = ref(false)
 
+/* ==================== 候选陪诊员推荐（V3.4 · T9） ==================== */
+
+/*
+ * 只在「待接单」时展示：订单一旦被接走，用户关心的是「谁在服务我」，
+ * 而不是「还有谁可能来」—— 此时再列候选人只会制造噪音与误解。
+ *
+ * ⚠️ 推荐 ≠ 派单。该端点只做排序与解释，**不产生任何订单状态变更**，
+ *    接单权仍在陪诊员。所以页面文案必须写明「最终由陪诊员确认接单」，
+ *    不得出现「已指派 / 已分配 / 自动派单」这类暗示系统替用户拍板的表述。
+ *
+ * 三态：Loading（骨架）/ Empty（无候选）/ Error（可重试）。
+ * 单块失败只降级候选区，不影响页面其余部分。
+ */
+const recommendLoading = ref(false)
+const recommendError = ref(false)
+const recommendTotal = ref(0)
+const candidates = ref([])
+
+/** 五个维度的展示名；得分全部由后端给出，前端只做「字段 → 标签」映射，不参与任何计算 */
+const SCORE_DIMS = [
+  { key: 'regionScore', label: '区域' },
+  { key: 'timeScore', label: '时间' },
+  { key: 'distanceScore', label: '距离' },
+  { key: 'skillScore', label: '服务' },
+  { key: 'ratingScore', label: '评分' }
+]
+
+async function loadCandidates() {
+  // 只有「待接单」才需要候选推荐；其它状态下清空即可（模板也不会渲染这一块）
+  if (order.value?.status !== 'PENDING') {
+    candidates.value = []
+    recommendTotal.value = 0
+    recommendError.value = false
+    recommendLoading.value = false
+    return
+  }
+  recommendLoading.value = true
+  recommendError.value = false
+  try {
+    const data = await recommendCompanions(orderId, { limit: 10 })
+    candidates.value = data?.candidates || []
+    recommendTotal.value = data?.total ?? candidates.value.length
+  } catch {
+    candidates.value = []
+    recommendTotal.value = 0
+    recommendError.value = true
+  } finally {
+    recommendLoading.value = false
+  }
+}
+
 let socket = null
 
 async function loadAll() {
@@ -79,6 +131,9 @@ async function loadAll() {
   } finally {
     loading.value = false
   }
+  // 候选推荐依赖详情里的订单状态（只有「待接单」才需要），
+  // 故放在详情之后单独拉；它失败只降级候选区，不牵连页面其余部分。
+  await loadCandidates()
 }
 
 /* ==================== 履约状态条（V3.1 · T5） ==================== */
@@ -217,7 +272,10 @@ const isLive = computed(() =>
   order.value && (order.value.status === 'ACCEPTED' || order.value.status === 'IN_SERVICE')
 )
 
-const canCancel = computed(() => order.value?.status === 'PENDING')
+/** 是否处于「待接单」（决定候选推荐区是否渲染） */
+const isPending = computed(() => order.value?.status === 'PENDING')
+
+const canCancel = computed(() => isPending.value)
 const canReview = computed(() => order.value?.status === 'COMPLETED')
 const canComplaint = computed(() =>
   order.value && ['COMPLETED', 'REVIEWED'].includes(order.value.status)
@@ -356,6 +414,59 @@ onBeforeUnmount(() => {
           <NlStatusChip :status="order.status" :text="order.statusLabel" />
         </div>
         <el-button v-if="order.companionId" type="primary" plain @click="router.push(`/chat/${orderId}`)">联系对方</el-button>
+      </NlCard>
+
+      <!-- 候选陪诊员推荐（V3.4 · T9）
+           ⚠️ 只做推荐，不产生任何订单状态变更 —— 接单权仍在陪诊员。
+              文案必须写明「最终由陪诊员确认接单」，不得出现暗示自动派单的表述。 -->
+      <NlCard v-if="isPending" title="系统正在为你匹配" class="cand-card">
+        <template #extra>
+          <span class="nl-caption nl-text-muted">符合条件 {{ recommendTotal }} 位</span>
+        </template>
+
+        <NlSkeleton v-if="recommendLoading" :count="2" />
+
+        <NlEmpty
+          v-else-if="recommendError"
+          type="network"
+          title="匹配信息加载失败"
+          description="请检查网络后重试"
+          action-text="重试"
+          @action="loadCandidates"
+        />
+
+        <NlEmpty
+          v-else-if="!candidates.length"
+          type="empty"
+          title="暂无匹配候选"
+          description="陪诊员会在大厅看到你的订单，由对方决定是否接单"
+        />
+
+        <template v-else>
+          <ul class="cand">
+            <li v-for="c in candidates" :key="c.companionId" class="cand__item">
+              <div class="cand__head">
+                <span class="cand__name">{{ c.companionName }}</span>
+                <span class="cand__score is-num">综合 {{ c.totalScore }} 分</span>
+              </div>
+              <div class="cand__dims">
+                <span v-for="d in SCORE_DIMS" :key="d.key" class="cand__dim">
+                  {{ d.label }} {{ c[d.key] ?? 0 }}
+                </span>
+              </div>
+              <ul v-if="c.reasons?.length" class="cand__reasons">
+                <li v-for="(r, i) in c.reasons" :key="i">{{ r }}</li>
+              </ul>
+              <ul v-if="c.notes?.length" class="cand__notes">
+                <li v-for="(n, i) in c.notes" :key="i">{{ n }}</li>
+              </ul>
+            </li>
+          </ul>
+        </template>
+
+        <p class="cand-card__note nl-caption nl-text-weak">
+          推荐仅供参考，最终由陪诊员本人确认接单；接单前订单状态不会改变。
+        </p>
       </NlCard>
 
       <!-- 陪诊员 -->
@@ -556,6 +667,86 @@ onBeforeUnmount(() => {
   &__name {
     font-size: var(--nl-font-h3);
     font-weight: 600;
+  }
+}
+
+/* 候选陪诊员推荐（V3.4 · T9） */
+.cand-card {
+  &__note {
+    margin: var(--nl-space-3) 0 0;
+  }
+}
+
+.cand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nl-space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+
+  &__item {
+    padding: var(--nl-space-3);
+    background: var(--nl-bg-sunken);
+    border: 1px solid var(--nl-border);
+    border-radius: var(--nl-radius-card);
+  }
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--nl-space-2);
+  }
+
+  &__name {
+    font-size: var(--nl-font-h3);
+    font-weight: 600;
+    color: var(--nl-text-1);
+  }
+
+  &__score {
+    flex-shrink: 0;
+    font-size: var(--nl-font-h3);
+    font-weight: 700;
+    color: var(--nl-primary-text);
+  }
+
+  /* 维度得分药丸：flex-wrap 兜底，375px 窄屏不横向溢出 */
+  &__dims {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--nl-space-2);
+    margin-top: var(--nl-space-2);
+  }
+
+  &__dim {
+    padding: 2px 10px;
+    font-size: var(--nl-font-caption);
+    color: var(--nl-text-2);
+    background: var(--nl-bg-card);
+    border: 1px solid var(--nl-border);
+    border-radius: var(--nl-radius-pill);
+  }
+
+  &__reasons,
+  &__notes {
+    padding: 0;
+    margin: var(--nl-space-2) 0 0;
+    list-style: none;
+  }
+
+  &__reasons li {
+    font-size: var(--nl-font-caption);
+    color: var(--nl-text-2);
+    line-height: 1.6;
+  }
+
+  /* 降级说明比推荐理由更弱一级：它是「数据缺失」的如实交代 */
+  &__notes li {
+    font-size: var(--nl-font-caption);
+    color: var(--nl-text-3);
+    line-height: 1.6;
   }
 }
 

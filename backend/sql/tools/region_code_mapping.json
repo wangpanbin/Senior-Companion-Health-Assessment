@@ -1,0 +1,14 @@
+{
+  "_comment": "自由文本 → 区域码映射。V3.4 结构化改造的 backfill 依据。格式：<CITY>_<DISTRICT>（全大写拼音）；城市前缀（_ 之前）是「区」这一层。由 gen_region_codes.py 生成 / 校验 backfill SQL。",
+  "_schemaVersion": 1,
+  "regions": [
+    { "code": "HAIKOU_MEILAN",  "city": "HAIKOU",  "district": "MEILAN",  "cityName": "海口市", "districtName": "美兰区", "keywords": ["美兰区"] },
+    { "code": "HAIKOU_LONGHUA", "city": "HAIKOU",  "district": "LONGHUA", "cityName": "海口市", "districtName": "龙华区", "keywords": ["龙华区"] },
+    { "code": "HAIKOU_XIUYING", "city": "HAIKOU",  "district": "XIUYING", "cityName": "海口市", "districtName": "秀英区", "keywords": ["秀英区"] },
+    { "code": "HAIKOU_QONGSHAN","city": "HAIKOU",  "district": "QONGSHAN","cityName": "海口市", "districtName": "琼山区", "keywords": ["琼山区"] },
+    { "code": "SANYA_JIYANG",   "city": "SANYA",   "district": "JIYANG",  "cityName": "三亚市", "districtName": "吉阳区", "keywords": ["吉阳区"] },
+    { "code": "SANYA_TIANYA",   "city": "SANYA",   "district": "TIANYA",  "cityName": "三亚市", "districtName": "天涯区", "keywords": ["天涯区"] },
+    { "code": "DANZHOU_NADA",   "city": "DANZHOU", "district": "NADA",    "cityName": "儋州市", "districtName": "那大镇", "keywords": ["那大镇"] },
+    { "code": "QIONGHAI_JIJI",  "city": "QIONGHAI","district": "JIJI",    "cityName": "琼海市", "districtName": "嘉积镇", "keywords": ["嘉积镇"] }
+  ]
+}

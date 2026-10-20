@@ -192,4 +192,13 @@ public class CompanionOrder extends BaseEntity {
     @Schema(description = "last_urge_at")
     private LocalDateTime lastUrgeAt;
 
+    /**
+     * 订单服务区域码（V3.4 结构化改造）：{@code <CITY>_<DISTRICT>}
+     *
+     * <p>由订单地址的区县文本 backfill 而来；映射不上时为空，
+     * 该维度按「无数据」处理（记 0 并标注），<b>不猜</b>。</p>
+     */
+    @Schema(description = "订单服务区域码（<CITY>_<DISTRICT>），V3.4 新增")
+    private String serviceRegionCode;
+
 }

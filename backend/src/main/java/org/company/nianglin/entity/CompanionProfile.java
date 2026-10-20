@@ -69,6 +69,31 @@ public class CompanionProfile extends BaseEntity {
     private String serviceArea;
 
     /**
+     * 服务区域码（V3.4 结构化改造）：{@code <CITY>_<DISTRICT>}
+     *
+     * <p>城市前缀（{@code _} 之前）是「区」这一层：码相等 = 1.0、同市不同区 = 0.5、跨市 = 0。</p>
+     *
+     * <p>老数据为 {@code null}，读路径回退自由文本包含式匹配（见 {@code RegionMatchRule}）。</p>
+     */
+    @Schema(description = "服务区域码（<CITY>_<DISTRICT>），V3.4 新增，老数据为空")
+    private String serviceRegionCode;
+
+    /**
+     * 陪诊员档案经度
+     *
+     * <p>一期由陪诊员自填或管理员代录；为 {@code null} 时距离维度记 0 并标注「未填写坐标」，
+     * <b>绝不按 (0,0) 推断</b>（见 {@code DistanceMatchRule}）。</p>
+     */
+    @Schema(description = "陪诊员档案经度，V3.4 新增；为空则距离维度不参与评分")
+    private BigDecimal longitude;
+
+    /**
+     * 陪诊员档案纬度
+     */
+    @Schema(description = "陪诊员档案纬度，V3.4 新增；为空则距离维度不参与评分")
+    private BigDecimal latitude;
+
+    /**
      * 可服务时段
      */
     @Schema(description = "可服务时段")

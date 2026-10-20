@@ -2,6 +2,7 @@ package org.company.nianglin.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.config.MatchingProperties;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.ArbitrateDTO;
@@ -117,7 +118,9 @@ class AdminArbitrateTest {
         orderService = new OrderServiceImpl(orderMapper, statusLogMapper, null,
                 null, companionProfileMapper, sysUserMapper, null,
                 null, messageService, null, new ObjectMapper(),
-                transitionService, null, null, null);
+                transitionService, null, null, null,
+                // V3.4 智能调度：本类不碰大厅与候选推荐，两个入参用不到
+                null, new MatchingProperties());
 
         adminService = new AdminServiceImpl(null, companionProfileMapper, sysUserMapper,
                 null, orderMapper, operLogMapper,

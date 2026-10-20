@@ -13,7 +13,7 @@
 #   5. vos 段声明每个 VO 的字段构成：出现在 bindings 里的是指标，
 #      出现在 structural 里的是结构字段 —— 两边都没有的字段会让测试变红。
 
-version: 2
+version: 3
 updatedAt: "2026-10-20"
 
 metrics:
@@ -452,6 +452,87 @@ metrics:
       - vo: CompanionIncomeVO
         field: serviceTotal
 
+  # ==================== 智能调度匹配（V3.4） ====================
+  # 维度得分是「0–1 的原始分 × 100 后的整数」，加权总分 = Σ(维度分 × 权重)。
+  # ⚠️ 权重配置化于 nianglin.matching.*.weight，且启动期校验权重之和 = 1。
+  - key: matching.total_score
+    name: 匹配总分
+    scope: 候选陪诊员对某个订单的加权匹配总分（五维加权）
+    period: 单次匹配（订单与候选人的配对，无时间区间）
+    source: 匹配规则引擎（companion_profile / companion_order / order_checkin / companion_available_slot）
+    formula: "Σ(维度分 × 权重) × 100，权重：区域 30% / 时间 25% / 距离 20% / 服务能力 15% / 评分 10%（配置化于 nianglin.matching.*.weight）"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/order/{id}/recommend-companions"
+    bindings:
+      - vo: CompanionMatchVO
+        field: totalScore
+
+  - key: matching.region_score
+    name: 区域维度得分
+    scope: 候选陪诊员与订单的服务区域匹配程度
+    period: 单次匹配
+    source: companion_profile(service_region_code, service_area) + companion_order(service_region_code, address)
+    formula: "区域码相等 = 100；同市不同区 = 50；跨市 = 0；缺区域码时回退自由文本包含式并降级标注"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/order/{id}/recommend-companions"
+    bindings:
+      - vo: CompanionMatchVO
+        field: regionScore
+
+  - key: matching.time_score
+    name: 时间维度得分
+    scope: 订单就诊时间与候选陪诊员可服务时段的重合程度
+    period: 单次匹配
+    source: companion_available_slot(weekday, start_time, end_time) + companion_profile(available_time)
+    formula: "就诊时间落在可服务时段内 = 100；同日但不在时段内 = 50；其它 = 0；无可服务时段时记 0 并降级标注"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/order/{id}/recommend-companions"
+    bindings:
+      - vo: CompanionMatchVO
+        field: timeScore
+
+  - key: matching.distance_score
+    name: 距离维度得分
+    scope: 候选陪诊员与订单地址的直线距离匹配程度
+    period: 单次匹配
+    source: companion_profile(longitude, latitude) + companion_order(longitude, latitude)
+    formula: "(1 - Haversine距离 / 满量程) × 100，满量程 nianglin.matching.distance-max-meters（默认 30000 米）；陪诊员无坐标时记 0 并标注「未填写坐标」，绝不按 (0,0) 推断"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/order/{id}/recommend-companions"
+    bindings:
+      - vo: CompanionMatchVO
+        field: distanceScore
+
+  - key: matching.skill_score
+    name: 服务能力维度得分
+    scope: 候选陪诊员在订单科室上的历史服务能力
+    period: 单次匹配（数据来自历史累计）
+    source: companion_order(companion_id, department, status)
+    formula: "该陪诊员在该科室的已完成单数 / 满量程 × 100，满量程 nianglin.matching.skill-max-orders（默认 20 单），上限 100"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/order/{id}/recommend-companions"
+    bindings:
+      - vo: CompanionMatchVO
+        field: skillScore
+
+  - key: matching.rating_score
+    name: 评分维度得分
+    scope: 候选陪诊员的平均评分归一化后的得分
+    period: 单次匹配（数据来自历史累计）
+    source: companion_profile(score, user_id)
+    formula: "score / 5 × 100；无有效评分时记 0 并降级标注"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/order/{id}/recommend-companions"
+    bindings:
+      - vo: CompanionMatchVO
+        field: ratingScore
+
 vos:
   - class: ElderHealthOverviewVO
     structural:
@@ -556,3 +637,16 @@ vos:
     structural:
       - periodStart
       - periodEnd
+
+  - class: OrderRecommendVO
+    structural:
+      - orderId
+      - total
+      - candidates
+
+  - class: CompanionMatchVO
+    structural:
+      - companionId
+      - companionName
+      - reasons
+      - notes

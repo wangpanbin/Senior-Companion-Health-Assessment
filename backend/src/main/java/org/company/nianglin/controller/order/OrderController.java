@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.Result;
+import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.OrderCancelDTO;
 import org.company.nianglin.dto.OrderCompleteDTO;
@@ -15,8 +16,12 @@ import org.company.nianglin.dto.OrderCreateDTO;
 import org.company.nianglin.dto.OrderHallQuery;
 import org.company.nianglin.dto.OrderQuery;
 import org.company.nianglin.dto.OrderUrgeDTO;
+import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.dto.OrderRejectDTO;
 import org.company.nianglin.dto.FeeItemCreateDTO;
+import org.company.nianglin.exception.BusinessException;
+import org.company.nianglin.security.SecurityUtils;
+import org.company.nianglin.service.MatchingService;
 import org.company.nianglin.service.OrderFeeItemService;
 import org.company.nianglin.service.FulfillmentService;
 import org.company.nianglin.service.OrderService;
@@ -27,6 +32,7 @@ import org.company.nianglin.vo.OrderFeeItemVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderFulfillmentVO;
+import org.company.nianglin.vo.OrderRecommendVO;
 import org.company.nianglin.vo.OrderUrgeResultVO;
 import org.company.nianglin.vo.OrderVO;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,9 +42,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 陪诊订单接口。
@@ -72,6 +80,7 @@ public class OrderController {
     private final OrderService orderService;
     /** 履约保障（V3.1）——催单 */
     private final FulfillmentService fulfillmentService;
+    private final MatchingService matchingService;
     private final OrderFeeItemService orderFeeItemService;
 
     /* ==================== 查询 ==================== */
@@ -132,6 +141,36 @@ public class OrderController {
     public Result<OrderFulfillmentVO> fulfillmentDetail(
             @Parameter(description = "订单 ID", example = "1001") @PathVariable("id") Long id) {
         return Result.success(orderService.fulfillmentDetail(id));
+    }
+
+    @Operation(summary = "候选陪诊员推荐（V3.4 · 智能调度）",
+            description = "为该订单推荐 Top N 候选陪诊员，按五维加权匹配分排序："
+                    + "区域 30% / 时间 25% / 距离 20% / 服务能力 15% / 评分 10%（权重可配置）。"
+                    + "每条候选都带<b>可解释性</b>：命中理由（reasons）与降级说明（notes），"
+                    + "例如「未填写坐标，距离维度记 0」——<b>不会给出一个没有理由的分数</b>。"
+                    + "仅下单家属可查（他人 3004，非家属角色 403）。"
+                    + "<b>推荐 ≠ 派单</b>：本接口不产生任何订单状态变更，接单权始终在陪诊员手里")
+    @PreAuthorize("hasRole('" + RoleConstants.FAMILY + "')")
+    @GetMapping("/{id}/recommend-companions")
+    public Result<OrderRecommendVO> recommendCompanions(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("id") Long id,
+            @Parameter(description = "返回条数，默认 10，上限 20", example = "10")
+            @RequestParam(value = "limit", required = false) Integer limit) {
+        CompanionOrder order = orderService.requireInvolved(id);
+        // 归属校验：即使角色对了，也必须是「这一单的下单家属」
+        if (!Objects.equals(order.getFamilyId(), SecurityUtils.currentUserId())) {
+            throw new BusinessException(ResultCode.ORDER_NO_PERMISSION,
+                    "只有下单家属可以查看该订单的候选陪诊员");
+        }
+        return Result.success(matchingService.recommendCompanions(order, normalizeLimit(limit)));
+    }
+
+    /** 推荐条数归一化：默认 10，上限 20（非法值一律落到默认值，不报错） */
+    private int normalizeLimit(Integer limit) {
+        if (limit == null || limit < 1) {
+            return 10;
+        }
+        return Math.min(limit, 20);
     }
 
     @Operation(summary = "取消订单",

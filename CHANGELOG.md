@@ -8,6 +8,53 @@
 
 ---
 
+## [V3.4] · 2026-10-20 · 智能调度
+
+让平台**自动找到更合适的陪诊员**，并且每一条推荐都能说出「为什么是他」。
+产品与工程契约见 [spec](docs/spec/V3.4-matching-spec.md) /
+[tickets](docs/spec/V3.4-tickets.md) /
+[ADR-0016](docs/adr/0016-matching-structured-and-explainable.md)。
+
+### Added · 新增
+
+**结构化改造（V7 迁移）**
+
+- `backend/sql/V7__matching_structured.sql`：`companion_profile` 增坐标 + 服务区域码；
+  `companion_order` 增服务区域码；新表 `companion_available_slot`（可服务时段）
+- backfill：自由文本 → 区域码（8 个区县 / 4 个市，**映射不上的留空**）
+- `backend/sql/tools/gen_region_codes.py` + `region_code_mapping.json` —— 映射生成器与校验器
+  （`--check` 机械核对「迁移里手写的 CASE」与「生成器产出」逐字一致）
+
+**匹配三件套（纯函数，无 Spring 上下文）**
+
+- `service/support/matching/`：`MatchingRule` / `MatchingScore` / `MatchingCandidate` / `MatchTarget`
+  + 五条规则（区域 / 时间 / 距离 / 服务能力 / 评分）+ `LegacySlotParser`（自由文本时段回退）
+- `config/MatchingProperties` —— 五个权重配置化，**启动期校验权重之和 = 1**（不等于就启动失败）
+- `service/MatchingService(+Impl)` + `mapper/MatchingMapper` —— 过滤链（工作状态 → 资质 → 区域 → 时段 → 档期冲突）
+
+**接口**
+
+- `GET /api/order/{id}/recommend-companions` —— 家属端候选推荐（Top N + 可解释性）
+- `GET /api/order/hall?sortBy=` —— 开放 `DISTANCE` / `TIME_MATCH`；`RECOMMEND` 换成五维加权
+
+### Changed · 变更
+
+- `OrderServiceImpl#hall`：从 SQL 三级键改为 **Java 侧五维打分 + 内存分页**
+  （响应结构与 `total` 语义**零变更**，变的只有「哪几条排在前面」）
+- 指标字典登记 6 条匹配指标（v1.0 → v1.2）
+- `docs/api/03-order.md` —— 补排序语义与候选推荐端点
+- `docs/adr/0016-*.md` —— 新 ADR：为什么必须先做结构化改造 + 为什么每条推荐都必须可解释
+- 前端：大厅加排序选择器；家属端订单详情加候选展示（标注「推荐 ≠ 派单」）
+
+### 口径决策
+
+- **区域码两级**（`<CITY>_<DISTRICT>`）：码相等 = 1.0；同市不同区 = 0.5；跨市 = 0
+- **「缺数据」与「不匹配」分开**：没填坐标 / 没登记时段 → 放行 + 降级标注，**不淘汰**
+- **`INCOME` 排序仍不开放**：缺真实结算金额口径（决策 D8）
+- **推荐 ≠ 派单**：端点不产生任何订单状态变更，接单权始终在陪诊员手里
+
+---
+
 ## [V3.3] · 2026-10-20 · 陪诊员工作台
 
 把陪诊员端散落的「接单大厅 / 订单列表 / 订单执行 / 收入 / 评价」收成**一个工作台**，
