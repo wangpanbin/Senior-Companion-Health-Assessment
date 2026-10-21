@@ -220,7 +220,7 @@ describe('智能助手 · 提问链路', () => {
     expect(chatAssistantMock.mock.calls[0][0].orderId).toBe(1001)
   })
 
-  it('降级时显示「基础模式」提示', async () => {
+  it('降级时说明这条是标准答案原文', async () => {
     chatAssistantMock.mockResolvedValue({
       answer: '标准答案',
       intent: 'FAQ_PLATFORM',
@@ -230,7 +230,64 @@ describe('智能助手 · 提问链路', () => {
     })
     const wrapper = mountAssistant()
     await ask(wrapper, '陪诊费多少钱')
-    expect(wrapper.text()).toContain('当前为基础模式')
+    // ⚠️ 文案只描述**事实**（这条是标准答案原文），不描述**原因** ——
+    // degraded=true 有两种成因（没配模型 / Python 服务挂掉走 Java 兜底），
+    // 断言「未接入大模型」会把「服务故障」说成「平台没接模型」。
+    expect(wrapper.text()).toContain('以下为平台标准答案原文')
+  })
+})
+
+describe('智能助手 · 失败提示', () => {
+  it('业务错误（限流）显示后端给的真实原因，不说「没响应」', async () => {
+    // 拦截器对业务错误是 reject(new Error(message) + { code })，
+    // code 是 1000 以上的业务码（限流 10001 / 违规 10003）。
+    chatAssistantMock.mockRejectedValue(
+      Object.assign(new Error('提问过于频繁，请稍后再试'), { code: 10001 })
+    )
+    const wrapper = mountAssistant()
+    await ask(wrapper, '陪诊费多少钱')
+
+    expect(wrapper.text()).toContain('提问过于频繁')
+    // 「助手暂时没有响应」会让人以为服务挂了，而真实原因就在旁边提示条上
+    expect(wrapper.text()).not.toContain('助手暂时没有响应')
+  })
+
+  it('网络异常没有业务码，仍显示中文兜底文案', async () => {
+    chatAssistantMock.mockRejectedValue(new Error('Network Error'))
+    const wrapper = mountAssistant()
+    await ask(wrapper, '陪诊费多少钱')
+
+    expect(wrapper.text()).toContain('助手暂时没有响应')
+    expect(wrapper.text()).not.toContain('Network Error')
+  })
+
+  it('HTTP 层错误的 code 是字符串（axios 的 ERR_BAD_REQUEST），仍走中文兜底', async () => {
+    // axios 的 HTTP 层错误带的是**字符串** code，不是业务码数字。
+    // 判据要是「数字」而不是「某个阈值」，才能同时放过 400 这类小业务码、
+    // 又不把英文技术文案漏给用户。
+    chatAssistantMock.mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 403'), {
+        code: 'ERR_BAD_REQUEST'
+      })
+    )
+    const wrapper = mountAssistant()
+    await ask(wrapper, '陪诊费多少钱')
+
+    expect(wrapper.text()).toContain('助手暂时没有响应')
+    expect(wrapper.text()).not.toContain('Request failed with status code 403')
+  })
+
+  it('小于 1000 的业务码（400 参数错误）同样显示后端给的真实原因', async () => {
+    // 通用业务码 400 也在 1000 以下 —— 曾经被 `code >= 1000` 的判据漏掉，
+    // 后端给的真实原因被「助手暂时没有响应」吞了。
+    chatAssistantMock.mockRejectedValue(
+      Object.assign(new Error('问题长度不能超过 500 字'), { code: 400 })
+    )
+    const wrapper = mountAssistant()
+    await ask(wrapper, '陪诊费多少钱')
+
+    expect(wrapper.text()).toContain('问题长度不能超过 500 字')
+    expect(wrapper.text()).not.toContain('助手暂时没有响应')
   })
 })
 
@@ -248,8 +305,8 @@ describe('智能助手 · 合规红线', () => {
 
     expect(wrapper.text()).toContain('请咨询接诊医生')
     expect(wrapper.text()).toContain('查看线下就医指引')
-    // 医疗拒答不是降级 —— 不该显示「基础模式」
-    expect(wrapper.text()).not.toContain('当前为基础模式')
+    // 医疗拒答不是降级 —— 不该显示「标准答案原文」提示
+    expect(wrapper.text()).not.toContain('以下为平台标准答案原文')
   })
 
   it('页面文本不得出现「已指派 / 已分配 / 自动派单」', async () => {

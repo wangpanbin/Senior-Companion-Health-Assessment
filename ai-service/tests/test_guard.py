@@ -222,6 +222,78 @@ def test_all_assignment_words_are_blocked(word: str) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# 距离措辞 —— ADR-0016 决策 3 的代码层兜底
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_distance_wording_is_corrected_to_truthful_form() -> None:
+    """「离得近」→ 纠正成「距离维度无法计算」，而不是笼统免责。
+
+    陪诊员坐标全是空，距离维度恒为 0 —— 把「算不出来」说成「很近」，
+    正在挑陪诊员的家属会据此做决定（ADR-0016 决策 3）。
+    """
+    answer = "这位陪诊员离得近，接诊方便。"
+    scan = guard.scan_output(answer)
+    assert scan.blocked is True
+    assert scan.kind == "distance"
+    assert "离得近" not in scan.text
+    assert "距离维度无法计算" in scan.text
+    # 其余内容保留
+    assert "接诊方便" in scan.text
+
+
+@pytest.mark.parametrize("phrase", guard.DISTANCE_FORBIDDEN_PHRASES)
+def test_all_distance_phrases_are_blocked(phrase: str) -> None:
+    """每一个距离措辞禁用词都要拦下（prompt 约束 5 与 PRD 验收条款的并集）。"""
+    scan = guard.scan_output(f"这位陪诊员{phrase}，推荐给您。")
+    assert scan.blocked is True
+    assert scan.kind == "distance"
+    assert phrase not in scan.text
+    assert "距离维度无法计算" in scan.text
+
+
+def test_distance_replacement_does_not_trigger_the_guard_again() -> None:
+    """纠正后的串**自身不含任何禁用词**。
+
+    否则会出现「纠正出来的文本又被自己拦下」的死循环。
+    """
+    for phrase in guard.DISTANCE_FORBIDDEN_PHRASES:
+        assert phrase not in guard.DISTANCE_REPLACEMENT
+    # 纠正一次之后不再命中
+    corrected = f"这位陪诊员{guard.DISTANCE_FORBIDDEN_PHRASES[0]}，推荐给您。"
+    once = guard.scan_output(corrected)
+    twice = guard.scan_output(once.text)
+    assert twice.blocked is False
+    assert twice.text == once.text
+
+
+def test_assignment_and_distance_are_both_corrected() -> None:
+    """两种措辞**同时**出现时都要纠正 —— 不能先命中一种就早退。
+
+    「已指派…就在附近」是最坏组合：两个错误叠加，
+    早退会让距离那一半漏出去。
+    """
+    answer = "系统已指派李建军，他就在附近。"
+    scan = guard.scan_output(answer)
+    assert scan.blocked is True
+    assert "已指派" not in scan.text
+    assert "就在附近" not in scan.text
+    assert "距离维度无法计算" in scan.text
+    assert guard.RECOMMEND_DISCLAIMER in scan.text
+
+
+def test_distance_notes_text_is_not_blocked() -> None:
+    """降级说明原文「未填写坐标，距离维度记 0」**不得**被误伤。
+
+    它含「距离」但不含任何禁用措辞 —— 拦下它等于把真相也拦了。
+    """
+    answer = "命中理由：服务区域匹配。降级说明：未填写坐标，距离维度记 0。"
+    scan = guard.scan_output(answer)
+    assert scan.blocked is False
+    assert scan.text == answer
+
+
+# ──────────────────────────────────────────────────────────────────────
 # 固定文案的自检 —— 一个容易踩、且极难排查的坑
 # ──────────────────────────────────────────────────────────────────────
 

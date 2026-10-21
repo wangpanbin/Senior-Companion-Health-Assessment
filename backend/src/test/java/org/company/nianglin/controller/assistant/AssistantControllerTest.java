@@ -65,7 +65,7 @@ class AssistantControllerTest {
 
     @Test
     @DisplayName("正常提问 → 200 + 统一响应信封")
-    void shouldReturnSuccessEnvelope() throws Exception {
+    void chatShouldReturnSuccessEnvelope() throws Exception {
         AssistantChatVO vo = new AssistantChatVO()
                 .setAnswer("工作日白天 128.00 元，夜间或周末 158.00 元。")
                 .setIntent("FAQ_PLATFORM")
@@ -85,7 +85,7 @@ class AssistantControllerTest {
 
     @Test
     @DisplayName("问题为空 → 400 + PARAM_ERROR（业务失败仍是 HTTP 200 约定之外的那一类：参数不合法）")
-    void shouldRejectBlankQuestion() throws Exception {
+    void chatShouldRejectBlankQuestion() throws Exception {
         mockMvc.perform(post("/api/assistant/chat")
                         .contentType("application/json")
                         .content("{\"question\":\"\"}"))
@@ -95,7 +95,7 @@ class AssistantControllerTest {
 
     @Test
     @DisplayName("问题超长（>500） → 400 + PARAM_ERROR")
-    void shouldRejectTooLongQuestion() throws Exception {
+    void chatShouldRejectTooLongQuestion() throws Exception {
         String longQuestion = "陪".repeat(501);
         mockMvc.perform(post("/api/assistant/chat")
                         .contentType("application/json")
@@ -106,7 +106,7 @@ class AssistantControllerTest {
 
     @Test
     @DisplayName("历史轮数超限（>12 条 = >6 轮） → 400 + PARAM_ERROR")
-    void shouldRejectTooManyHistoryTurns() throws Exception {
+    void chatShouldRejectTooManyHistoryTurns() throws Exception {
         String body = """
                 {"question":"陪诊费多少钱","history":[
                   {"role":"user","content":"1"},{"role":"assistant","content":"2"},
@@ -126,7 +126,7 @@ class AssistantControllerTest {
 
     @Test
     @DisplayName("历史刚好 12 条（6 轮） → 200，**不能**被拦")
-    void shouldAcceptTwelveHistoryMessages() throws Exception {
+    void chatShouldAcceptTwelveHistoryMessages() throws Exception {
         // ⚠️ 曾经踩过的坑：后端按「条」卡却写成 6，前端每轮发 2 条，
         //    结果问到第 5 轮就 400 —— 用得越久越坏，而只测 1–2 轮时完全看不出来。
         AssistantChatVO vo = new AssistantChatVO()
@@ -153,7 +153,7 @@ class AssistantControllerTest {
 
     @Test
     @DisplayName("角色规则：只有 FAMILY 能调（老人账号只读是项目硬规则）")
-    void shouldRestrictToFamilyRole() throws Exception {
+    void chatShouldRestrictToFamilyRole() throws Exception {
         Method method = AssistantController.class.getMethod("chat", AssistantChatDTO.class);
         PreAuthorize annotation = method.getAnnotation(PreAuthorize.class);
         assertNotNull(annotation, "chat 方法必须有 @PreAuthorize，否则任何登录角色都能调");
@@ -163,7 +163,7 @@ class AssistantControllerTest {
 
     @Test
     @DisplayName("路由前缀必须是 /api/assistant（不能叫 chat —— 那是 M13 订单聊天）")
-    void shouldUseAssistantPrefix() throws Exception {
+    void chatShouldUseAssistantPrefix() throws Exception {
         org.springframework.web.bind.annotation.RequestMapping mapping =
                 AssistantController.class.getAnnotation(org.springframework.web.bind.annotation.RequestMapping.class);
         assertNotNull(mapping, "控制器必须声明 @RequestMapping");

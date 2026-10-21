@@ -164,7 +164,7 @@ class AssistantServiceTest {
 
     @Test
     @DisplayName("给了 orderId → 装配订单上下文与候选陪诊员（候选原样来自规则引擎）")
-    void shouldAssembleOrderAndCandidates() throws Exception {
+    void chatShouldAssembleOrderAndCandidates() throws Exception {
         startPython(200, """
                 {"answer":"好的","intent":"RECOMMEND_COMPANION","actions":[],"sources":[],"degraded":true}
                 """);

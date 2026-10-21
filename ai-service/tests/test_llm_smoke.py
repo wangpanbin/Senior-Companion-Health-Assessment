@@ -3,6 +3,21 @@
 **只在配置了模型时运行**（``LLM_BASE_URL`` + ``LLM_MODEL`` 都在）。
 没配就整组跳过 —— 核心测试不依赖模型（见 ``test_chat.py``）。
 
+## ⚠️ 判断「配没配」必须走配置对象，不能走 os.getenv（V3.7 联调实测）
+
+``pydantic-settings`` 读 ``.env`` 文件，但**不会**把 ``.env`` 的内容注入
+``os.environ``。所以旧写法 ``os.getenv("LLM_BASE_URL")`` 读不到 ``.env`` 里的值：
+
+- 文档教用户写 ``.env``（``README.md`` 的标准做法）；
+- 用户照做 → 服务确实启用了模型（启动日志写「已启用」）；
+- 但这组测试仍判定「没配模型」→ **整组跳过**。
+
+症状是「模型明明在跑，冒烟测试却从没绿过」——
+测试自己把唯一的真模型验证关掉了，而没人发现。
+
+所以这里统一走 :func:`app.config.get_settings`（与运行时读的是同一份配置），
+``os.environ`` 仍作为更高优先级被它一并覆盖。
+
 ## 这一组在验什么
 
 不是「模型答得好不好」（那不可测），而是三件**工程上可测**的事：
@@ -17,8 +32,6 @@
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from app import guard
@@ -27,8 +40,11 @@ from app.llm import LangChainProvider, NullProvider, build_provider
 from app.schemas import ChatRequest
 from app.service import AssistantService
 
+#: 与运行时同一份配置（读 ``.env`` + 环境变量）。
+_SETTINGS = get_settings()
+
 pytestmark = pytest.mark.skipif(
-    not (os.getenv("LLM_BASE_URL") and os.getenv("LLM_MODEL")),
+    not _SETTINGS.llm_enabled,
     reason="未配置 LLM_BASE_URL / LLM_MODEL —— 核心测试不依赖模型",
 )
 

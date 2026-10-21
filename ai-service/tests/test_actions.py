@@ -40,10 +40,17 @@ def test_extract_visit_time_with_weekday() -> None:
     assert actions.extract_visit_time("下周三上午9点", today=today) == "2026-10-28 09:00:00"
 
 
-def test_extract_visit_time_defaults_to_morning_when_time_missing() -> None:
-    """只有日期没有时刻 → 默认上午 9 点。"""
+def test_extract_visit_time_requires_a_time_too() -> None:
+    """只有日期没有时刻 → **抽不到**。猜一个时刻比留空更危险。
+
+    ⚠️ 曾经默认填 ``09:00:00``。那个时刻不是用户说的，是平台编的，
+    而它会被前端写进草稿、最终成为订单的就诊时间 ——
+    家属看到「下周三 09:00」多半不会意识到这个 09:00 是猜的。
+    与 spec §4.11「payload **只带抽到的**」直接冲突。
+    """
     today = date(2026, 10, 21)
-    assert actions.extract_visit_time("2026-10-28", today=today) == "2026-10-28 09:00:00"
+    assert actions.extract_visit_time("2026-10-28", today=today) is None
+    assert actions.extract_visit_time("下周三", today=today) is None
 
 
 def test_extract_visit_time_requires_a_date() -> None:
@@ -59,7 +66,7 @@ def test_extract_visit_time_returns_none_for_unrelated_text() -> None:
 
 def test_extract_draft_only_includes_found_fields() -> None:
     """只带抽到的字段 —— 前端只写存在的字段。"""
-    extraction = actions.extract_draft("去海南省人民医院心内科")
+    extraction = actions.extract_draft("去海南省人民医院心内科", today=date(2026, 10, 21))
     payload = extraction.to_payload()
     assert payload["hospital"] == "海南省人民医院"
     assert payload["department"] == "心内科"
@@ -67,9 +74,25 @@ def test_extract_draft_only_includes_found_fields() -> None:
     assert "elderId" not in payload
 
 
+def test_extract_draft_does_not_invent_a_visit_time() -> None:
+    """只有日期没有时刻 → 草稿里**不得**出现 visitTime。
+
+    这条锁的是「平台不替用户编时间」—— 草稿里的每个字段都必须是用户说过的。
+    """
+    extraction = actions.extract_draft(
+        "下周三去海南省人民医院心内科", today=date(2026, 10, 21)
+    )
+    payload = extraction.to_payload()
+    assert payload["hospital"] == "海南省人民医院"
+    assert payload["department"] == "心内科"
+    assert "visitTime" not in payload
+
+
 def test_extract_draft_with_single_elder() -> None:
     extraction = actions.extract_draft(
-        "去海南省人民医院心内科", elders=[{"id": 401, "name": "张*"}]
+        "去海南省人民医院心内科",
+        elders=[{"id": 401, "name": "张*"}],
+        today=date(2026, 10, 21),
     )
     assert extraction.elder_id == 401
     assert extraction.elder_name == "张*"
@@ -79,11 +102,12 @@ def test_extract_draft_with_multiple_elders_leaves_elder_unset() -> None:
     extraction = actions.extract_draft(
         "去海南省人民医院心内科",
         elders=[{"id": 401, "name": "张*"}, {"id": 402, "name": "李*"}],
+        today=date(2026, 10, 21),
     )
     assert extraction.elder_id is None
 
 
 def test_extract_draft_empty() -> None:
-    extraction = actions.extract_draft("陪诊费多少钱")
+    extraction = actions.extract_draft("陪诊费多少钱", today=date(2026, 10, 21))
     assert extraction.is_empty() is True
     assert extraction.to_payload() == {}
