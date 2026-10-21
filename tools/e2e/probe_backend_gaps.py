@@ -34,7 +34,7 @@ import urllib.request
 import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _probe_http import read_token, http  # noqa: E402  共享 storageState + HTTP
+from _probe_http import BASE, read_token, http  # noqa: E402  共享 storageState + HTTP
 
 # 隐私红线：列表 VO 里一旦出现这些字段就是回归
 FORBIDDEN_IN_LIST = ["familyId", "elderId", "companionId", "address", "remark", "version"]

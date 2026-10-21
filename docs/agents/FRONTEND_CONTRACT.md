@@ -564,17 +564,26 @@ onBeforeUnmount(() => polling?.stop())
 
 ### 10.8 种子数据分布（用于判断页面「该显示几条」）
 
+> 📌 **数据真源**：`backend/sql/V2__seed_data.sql`（`medication_task` / `companion_profile` / `companion_order` / `complaint` 都**只在这一个文件里 INSERT**，V3/V4 未再插入）。
+> **核对方式**：只读 SQL（`SELECT ... GROUP BY`），不要 `MAX(id)-N` 猜。
+> **本节数值实测于 2026-10-21**（开发库已复位到 V2 种子基线）。
+> ⚠️ `V2__seed_data.sql` 自 `6bc37c5`（2026-09-15 骨架初始化）起**从未修改过** —— 所以下面的数不是「旧快照」，就是种子的真实分布。
+
 - **订单**（共 64）：`PENDING` 6 / `ACCEPTED` 8 / `IN_SERVICE` 4 / `COMPLETED` 12 / `REVIEWED` 31 / `CANCELLED` 3。
-  待接单样本 id `1001`–`1006`，费用 98 / 128 / 158 / 188 / 218。
+  待接单样本 id `1001`–`1006`，费用 98 / 128 / 158 / 188 / 218 / **248**（6 个订单 6 个费用）。
   陪诊员端「待接单」应显示 **6 条**。
 - **fam001(101)** 只绑定了老人 **401**（`张德海`，MALE，`BOUND`，`SELF`，`is_default=1`）。
   另有一条 **`UNBOUND`** 关系指向 431（解绑边界样本）。
   fam001 名下订单只有 **2 条**：`1031`(REVIEWED) 与 `1001`(PENDING)。
 - **comp001(301)**：`audit_status=APPROVED`、`work_status=AVAILABLE`、`score=4.00`、`order_count=18` → **可以接单**。
-- **服药任务**：`MISSED` 213 / `PENDING` 12 / `TAKEN` 338。老人 401 在 `2026-09-16` 的任务**全是 `MISSED`**
-  （漏服扫描器已跑过，不是缺陷）。
-- **投诉**：`PENDING` 10 / `PROCESSING` 6 / `RESOLVED` 11 / `REJECTED` 5。
-- **资质申请**：`companion_profile` 24 APPROVED / 4 PENDING / 2 REJECTED。
+  （`companion_profile.id=601`，`user_id=301`；账号名是 `comp001`。）
+- **服药任务**（共 **520**）：`MISSED` **193** / `PENDING` **0** / `TAKEN` **327**。
+  老人 401 的任务共 **12** 条：`MISSED` **7** / `TAKEN` **5**（不是「全是 MISSED」；漏服扫描器跑过的那些才会变 `MISSED`）。
+- **投诉**（共 32）：`PENDING` **9** / `PROCESSING` **7** / `RESOLVED` 11 / `REJECTED` 5。
+- **资质申请**（`companion_profile` 共 **30**）：`audit_status` 为 `APPROVED` **25**（其中 `work_status=AVAILABLE` **22**、`REST` **3**）/ `PENDING` **3** / `REJECTED` **2**。
+
+> ⚠️ 上面这组数在 2026-10-21 之前**是错的**（用药任务写成 563、资质申请写成 24/4/2、投诉写成 10/6、待接单费用漏了 248）。
+> 改这节时先按上面的「核对方式」查一遍库，别照抄旧数 —— 照抄会把「数据漂移」误判成缺陷。
 
 ### 10.9 连库自查（PowerShell，密码走环境变量）
 
