@@ -29,6 +29,20 @@ foreach ($svc in @('MySQL80', 'Redis')) {
 }
 
 Write-Host "== 2) 后端（8080） ==" -ForegroundColor Cyan
+# ⚠️ **必须显式给 SPRING_PROFILES_ACTIVE**：
+#    application.yml 的 `spring.profiles.active: ${SPRING_PROFILES_ACTIVE:}` **刻意不给默认值**
+#    （留 dev 兜底会让漏配的生产直接以开发配置启动：SQL 明文日志 + 接口文档全开 + 开发默认密钥，
+#    三条高危同时落地）。漏配时的表现是**应用打完 Spring Boot banner 就以退出码 1 静默结束，
+#    stderr 全空、无堆栈**（此时日志系统还没接管，异常被吞）—— 排查极难。
+#    本脚本只用于本机联调（会拉起 MySQL/Redis 的 Windows 服务、用 mvn spring-boot:run），
+#    所以用户没设时兜底为 dev；已设则沿用，不覆盖。
+#    🔒 生产环境绝不能依赖这个兜底 —— 必须显式 SPRING_PROFILES_ACTIVE=prod。
+if (-not $env:SPRING_PROFILES_ACTIVE) {
+  $env:SPRING_PROFILES_ACTIVE = 'dev'
+  Write-Host '  SPRING_PROFILES_ACTIVE 未设置 -> 本机联调兜底为 dev' -ForegroundColor Yellow
+} else {
+  Write-Host "  SPRING_PROFILES_ACTIVE = $env:SPRING_PROFILES_ACTIVE（沿用你已设的值）"
+}
 # ⚠️ 必须 clean：target/ 可能残留 Eclipse(ECJ) 编译的、缺 Lombok 生成的 .class，
 #    表现为启动报 `Unresolved compilation problems: The blank final field ... not initialized`。
 #    mvn compile 会误判「Nothing to compile」而不修 —— 只有 clean 才能重编。
