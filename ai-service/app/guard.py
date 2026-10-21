@@ -6,7 +6,7 @@
 |---|---|---|
 | 1 输入 | :func:`scan_input` | 医疗意图 → 直接拒答，**不经 LLM**；辱骂 / 引流 → 抛 ``IllegalQuestion`` |
 | 2 Prompt | ``app/prompts.py`` | system prompt 写死约束（只基于 facts、不得美化 notes 等） |
-| 3 输出 | :func:`scan_output` | 命中共享禁用词表 → **整段替换**为拒答模板；命中派单措辞 → 词语级纠正 |
+| 3 输出 | :func:`scan_output` | 命中共享禁用词表 → **整段替换**为拒答模板；命中派单措辞 → 词语级纠正；命中距离措辞 → 词语级纠正 |
 
 ## 两种拦截为什么处理方式不同
 
@@ -16,6 +16,11 @@
 - **派单措辞**（「已指派」「已分配」「自动派单」）：这是**产品边界**问题而不是合规红线，
   纠正后语义依然正确（推荐 ≠ 派单，但推荐本身是允许说的）。所以做**词语级纠正**，
   保留其余内容，再追加一句免责 —— 整段丢掉会让家属白问一次。
+- **距离措辞**（「离得近」「就在附近」…）：同样是**事实准确性**问题而不是合规红线，
+  但它比派单措辞更危险 —— 派单措辞只是把「推荐」说成了「已安排」，
+  而距离措辞是**把「算不出来」说成了「很近」**。正在挑陪诊员的家属会据此做决定。
+  所以也做词语级纠正，但**替换成「距离维度无法计算」**这个真实说法，
+  而不是笼统的免责句。
 
 ## 一个必须自己检查的坑
 
@@ -119,6 +124,34 @@ ASSIGNMENT_WORD_FIXES: dict[str, str] = {
     "已分配": "推荐",
     "自动派单": "自动推荐",
 }
+
+#: 距离措辞禁用词 —— ADR-0016 决策 3。
+#:
+#: 陪诊员坐标目前全是空，所以距离维度对所有候选人恒为 0，
+#: ``notes`` 里写的是「未填写坐标，距离维度记 0」。
+#: 把这件事说成「离得近」「就在附近」是**把算不出来说成了很近** ——
+#: 正在挑陪诊员的家属会据此做决定，所以必须拦。
+#:
+#: ⚠️ 这条纪律原先只写在 prompt 里（约束 5），代码层没有兜底：
+#: 模型偶尔不遵守时，「就在附近」会原样出现在给家属的回答里。
+#: prompt 是「请求模型遵守」的约定，代码才是「模型不遵守也拦得住」的保证。
+#:
+#: 词表取自 prompt 约束 5 与 PRD 验收条款的**并集**。
+DISTANCE_FORBIDDEN_PHRASES: tuple[str, ...] = (
+    "距离近",
+    "距离很近",
+    "距离较近",
+    "离得近",
+    "离您很近",
+    "离你很近",
+    "就在附近",
+)
+
+#: 距离措辞的纠正目标 —— 与 prompt 约束 5 要求的表述逐字一致。
+#:
+#: ⚠️ 这个串**自身不含任何禁用词**（它含「距离」但不含「距离近」「离得近」
+#: 「就在附近」），所以纠正后的文本不会再次触发本护栏。
+DISTANCE_REPLACEMENT = "距离维度无法计算（陪诊员尚未填写坐标）"
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -231,34 +264,63 @@ def find_assignment_word(text: str) -> str | None:
     return None
 
 
+def find_distance_phrase(text: str) -> str | None:
+    """查找距离措辞禁用词。命中返回该词。"""
+    if not text:
+        return None
+    for phrase in DISTANCE_FORBIDDEN_PHRASES:
+        if phrase in text:
+            return phrase
+    return None
+
+
 def scan_output(text: str) -> OutputScan:
     """第 3 层护栏。
 
     - 命中**共享禁用词表** → 整段替换为 :data:`REFUSAL_TEMPLATE`；
     - 命中**派单措辞** → 词语级纠正 + 追加 :data:`RECOMMEND_DISCLAIMER`；
+    - 命中**距离措辞** → 词语级纠正为「距离维度无法计算」；
     - 文本为空 → 原样返回（调用方负责回落到 FAQ 原文）。
+
+    ⚠️ **派单措辞与距离措辞不早退**：一段话可能同时命中两种。
+    早退会让「先命中派单措辞」的那段话**跳过**距离纠正 ——
+    于是「已指派…就在附近」这种最坏组合反而能漏出去。
+    两种纠正都要跑。
     """
     if not text:
         return OutputScan(text=text)
 
-    # 医疗内容：整段拒答
+    # 医疗内容：整段拒答（命中即止，后面的内容都没有意义了）
     for word in _MEDICAL_ADVICE_WORDS:
         if word in text:
             return OutputScan(
                 text=REFUSAL_TEMPLATE, blocked=True, hit=word, kind="medical"
             )
 
+    corrected = text
+    hit: str | None = None
+    kind: str | None = None
+
     # 派单措辞：词语级纠正
-    hit = find_assignment_word(text)
-    if hit:
-        corrected = text
+    assignment_hit = find_assignment_word(corrected)
+    if assignment_hit:
         for bad, good in ASSIGNMENT_WORD_FIXES.items():
             corrected = corrected.replace(bad, good)
         if RECOMMEND_DISCLAIMER not in corrected:
             corrected = f"{corrected}\n\n{RECOMMEND_DISCLAIMER}"
-        return OutputScan(
-            text=corrected, blocked=True, hit=hit, kind="assignment"
-        )
+        hit = assignment_hit
+        kind = "assignment"
+
+    # 距离措辞：词语级纠正（把「算不出来」纠正回真实说法）
+    for phrase in DISTANCE_FORBIDDEN_PHRASES:
+        if phrase in corrected:
+            corrected = corrected.replace(phrase, DISTANCE_REPLACEMENT)
+            if hit is None:
+                hit = phrase
+                kind = "distance"
+
+    if kind is not None:
+        return OutputScan(text=corrected, blocked=True, hit=hit, kind=kind)
 
     return OutputScan(text=text)
 
@@ -269,6 +331,8 @@ __all__ = [
     "ASSIGNMENT_WORD_FIXES",
     "CLARIFY_TEMPLATE",
     "ComplianceWordsError",
+    "DISTANCE_FORBIDDEN_PHRASES",
+    "DISTANCE_REPLACEMENT",
     "IllegalQuestion",
     "InputVerdict",
     "MEDICAL_INTENT_HINT",
@@ -278,6 +342,7 @@ __all__ = [
     "REFUSAL_TEMPLATE",
     "find_abusive",
     "find_assignment_word",
+    "find_distance_phrase",
     "find_medical_intent",
     "medical_advice_words",
     "sensitive_words",

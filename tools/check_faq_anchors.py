@@ -13,7 +13,7 @@
 ⑤ source 指向的文件真实存在
 ⑥ **anchor 的标题文本能在 source 文件里逐字找到**（本脚本的核心价值，见下）
 ⑦ answer 里不含医疗建议类禁用词
-⑧ keywords 非空且至少 1 条
+⑧ keywords 非空，且不超过每条目上限（见 MAX_KEYWORDS_PER_ENTRY）
 
 为什么要校验 anchor
 ------------------
@@ -30,13 +30,16 @@ FAQ 还在原地，但引用已经指不到任何地方 —— 家属点进去�
 
 与其它门禁的关系
 ----------------
-第 ⑦ 项的禁用词表与
+第 ⑦ 项的禁用词表**直接读**单一真源
 `backend/src/main/resources/compliance/medical-advice-words.txt`
-是**同一份词表，必须两边同步**：那份文件是单一真源（Java 侧
-`ComplianceCheckUtil` 与 Python 侧 `ai-service/app/paths.py` 都在读它）。
-本脚本内嵌一份副本只为**离线可跑**（不依赖后端资源目录是否随包发布）。
-一旦两边分叉，FAQ 里就会出现能被输出护栏整段拦掉的答案 —— 降级模式下
-家属什么也拿不到，而且是从自己写的答案里被拦掉的。
+（Java 侧 `ComplianceCheckUtil` 与 Python 侧 `ai-service/app/paths.py`
+读的是同一个文件）。
+
+⚠️ **本脚本不再内嵌词表副本。**
+内嵌副本看起来「离线可跑」，实际是埋了一个静默分叉：改了真源、这份副本没改，
+FAQ 里就会出现能被输出护栏整段拦掉的答案 —— 降级模式下家属什么也拿不到，
+而且是从自己写的答案里被拦掉的，**而这道门禁还显示通过**。
+词表是合规红线，宁可让门禁红，也不让它查一份过期副本。
 
 零依赖
 ------
@@ -57,37 +60,32 @@ MIN_ENTRY_COUNT = 25
 #: 每条必需的字段。
 REQUIRED_FIELDS = ("id", "intent", "question", "keywords", "answer", "source", "anchor")
 
+#: 每条目关键词数上限。
+#:
+#: ⚠️ 这里原先是「3–6 个」—— 那是**手工设计**关键词时的口径（原始 140 词 / 30 条 = 4.7 个）。
+#: 2026-10-21 引入大模型生成的问法池之后，关键词要覆盖 179 条口语化问法，
+#: 3–6 个压不住：实测把上限压到 6，问法池召回率掉到 **86.7%**（达不到 95% 目标线）。
+#:
+#: 关键词是**子串匹配** —— 多一个词就多一次误命中的机会，所以要设上限而不是放开。
+#: 实测扫描（180 条问法池）：
+#:   上限  8 → 召回 86.7%　10 → 94.4%　12 → 95.6%　14 → 96.7%（与不限同值）
+#: 取 14：既过 95% 目标线，又比「不限」少 5 个关键词。
+#: 详见 ``docs/spec/V3.7-faq-question-pool.md``。
+MAX_KEYWORDS_PER_ENTRY = 14
+
 #: id 必须是小写短横线（faq-order-cancel-01 这种）。
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
-#: 医疗建议类禁用词 —— 与
-#: `backend/src/main/resources/compliance/medical-advice-words.txt` 是同一份。
+#: 医疗建议类禁用词的**单一真源**（Java `ComplianceCheckUtil` /
+#: Python `ai-service/app/paths.py` 读的都是这一个文件）。
 #:
-#: ⚠️ **两边必须同步**。那份文件是单一真源（Java `ComplianceCheckUtil` /
-#: Python `ai-service/app/paths.py` 都在读它），这里内嵌副本只为离线可跑。
-#: 改了那边就要改这里，否则 FAQ 里会出现被输出护栏整段替换成拒答模板的答案。
-#:
-#: 词表刻意「宁可误拒」：被拒时用户能看到具体命中的词，改写成本很低；
-#: 而漏放一条「建议加量」的代价无法挽回。
-MEDICAL_ADVICE_WORDS = (
-    "诊断",
-    "确诊",
-    "疑似",
-    "病情判断",
-    "处方",
-    "开具",
-    "开药",
-    "配药",
-    "建议服用",
-    "建议使用",
-    "换药",
-    "停药",
-    "加量",
-    "减量",
-    "剂量",
-    "服用方法",
-    "用药方案",
+#: 格式：一行一个词；空行与 `#` 开头的行被忽略 —— 与两侧的解析口径一致。
+COMPLIANCE_WORDS_PATH = (
+    ROOT / "backend" / "src" / "main" / "resources" / "compliance" / "medical-advice-words.txt"
 )
+
+#: 词数下限 —— 低于此值说明读到了错文件（与 Java / Python 侧同口径）。
+MIN_COMPLIANCE_WORDS = 10
 
 #: 助手输出里同样不得出现的派单措辞（与 ADR-0016 决策 4.4 一致）。
 #: 属于产品边界而非合规红线，但 FAQ 答案同样会被输出护栏处理。
@@ -105,6 +103,26 @@ failures = []
 def fail(message):
     """登记一条失败项。"""
     failures.append(message)
+
+
+def load_compliance_words(path):
+    """读**共享词表**（单一真源），返回词元组。
+
+    读不到 / 词数异常 → 抛错。这道门禁自己读不到词表时**必须红**，
+    否则它会「什么都不查还显示通过」—— 那比没有这道门禁更危险。
+    """
+    if not path.is_file():
+        raise FileNotFoundError("合规词表不存在：{}".format(path))
+    words = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        words.append(line)
+    if len(words) < MIN_COMPLIANCE_WORDS:
+        raise ValueError(
+            "合规词表词数异常：{} < {}".format(len(words), MIN_COMPLIANCE_WORDS))
+    return tuple(words)
 
 
 def load_entries():
@@ -136,7 +154,16 @@ def main():
         print("❌ {}".format(error))
         return 1
 
+    try:
+        medical_words = load_compliance_words(COMPLIANCE_WORDS_PATH)
+    except (OSError, ValueError) as exc:
+        print("❌ 共享合规词表读取失败：{}".format(exc))
+        print("   来源：{}".format(COMPLIANCE_WORDS_PATH.relative_to(ROOT).as_posix()))
+        print("   这道门禁必须读到真源才有效 —— 读不到就红，绝不跳过。")
+        return 1
+
     print("✅ ① FAQ 文件存在且是合法 JSON 数组（{} 条）".format(len(entries)))
+    print("   ⑦ 的禁用词表读自共享真源（{} 词）".format(len(medical_words)))
 
     if len(entries) < MIN_ENTRY_COUNT:
         fail("FAQ 条目数不足：{} 条 < 下限 {} 条".format(len(entries), MIN_ENTRY_COUNT))
@@ -177,12 +204,13 @@ def main():
             fail("{} keywords 必须是非空数组".format(tag))
         elif not all(isinstance(kw, str) and kw.strip() for kw in keywords):
             fail("{} keywords 里存在空值或非字符串".format(tag))
-        elif not 3 <= len(keywords) <= 6:
-            print("💡 {} keywords 有 {} 个，建议 3–6 个口语短语".format(tag, len(keywords)))
+        elif len(keywords) > MAX_KEYWORDS_PER_ENTRY:
+            print("💡 {} keywords 有 {} 个，超过上限 {}".format(
+                tag, len(keywords), MAX_KEYWORDS_PER_ENTRY))
 
-        # ⑦ answer 不含禁用词
+        # ⑦ answer 不含禁用词（词表读自共享真源）
         answer = str(item["answer"])
-        hits = [word for word in MEDICAL_ADVICE_WORDS if word in answer]
+        hits = [word for word in medical_words if word in answer]
         if hits:
             fail("{} answer 命中医疗建议禁用词：{}".format(tag, "、".join(hits)))
         hits = [word for word in ASSIGNMENT_FORBIDDEN_WORDS if word in answer]

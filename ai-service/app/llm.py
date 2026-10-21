@@ -58,11 +58,17 @@ class LangChainProvider:
         timeout_seconds: int = 30,
     ) -> None:
         try:
-            from langchain.prompts import PromptTemplate
+            # ⚠️ 模板类从 langchain_core 导入，**不是** langchain.prompts ——
+            #    LangChain 1.x 已移除 langchain.prompts 模块（模板类搬到 langchain_core.prompts），
+            #    写旧路径在 1.x 上必然 ImportError，会被下面兜成 NullProvider，
+            #    症状是「模型配得好好的，回答却永远是 FAQ 原文」——
+            #    而且只在启动日志里留一条 WARN，很容易被忽略。
+            #    langchain_core.prompts 在 0.x 与 1.x 上都可用，是唯一稳定路径。
+            from langchain_core.prompts import PromptTemplate
             from langchain_openai import ChatOpenAI
         except ImportError as exc:  # pragma: no cover - 取决于安装环境
             raise LlmUnavailableError(
-                "未安装 langchain / langchain-openai，无法启用大模型（不影响降级模式）"
+                "未安装 langchain-core / langchain-openai，无法启用大模型（不影响降级模式）"
             ) from exc
 
         self._model = ChatOpenAI(

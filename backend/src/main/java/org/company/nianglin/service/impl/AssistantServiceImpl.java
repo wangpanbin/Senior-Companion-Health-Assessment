@@ -78,6 +78,22 @@ public class AssistantServiceImpl implements AssistantService {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter MINUTE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmm");
 
+    /**
+     * 派单措辞禁用词 → 纠正后的说法。
+     *
+     * <p>与 Python 侧 {@code ai-service/app/guard.py} 的
+     * {@code ASSIGNMENT_WORD_FIXES} 同源同口径。详见
+     * {@link #correctAssignmentWording(String)}。</p>
+     */
+    private static final Map<String, String> ASSIGNMENT_WORD_FIXES = Map.of(
+            "已指派", "推荐",
+            "已分配", "推荐",
+            "自动派单", "自动推荐");
+
+    /** 派单措辞纠正后要追加的免责句 —— 与 Python 侧同字。 */
+    private static final String RECOMMEND_DISCLAIMER =
+            "以上推荐仅供参考，最终由陪诊员本人确认接单。";
+
     private final OrderService orderService;
     private final ElderService elderService;
     private final StringRedisTemplate redisTemplate;
@@ -405,6 +421,9 @@ public class AssistantServiceImpl implements AssistantService {
      *
      * <p>命中医疗建议类表述 → 整段替换为固定拒答模板（沿用
      * {@code ComplianceCheckUtil} 的「命中即拒、不打码」决策）。</p>
+     *
+     * <p>命中派单措辞 → <b>词语级纠正</b>（不是整段丢掉），
+     * 与 Python 侧 {@code guard.scan_output} 同口径。</p>
      */
     private String guardAnswer(String text) {
         String hit = ComplianceCheckUtil.firstHit(text);
@@ -412,7 +431,43 @@ public class AssistantServiceImpl implements AssistantService {
             log.warn("助手兜底答案命中合规词表，已整段替换为拒答模板 | hit={}", hit);
             return ComplianceCheckUtil.refusalTemplate();
         }
-        return text;
+        return correctAssignmentWording(text);
+    }
+
+    /**
+     * 派单措辞的**词语级纠正**。
+     *
+     * <p><b>推荐 ≠ 派单</b>（ADR-0016 决策 4.4）：接单权始终在陪诊员手里。
+     * 这三个词前端 {@code matching.test.js} 已经断言过，助手输出同样不得出现。</p>
+     *
+     * <p><b>为什么纠正而不是整段丢掉</b>：派单措辞是<b>产品边界</b>问题而不是合规红线，
+     * 纠正后语义依然正确（推荐本身是允许说的），整段丢掉会让家属白问一次。</p>
+     *
+     * <p>与 Python 侧 {@code ai-service/app/guard.py} 的
+     * {@code ASSIGNMENT_WORD_FIXES} 同源同口径。⚠️ 它是<b>产品边界</b>清单（3 个词），
+     * 不是合规词表 —— 合规词表（医疗 / 辱骂）是跨栈共享的单一真源文件，
+     * 而这三个词只出现在「助手输出」这一个场景；
+     * FAQ 答案里若混入这三个词，{@code tools/check_faq_anchors.py} 会先变红。</p>
+     *
+     * <p>做成 {@code static} 且<b>包级可见</b>：本类构造需要一整套依赖，
+     * 而这段纯文本逻辑不该为了可测性把整个门面拉起来。</p>
+     */
+    static String correctAssignmentWording(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        String corrected = text;
+        boolean hit = false;
+        for (Map.Entry<String, String> entry : ASSIGNMENT_WORD_FIXES.entrySet()) {
+            if (corrected.contains(entry.getKey())) {
+                corrected = corrected.replace(entry.getKey(), entry.getValue());
+                hit = true;
+            }
+        }
+        if (hit && !corrected.contains(RECOMMEND_DISCLAIMER)) {
+            corrected = corrected + "\n\n" + RECOMMEND_DISCLAIMER;
+        }
+        return corrected;
     }
 
     /** 供测试与排障查看当前是否可用。 */

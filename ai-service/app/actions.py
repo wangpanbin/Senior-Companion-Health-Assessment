@@ -84,6 +84,24 @@ class DraftExtraction:
             ]
         )
 
+    def has_visit_info(self) -> bool:
+        """问题里**是否真的抽到了就诊信息**（医院 / 科室 / 就诊时间）。
+
+        ⚠️ **老人不算** —— elderId 是**会话上下文自动补的**（当前家属恰好只有
+        一位绑定老人时才填），不是用户说出来的。
+
+        这个区别不是抠字眼（V3.7 联调实测）：
+
+        - 把 elderId 算进去 → 「陪诊费多少钱」「我的订单到哪了」「今天天气怎么样」
+          这些**纯问规则**的提问，都会挂出一张「已为你填好下单信息」卡片；
+        - 卡片点下去跳到下单页，但用户根本没有下单的意思 ——
+          这是**噪声**，而且出现在每一条回答后面。
+
+        spec §4.11 的原文就是「**问题里抽到就诊信息时**」才产出该动作，
+        所以这条判据与契约一致。
+        """
+        return bool(self.hospital or self.department or self.visit_time)
+
     def to_payload(self) -> dict[str, Any]:
         """转成 ``FILL_ORDER_DRAFT`` 的 payload（只含非空字段）。"""
         payload: dict[str, Any] = {}
@@ -225,16 +243,23 @@ def extract_visit_time(text: str, today: date) -> str | None:
     猜一个时间比留空更危险（用户会以为平台已经安排好了）。
 
     只找到时刻没找到日期 → 返回 ``None``。
-    只找到日期没找到时刻 → 默认 09:00:00（工作日上午的常识默认值）。
+    **只找到日期没找到时刻 → 同样返回 ``None``。**
+
+    ⚠️ 曾经在这里默认填 ``09:00:00``（工作日上午的常识默认值），
+    与本函数上面那句「猜一个时间比留空更危险」自相矛盾 ——
+    而且与 spec §4.11 / 接口契约「payload **只带抽到的**」直接冲突：
+    09:00 不是用户说的，它是平台编的，而它会被前端写进草稿、
+    最终成为订单的就诊时间。家属看到「下周三 09:00」多半不会意识到这个时刻是猜的。
+
+    抽不到时刻时**留空**，让家属在确认页自己补 —— 这与「多位老人时不自动挑人」
+    是同一条纪律：**猜错比不填更糟**。
     """
     if not text:
         return None
     day = _resolve_date(text, today)
     moment = _resolve_time(text)
-    if day is None:
+    if day is None or moment is None:
         return None
-    if moment is None:
-        moment = (9, 0, 0)
     hour, minute, second = moment
     return f"{day.isoformat()} {hour:02d}:{minute:02d}:{second:02d}"
 
@@ -242,7 +267,8 @@ def extract_visit_time(text: str, today: date) -> str | None:
 def extract_draft(
     text: str,
     elders: list[Any] | None = None,
-    today: date | None = None,
+    *,
+    today: date,
 ) -> DraftExtraction:
     """从问题里抽取下单草稿片段。
 
@@ -250,12 +276,13 @@ def extract_draft(
     **只有恰好一位老人时才自动填 elderId** —— 多位时由前端让用户选，
     猜错人比不填更糟。
 
-    ``today`` 留空时回落到当前日期；生产链路由编排层显式传入。
+    ``today`` **必填且仅限关键字传参** —— 纯函数不碰时钟（AGENTS.md §2.11），
+    「今天」由编排层（``service.py``）取好传进来。
     """
     extraction = DraftExtraction(
         hospital=extract_hospital(text),
         department=extract_department(text),
-        visit_time=extract_visit_time(text, today or date.today()),
+        visit_time=extract_visit_time(text, today),
     )
     if elders and len(elders) == 1:
         elder = elders[0]

@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse
 from . import knowledge
 from .config import get_settings
 from .guard import IllegalQuestion, medical_advice_words
-from .llm import build_provider
+from .llm import LangChainProvider, build_provider
 from .paths import resolve_faq_path
 from .schemas import ChatRequest, ChatResponse
 from .service import AssistantService
@@ -60,10 +60,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ③ LLM provider —— 未配置不是错误，走 NullProvider（基础模式）
     settings = get_settings()
     provider = build_provider(settings)
-    logger.info(
-        "大模型：%s",
-        "已启用" if settings.llm_enabled else "未配置（基础模式，回答直接给标准答案原文）",
-    )
+    # ⚠️ 这里报告的是**实际生效的 provider**，不是配置项。
+    #    旧写法只看 settings.llm_enabled，于是「配了但构造失败」时会先打一条
+    #    WARN 说已回退基础模式、再打一条 INFO 说已启用 —— 两句自相矛盾，
+    #    读日志的人只会以为模型确实在跑。
+    if isinstance(provider, LangChainProvider):
+        llm_desc = "已启用（模型={}）".format(settings.llm_model)
+    elif settings.llm_enabled:
+        llm_desc = "已配置但不可用，已回退基础模式（回答直接给标准答案原文）"
+    else:
+        llm_desc = "未配置（基础模式，回答直接给标准答案原文）"
+    logger.info("大模型：%s", llm_desc)
 
     app.state.service = AssistantService(faq_index, provider)
     yield

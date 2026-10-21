@@ -16,7 +16,14 @@ uvicorn[standard]>=0.27
 
 # LangChain 只用两件东西：ChatOpenAI（OpenAI 兼容协议：云端 / Ollama / vLLM 共用）
 # 与 prompt 模板。导入是**惰性**的（见 app/llm.py），所以核心测试完全不依赖它。
+#
+# ⚠️ langchain-core 是**显式声明**，不是新引入的第三方库：
+#    它是 langchain 与 langchain-openai 共同依赖的 LangChain 内核包，
+#    早就随这两个包装好了。写出来的原因是 app/llm.py 直接 import 了
+#    langchain_core.prompts.PromptTemplate（LangChain 1.x 移除了 langchain.prompts），
+#    直接依赖就该直接声明 —— 不声明等于让 pip 自由处置一个我们直接 import 的包。
 langchain>=0.2
+langchain-core>=0.1
 langchain-openai>=0.1
 
 pydantic-settings>=2.2
