@@ -643,6 +643,7 @@ AI 在任何"新增 / 修改 / 删除接口"的场景下，必须：
 | 新增 / 修改 `ai-service/`（Python 助手服务） | `ai-service/requirements.txt`（依赖清单需重新报批） + `AGENTS.md` §0 技术栈表与 §2.11 + `docs/api/13-assistant.md` + `docs/spec/V3.7-assistant-spec.md` |
 | 新增 / 修改 FAQ 知识库（`ai-service/knowledge/faq.json`） | 逐条核对 `source` + `anchor` 指向真实锚点 + `python tools/check_faq_anchors.py` 通过 + 答案不含合规禁用词 |
 | 新增 / 修改共享合规词表 | `backend/src/main/resources/compliance/medical-advice-words.txt` + Java `ComplianceCheckUtilTest` + Python `test_guard.py`（**两侧快照必须逐字相同**） |
+| 新增 / 修改 `docs/db/*` | ⚠️ **改生成器 `backend/sql/tools/gen_db_docs.py`，不要直接改 `docs/db/` 下的生成物** —— 那些文件由脚本整篇覆盖，下次 render 会把手写内容冲掉 |
 
 ---
 
