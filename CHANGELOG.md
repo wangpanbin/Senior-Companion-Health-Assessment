@@ -8,10 +8,83 @@
 
 ---
 
+## [V3.3 – V3.6 评审收口] · 2026-10-21 · 代码评审发现项修复
+
+对 `c735693..de994b3`（V3.3 – V3.6 四版）做 Standards / Spec 两轴评审后的收口。
+**零新增错误码**，全部复用既有段位。
+
+### Fixed · 评审发现项
+
+**匹配可解释性拆三段**（`CompanionMatchVO` 新增 `mismatches`）
+
+- `MatchingScore#reasons()` 收窄为「**得分大于 0** 的命中理由」——
+  原来 0 分且非降级的维度（「跨城市」「超出服务半径」「未服务过该科室」）
+  会被当成「推荐理由」渲染给家属，**淘汰理由被说成了推荐理由**
+- 新增 `MatchingScore#mismatches()` 承载「该维度得 0 分的原因」，
+  `CompanionMatchVO.mismatches` + 前端 `order-detail.vue` 分行渲染
+- `notes`（降级说明，因数据缺失没算出来的维度）语义**不变** ——
+  「没法算」与「没命中」这两件不同的事仍然是分开的
+
+**指标字典口径精度**
+
+- `operations.gap.available_companion_count` / `operations.gap.companions_without_slots`
+  的「统计范围」措辞与实现对齐：universe 明确为**资质通过（APPROVED）且当前在线（AVAILABLE）**
+  的陪诊员（`OperationsMapper` 的过滤本就是有意为之：休息 / 离线的人不接新单）
+- **口径值未变**（`caliberVersion` 保持 1）：原措辞「全部陪诊员中」比实现**宽**，
+  是文档写得比实现松，不是实现算错了
+- 人读面 §2.7 表格由 `tools/gen_metric_dict_human_v36.py` 重新生成，两面逐条一致
+
+**其它**
+
+- 大厅 `total` 改为截断**前**的真实总数（`paginate` 增加 `trueTotal` 参数）
+- `recommendCompanions` 的归属校验与条数归一化从 Controller 下沉到 Service（G4）
+- `MatchingServiceImpl` 的 NPE 守卫移到解引用**之前**
+- `OperationsMapper.todayCount` 改用独立子查询（不再被区间 `WHERE` 套住）
+- 履约率 / 完成率(按时) / 投诉率 / 平均评分 / 平均接单时间收敛到 `MetricFormulas`
+  **唯一一份实现**（ADR-0017 决策 2）
+
+### Added · 评审补漏
+
+- **`GET /api/admin/metrics`** —— 指标字典只读导出（仅 ADMIN）。
+  兑现 `V3.6-data-loop-spec.md` §二 的合同级预写（此前 spec 有、实现无、tickets 无删减留痕）。
+  导出的是**口径定义**而非统计值，故不进 `metrics/endpoints.yml`
+- `tools/_metric_dict_reader.py` —— 指标字典机器面的**零依赖**读取器（CI 不承诺装 PyYAML）
+- `tools/fix_line_endings.py` —— 本地辅助脚本：检查 / 统一工作区行尾为 CRLF
+  （Windows 上 `core.autocrlf=true`，用编辑器新建的文件默认写成 LF）。
+  **本地工具，不是 CI 门禁**
+- `tools/check_metric_dict_parity.py` 升级为**字段级**矛盾检测（原来只比 key 集合）
+- `.github/workflows/ci.yml` 新增 `metric-dict` job；`secrets` job 改为调 `tools/check_secrets.py`
+  （**单一真源**，不在 workflow 里抄第二份规则）
+- **ADR-0018**（V3.3 陪诊员工作台：口径必须自带区间、字段名必须自带口径）
+- **ADR-0019**（V3.5 平台运营驾驶舱：不给合成分、异常必须复用而不是另建）
+  —— 补齐 roadmap G9「每版收口同步六处文档」里的 ADR 项
+
+### Docs · 文档收口
+
+- `docs/api/08-admin.md` §18 补「请求参数」小节（异常中心实际接收 `DateRangeQuery`）；
+  §17 `todayOrderCount` 补「不随统计区间浮动」；新增 §24（指标字典导出）
+- `docs/api/03-order.md` §13 补 `mismatches` 字段与三段语义说明；
+  修正 v1.2.0 变更行误置于文件首行（标题之前）的排版缺陷
+- `docs/spec/metric-dictionary.md` v1.4 → v1.5
+- **V3.1 / V3.3 / V3.4 / V3.5 / V3.6 五份 spec 的状态头勘误** ——
+  此前仍写着「待评审 / 未开工」，而四版早已交付
+- `docs/db/*` 按真实库**重新生成**（25 表，字段数 / 索引数逐表零差异）
+- `docs/agents/FRONTEND_CONTRACT.md`：`/admin/*` 9 页 → **11 页**；
+  运营端 6 个端点从 `@/api/statistics` 迁到 `@/api/admin`（AGENTS.md §3.10）
+
+### 门禁
+
+- mvn -B verify（基线 1230 条测试 + 本轮新增）
+- pnpm lint:check / vitest / build
+- `python tools/check_secrets.py` · `python tools/check_metric_dict_parity.py`
+
+---
+
 ## [V3.6] · 2026-10-20 · 数据闭环
 
 让平台**通过数据持续提高服务质量**，而不是「统计完了就放着」。
-产品与工程契约见 [spec](docs/spec/V3.6-data-loop-spec.md) /
+产品与工程契约见 [PRD](docs/prd/PRD-V3.6-数据闭环.md) /
+[spec](docs/spec/V3.6-data-loop-spec.md) /
 [tickets](docs/spec/V3.6-tickets.md) /
 [ADR-0017](docs/adr/0017-metric-endpoint-machine-contract.md)。
 
@@ -58,7 +131,8 @@
 ## [V3.5] · 2026-10-20 · 平台运营驾驶舱
 
 让管理员**在 30 秒内发现平台异常，并且能直接去处理**。
-产品与工程契约见 [spec](docs/spec/V3.5-operations-cockpit-spec.md) /
+产品与工程契约见 [PRD](docs/prd/PRD-V3.5-平台运营驾驶舱.md) /
+[spec](docs/spec/V3.5-operations-cockpit-spec.md) /
 [tickets](docs/spec/V3.5-tickets.md)。
 
 ### Added · 新增
@@ -103,7 +177,8 @@
 ## [V3.4] · 2026-10-20 · 智能调度
 
 让平台**自动找到更合适的陪诊员**，并且每一条推荐都能说出「为什么是他」。
-产品与工程契约见 [spec](docs/spec/V3.4-matching-spec.md) /
+产品与工程契约见 [PRD](docs/prd/PRD-V3.4-智能调度.md) /
+[spec](docs/spec/V3.4-matching-spec.md) /
 [tickets](docs/spec/V3.4-tickets.md) /
 [ADR-0016](docs/adr/0016-matching-structured-and-explainable.md)。
 
@@ -151,7 +226,8 @@
 
 把陪诊员端散落的「接单大厅 / 订单列表 / 订单执行 / 收入 / 评价」收成**一个工作台**，
 并把**收入页的前端自算搬回后端**。
-产品与工程契约见 [spec](docs/spec/V3.3-companion-workbench-spec.md) /
+产品与工程契约见 [PRD](docs/prd/PRD-V3.3-陪诊员工作台.md) /
+[spec](docs/spec/V3.3-companion-workbench-spec.md) /
 [tickets](docs/spec/V3.3-tickets.md) /
 [指标字典](docs/spec/metric-dictionary.md#24-陪诊员工作台v33)。
 

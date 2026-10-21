@@ -5,7 +5,6 @@ import org.company.nianglin.config.OperationsProperties;
 import org.company.nianglin.mapper.OperationsMapper;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
 
 /**
  * 平均接单时间计算器（V3.6 · T3）。
@@ -34,7 +33,7 @@ public class AvgAcceptMinutesCalculator extends AbstractMetricCalculator {
 
     @Override
     public String calculate(DateRange range) {
-        Map<String, Object> stats = orderStats(range);
-        return count(rounded(stats == null ? null : stats.get("avgAcceptMinutes")));
+        // 公式本体在 MetricFormulas —— 驾驶舱概览 / 健康度调的是同一份实现
+        return MetricFormulas.countText(MetricFormulas.avgAcceptMinutes(orderStats(range)));
     }
 }

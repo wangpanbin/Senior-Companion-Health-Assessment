@@ -13,6 +13,7 @@ import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
 import org.company.nianglin.vo.OrderFulfillmentVO;
+import org.company.nianglin.vo.OrderRecommendVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
@@ -185,4 +186,25 @@ public interface OrderService {
      * @return 订单实体（非 null）
      */
     CompanionOrder requireInvolved(Long orderId, LoginUser loginUser);
+
+    /**
+     * 为指定订单推荐候选陪诊员（V3.4 · FR-Service）。
+     *
+     * <p>归属校验与条数归一化都放在<b>服务层</b>：Controller 只负责收参与转发
+     * （全局决策 G4「Controller 不承载业务规则」）。</p>
+     *
+     * <p>归属规则比 {@link #requireInvolved(Long)} 更严一档：
+     * {@code requireInvolved} 放行「下单家属 / 接单陪诊员 / 就诊老人 / 管理员」，
+     * 而<b>候选陪诊员只有下单家属能看</b> —— 否则接单方能看到「还有谁在候选名单里」，
+     * 陪诊员之间会互相压价。</p>
+     *
+     * <p>条数默认值与上限取自 {@code nianglin.matching.recommend-limit} /
+     * {@code nianglin.matching.recommend-max-limit}，非法值一律落到默认值，不报错。</p>
+     *
+     * @param orderId 订单 ID
+     * @param limit   请求条数，可为 {@code null}（走配置默认值）
+     * @return 候选结果（含通过过滤链的候选总数与 Top N）
+     * @throws org.company.nianglin.exception.BusinessException 3001 不存在 / 3004 非下单家属
+     */
+    OrderRecommendVO recommendCompanions(Long orderId, Integer limit);
 }

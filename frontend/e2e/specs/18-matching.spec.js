@@ -106,7 +106,12 @@ test.describe('V3.4 · 候选推荐端点', () => {
         expect(c.totalScore).toBeGreaterThanOrEqual(0)
         expect(c.totalScore).toBeLessThanOrEqual(100)
         expect(Array.isArray(c.reasons), 'reasons 必须是数组').toBeTruthy()
+        expect(Array.isArray(c.mismatches), 'mismatches 必须是数组').toBeTruthy()
         expect(Array.isArray(c.notes), 'notes 必须是数组').toBeTruthy()
+        // 三段互斥：「命中理由 / 没命中 / 没法算」不能混在一起
+        for (const r of c.reasons) {
+          expect(c.mismatches, `「${r}」不得同时出现在 reasons 与 mismatches`).not.toContain(r)
+        }
         // 五个维度得分都是 0-100 的整数
         for (const key of ['regionScore', 'timeScore', 'distanceScore', 'skillScore', 'ratingScore']) {
           expect(typeof c[key], `${key} 必须是数字`).toBe('number')

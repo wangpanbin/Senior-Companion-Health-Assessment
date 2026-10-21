@@ -60,6 +60,7 @@ import org.company.nianglin.vo.OrderAcceptResultVO;
 import org.company.nianglin.vo.OrderCreateResultVO;
 import org.company.nianglin.vo.OrderFulfillmentVO;
 import org.company.nianglin.vo.OrderFlowResultVO;
+import org.company.nianglin.vo.OrderRecommendVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -343,6 +344,9 @@ public class OrderServiceImpl implements OrderService {
         //    而 SQL 里写 CASE 会让「没数据」与「坐标相同（距离 0）」落进同一个值。
         List<CompanionOrder> candidates = orderMapper.selectList(wrapper);
         int limit = matchingProperties.getHallCandidateLimit();
+        // total 必须是「满足大厅筛选条件的待接单订单数」（ADR-0016 §八），
+        // 所以**先记下截断前的真实条数**，再截断候选集。
+        int trueTotal = candidates.size();
         if (candidates.size() > limit) {
             log.warn("大厅候选集超过上限，已按就诊时间截断 | companionId={} | 候选={} | 上限={}",
                     me.userId(), candidates.size(), limit);
@@ -350,7 +354,7 @@ public class OrderServiceImpl implements OrderService {
         }
 
         sortByMatch(candidates, profile, sortKey);
-        return paginate(candidates, query, true);
+        return paginate(candidates, query, true, trueTotal);
     }
 
     /**
@@ -419,14 +423,21 @@ public class OrderServiceImpl implements OrderService {
      * <p>响应结构与 DB 分页<b>完全一致</b>：{@code total} 仍是「满足大厅筛选条件的
      * 待接单订单数」，{@code pages} 仍是 {@code ceil(total / size)}。
      * 变的只有「哪几条排在前面」。</p>
+     *
+     * <p>{@code trueTotal} 是<b>截断前</b>的候选数：候选集可能撞上
+     * {@code nianglin.matching.hall-candidate-limit} 被截断，但 {@code total}
+     * 仍要如实报告筛选条件下的真实条数（ADR-0016 §八「total 语义零变更」）。
+     * 切片边界则按<b>实际可用</b>的记录数算 —— 否则 total 大于候选集时会越界。</p>
      */
-    private PageResult<OrderVO> paginate(List<CompanionOrder> all, PageQuery<?> query, boolean withAddress) {
+    private PageResult<OrderVO> paginate(List<CompanionOrder> all, PageQuery<?> query,
+                                         boolean withAddress, long trueTotal) {
         long pageNo = query.normalizedPage();
         long size = query.normalizedSize();
-        long total = all.size();
+        long total = trueTotal;
         long pages = (total + size - 1) / size;
-        long from = Math.min(Math.max(0L, (pageNo - 1) * size), total);
-        long to = Math.min(from + size, total);
+        long available = all.size();
+        long from = Math.min(Math.max(0L, (pageNo - 1) * size), available);
+        long to = Math.min(from + size, available);
         List<CompanionOrder> records = from >= to ? List.of() : all.subList((int) from, (int) to);
         return new PageResult<>(total, pageNo, size, pages, toVoList(records, withAddress));
     }
@@ -775,6 +786,39 @@ public class OrderServiceImpl implements OrderService {
             return order;
         }
         throw new BusinessException(ResultCode.ORDER_NO_PERMISSION);
+    }
+
+    /* ================================================================== */
+    /* 候选陪诊员推荐（V3.4）                                              */
+    /* ================================================================== */
+
+    @Override
+    public OrderRecommendVO recommendCompanions(Long orderId, Integer limit) {
+        CompanionOrder order = requireInvolved(orderId);
+        // 归属校验：即使角色对了，也必须是「这一单的下单家属」。
+        // requireInvolved 放行的是「相关方」（家属 / 陪诊员 / 老人 / 管理员），
+        // 而候选名单只有下单家属能看 —— 否则接单方能看到还有谁在候选里。
+        if (!Objects.equals(order.getFamilyId(), SecurityUtils.currentUserId())) {
+            throw new BusinessException(ResultCode.ORDER_NO_PERMISSION,
+                    "只有下单家属可以查看该订单的候选陪诊员");
+        }
+        return matchingService.recommendCompanions(order, normalizeRecommendLimit(limit));
+    }
+
+    /**
+     * 推荐条数归一化：默认取配置 {@code nianglin.matching.recommend-limit}，
+     * 上限取 {@code nianglin.matching.recommend-max-limit}。
+     *
+     * <p>非法值（{@code null} / 小于 1）一律落到默认值，**不报错** ——
+     * 这是个只读端点，为一个「返回几条」把请求打回去没有意义。
+     * 默认值本身也要夹到上限内：配置写反了（默认 30 / 上限 20）时取 20。</p>
+     */
+    private int normalizeRecommendLimit(Integer limit) {
+        int max = matchingProperties.getRecommendMaxLimit();
+        if (limit == null || limit < 1) {
+            return Math.min(matchingProperties.getRecommendLimit(), max);
+        }
+        return Math.min(limit, max);
     }
 
     /* ================================================================== */

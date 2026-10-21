@@ -31,7 +31,7 @@ const healthMock = vi.fn()
 const gapMock = vi.fn()
 const effectMock = vi.fn()
 
-vi.mock('@/api/statistics', () => ({
+vi.mock('@/api/admin', () => ({
   getOperationsOverview: (...a) => overviewMock(...a),
   getOperationsExceptions: (...a) => exceptionsMock(...a),
   getOperationsTrend: (...a) => trendMock(...a),

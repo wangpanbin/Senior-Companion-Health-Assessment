@@ -46,7 +46,11 @@
 - **不要执行破坏性命令**：`rm -rf`、强制 `git push --force` 到 `main` / `develop`、直接 drop database、`mvn clean install -DskipTests` 之外的危险 Maven 目标。对 `git commit`、`git push`、`git reset`、`git clean`、重启服务、删容器等动作必须**先确认**。
 - **不要在仓库中留下明文密码 / 真实手机号 / 真实身份证号**。所有示例数据用合规占位串（如 `13800000000`、`110101199001010001`）。
 - **不要"自创"技术栈**：不得引入 README / pom.xml / package.json 之外的依赖。需要新增依赖时，在回复中明确说明理由，由人工确认后再写。
-- **提交前跑该跑的检查**。仓库已有 CI（`.github/workflows/ci.yml`，push / PR 到 `main` 时触发），覆盖后端 `mvn verify`、前端 `lint:check` + `vitest` + `build`、密钥体检四类。**改后端就跑 `mvn -B verify`，改 `frontend/` 就跑 `pnpm run lint:check` 与 `pnpm run test`** —— 与 CI 同命令，自己先红总比推送后红好。新增检查项时同步改 workflow。
+- **提交前跑该跑的检查**。仓库已有 CI（`.github/workflows/ci.yml`，push / PR 到 `main` 时触发），覆盖后端 `mvn verify`、前端 `lint:check` + `vitest` + `build`、密钥体检、指标字典人读面↔机器面一致性五类。**改后端就跑 `mvn -B verify`，改 `frontend/` 就跑 `pnpm run lint:check` 与 `pnpm run test`** —— 与 CI 同命令，自己先红总比推送后红好。新增检查项时同步改 workflow。
+- **本地能复跑 CI 的两个静态门禁**（纯 Python 标准库，不需要装任何依赖）：
+  - `python tools/check_secrets.py` —— 密钥体检四条（**CI secrets job 调的就是这一份**，规则本体只有一处）
+  - `python tools/check_metric_dict_parity.py` —— 指标字典人读面↔机器面一致性
+  改这两处的规则**只改脚本**，CI 与本地共用同一份；**不要在 workflow 里再抄一遍** —— 抄两份必然漂移（2026-10-21 review 实测：抄出来的两份在 Windows 上白名单语义不同，本地绿、CI 也绿，但其中一份其实已经失效）。
 - 不确定就问，不要瞎猜；宁可少写，不要乱写。
 
 ---

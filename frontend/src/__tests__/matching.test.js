@@ -313,6 +313,37 @@ describe('候选展示 · 正常路径', () => {
     expect(wrapper.findAll('.cand__reasons').length).toBe(1)
   })
 
+  it('未命中说明单独成行，不得混进推荐理由', async () => {
+    recommendCompanionsMock.mockResolvedValue({
+      orderId: 1001,
+      total: 1,
+      candidates: [
+        {
+          ...CANDIDATES.candidates[0],
+          reasons: ['同服务区域'],
+          mismatches: ['超出服务半径'],
+          notes: []
+        }
+      ]
+    })
+    const wrapper = await mountOrderDetail()
+    const mismatchList = wrapper.findAll('.cand__mismatches')
+    expect(mismatchList.length).toBe(1)
+    expect(mismatchList[0].text()).toContain('超出服务半径')
+    // 淘汰理由被当成推荐理由，是这一版要修掉的错
+    expect(wrapper.findAll('.cand__reasons')[0].text()).not.toContain('超出服务半径')
+  })
+
+  it('mismatches 为空数组时不渲染未命中行', async () => {
+    recommendCompanionsMock.mockResolvedValue({
+      orderId: 1001,
+      total: 1,
+      candidates: [{ ...CANDIDATES.candidates[0], mismatches: [] }]
+    })
+    const wrapper = await mountOrderDetail()
+    expect(wrapper.findAll('.cand__mismatches').length).toBe(0)
+  })
+
   it('接口失败走错误态并给出重试入口', async () => {
     recommendCompanionsMock.mockRejectedValue(new Error('boom'))
     const wrapper = await mountOrderDetail()

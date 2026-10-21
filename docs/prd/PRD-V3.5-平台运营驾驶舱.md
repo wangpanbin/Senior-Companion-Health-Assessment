@@ -12,7 +12,7 @@
 | 上游依据 | [`V3.5-operations-cockpit-spec.md`](../spec/V3.5-operations-cockpit-spec.md)（工程契约）· [`V3.5-tickets.md`](../spec/V3.5-tickets.md)（T1–T9）· [`V3.x-roadmap-spec.md`](../spec/V3.x-roadmap-spec.md) §3.5 / §4.5 · 仓库 [`plans/迭代计划.md`](../../plans/迭代计划.md) §41 – §45 |
 | 接口契约 | [`docs/api/08-admin.md`](../api/08-admin.md) §17 – §20 |
 | 指标登记 | [`metric-dictionary.md`](../spec/metric-dictionary.md) §2.6（人读面 v1.3） |
-| 关联 ADR | [0012 风险与状态分离](../adr/0012-fulfillment-risk-not-order-status.md)（异常中心的判定来源）· [0014 用药三桶唯一真源](../adr/0014-medication-bucket-single-source.md)（用药漏服口径） |
+| 关联 ADR | [0019 驾驶舱不给合成分](../adr/0019-operations-cockpit-no-synthetic-score.md)（本版核心决策）· [0012 风险与状态分离](../adr/0012-fulfillment-risk-not-order-status.md)（异常中心的判定来源）· [0014 用药三桶唯一真源](../adr/0014-medication-bucket-single-source.md)（用药漏服口径） |
 | 测试报告 | [`iteration-v3.5-test-report.md`](../agents/reports/iteration-v3.5-test-report.md) |
 
 ---

@@ -102,8 +102,9 @@ public class MatchingScore {
     /**
      * 命中理由（面向人的一句话们）。
      *
-     * <p>只收**没有降级**的维度的理由 —— 降级维度的事实写在
-     * {@link #notes()} 里，混在一起会让人误以为「距离不匹配」。</p>
+     * <p>只收**没有降级**且**得分大于 0**的维度的理由 —— 降级维度的事实写在
+     * {@link #notes()} 里，0 分维度的说明写在 {@link #mismatches()} 里。
+     * 三者混在一起会让人误以为「距离不匹配」。</p>
      */
     public List<String> reasons() {
         List<String> reasons = new ArrayList<>();
@@ -112,9 +113,41 @@ public class MatchingScore {
             if (result == null || result.isDegraded() || result.reason() == null) {
                 continue;
             }
+            if (result.score() <= 0D) {
+                // 0 分不是命中：它是「这一维没中」，归 mismatches
+                continue;
+            }
             reasons.add(result.reason());
         }
         return reasons;
+    }
+
+    /**
+     * 未命中说明（该维度得了 0 分的原因）。
+     *
+     * <p>0 分有两种<b>完全不同</b>的含义，必须分开说：</p>
+     * <ul>
+     *   <li><b>没法算</b>（缺坐标 / 缺可服务时段）→ {@link #notes()}；</li>
+     *   <li><b>算了但没命中</b>（跨城市 / 超出服务半径 / 就诊当天不可服务）→ 本方法。</li>
+     * </ul>
+     *
+     * <p>把「没命中」混进 {@link #reasons()} 的后果很具体：家属在「推荐理由」里
+     * 读到「跨城市」，却以为系统在夸这个人 —— 那不是理由，那是<b>淘汰</b>理由。
+     * 把它单列出来，运营与家属才能一眼看出「这个人为什么排在这」。</p>
+     */
+    public List<String> mismatches() {
+        List<String> mismatches = new ArrayList<>();
+        for (String dimension : MatchingWeights.DIMENSIONS) {
+            DimensionResult result = dimensions.get(dimension);
+            if (result == null || result.isDegraded() || result.reason() == null) {
+                continue;
+            }
+            if (result.score() > 0D) {
+                continue;
+            }
+            mismatches.add(result.reason());
+        }
+        return mismatches;
     }
 
     /**

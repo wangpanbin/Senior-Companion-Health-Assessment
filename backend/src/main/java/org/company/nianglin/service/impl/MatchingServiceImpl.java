@@ -94,10 +94,10 @@ public class MatchingServiceImpl implements MatchingService {
 
     @Override
     public OrderRecommendVO recommendCompanions(CompanionOrder order, int limit) {
-        OrderRecommendVO result = new OrderRecommendVO().setOrderId(order.getId()).setTotal(0);
         if (order == null) {
-            return result;
+            return new OrderRecommendVO().setOrderId(null).setTotal(0);
         }
+        OrderRecommendVO result = new OrderRecommendVO().setOrderId(order.getId()).setTotal(0);
 
         List<Map<String, Object>> rows = matchingMapper.selectCandidates();
         if (rows.isEmpty()) {
@@ -412,6 +412,7 @@ public class MatchingServiceImpl implements MatchingService {
                 .setSkillScore(score.dimensionPercent(MatchingWeights.DIMENSION_SKILL))
                 .setRatingScore(score.dimensionPercent(MatchingWeights.DIMENSION_RATING))
                 .setReasons(score.reasons())
+                .setMismatches(score.mismatches())
                 .setNotes(score.notes());
     }
 

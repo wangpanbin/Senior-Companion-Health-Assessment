@@ -44,7 +44,7 @@ import {
   getOperationsHealth,
   getOperationsGap,
   getOperationsEffect
-} from '@/api/statistics'
+} from '@/api/admin'
 import { lastNDays, addDays } from '@/utils/format'
 
 echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
@@ -1263,6 +1263,8 @@ onBeforeUnmount(() => {
   border-radius: var(--nl-radius-chip);
 
   &__btn {
+    /* 触控区不低于适老化基线（AGENTS.md §3.5） */
+    min-height: var(--nl-touch-min);
     padding: 6px 12px;
     font-size: var(--nl-font-caption);
     color: var(--nl-text-2);

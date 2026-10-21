@@ -37,6 +37,8 @@
 | `companion_profile` | `idx_service_area` | 普通 | `service_area` | 按服务区域匹配陪诊员 |
 | `companion_profile` | `idx_score` | 普通 | `score` | 按评分排序（选人页） |
 | `companion_profile` | `idx_order_count` | 普通 | `order_count` | 按接单量排序（榜单） |
+| `companion_available_slot` | `idx_companion_weekday` | 普通 | `companion_id`, `weekday`, `deleted` | 支撑业务查询条件 |
+| `companion_available_slot` | `idx_companion_id` | 普通 | `companion_id` | 查某陪诊员的全部相关记录 |
 | `companion_order` | `uk_order_no` | 唯一 | `order_no` | 订单号唯一 + 按订单号查询 |
 | `companion_order` | `idx_status_create` | 普通 | `status`, `create_time` | 按状态 + 下单时间分页 |
 | `companion_order` | `idx_status_visit` | 普通 | `status`, `visit_time` | 订单大厅：status='PENDING' AND visit_time>NOW() ORDER BY visit_time |
@@ -91,9 +93,6 @@
 | `chat_message` | `idx_order_id_id` | 普通 | `order_id`, `id` | 聊天历史倒序游标、未读计数、会话最后一条 |
 | `chat_message` | `idx_sender` | 普通 | `sender_id`, `create_time` | 按发送人审计聊天记录 |
 | `chat_read_cursor` | `uk_order_user` | 唯一 | `order_id`, `user_id` | 一订单一用户一条已读游标（幂等 upsert） |
-
-| `companion_available_slot` | `idx_companion_weekday` | 普通 | `companion_id`, `weekday`, `deleted` | 匹配引擎的时间维度：按陪诊员 + 星期取可服务时段（V3.4） |
-| `companion_available_slot` | `idx_companion_id` | 普通 | `companion_id` | 按陪诊员取全部时段（时段为空时回退解析自由文本）（V3.4） |
 
 ## 二、关键设计决策
 

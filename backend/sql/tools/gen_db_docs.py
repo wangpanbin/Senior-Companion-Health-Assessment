@@ -34,7 +34,8 @@ BASE_COLS = ["id", "create_time", "update_time", "deleted"]
 DOMAINS = [
     ("一、账号与权限域", ["sys_user", "sys_login_log", "sys_dict", "sys_file", "admin_oper_log"]),
     ("二、老人档案与陪诊员资质域", ["elder_profile", "family_elder_relation",
-                                    "companion_audit_record", "companion_profile"]),
+                                    "companion_audit_record", "companion_profile",
+                                    "companion_available_slot"]),
     ("三、陪诊订单与执行域（系统核心）", ["companion_order", "order_status_log", "order_reject_log",
                                           "order_checkin", "companion_track", "order_fee_item",
                                           "order_fulfillment_event"]),
@@ -47,6 +48,7 @@ MODULE_OF = {
     "sys_user": "M2/M3", "sys_login_log": "M2", "sys_dict": "M0", "sys_file": "M0/M3",
     "admin_oper_log": "M9", "elder_profile": "M3", "family_elder_relation": "M3",
     "companion_audit_record": "M9", "companion_profile": "M3/M9",
+    "companion_available_slot": "M3/M4",
     "companion_order": "M4", "order_status_log": "M4", "order_reject_log": "M4",
     "order_fee_item": "M4", "order_fulfillment_event": "M4/M9",
     "order_checkin": "M5", "companion_track": "M5", "medicine_dict": "M6",
@@ -59,6 +61,7 @@ TABLE_CN = {
     "sys_dict": "数据字典表", "sys_file": "附件统一登记表", "admin_oper_log": "管理员操作日志表（只增不改不删）",
     "elder_profile": "老人档案表", "family_elder_relation": "家属-老人绑定关系表",
     "companion_audit_record": "陪诊员资质申请记录表", "companion_profile": "陪诊员业务资料表",
+    "companion_available_slot": "陪诊员可服务时段表（V3.4 结构化排班）",
     "companion_order": "陪诊订单主表", "order_status_log": "订单状态流转日志表（只增不改）",
     "order_fee_item": "订单费用明细表（代垫/服务费分账，ADR-0009）",
     "order_reject_log": "陪诊员拒单记录表", "order_checkin": "陪诊打卡记录表",
@@ -94,6 +97,8 @@ RELATIONS = [
     ("companion_order", "chat_message", "||--o{", "order_id", "订单会话消息"),
     ("sys_user", "chat_message", "||--o{", "sender_id", "家属/陪诊员发送消息"),
     ("companion_order", "chat_read_cursor", "||--o{", "order_id", "订单会话已读游标"),
+    ("companion_profile", "companion_available_slot", "||--o{", "companion_id",
+     "陪诊员可服务时段（V3.4 结构化排班；老数据仍回退解析 companion_profile.available_time）"),
 ]
 
 # ---------------------------------------------------------------- 解析
@@ -194,6 +199,73 @@ def parse_alter(text, tables):
                 "name": iname,
                 "cols": re.findall(r"`(\w+)`", im.group(2)),
                 "note": "",
+            })
+    return tables
+
+
+# V7 起用**裸** ALTER TABLE（不再套 information_schema 守卫）。
+# 为什么不再守卫：Flyway 每个版本只执行一次，守卫对它没有意义；
+# 而守卫写法把 DDL 藏进字符串字面量里，人读起来更难 —— V7 选择直白。
+#
+# 但生成器必须能解析它，否则 docs/db 会漏掉 V7 新增的 4 个列
+# （companion_profile 三列 + companion_order 一列），
+# 文档与真实库结构对不上 —— 那正是「docs/db 由脚本生成」这条约定要防的事。
+ADD_COLUMN_PATTERN = re.compile(
+    r"^ADD\s+COLUMN\s+`(\w+)`\s+([A-Za-z]+(?:\([^)]*\))?)\s*(.*?)(?:,)?$", re.S)
+ALTER_BARE_HEAD = re.compile(r"^ALTER TABLE\s+`(\w+)`\s*(.*)$")
+
+
+def parse_alter_bare(text, tables):
+    """把**裸** ALTER TABLE ... ADD COLUMN 合并进已解析的表。
+
+    支持两种写法：
+      ① 换行式（V7 实际写法）：一条 ALTER 后面跟若干行 ADD COLUMN；
+      ② 单行式：ALTER TABLE x ADD COLUMN `a` ...[, ADD COLUMN `b` ...]
+
+    幂等：列名已存在则跳过，因此同一段 SQL 被重复拼接也只生效一次。
+    """
+    by_name = {t["table"]: t for t in tables}
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines):
+        raw = lines[i].strip()
+        m = ALTER_BARE_HEAD.match(raw)
+        if not m:
+            i += 1
+            continue
+        t = by_name.get(m.group(1))
+        inline = m.group(2).strip()
+        i += 1
+        statements = []
+        if inline:
+            statements = re.split(r",\s*(?=ADD\s+(?:COLUMN|INDEX|UNIQUE INDEX)\b)", inline)
+        else:
+            while i < len(lines):
+                cur = lines[i].strip()
+                if cur.startswith("ADD "):
+                    statements.append(cur)
+                    i += 1
+                elif cur and not cur.startswith("--"):
+                    break
+                else:
+                    i += 1
+        for stmt in statements:
+            cm = ADD_COLUMN_PATTERN.match(stmt.strip())
+            if not cm or t is None:
+                continue
+            cname = cm.group(1)
+            if any(c["name"] == cname for c in t["cols"]):
+                continue
+            ctail = cm.group(3)
+            ccm = re.search(r"COMMENT\s+'((?:[^']|'')*)'", ctail)
+            dm = re.search(r"\bDEFAULT\s+('(?:[^']*)'|[^\s,]+)", ctail, re.I)
+            t["cols"].append({
+                "name": cname,
+                "type": cm.group(2),
+                "not_null": "NOT NULL" in ctail.upper(),
+                "default": dm.group(1) if dm else "",
+                "comment": ccm.group(1).replace("''", "'") if ccm else "",
+                "auto": False,
             })
     return tables
 
@@ -307,6 +379,7 @@ def doc_readme(tables, counts):
     L.append("| V4 | `V4__order_fee_item.sql` | 订单费用明细表（ADR-0009） | 纯增量建表 |")
     L.append("| V5 | `V5__chat_message.sql` | 订单聊天消息与已读游标（ADR-0011） | 纯增量建表 |")
     L.append("| V6 | `V6__order_fulfillment.sql` | 履约事件流水表 + `companion_order` 增列与索引（ADR-0012） | 纯增量；`information_schema` 守卫可重复执行 |")
+    L.append("| V7 | `V7__matching_structured.sql` | 智能调度结构化改造：`companion_available_slot` 建表 + `companion_profile` 增坐标与区域码 + `companion_order` 增区域码（ADR-0016） | 纯增量建表 + 可空增列 + backfill；裸 `ALTER TABLE`（Flyway 每版本只跑一次，不加守卫） |")
     L.append("")
     L.append("> **已执行的脚本不得再改**：`validate-on-migrate: true` 会校验 checksum，")
     L.append("> 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5、V6…）。")
@@ -658,7 +731,7 @@ def doc_seed(tables, counts):
     total = sum(counts.get(t["table"], 0) for t in tables)
     L.append("共 %d 张表、当前运行库 **%s** 行；下表行数是生成文档时的**运行库快照**（含 E2E 产生的业务数据）。" % (len(tables), format(total, ",")))
     L.append("")
-    L.append("V2 种子覆盖 V1 的 20 张业务表，每张 ≥30 行；V4/V5/V6 增量表只建表、不预置种子，")
+    L.append("V2 种子覆盖 V1 的 20 张业务表，每张 ≥30 行；V4/V5/V6/V7 增量表只建表、不预置种子，")
     L.append("订单聊天消息等运行期数据由用户操作产生，行数为 0 不是数据缺失。")
     L.append("")
     L.append("| 表 | 中文名 | 行数 | 说明 |")
@@ -687,6 +760,7 @@ def doc_seed(tables, counts):
         "chat_message": "V5 不预置；行数为运行期订单聊天快照（M13 测试/演示产生）",
         "chat_read_cursor": "V5 不预置；每订单每用户最多一条，行数为运行期已读上报快照",
         "order_fulfillment_event": "V6 不预置；行数为运行期履约事件流水快照（V3.1 联调产生）",
+        "companion_available_slot": "V7 不预置；行数为运行期结构化排班快照（陪诊员自行登记可服务时段后产生；老数据仍回退解析 `companion_profile.available_time`）",
     }
     for domain, names in DOMAINS:
         for name in names:
@@ -788,7 +862,7 @@ def main():
     for path in sql_files:
         with open(path, "r", encoding="utf-8") as f:
             text += f.read() + "\n"
-    tables = parse_alter(text, parse_ddl(text))
+    tables = parse_alter_bare(text, parse_alter(text, parse_ddl(text)))
 
     if mode == "counts":
         lines = []

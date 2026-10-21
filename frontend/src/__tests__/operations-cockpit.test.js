@@ -29,7 +29,7 @@ const exceptionsMock = vi.fn()
 const trendMock = vi.fn()
 const healthMock = vi.fn()
 
-vi.mock('@/api/statistics', () => ({
+vi.mock('@/api/admin', () => ({
   getOperationsOverview: (...a) => overviewMock(...a),
   getOperationsExceptions: (...a) => exceptionsMock(...a),
   getOperationsTrend: (...a) => trendMock(...a),

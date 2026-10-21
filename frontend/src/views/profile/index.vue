@@ -276,6 +276,29 @@ async function submitChangePwd() {
               </svg>
             </template>
           </NlListRow>
+          <NlListRow
+            title="工作台"
+            subtitle="本月完成单数 / 收入 / 趋势 / 服务画像"
+            chevron
+            divider
+            @click="router.push('/companion/workbench')"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M4 19V5M4 19h16" />
+                <path d="M8 15l3-4 3 2 4-6" />
+              </svg>
+            </template>
+          </NlListRow>
         </NlCard>
       </section>
 

@@ -5,7 +5,6 @@ import org.company.nianglin.config.OperationsProperties;
 import org.company.nianglin.mapper.OperationsMapper;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
 
 /**
  * 完成率（按时）计算器（V3.6 · T3）。
@@ -36,9 +35,7 @@ public class CompletionRateCalculator extends AbstractMetricCalculator {
 
     @Override
     public String calculate(DateRange range) {
-        Map<String, Object> stats = orderStats(range);
-        long completed = longOf(stats, "completedCount");
-        long onTime = longOf(stats, "onTimeCompletedCount");
-        return percent(onTime, completed);
+        // 公式本体在 MetricFormulas —— 驾驶舱健康度调的是同一份实现
+        return MetricFormulas.completionRate(orderStats(range));
     }
 }

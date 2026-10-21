@@ -1,6 +1,6 @@
 # 指标字典 · 人读面
 
-> **版本**：v1.3 · 2026-10-20
+> **版本**：v1.5 · 2026-10-21
 > **机器面**：[`backend/src/main/resources/metrics/metric-dictionary.yml`](../../backend/src/main/resources/metrics/metric-dictionary.yml)（`MetricDictionary` 加载，`MetricDictionaryTest` 双向校验）
 > **上游依据**：[`V3.x-roadmap-spec.md`](./V3.x-roadmap-spec.md) §4.2 决策 2.6、§4.6 决策 6.1 / 6.3 · [`迭代计划.md`](../../plans/迭代计划.md) §48 / §49
 > **不在本文件范围**：各版的具体接口契约（见 `docs/api/`）· 订单状态机语义（见 ADR-0010）
@@ -199,11 +199,11 @@ bucket = TAKEN    其余
 | 指标 key | 名称 | 统计范围 | 统计时间 | 数据来源 | 计算公式 | 口径版本 |
 |---|---|---|---|---|---|---|
 | `operations.today_order_count` | 今日订单数 | 今日新增的陪诊订单数 | **当天**（按 `create_time`，不随统计区间浮动） | `companion_order(create_time)` | `COUNT(*)` | 1 |
-| `operations.completed_order_count` | 区间完成订单数 | 统计区间内「已完成」的陪诊订单数 | 统计区间 | `companion_order(status, visit_time)` | `COUNT(status IN ('COMPLETED','REVIEWED'))` | 1 |
-| `operations.in_service_count` | 区间服务中订单数 | 统计区间内处于服务中的订单数 | 统计区间 | `companion_order(status, visit_time)` | `COUNT(status = 'IN_SERVICE')` | 1 |
-| `operations.pending_count` | 区间待接单订单数 | 统计区间内仍待接单的订单数 | 统计区间 | `companion_order(status, visit_time)` | `COUNT(status = 'PENDING')` | 1 |
-| `operations.fulfillment_rate` | 履约率 | 统计区间内订单的最终履约比例 | 统计区间 | `companion_order(status, visit_time)` | `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)` | 1 |
-| `operations.completion_rate` | 完成率（按时） | 统计区间内**已完成**订单里「没超时」的比例 | 统计区间 | `companion_order(status, visit_time, finish_time)` | 按时完成单数 / 已完成单数；「按时」= `finish_time ≤ visit_time + 履约时长窗口`（`nianglin.operations.fulfillment-window-minutes`，默认 240 分钟） | 1 |
+| `operations.completed_order_count` | 区间完成订单数 | 统计区间内**创建**的陪诊订单中，当前状态为「已完成」的订单数 | 统计区间 | `companion_order(status, create_time)` | `COUNT(status IN ('COMPLETED','REVIEWED'))` | 1 |
+| `operations.in_service_count` | 区间服务中订单数 | 统计区间内**创建**的陪诊订单中，当前状态为「服务中」的订单数 | 统计区间 | `companion_order(status, create_time)` | `COUNT(status = 'IN_SERVICE')` | 1 |
+| `operations.pending_count` | 区间待接单订单数 | 统计区间内**创建**的陪诊订单中，当前状态为「待接单」的订单数 | 统计区间 | `companion_order(status, create_time)` | `COUNT(status = 'PENDING')` | 1 |
+| `operations.fulfillment_rate` | 履约率 | 统计区间内最终履约（完成）的订单占「完成 + 取消」的比例 | 统计区间 | `companion_order(status, create_time)` | `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)` | 1 |
+| `operations.completion_rate` | 完成率（按时） | 统计区间内**已完成**订单里「没超时」的比例 | 统计区间 | `companion_order(status, visit_time, finish_time, create_time)` | 按时完成单数 / 已完成单数；「按时」= `finish_time ≤ visit_time + 履约时长窗口`（`nianglin.operations.fulfillment-window-minutes`，默认 240 分钟） | 1 |
 | `operations.avg_accept_minutes` | 平均接单时间 | 统计区间内已接单订单的接单耗时 | 统计区间 | `companion_order(create_time, accept_time)` | `AVG(TIMESTAMPDIFF(MINUTE, create_time, accept_time))`，仅 `accept_time` 非空 | 1 |
 
 #### 服务与陪诊员
@@ -212,7 +212,7 @@ bucket = TAKEN    其余
 |---|---|---|---|---|---|---|
 | `operations.complaint_rate` | 投诉率 | 统计区间内被投诉的订单占比 | 统计区间 | `complaint` + `companion_order` | 投诉订单数 / 区间订单数 | 1 |
 | `operations.average_score` | 平均评分 | 统计区间内有效评价的平均分 | 统计区间 | `order_review(score, is_valid, create_time)` | `AVG(score)`，仅 `is_valid = 1` | 1 |
-| `operations.active_companion_count` | 活跃陪诊员数 | 统计区间内有过接单的陪诊员人数（去重） | 统计区间 | `companion_order(companion_id, visit_time)` | `COUNT(DISTINCT companion_id)` | 1 |
+| `operations.active_companion_count` | 活跃陪诊员数 | 统计区间内**创建**的订单中接过单的陪诊员人数（去重） | 统计区间 | `companion_order(companion_id, create_time)` | `COUNT(DISTINCT companion_id)` | 1 |
 
 #### 异常中心
 
@@ -244,9 +244,14 @@ bucket = TAKEN    其余
    概览与健康度两个出口，**共用同一个计算实现**（决策 6.2）。
    两处各写一遍公式，迟早漂移。
 
+> **人读面与机器面的一致性由 `tools/check_metric_dict_parity.py` 机械校验**：
+> ① key 集合必须一致；② 人读面「数据来源」里提到的每个字段，
+> 机器面的 source 里必须也提到（单向包含 —— 机器面写得更精确不算漂移，
+> 人读面提到一个机器面没有的字段才算矛盾）。
+> 这道校验已接进 CI（`.github/workflows/ci.yml`），不一致即非零退出。
+
 > **待登记（V3.6 补登）**：超时率 / 人工介入率 / 改派率 / 平均服务时长 /
-> 陪诊员数 / 用药任务数 / 漏服率 —— 这几条的公式尚未在机器面登记，
-   留到 V3.6「指标字典校验与补全」时统一处理（见 `docs/spec/V3.6-tickets.md` T6）。
+> 陪诊员数 / 用药任务数 / 漏服率 —— 这 7 条已在 §2.7 补登（v1.4）。
 
 
 
@@ -258,16 +263,16 @@ bucket = TAKEN    其余
 >
 > ⚠️ **本节的表格由 `tools/gen_metric_dict_human_v36.py` 从机器面直接生成**，
 > 不要手改 —— 手改就会与机器面漂移（V3.5 修过的那次真实漂移就是这么来的）。
-> 两边的 key 集合由 `tools/check_metric_dict_parity.py` 机械校验。
+> 两边的 key 集合与「数据来源」口径由 `tools/check_metric_dict_parity.py` 机械校验。
 
 #### 供给缺口分析
 
 | 指标 key | 名称 | 统计范围 | 统计时间 | 数据来源 | 计算公式 | 口径版本 |
 |---|---|---|---|---|---|---|
 | `operations.gap.pending_unaccepted_count` | 时段待接未接单数 | 统计区间内仍处于待接单的陪诊订单数，按周内第几天与小时分桶 | 统计区间（默认 30 天、最多 366 天、闭区间）；桶固定 7×24 = 168 个，与区间长度无关 | companion_order(status, visit_time) | COUNT(status = 'PENDING')，按 visit_time 的 ISO 周内序号（1=周一…7=周日）与小时落桶 | 1 |
-| `operations.gap.available_companion_count` | 时段可服务陪诊员数 | 该时段可服务的陪诊员人数（去重）：优先读结构化表 companion_available_slot，表里没有时回退解析存量自由文本 companion_profile.available_time | 当前可服务时段（按周模板统计，不随统计区间浮动） | companion_available_slot(companion_id, weekday, start_time, end_time) + companion_profile(user_id, available_time) | 同一陪诊员在同一桶内只计 1 次（按人计，不按单计）；整点落在时段内即算该小时可服务；完全解析不出时段的陪诊员不进任何桶（见 operations.gap.companions_without_slots） | 1 |
+| `operations.gap.available_companion_count` | 时段可服务陪诊员数 | 该时段可服务的陪诊员人数（去重）：只统计资质通过（APPROVED）且当前在线（AVAILABLE）的陪诊员 —— 休息 / 离线的人不接新单，算作供给会让缺口被低估；优先读结构化表 companion_available_slot，表里没有时回退解析存量自由文本 companion_profile.available_time | 当前可服务时段（按周模板统计，不随统计区间浮动） | companion_available_slot(companion_id, weekday, start_time, end_time) + companion_profile(user_id, available_time) | 同一陪诊员在同一桶内只计 1 次（按人计，不按单计）；整点落在时段内即算该小时可服务；完全解析不出时段的陪诊员不进任何桶（见 operations.gap.companions_without_slots） | 1 |
 | `operations.gap.supply_gap` | 时段供给缺口 | 该时段的待接未接单数减去可服务陪诊员数；大于 0 即为缺口 | 同 operations.gap.pending_unaccepted_count | companion_order + companion_available_slot | pendingUnaccepted − availableCompanions（可为负：供给多于待接量，不做截断） | 1 |
-| `operations.gap.companions_without_slots` | 无可解析可服务时段的陪诊员数 | 全部陪诊员中既没有结构化可服务时段、又无法从自由文本解析出时段的人数；这部分陪诊员不参与供给统计 | 当前状态（不随统计区间浮动） | companion_profile(user_id, available_time) + companion_available_slot(companion_id) | COUNT(陪诊员 WHERE 结构化时段为空 AND 自由文本解析结果为空) | 1 |
+| `operations.gap.companions_without_slots` | 无可解析可服务时段的陪诊员数 | 与供给统计同一批人（资质通过 APPROVED 且当前在线 AVAILABLE）中，既没有结构化可服务时段、又无法从自由文本解析出时段的人数；这批人正是「因不参与供给统计而看不出缺口」的那部分，如实计数披露 | 当前状态（不随统计区间浮动） | companion_profile(user_id, available_time) + companion_available_slot(companion_id) | COUNT(陪诊员 WHERE 资质=APPROVED AND 工作状态=AVAILABLE AND 结构化时段为空 AND 自由文本解析结果为空) | 1 |
 
 #### 其它补登
 
@@ -306,7 +311,13 @@ bucket = TAKEN    其余
 | 2026-10-20 | v1.1 | 登记 V3.3 陪诊员工作台的 18 条指标（区间 11 条 + 累计 7 条） | `companion_profile.order_count` 不再作为来源（运行期无人维护），累计完成单数改从 `companion_order` 现算 |
 | 2026-10-20 | v1.2 | 登记 V3.4 智能调度的 6 条匹配指标（五个维度 + 加权总分） | 无 —— 新指标首次登记 |
 | 2026-10-20 | v1.3 | 登记 V3.5 运营驾驶舱的 **15** 条管理端指标（订单/履约/服务/陪诊员/异常/趋势六域），与机器面逐条对齐 | 超时率 / 人工介入率 / 改派率等留给 V3.6 补登 |
-| 2026-10-20 | v1.1 | 登记 V3.3 陪诊员工作台的 18 条指标（区间 11 条 + 累计 7 条） | `companion_profile.order_count` 不再作为来源（运行期无人维护），累计完成单数改从 `companion_order` 现算 |
+| 2026-10-20 | v1.4 | 登记 V3.6 数据闭环的 **11** 条指标（供给缺口 4 条 + 其它补登 7 条），本节表格由脚本从机器面生成 | 超时率 / 人工介入率 / 改派率等补齐迭代计划 §48 清单；§2.6 运营端 5 条指标的「数据来源」勘误为 `create_time`（机器面与 SQL 一直是 `create_time`，是人读面滞后） |
+| 2026-10-21 | v1.5 | 供给缺口 2 条指标的「统计范围」措辞精度修正：universe 明确为**资质通过（APPROVED）且当前在线（AVAILABLE）**的陪诊员，与实现一致；新增 `GET /api/admin/metrics` 指标字典只读导出端点 | **口径值未变**（`caliberVersion` 保持 1）—— 原措辞「全部陪诊员中」与实现的过滤条件不符，是**文档写得比实现宽**，实现侧 `OperationsMapper` 的过滤是有意为之（休息 / 离线的人不接新单，算作供给会让缺口被低估）；新端点导出的是**口径定义**而非统计值，故不进 `metrics/endpoints.yml` |
 
 > 口径变更 = 改公式 + 升 `caliberVersion` + 在本表留一行。
 > **不改写历史数据**（V3.6 范围外条款）。
+>
+> v1.4 里的 §2.6 勘误属于**人读面写错**（机器面与 SQL 一直是对的），
+> 所以没有升 `caliberVersion` —— 口径本身没变，改的是把口径抄错的那一栏。
+>
+> v1.5 同理：计算逻辑一个字没动，只是把**两个面都写宽了**的 universe 收回成实现真正使用的那一批人。

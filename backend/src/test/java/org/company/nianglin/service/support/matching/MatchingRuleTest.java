@@ -471,10 +471,34 @@ class MatchingRuleTest {
             MatchingScore score = new MatchingScore(dimensions,
                     MatchingScore.weightedTotal(dimensions, weights));
 
-            assertEquals(4, score.reasons().size(), "只有未降级的维度才有命中理由");
+            assertEquals(3, score.reasons().size(), "只有未降级且得分大于 0 的维度才有命中理由");
             assertFalse(score.reasons().contains("未填写坐标"), "降级维度不得混进命中理由");
+            assertFalse(score.reasons().contains("未服务过该科室"), "0 分维度不是命中理由");
             assertEquals(1, score.notes().size());
             assertTrue(score.notes().get(0).contains("未填写坐标"));
+        }
+
+        @Test
+        @DisplayName("0 分且非降级的维度进 mismatches，不进 reasons（淘汰理由不能说成推荐理由）")
+        void zeroScoreDimensionShouldAppearInMismatchesNotReasons() {
+            Map<String, DimensionResult> dimensions = new LinkedHashMap<>();
+            dimensions.put(MatchingWeights.DIMENSION_REGION, DimensionResult.of(0.0D, "跨城市"));
+            dimensions.put(MatchingWeights.DIMENSION_TIME, DimensionResult.of(0.5D, "同一城市不同区域"));
+            dimensions.put(MatchingWeights.DIMENSION_DISTANCE, DimensionResult.of(0.0D, "超出服务半径"));
+            dimensions.put(MatchingWeights.DIMENSION_SKILL,
+                    DimensionResult.degraded(0.0D, "未登记可服务时段", "未登记可服务时段，时间维度记 0"));
+            dimensions.put(MatchingWeights.DIMENSION_RATING, DimensionResult.of(1.0D, "评分 4.8"));
+
+            MatchingScore score = new MatchingScore(dimensions,
+                    MatchingScore.weightedTotal(dimensions, weights));
+
+            assertEquals(List.of("同一城市不同区域", "评分 4.8"), score.reasons(),
+                    "命中理由只收得分大于 0 的维度");
+            assertEquals(List.of("跨城市", "超出服务半径"), score.mismatches(),
+                    "0 分且非降级的维度归 mismatches");
+            assertEquals(1, score.notes().size(), "降级维度仍归 notes");
+            assertFalse(score.reasons().contains("跨城市"), "「跨城市」是淘汰理由，不得混进推荐理由");
+            assertFalse(score.mismatches().contains("未登记可服务时段"), "降级不是没命中");
         }
 
         @Test

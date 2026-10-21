@@ -4,10 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.company.nianglin.common.DateRange;
 import org.company.nianglin.config.OperationsProperties;
 import org.company.nianglin.mapper.OperationsMapper;
-import org.company.nianglin.vo.ChartDataVO;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.Map;
 
@@ -87,66 +85,50 @@ public abstract class AbstractMetricCalculator implements MetricCalculator {
     /* 取值与渲染                                                          */
     /* ================================================================== */
 
+    /*
+     * 以下 helper 全部委托给 {@link MetricFormulas} ——
+     * 取值与渲染的规则也要「物理上只有一份」，
+     * 否则同一个「解析不了就记 0」的规则在两处会有两个写法，
+     * 迟早漂移成两个口径（ADR-0017 决策 2）。
+     */
+
     /** 从聚合行取整数值，{@code null} 记 0 */
     protected static long longOf(Map<String, Object> row, String key) {
-        return longOf(row == null ? null : row.get(key));
+        return MetricFormulas.longOf(row, key);
     }
 
     /** 把任意查询结果转成长整数，{@code null} / 非法值记 0 */
     protected static long longOf(Object value) {
-        if (value == null) {
-            return 0L;
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        try {
-            return Long.parseLong(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return 0L;
-        }
+        return MetricFormulas.longOf(value);
     }
 
     /** 从聚合行取小数值，{@code null} 记 0 */
     protected static BigDecimal decimalOf(Map<String, Object> row, String key) {
-        return decimalOf(row == null ? null : row.get(key));
+        return MetricFormulas.decimalOf(row == null ? null : row.get(key));
     }
 
     /** 把任意查询结果转成小数，{@code null} 记 0 */
     protected static BigDecimal decimalOf(Object value) {
-        if (value == null) {
-            return BigDecimal.ZERO;
-        }
-        if (value instanceof BigDecimal decimal) {
-            return decimal;
-        }
-        if (value instanceof Number number) {
-            return BigDecimal.valueOf(number.doubleValue());
-        }
-        try {
-            return new BigDecimal(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return BigDecimal.ZERO;
-        }
+        return MetricFormulas.decimalOf(value);
     }
 
     /** 百分比字符串（两位小数 + {@code %}）；分母为 0 时 {@code "0.00%"} */
     protected static String percent(long numerator, long denominator) {
-        return ChartDataVO.percent(numerator, denominator);
+        return MetricFormulas.percent(numerator, denominator);
     }
 
     /** 计数字符串（不带小数位） */
     protected static String count(long value) {
-        return String.valueOf(value);
+        return MetricFormulas.countText(value);
     }
 
     /** 两位小数字符串（不带 {@code %}），用于评分、时长这类非比率指标 */
     protected static String fixed(Object value) {
-        return decimalOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString();
+        return MetricFormulas.fixed(value);
     }
 
     /** 四舍五入到整数（用于「平均接单时间」这类分钟数） */
     protected static long rounded(Object value) {
-        return decimalOf(value).setScale(0, RoundingMode.HALF_UP).longValue();
+        return MetricFormulas.rounded(value);
     }
 }

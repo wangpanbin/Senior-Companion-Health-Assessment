@@ -2,7 +2,11 @@
 #
 # 存在的理由：仓库里本来就有 609 条后端单测、34 条前端单测、ESLint 与 Prettier 配置，
 # 但**没有任何入口会自动跑它们** —— 唯一的质量防线是「谁记得跑」。
-# 本文件把那套已经存在的检查接上电，不新增任何检查项。
+# 本文件把那套已经存在的检查接上电。
+#
+# 后来新增的检查项（AGENTS.md §0.2 要求「新增检查项时同步改 workflow」）：
+#   · 指标字典人读面↔机器面一致性（metric-dict job）—— V3.6 收口时新增
+#   · 密钥体检（secrets job）—— 规则本体已收敛到 tools/check_secrets.py
 #
 # 为什么需要 service 容器：backend/src/test 下**有** @SpringBootTest（609 条里 270 条，
 # 12 个类，明细见下面 backend job 的注释）—— 它们会拉起完整 Spring 上下文、Flyway 连库
@@ -207,51 +211,36 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0  # 需要历史才能扫「曾经提交过」
+          fetch-depth: 0  # 保留完整历史，后续要扫「曾经提交过」时不用再改 workflow
 
-      - name: 扫 JWT / 明文口令 / 真实手机号
-        run: |
-          set -euo pipefail
-          # 只扫入库范围：汇报物料（presentation/ voiceover/）已 gitignore，不该进扫描
-          fail=0
+      # ⚠️ **规则本体在 `tools/check_secrets.py`，不要在这里再抄一份。**
+      # 这四条曾经内联在本文件里，结果本地自查脚本与 CI 各有一份 ——
+      # 抄两份就出现「本地脚本的 Windows 路径分隔符让白名单永远不生效」这种偏差，
+      # 而本 job 绿着、本地红着，谁也不知道该信谁。
+      # 改规则请改脚本，本 job 只负责调用；脚本与本 job 的等价性由
+      # 「植入一个已知会命中的样本，两边都必须变红」来保证。
+      - name: 扫 JWT / 明文口令 / 真实手机号 / 真实身份证号
+        run: python3 tools/check_secrets.py
 
-          # ① 真实 JWT（eyJ 开头的 base64 头）
-          if git grep -nE 'eyJ[A-Za-z0-9_-]{20,}' -- . ; then
-            echo "::error::发现疑似真实 JWT"
-            fail=1
-          fi
+  # ------------------------------------------------------------------ #
+  # 指标字典一致性
+  #
+  # 人读面（docs/spec/metric-dictionary.md）与机器面
+  # （backend/src/main/resources/metrics/metric-dictionary.yml）必须一致 ——
+  # 两边对不上就是**口径漂移本身**。
+  #
+  # 为什么单开一个 job：这条检查不产出构建物，只回答「文档有没有抄错口径」。
+  # V3.6 收口时真实漂移过一次 —— 人读面写 `visit_time`、
+  # 机器面与 SQL 都是 `create_time`，而当时只比 key 集合，漂移就溜过去了。
+  # ------------------------------------------------------------------ #
+  metric-dict:
+    name: 指标字典 · 人读面↔机器面
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
 
-          # ② 明文口令赋值 —— 排除四类**已知安全**的形态，否则本 job 永远红：
-          #    a) 占位串与变量引用：CHANGE_ME / ${VAR} / your-xxx / os.environ["X"]
-          #    b) @Schema(example=...) 与 @Pattern 的文档示例 —— 那是给人看的契约
-          #    c) 单测夹具里的固定口令（AuthServiceTest 等），断言要用，不能改
-          #    d) 种子密钥生成器 GenSeedSecrets 的本地默认口令，其值由环境变量覆盖
-          #    真正要抓的是 application-*.yml 里的硬编码
-          if git grep -nE '(password|passwd|secret)[[:space:]]*[=:][[:space:]]*["'"'"'][^"'"'"']{6,}' -- . \
-             | grep -vE 'CHANGE_ME|your-|your_|占位|示例|dummy|example|\$\{|os\.environ|getenv|__tests__|/test/|GenSeedSecrets' ; then
-            echo "::error::发现疑似明文口令（生产代码与配置中不得硬编码）"
-            fail=1
-          fi
-
-          # ③ 真实手机号 —— 白名单放过种子数据、E2E 夹具与文档示例的固定号段：
-          #    1380000(AGENTS.md §0.2 占位串) / 138001 / 137001 / 138123 / 139001 /
-          #    139111 / 138999 / 139000(E2E 夹具) / 135000(E2E 夹具) / xxxx 掩码
-          if git grep -nE '\b1[3-9][0-9]{9}\b' -- . \
-             | grep -vE '1380000|138001|137001|138123|139001|139111|138999|139000|135000|xxxx' ; then
-            echo "::error::发现疑似真实手机号（示例数据请用 13800000000）"
-            fail=1
-          fi
-
-          # ④ 真实身份证号 —— 本仓库的示例号段是固定的三组，全部白名单：
-          #    110101…  AGENTS.md §0.2 规定的占位串
-          #    460101…  DTO 的 @Schema example、单测夹具、e2e 夹具共用的固定示例
-          #    4601xx / 4403xx  GenSeedSecrets 每次随机生成的假号（不固定、不可用）
-          #    真正要抓的是这三组之外的号 —— 那才是可能来自真实用户的
-          if git grep -nE '\b[1-9][0-9]{5}(19|20)[0-9]{2}(0[1-9]|1[0-2])[0-9]{2}[0-9]{3}[0-9Xx]\b' -- . \
-             | grep -vE '11010119|46010119|4601011948|46[0-9]{4}(19|20)[0-9]{2}' ; then
-            echo "::error::发现疑似身份证号（示例数据请用 110101199001010001）"
-            fail=1
-          fi
-
-          exit $fail
+      # ⚠️ 脚本只用标准库（不 import yaml）：CI 没有承诺装 PyYAML，
+      # 而本文件顶部明写「不要引入 pom.xml / package.json 之外的依赖」。
+      - name: 校验人读面与机器面一致
+        run: python3 tools/check_metric_dict_parity.py
 

@@ -12,6 +12,12 @@
 #      **不改写历史数据**；
 #   5. vos 段声明每个 VO 的字段构成：出现在 bindings 里的是指标，
 #      出现在 structural 里的是结构字段 —— 两边都没有的字段会让测试变红。
+#   6. ⚠️ 标量值**不能以 `*` 开头**（如 `scope: **重点**`）——
+#      YAML 会把它当成 alias，SnakeYAML 直接抛 "Scanner while scanning an alias"，
+#      整个 Spring 上下文起不来（表现为一大批测试报 ApplicationContext 失败）。
+#      要强调就用引号包起来，或者干脆不用 Markdown 标记（本文件不是 Markdown）。
+#   7. 本文件里**不写 Markdown 强调**（`**`）—— 人读面由脚本生成，
+#      需要强调时在脚本里加，不要把标记带进机器面。
 
 version: 5
 updatedAt: "2026-10-20"
@@ -770,7 +776,7 @@ metrics:
 
   - key: operations.gap.available_companion_count
     name: 时段可服务陪诊员数
-    scope: 该时段可服务的陪诊员人数（去重）：优先读结构化表 companion_available_slot，表里没有时回退解析存量自由文本 companion_profile.available_time
+    scope: 该时段可服务的陪诊员人数（去重）：只统计资质通过（APPROVED）且当前在线（AVAILABLE）的陪诊员 —— 休息 / 离线的人不接新单，算作供给会让缺口被低估；优先读结构化表 companion_available_slot，表里没有时回退解析存量自由文本 companion_profile.available_time
     period: 当前可服务时段（按周模板统计，不随统计区间浮动）
     source: companion_available_slot(companion_id, weekday, start_time, end_time) + companion_profile(user_id, available_time)
     formula: "同一陪诊员在同一桶内只计 1 次（按人计，不按单计）；整点落在时段内即算该小时可服务；完全解析不出时段的陪诊员不进任何桶（见 operations.gap.companions_without_slots）"
@@ -796,10 +802,10 @@ metrics:
 
   - key: operations.gap.companions_without_slots
     name: 无可解析可服务时段的陪诊员数
-    scope: 全部陪诊员中既没有结构化可服务时段、又无法从自由文本解析出时段的人数；这部分陪诊员不参与供给统计
+    scope: 与供给统计同一批人（资质通过 APPROVED 且当前在线 AVAILABLE）中，既没有结构化可服务时段、又无法从自由文本解析出时段的人数；这批人正是「因不参与供给统计而看不出缺口」的那部分，如实计数披露
     period: 当前状态（不随统计区间浮动）
     source: companion_profile(user_id, available_time) + companion_available_slot(companion_id)
-    formula: "COUNT(陪诊员 WHERE 结构化时段为空 AND 自由文本解析结果为空)"
+    formula: "COUNT(陪诊员 WHERE 资质=APPROVED AND 工作状态=AVAILABLE AND 结构化时段为空 AND 自由文本解析结果为空)"
     caliberVersion: 1
     endpoints:
       - "GET /api/admin/operations/gap"
@@ -993,6 +999,7 @@ vos:
       - companionId
       - companionName
       - reasons
+      - mismatches
       - notes
 
   - class: OperationsOverviewVO
@@ -1057,3 +1064,24 @@ vos:
       - from
       - to
       - value
+
+  # 指标字典的只读导出（V3.6 · T7 · FR-Trace）。
+  # 这两个 VO 导出的是**口径定义**，不是指标值 ——
+  # 所以字段全部按结构字段登记，且它们**不**出现在 metrics/endpoints.yml 里
+  # （那张表登记的是「哪个端点返回了哪些指标**值**」）。
+  - class: MetricDictionaryVO
+    structural:
+      - version
+      - total
+      - metrics
+
+  - class: MetricDefinitionVO
+    structural:
+      - key
+      - name
+      - scope
+      - period
+      - source
+      - formula
+      - caliberVersion
+      - endpoints

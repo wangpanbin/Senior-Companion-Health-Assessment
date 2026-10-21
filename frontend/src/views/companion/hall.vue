@@ -379,6 +379,7 @@ onMounted(async () => {
     <template #actions>
       <el-button text @click="router.push('/companion/order')">我的订单</el-button>
       <el-button text @click="router.push('/companion/income')">我的收入</el-button>
+      <el-button text @click="router.push('/companion/workbench')">工作台</el-button>
       <el-button v-if="certStatus !== 'APPROVED'" type="primary" round @click="goEntry">
         去提交资质
       </el-button>
@@ -592,6 +593,8 @@ onMounted(async () => {
   margin-bottom: var(--nl-space-3);
 
   &__btn {
+    /* 触控区不低于适老化基线（AGENTS.md §3.5） */
+    min-height: var(--nl-touch-min);
     padding: 6px 14px;
     font-size: var(--nl-font-caption);
     font-weight: 500;
@@ -692,6 +695,8 @@ onMounted(async () => {
   margin-bottom: var(--nl-space-3);
 
   &__btn {
+    /* 触控区不低于适老化基线（AGENTS.md §3.5） */
+    min-height: var(--nl-touch-min);
     padding: 6px 14px;
     font-size: var(--nl-font-caption);
     font-weight: 500;

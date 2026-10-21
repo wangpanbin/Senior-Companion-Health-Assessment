@@ -109,6 +109,7 @@
 | 20 | GET | `/api/admin/operations/health` | ADMIN | 平台健康度（V3.5） |
 | 21 | GET | `/api/admin/operations/gap` | ADMIN | 供给时段缺口分析（V3.6） |
 | 22 | GET | `/api/admin/operations/effect` | ADMIN | 干预效果对比（V3.6） |
+| 23 | GET | `/api/admin/metrics` | ADMIN | 指标字典只读导出（V3.6） |
 
 ---
 
@@ -748,7 +749,7 @@
 
 | 字段 | 口径 |
 |---|---|
-| `todayOrderCount` | 今日新增订单数 |
+| `todayOrderCount` | 今日新增订单数（**不随统计区间浮动** —— 它是「今天」这个事实，与区间是两个维度；口径同 `operations.today_order_count`） |
 | `completedOrderCount` | 区间内完成（`COMPLETED` + `REVIEWED`） |
 | `inServiceCount` | 区间内服务中（`IN_SERVICE`） |
 | `pendingCount` | 区间内待接单（`PENDING`） |
@@ -762,6 +763,20 @@
 ## 18. 异常中心（V3.5）
 
 `GET /api/admin/operations/exceptions`　权限：**ADMIN**
+
+### 请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `startDate` | String | 否 | `yyyy-MM-dd`，闭区间，默认最近 30 天；超 366 天返 `9002` |
+| `endDate` | String | 否 | `yyyy-MM-dd`，闭区间，默认今天；起止颠倒返 `9002` |
+
+> 与 §17 概览共用同一套区间入参（`dto.DateRangeQuery`）：
+> 不传即最近 30 天（含今天）。区间**只影响「用药漏服异常」这一项**
+> （按 `medication_task.plan_time` 落区间内统计）；
+> 「需人工介入订单」「超匹配预警时间订单」来自 V3.1 风险中心，是**当前状态**（与区间无关）；
+> 「投诉率异常陪诊员」按**运营配置的回溯期**判定
+> （`nianglin.operations.complaint-lookback-days`，默认 30 天），**不随请求区间变化**。
 
 ### 响应
 
@@ -1005,3 +1020,73 @@ V3.6 起，「哪个端点返回了哪些指标」由
 
 指标字典的「人读面」与「机器面」是否逐条一致，由
 `tools/check_metric_dict_parity.py` 机械校验（不一致即非零退出）。
+
+---
+
+## 24. 指标字典只读导出（V3.6）
+
+`GET /api/admin/metrics`　权限：**ADMIN**
+
+### 请求参数
+
+无。本端点不接收任何业务参数 —— 口径是静态登记的，不随区间变化。
+
+### 响应
+
+```json
+{
+  "code": 200, "message": "操作成功",
+  "data": {
+    "version": 5,
+    "total": 64,
+    "metrics": [
+      {
+        "key": "operations.fulfillment_rate",
+        "name": "履约率",
+        "scope": "统计区间内进入终态的陪诊订单",
+        "period": "统计区间（闭区间，默认最近 30 天）",
+        "source": "companion_order(status, create_time)",
+        "formula": "(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)",
+        "caliberVersion": 1,
+        "endpoints": ["GET /api/admin/operations/overview", "GET /api/admin/operations/health"]
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `version` | 字典版本（机器面 `version`）；口径变更即 +1 |
+| `total` | 登记的指标条数 |
+| `metrics[].key` | 指标 key（全局唯一） |
+| `metrics[].name` | 指标名称 |
+| `metrics[].scope` | 统计范围 |
+| `metrics[].period` | 统计时间 |
+| `metrics[].source` | 数据来源（表与字段） |
+| `metrics[].formula` | 计算公式 |
+| `metrics[].caliberVersion` | 该指标的口径版本 |
+| `metrics[].endpoints` | 返回该指标的端点（端点 ↔ 指标机器面） |
+
+### 它导出的是「口径」，不是「值」
+
+⚠️ 本端点**不返回任何统计值**。它回答的是「这个数**怎么算**」，
+供运营对账与开发排查；**看板上的数在各自的统计端点**。
+
+因此它**不进** `backend/src/main/resources/metrics/endpoints.yml` ——
+那张表登记的是「哪个端点返回了哪些指标**值**」，
+而本端点返回的是指标**定义**（ADR-0017 §待观察的边界：
+「这个字段是不是一个有口径的统计量」）。
+
+### 只读
+
+本端点**不提供修改口径的入口**。口径变更只能通过
+`metrics/metric-dictionary.yml` 的变更 + 字典版本升级走代码评审 ——
+否则同一时刻两个看板可能读到两份口径。
+
+### 错误码
+
+| 码 | 含义 | 触发条件 |
+|---|---|---|
+| 401 | 未登录 | 无令牌 |
+| 403 | 无权限 | 角色不是 `ADMIN` |

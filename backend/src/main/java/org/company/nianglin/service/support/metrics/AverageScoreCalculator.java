@@ -5,7 +5,6 @@ import org.company.nianglin.config.OperationsProperties;
 import org.company.nianglin.mapper.OperationsMapper;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
 
 /**
  * 平均评分计算器（V3.6 · T3）。
@@ -35,7 +34,7 @@ public class AverageScoreCalculator extends AbstractMetricCalculator {
 
     @Override
     public String calculate(DateRange range) {
-        Map<String, Object> stats = reviewStats(range);
-        return fixed(stats == null ? null : stats.get("averageScore"));
+        // 公式本体在 MetricFormulas —— 驾驶舱概览 / 健康度调的是同一份实现
+        return MetricFormulas.averageScore(reviewStats(range));
     }
 }

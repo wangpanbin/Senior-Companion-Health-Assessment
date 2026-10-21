@@ -457,6 +457,9 @@ onBeforeUnmount(() => {
               <ul v-if="c.reasons?.length" class="cand__reasons">
                 <li v-for="(r, i) in c.reasons" :key="i">{{ r }}</li>
               </ul>
+              <ul v-if="c.mismatches?.length" class="cand__mismatches">
+                <li v-for="(m, i) in c.mismatches" :key="i">{{ m }}</li>
+              </ul>
               <ul v-if="c.notes?.length" class="cand__notes">
                 <li v-for="(n, i) in c.notes" :key="i">{{ n }}</li>
               </ul>
@@ -730,6 +733,7 @@ onBeforeUnmount(() => {
   }
 
   &__reasons,
+  &__mismatches,
   &__notes {
     padding: 0;
     margin: var(--nl-space-2) 0 0;
@@ -739,6 +743,14 @@ onBeforeUnmount(() => {
   &__reasons li {
     font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
+    line-height: 1.6;
+  }
+
+  /* 未命中说明：这一维得了 0 分（跨城市 / 超出服务半径）——
+     它是「为什么排这么后」，不是加分项，视觉上比命中理由弱一级 */
+  &__mismatches li {
+    font-size: var(--nl-font-caption);
+    color: var(--nl-text-3);
     line-height: 1.6;
   }
 

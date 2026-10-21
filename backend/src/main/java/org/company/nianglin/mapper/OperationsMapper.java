@@ -46,6 +46,12 @@ public interface OperationsMapper {
      * 因此「同一个指标在驾驶舱与效果对比里必须是同一个数」这件事，
      * 由「两边都从这里取数」保证，而不是靠两边各写一遍公式。</p>
      *
+     * <p><b>todayCount 不随统计区间浮动</b>：它是「今日新增订单数」，
+     * 与 {@code operations.today_order_count} 的字典口径（{@code metric-dictionary.yml}
+     * 「统计时间 = 当天，不随统计区间浮动」）一致。所以它用**独立子查询**算，
+     * 不挂在区间的 {@code WHERE} 上 —— 否则自定义一个不含今天的区间时，
+     * 「今日订单数」会恒为 0。</p>
+     *
      * @param start                    区间起点（含）
      * @param end                      区间终点（含）
      * @param fulfillmentWindowMinutes 「按时完成」的判定窗口（分钟，配置项）
@@ -59,8 +65,8 @@ public interface OperationsMapper {
      *         无数据时各计数为 0，均值为 {@code null}
      */
     @Select("""
-            SELECT COALESCE(SUM(CASE WHEN create_time >= #{todayStart} AND create_time < #{todayEnd}
-                                      THEN 1 ELSE 0 END), 0) AS todayCount,
+            SELECT (SELECT COUNT(*) FROM companion_order
+                    WHERE deleted = 0 AND create_time >= #{todayStart} AND create_time < #{todayEnd}) AS todayCount,
                    COUNT(*) AS totalCount,
                    COALESCE(SUM(CASE WHEN status IN ('COMPLETED', 'REVIEWED') THEN 1 ELSE 0 END), 0) AS completedCount,
                    COALESCE(SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END), 0) AS cancelledCount,

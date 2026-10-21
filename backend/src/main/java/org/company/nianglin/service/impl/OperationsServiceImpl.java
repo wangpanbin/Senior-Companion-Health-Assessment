@@ -20,9 +20,9 @@ import org.company.nianglin.service.support.matching.LegacySlotParser;
 import org.company.nianglin.service.support.matching.MatchingCandidate;
 import org.company.nianglin.service.support.metrics.MetricCalculator;
 import org.company.nianglin.service.support.metrics.MetricCalculatorRegistry;
+import org.company.nianglin.service.support.metrics.MetricFormulas;
 import org.company.nianglin.service.support.metrics.MetricValues;
 import org.company.nianglin.util.MetricDictionary;
-import org.company.nianglin.vo.ChartDataVO;
 import org.company.nianglin.vo.FulfillmentSummaryVO;
 import org.company.nianglin.vo.OperationsEffectVO;
 import org.company.nianglin.vo.OperationsExceptionItemVO;
@@ -117,23 +117,21 @@ public class OperationsServiceImpl implements OperationsService {
         Map<String, Object> reviewStats = operationsMapper.selectReviewStats(
                 range.startTime(), range.endTime());
 
-        long completed = longOf(orderStats, "completedCount");
-        long cancelled = longOf(orderStats, "cancelledCount");
-        long total = longOf(orderStats, "totalCount");
-
         return new OperationsOverviewVO()
                 .setPeriodStart(range.start().toString())
                 .setPeriodEnd(range.end().toString())
                 .setTodayOrderCount((int) longOf(orderStats, "todayCount"))
-                .setCompletedOrderCount((int) completed)
+                .setCompletedOrderCount((int) longOf(orderStats, "completedCount"))
                 .setInServiceCount((int) longOf(orderStats, "inServiceCount"))
                 .setPendingCount((int) longOf(orderStats, "pendingCount"))
-                // 履约率：完成 ÷（完成 + 取消）。与「完成率（按时）」不是一个数。
-                .setFulfillmentRate(ChartDataVO.percent(completed, completed + cancelled))
-                .setAvgAcceptMinutes((int) longOf(orderStats, "avgAcceptMinutes"))
-                // 投诉率：投诉<b>订单</b>数 ÷ 区间订单数（同一单多次投诉只算一单）
-                .setComplaintRate(ChartDataVO.percent(longOf(complaintStats, "complaintOrderCount"), total))
-                .setAverageScore(averageScore(reviewStats));
+                // 履约率 / 平均接单时间 / 投诉率 / 平均评分：公式本体在 MetricFormulas，
+                // 与效果对比端点（service.support.metrics）共用同一份实现 ——
+                // 「同一个指标在两个端点必须是同一个数」靠的是同一段代码，
+                // 不是靠两处各写一遍再祈祷它们一样（ADR-0017 决策 2）。
+                .setFulfillmentRate(MetricFormulas.fulfillmentRate(orderStats))
+                .setAvgAcceptMinutes((int) MetricFormulas.avgAcceptMinutes(orderStats))
+                .setComplaintRate(MetricFormulas.complaintRate(orderStats, complaintStats))
+                .setAverageScore(MetricFormulas.averageScore(reviewStats));
     }
 
     /* ================================================================== */
@@ -393,19 +391,15 @@ public class OperationsServiceImpl implements OperationsService {
         Map<String, Object> reviewStats = operationsMapper.selectReviewStats(
                 range.startTime(), range.endTime());
 
-        long completed = longOf(orderStats, "completedCount");
-        long cancelled = longOf(orderStats, "cancelledCount");
-        long total = longOf(orderStats, "totalCount");
-        long onTime = longOf(orderStats, "onTimeCompletedCount");
-
         return new OperationsHealthVO()
-                .setFulfillmentRate(ChartDataVO.percent(completed, completed + cancelled))
+                // 公式本体同样在 MetricFormulas，与概览、效果对比共用一份
+                .setFulfillmentRate(MetricFormulas.fulfillmentRate(orderStats))
                 // 健康度六项统一用字符串渲染（与概览的 Integer 版本不同型，见 VO 注释）
-                .setAvgAcceptMinutes(String.valueOf(longOf(orderStats, "avgAcceptMinutes")))
+                .setAvgAcceptMinutes(String.valueOf(MetricFormulas.avgAcceptMinutes(orderStats)))
                 // 完成率（按时）：按时完成 ÷ 已完成。与履约率不是一个数。
-                .setCompletionRate(ChartDataVO.percent(onTime, completed))
-                .setComplaintRate(ChartDataVO.percent(longOf(complaintStats, "complaintOrderCount"), total))
-                .setAverageScore(averageScore(reviewStats))
+                .setCompletionRate(MetricFormulas.completionRate(orderStats))
+                .setComplaintRate(MetricFormulas.complaintRate(orderStats, complaintStats))
+                .setAverageScore(MetricFormulas.averageScore(reviewStats))
                 .setActiveCompanionCount((int) longOf(companionStats, "activeCompanionCount"));
     }
 
@@ -802,15 +796,6 @@ public class OperationsServiceImpl implements OperationsService {
         return range;
     }
 
-    /** 平均评分：两位小数字符串；无有效评价时为 {@code 0.00} */
-    private String averageScore(Map<String, Object> reviewStats) {
-        Object raw = reviewStats == null ? null : reviewStats.get("averageScore");
-        if (raw == null) {
-            return "0.00";
-        }
-        return decimalOf(raw).setScale(2, RoundingMode.HALF_UP).toPlainString();
-    }
-
     /** 百分比数值（趋势图用）：分母为 0 时记 0 */
     private BigDecimal percentValue(long numerator, long denominator) {
         if (denominator <= 0) {
@@ -831,41 +816,23 @@ public class OperationsServiceImpl implements OperationsService {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
     }
 
-    /** 从查询结果里取整数值，{@code null} 记 0 */
+    /**
+     * 从查询结果里取整数值，{@code null} 记 0。
+     *
+     * <p>委托给 {@link MetricFormulas}：取值规则也要「物理上只有一份」，
+     * 否则同一个「解析不了就记 0」的规则会在两处有两个写法。</p>
+     */
     private static long longOf(Map<String, Object> row, String key) {
-        return longOf(row == null ? null : row.get(key));
+        return MetricFormulas.longOf(row, key);
     }
 
     private static long longOf(Object value) {
-        if (value == null) {
-            return 0L;
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        try {
-            return Long.parseLong(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return 0L;
-        }
+        return MetricFormulas.longOf(value);
     }
 
-    /** 从查询结果里取小数，{@code null} 记 0 */
+    /** 从查询结果里取小数，{@code null} 记 0（委托给 {@link MetricFormulas}） */
     private static BigDecimal decimalOf(Object value) {
-        if (value == null) {
-            return BigDecimal.ZERO;
-        }
-        if (value instanceof BigDecimal decimal) {
-            return decimal;
-        }
-        if (value instanceof Number number) {
-            return BigDecimal.valueOf(number.doubleValue());
-        }
-        try {
-            return new BigDecimal(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return BigDecimal.ZERO;
-        }
+        return MetricFormulas.decimalOf(value);
     }
 
     /** 解析 {@code yyyy-MM-dd}；解析不了返回 {@code null}（跳过该行，不让整条趋势挂掉） */

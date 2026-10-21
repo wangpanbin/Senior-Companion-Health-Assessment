@@ -6,7 +6,6 @@ import org.company.nianglin.mapper.OperationsMapper;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 履约率计算器（V3.6 · T3）。
@@ -51,9 +50,7 @@ public class FulfillmentRateCalculator extends AbstractMetricCalculator {
 
     @Override
     public String calculate(DateRange range) {
-        Map<String, Object> stats = orderStats(range);
-        long completed = longOf(stats, "completedCount");
-        long cancelled = longOf(stats, "cancelledCount");
-        return percent(completed, completed + cancelled);
+        // 公式本体在 MetricFormulas —— 驾驶舱概览 / 健康度调的是同一份实现
+        return MetricFormulas.fulfillmentRate(orderStats(range));
     }
 }

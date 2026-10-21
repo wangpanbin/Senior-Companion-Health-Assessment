@@ -57,7 +57,12 @@ def main():
                 # （即 `路径:行号:内容`），不是只作用在内容上 ——
                 # 差这一点会让 `/test/` 目录下的单测夹具、`GenSeedSecrets.java`
                 # 这类文件被误判成明文口令。
-                out_line = "{}:{}: {}".format(path.relative_to(ROOT), lineno, line.strip())
+                #
+                # ⚠️ 路径必须用 **正斜杠**：CI 的 `git grep` 输出的是 `backend/src/test/...`，
+                # 而 `WindowsPath` 的 str() 是 `backend\src\test\...` ——
+                # 白名单里的 `/test/` 永远匹配不上，于是 Windows 上每次都误报。
+                # `.as_posix()` 把分隔符统一成正斜杠，与 CI 对齐。
+                out_line = "{}:{}: {}".format(path.relative_to(ROOT).as_posix(), lineno, line.strip())
                 if whitelist and whitelist.search(out_line):
                     continue
                 hits.append("  " + out_line[:150])

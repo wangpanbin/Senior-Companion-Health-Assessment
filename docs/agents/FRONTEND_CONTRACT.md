@@ -288,6 +288,18 @@ SSE 端点 `/sse/message` 要 `Authorization` 头，浏览器原生 `EventSource
 | `listComplaints(params)` | `GET /admin/complaint` |
 | `handleComplaint(id, data)` | `POST /admin/complaint/{id}/handle` |
 | `listOperLogs(params)` | `GET /admin/oper-log` |
+| `getOperationsOverview()` | `GET /admin/operations/overview`（V3.5 运营驾驶舱 · 概览） |
+| `getOperationsExceptions()` | `GET /admin/operations/exceptions`（V3.5 · 异常中心） |
+| `getOperationsTrend(params)` | `GET /admin/operations/trend`（V3.5 · 趋势；`dimension` / `range` / `startDate` / `endDate`） |
+| `getOperationsHealth()` | `GET /admin/operations/health`（V3.5 · 平台健康度） |
+| `getOperationsGap(params)` | `GET /admin/operations/gap`（V3.6 · 供给时段缺口；`range` / `startDate` / `endDate`） |
+| `getOperationsEffect(params)` | `GET /admin/operations/effect`（V3.6 · 干预效果对比；`metric` / `from` / `to` / `compareFrom` / `compareTo`） |
+| `getMetricDictionary()` | `GET /admin/metrics`（V3.6 · 指标字典只读导出；**导出的是口径定义，不是统计值**） |
+
+> ⚠️ **V3.5 / V3.6 的运营驾驶舱端点原本被放在 `@/api/statistics` 里** ——
+> 但它们的路径是 `/api/admin/operations/**`，契约登记在 `docs/api/08-admin.md`（M9 管理后台），
+> 而 `statistics.js` 的文件头声明的是「09-statistics-export.md / M10」。
+> 2026-10-21 迁到 `@/api/admin`，让「文件所在模块」与「端点所属模块」对上（AGENTS.md §3.10）。
 
 ### `@/api/statistics`
 `getOverview` `GET /statistics/overview` ｜ `getOrderTrend` `GET /statistics/order-trend`
@@ -439,7 +451,7 @@ onBeforeUnmount(() => polling?.stop())
 | `/companion/workbench` | `companion/workbench.vue` | COMPANION（**V3.3** 陪诊员工作台；运营指标 / 趋势 / 服务画像 / 收入摘要四块） |
 | `/companion/message` | `companion/message.vue` | COMPANION |
 | `/profile` | `profile/index.vue` | 全角色共用 |
-| `/admin/*`（9 页） | `admin/*.vue` | ADMIN（其中 `/admin/operations` 是 **V3.5** 运营驾驶舱：概览 / 异常中心 / 趋势 / 健康度 / 供给缺口 / 干预效果） |
+| `/admin/*`（11 页） | `admin/*.vue` | ADMIN —— `dashboard` / `companion-audit` / `order-dispute` / `user` / `order` / `complaint` / `export` / `oper-log` / `chat` / `operations` / `fulfillment`；其中 `/admin/operations` 是 **V3.5** 运营驾驶舱（概览 / 异常中心 / 趋势 / 健康度 / 供给缺口 / 干预效果），`/admin/fulfillment` 是 **V3.1** 履约风险 |
 
 ⚠️ **`elder/message.vue` 与 `family/message.vue` 没有被任何路由引用（死文件），不要动它们。**
 消息页只有一份：`companion/message.vue`，且它被 3 个角色共用 → **必须按当前登录角色渲染**（读 `useUserStore().role`）。
