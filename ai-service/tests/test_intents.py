@@ -37,10 +37,29 @@ def test_order_status_detected(question: str) -> None:
         "谁合适",
         "找谁陪我去医院",
         "陪诊员推荐",
+        "这几位陪诊员为什么合适",
+        "找几位陪诊员",
+        "陪诊员为什么推荐我",
     ],
 )
 def test_recommend_detected(question: str) -> None:
     assert intents.classify_recommend(question) is True
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "陪诊员资质怎么审核",
+        "陪诊员打卡是怎么规定的",
+    ],
+)
+def test_companion_questions_not_misrouted_to_recommend(question: str) -> None:
+    """带「陪诊员」但不是要推荐人的问题，**不得**被路由到推荐分支。
+
+    推荐分支在 FAQ 检索**之前**，一旦误路由，答案就答非所问 ——
+    比「没听懂」更糟，因为它看起来像个答案。
+    """
+    assert intents.classify_recommend(question) is False
 
 
 @pytest.mark.parametrize(

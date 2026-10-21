@@ -181,8 +181,10 @@ nianglin:
     read-timeout-ms: 60000
     # 每用户每分钟允许的提问次数（成本保护，不是安全边界）
     rate-limit-per-minute: 10
-    # 允许携带的历史轮数上限
-    max-history-turns: 6
+    # 允许携带的历史**消息条数**上限（1 轮 = user 1 条 + assistant 1 条 = 2 条；
+    # 12 条 = 6 轮）。⚠️ 单位是「条」不是「轮」—— 按「轮」写而实际按「条」卡，
+    # 用户问到第 5 轮就会被拦成 400。
+    max-history-messages: 12
     # 单条问题的长度上限
     max-question-length: 500
     # Python 不可用时是否走本地 FAQ 兜底

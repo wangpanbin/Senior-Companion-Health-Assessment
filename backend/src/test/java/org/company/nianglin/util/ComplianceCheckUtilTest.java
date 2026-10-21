@@ -106,4 +106,24 @@ class ComplianceCheckUtilTest {
         assertThat(ComplianceCheckUtil.class.getResourceAsStream(
                 "/compliance/medical-advice-words.txt")).isNotNull();
     }
+
+    @Test
+    @DisplayName("拒答模板来自共享资源，且**本身不含任何禁用词**")
+    void refusalTemplateIsClean() {
+        String template = ComplianceCheckUtil.refusalTemplate();
+
+        assertThat(template).isNotBlank();
+        // ⚠️ 这是本测试存在的核心理由：拒答模板若含禁用词，
+        //    输出护栏会把拒答模板**自己**拦下 —— 家属看到一段莫名其妙的提示。
+        for (String word : EXPECTED_WORDS) {
+            assertThat(template).doesNotContain(word);
+        }
+    }
+
+    @Test
+    @DisplayName("拒答模板资源必须存在于 classpath")
+    void refusalTemplateResourceIsOnClasspath() {
+        assertThat(ComplianceCheckUtil.class.getResourceAsStream(
+                "/compliance/refusal-template.txt")).isNotNull();
+    }
 }

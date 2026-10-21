@@ -206,9 +206,14 @@ public enum ResultCode {
     /**
      * 问题内容包含违规表述（辱骂 / 违规引流）。
      *
-     * <p>与 {@code 6003 CONTENT_SENSITIVE}（评价 / 投诉内容）、
-     * {@code 7004 CHAT_CONTENT_ILLEGAL}（聊天消息）是**三张不同的表**，
-     * 不可合并：前者拦辱骂引流，后两者拦医疗建议类表述。</p>
+     * <p>与 {@code 6003 CONTENT_SENSITIVE}、{@code 7004 CHAT_CONTENT_ILLEGAL}
+     * 是**不同的表**，不可合并：
+     * 本码拦的是<b>辱骂 / 违规引流</b>（与 {@code SensitiveWordUtil} 同源）。</p>
+     *
+     * <p>⚠️ {@code 6003} 实际<b>两种语义兼用</b>：评价 / 投诉内容走
+     * {@code SensitiveWordUtil}（辱骂），而催单备注 / 改派理由走
+     * {@code ComplianceCheckUtil}（医疗建议类表述）。
+     * 读 {@code 6003} 的错误消息时不要默认它只拦一种东西。</p>
      */
     ASSISTANT_QUESTION_ILLEGAL(10003, "问题内容包含违规表述，请重新描述"),
     ;

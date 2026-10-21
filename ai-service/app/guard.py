@@ -22,31 +22,46 @@
 **本模块的所有固定文案（拒答模板、免责句）本身不能含有禁用词** ——
 否则拒答模板会被自己的输出护栏拦下，变成「拒答模板被拒答」的死循环。
 
-所以 :data:`REFUSAL_TEMPLATE` 的措辞刻意避开了「病情判断」「诊断」这类词。
+所以拒答模板来自**共享资源文件**（与 Java 侧同一份），
 ``tests/test_guard.py`` 有一条断言专门守这个。
+
+## 词表在 import 时加载
+
+模块级常量在 import 时读共享文件 —— 读不到 / 读空 / 读错就**直接抛错**，
+进程起不来。这正是我们要的：护栏失效不能等到「医疗建议被放行」之后才发现。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
 
-from .paths import ComplianceWordsError, load_compliance_words
+from .paths import (
+    ComplianceWordsError,
+    load_compliance_words,
+    load_refusal_template,
+    load_sensitive_words,
+)
 
 # ──────────────────────────────────────────────────────────────────────
-# 固定文案
+# 共享合规资产（import 时加载 —— 加载失败 = 进程起不来）
 # ──────────────────────────────────────────────────────────────────────
 
-#: 医疗类问题的固定拒答模板。
+#: 医疗建议禁用词（与 Java 侧 ``ComplianceCheckUtil`` 读同一个文件）。
+_MEDICAL_ADVICE_WORDS: tuple[str, ...] = tuple(load_compliance_words())
+
+#: 辱骂 / 违规引流词（与 Java 侧 ``SensitiveWordUtil`` 读同一个文件）。
+_SENSITIVE_WORDS: tuple[str, ...] = tuple(load_sensitive_words())
+
+#: 固定拒答模板（与 Java 侧 ``ComplianceCheckUtil#refusalTemplate()`` 读同一个文件）。
 #:
 #: ⚠️ **本串本身不含任何禁用词**（诊断 / 疑似 / 病情判断 / 用药方案 …）。
 #: 若哪天有人把「诊断」写进来，输出护栏会把拒答模板自己拦下，
 #: 家属看到的就是一段莫名其妙的提示 —— 极其难排查。
-REFUSAL_TEMPLATE = (
-    "这个问题属于医疗健康咨询，平台不提供医疗建议。"
-    "请直接咨询接诊医生，或前往医院就诊。"
-)
+REFUSAL_TEMPLATE: str = load_refusal_template()
+
+# ──────────────────────────────────────────────────────────────────────
+# 固定文案
+# ──────────────────────────────────────────────────────────────────────
 
 #: 推荐类回答的免责句。推荐 ≠ 派单，接单权在陪诊员（ADR-0016 决策 4.4）。
 RECOMMEND_DISCLAIMER = "以上推荐仅供参考，最终由陪诊员本人确认接单。"
@@ -70,6 +85,10 @@ MEDICAL_INTENT_HINT = "涉及病情与用药的问题，平台不能给医疗建
 #: 判定的目的**只是拒绝**，不是分类 —— 所以可以粗。
 #: 刻意**不含**「药」「医院」「治疗」「检查」这类宽泛词：
 #: 「已协助取药」是完全合法的过程记录（与 ``ComplianceCheckUtil`` 同一纪律）。
+#:
+#: ⚠️ 用**裸词**（「癌」「手术」「抑郁」「焦虑」）而不是只用长变体
+#:    （「癌症」「抑郁症」）：家属说的是「肺癌」「要不要做手术」，
+#:    长变体匹配不上就等于没拦。
 MEDICAL_INTENT_KEYWORDS: tuple[str, ...] = (
     # 诊断与病情
     "诊断", "确诊", "得了什么病", "什么病", "是不是得了", "严重吗", "什么症状",
@@ -80,21 +99,10 @@ MEDICAL_INTENT_KEYWORDS: tuple[str, ...] = (
     "饭前还是饭后", "副作用", "禁忌", "过量",
     "换药", "停药", "加量", "减量", "处方", "开药", "配药",
     # 疾病与治疗
-    "肿瘤", "癌症", "化疗", "放疗", "支架", "偏方", "保健品有用吗",
-    "高血压", "糖尿病", "冠心病", "脑梗", "中风", "抑郁症", "焦虑症", "失眠",
+    "肿瘤", "癌", "化疗", "放疗", "支架", "手术", "偏方", "保健品有用吗",
+    "高血压", "糖尿病", "冠心病", "脑梗", "中风", "抑郁", "焦虑", "失眠",
     # 危急信号
     "自杀", "自残", "遗嘱", "传染",
-)
-
-#: 辱骂 / 违规引流词 —— 与后端 ``SensitiveWordUtil`` **保持同源**。
-#:
-#: 刻意保持短小：长词表会带来大量误伤（例如「滚」会命中「滚烫」），
-#: 而一期并没有内容审核的人工兜底能力。
-ABUSIVE_KEYWORDS: tuple[str, ...] = (
-    # 人身攻击
-    "垃圾", "滚蛋", "骗子", "骗人", "去死", "废物", "弱智", "傻逼", "脑残",
-    # 违规引流（平台外交易 / 私下联系）
-    "加微信", "加我微信", "私聊转账", "私下转账", "扫码付款",
 )
 
 #: 派单措辞禁用词 —— 与 ADR-0016 决策 4.4 一致。
@@ -111,28 +119,6 @@ ASSIGNMENT_WORD_FIXES: dict[str, str] = {
     "已分配": "推荐",
     "自动派单": "自动推荐",
 }
-
-
-# ──────────────────────────────────────────────────────────────────────
-# 加载共享禁用词表
-# ──────────────────────────────────────────────────────────────────────
-
-
-@lru_cache(maxsize=1)
-def medical_advice_words() -> tuple[str, ...]:
-    """加载**共享**的合规词表（与 Java 侧读同一个文件）。
-
-    首次调用时若加载失败会抛 :class:`ComplianceWordsError`。
-    ``app/main.py`` 在启动阶段就调用它 —— 失败即进程不启动。
-    """
-    return tuple(load_compliance_words())
-
-
-def reload_medical_advice_words(path: Path | None = None) -> tuple[str, ...]:
-    """重新加载词表（测试用）。"""
-    medical_advice_words.cache_clear()
-    words = tuple(load_compliance_words(path))
-    return words
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -175,6 +161,25 @@ class OutputScan:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# 词表访问器
+# ──────────────────────────────────────────────────────────────────────
+
+
+def medical_advice_words() -> tuple[str, ...]:
+    """共享的医疗建议禁用词表。"""
+    return _MEDICAL_ADVICE_WORDS
+
+
+def sensitive_words() -> tuple[str, ...]:
+    """共享的辱骂 / 违规引流词表。"""
+    return _SENSITIVE_WORDS
+
+
+#: 保留旧名 —— 语义未变（都是「辱骂 / 违规引流词」），但**来源已改为共享文件**。
+ABUSIVE_KEYWORDS: tuple[str, ...] = _SENSITIVE_WORDS
+
+
+# ──────────────────────────────────────────────────────────────────────
 # 第 1 层：输入侧
 # ──────────────────────────────────────────────────────────────────────
 
@@ -193,7 +198,7 @@ def find_abusive(text: str) -> str | None:
     """查找辱骂 / 违规引流词。命中返回该词。"""
     if not text:
         return None
-    for word in ABUSIVE_KEYWORDS:
+    for word in _SENSITIVE_WORDS:
         if word in text:
             return word
     return None
@@ -237,7 +242,7 @@ def scan_output(text: str) -> OutputScan:
         return OutputScan(text=text)
 
     # 医疗内容：整段拒答
-    for word in medical_advice_words():
+    for word in _MEDICAL_ADVICE_WORDS:
         if word in text:
             return OutputScan(
                 text=REFUSAL_TEMPLATE, blocked=True, hit=word, kind="medical"
@@ -275,7 +280,7 @@ __all__ = [
     "find_assignment_word",
     "find_medical_intent",
     "medical_advice_words",
-    "reload_medical_advice_words",
+    "sensitive_words",
     "scan_input",
     "scan_output",
 ]

@@ -306,7 +306,8 @@ public class OrderServiceImpl implements OrderService {
   **判定逻辑一旦依赖模型就没法写单测**，所以「先分类 → 再检索 → 最后叙述」的顺序不能改，LLM 只允许出现在最后一步的**叙述**上。
 - **降级路径与主路径同构**：未配置 `LLM_BASE_URL`、断网、超时、模型报错，**四种情况走同一条降级路径**（直接返回 FAQ 条目原文，`degraded=true`）。不要写成「主路径 + 一个补丁」；也**不要**把「没配模型」当成错误状态。降级出来的文本**同样要过输出护栏**。
 - **护栏写在代码里，不写在 prompt 里**：prompt 是「请求模型遵守」的约定，代码是「模型不遵守也拦得住」的保证。医疗意图的输入侧拦截、禁用词的输出侧替换，都必须在 `guard.py` 里用确定性的字符串匹配实现；prompt 里的对应文字只是第二层。
-- **共享词表读同一份文件**：合规禁用词只存在于 `backend/src/main/resources/compliance/medical-advice-words.txt`，Java 侧 `ComplianceCheckUtil` 与 Python 侧 `app/paths.py` **读同一个文件**（路径可用 `NIANGLIN_COMPLIANCE_WORDS_PATH` 覆盖）。**读不到 / 词数过少 / 缺关键词 → 启动失败**，不许「读空继续跑」——词表读空等于护栏静默失效。**不要在 Python 侧另抄一份词表。**
+- **共享合规资产读同一份文件**：`backend/src/main/resources/compliance/` 下三份 —— `medical-advice-words.txt`（医疗建议禁用词，Java `ComplianceCheckUtil`）、`sensitive-words.txt`（辱骂 / 违规引流词，Java `SensitiveWordUtil`）、`refusal-template.txt`（固定拒答模板）。Python 侧 `app/paths.py` **读同样的文件**（路径可用 `NIANGLIN_*_PATH` 覆盖）。**读不到 / 词数过少 / 缺关键词 → 启动失败**，不许「读空继续跑」——词表读空等于护栏静默失效。**不要在 Python 侧另抄一份词表。**
+  - 拒答模板也共享，是因为**它本身不得含任何禁用词** —— 两侧各写一份，早晚有一侧把自己拦下。
 - **FAQ 用 JSON，不引 PyYAML**：`knowledge/faq.json` 由 Python 标准库直接读，零依赖。**要改 YAML 必须先报批**（`PyYAML` 不在已批准的依赖清单里）。
 - **依赖清单冻结**：`ai-service/requirements.txt` 是**经人工逐项批准**的清单，**不擅自加一行**；需要新依赖时先说明理由、报批，再改清单。已刻意不引入：向量库 / embedding 模型 / 分词库 / redis-py / PyYAML。
 - **不引入自主 Agent**：决策链写死在代码里（输入护栏 → 意图分类 → FAQ 检索 → 事实装配 → 叙述 → 输出护栏），不用 `AgentExecutor` / `create_react_agent`。

@@ -42,7 +42,13 @@ class Settings(BaseSettings):
 
     # ── 共享资源路径 ──────────────────────────────────────────────────
     nianglin_compliance_words_path: str = ""
-    """合规词表路径。留空用仓库默认位置；生产由部署时挂载同一份文件。"""
+    """医疗建议禁用词表路径。留空用仓库默认位置；生产由部署时挂载同一份文件。"""
+
+    nianglin_sensitive_words_path: str = ""
+    """辱骂 / 违规引流词表路径。留空用仓库默认位置。"""
+
+    nianglin_refusal_template_path: str = ""
+    """固定拒答模板路径。留空用仓库默认位置。"""
 
     nianglin_faq_path: str = ""
     """FAQ 路径。留空用 knowledge/faq.json。"""

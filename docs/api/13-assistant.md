@@ -69,6 +69,22 @@
 
 ---
 
+### 0.5 三份共享合规资产
+
+合规红线在代码层只有一个落点，且**Java 与 Python 读同一份文件**：
+
+| 文件 | 内容 | Java 侧 | Python 侧 |
+|---|---|---|---|
+| `backend/src/main/resources/compliance/medical-advice-words.txt` | 医疗建议禁用词（17 词） | `ComplianceCheckUtil` | `app/paths.py` |
+| `backend/src/main/resources/compliance/sensitive-words.txt` | 辱骂 / 违规引流词（14 词） | `SensitiveWordUtil` | `app/paths.py` |
+| `backend/src/main/resources/compliance/refusal-template.txt` | 固定拒答模板 | `ComplianceCheckUtil#refusalTemplate()` | `app/guard.py` |
+
+- **读不到 / 读空 / 读错 → 两侧都启动失败**（词表读空 = 护栏静默失效 = 所有医疗回答放行）。
+- 拒答模板也共享，是因为**它本身不得含任何禁用词** —— 两侧各写一份，早晚有一侧把自己拦下。
+- 生产部署时把**同一份文件**挂给两个服务。
+
+---
+
 ## 一、数据模型
 
 ### 1.1 请求（`AssistantChatDTO`）
@@ -76,7 +92,7 @@
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `question` | String | ✓ | 家属的问题，最长 500 字符 |
-| `history` | List\<AssistantHistoryTurn\> | | 历史轮次，最多 6 轮 |
+| `history` | List\<AssistantHistoryTurn\> | | 历史消息，最多 **12 条**（1 轮 = user 1 条 + assistant 1 条 = 2 条；6 轮 = 12 条） |
 | `orderId` | Long | | 当前订单 ID；给了则装配该单上下文与候选陪诊员 |
 | `elderId` | Long | | 就诊老人档案 ID；给了则校验归属 |
 
@@ -136,7 +152,7 @@
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `question` | String | 是 | 家属的问题，≤500 字符 |
-| `history` | Array | 否 | 历史轮次，≤6 轮；只透传不落库 |
+| `history` | Array | 否 | 历史消息，≤**12 条**（6 轮）；只透传不落库 |
 | `orderId` | Long | 否 | 当前订单 ID |
 | `elderId` | Long | 否 | 就诊老人档案 ID |
 
@@ -217,6 +233,8 @@
   不是安全边界；Redis 挂了不该让助手整体不可用。
 - **`answer` 必须过输出护栏**：命中医疗建议类禁用词 → 整段替换为固定拒答模板；
   命中「已指派 / 已分配 / 自动派单」→ 词语级纠正并追加免责句。
+  **本地兜底路径同样要过这道护栏**（Java 侧 `AssistantServiceImpl#guardAnswer`）——
+  否则「Python 挂了就没人管」恰好成了绕过护栏的路径。
 
 ---
 

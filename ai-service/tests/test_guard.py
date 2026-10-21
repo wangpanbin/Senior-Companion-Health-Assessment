@@ -42,6 +42,27 @@ def test_word_snapshot_is_frozen(medical_words: tuple[str, ...]) -> None:
     assert len(medical_words) == 17
 
 
+def test_sensitive_words_snapshot_is_frozen() -> None:
+    """辱骂 / 违规引流词表**也是共享的**（V3.7 抽出），冻结一份快照。
+
+    与 Java 侧 ``SensitiveWordUtilTest`` 的同名快照必须逐字相同。
+    """
+    assert guard.sensitive_words() == (
+        # 人身攻击
+        "垃圾", "滚蛋", "骗子", "骗人", "去死", "废物", "弱智", "傻逼", "脑残",
+        # 违规引流
+        "加微信", "加我微信", "私聊转账", "私下转账", "扫码付款",
+    )
+
+
+def test_refusal_template_comes_from_shared_file() -> None:
+    """拒答模板来自**共享资源文件**（与 Java 侧同一份），两侧不会各说各话。"""
+    from app.paths import load_refusal_template, resolve_refusal_template_path
+
+    assert resolve_refusal_template_path().is_file()
+    assert guard.REFUSAL_TEMPLATE == load_refusal_template()
+
+
 def test_parse_word_lines_ignores_comments_and_blanks() -> None:
     text = "# 注释\n诊断\n\n  确诊  \n# 又一条注释\n疑似\n"
     assert parse_word_lines(text) == ["诊断", "确诊", "疑似"]
@@ -93,6 +114,25 @@ def test_medical_intent_detected(question: str) -> None:
     verdict = guard.scan_input(question)
     assert verdict.medical is True
     assert verdict.medical_hit
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "要不要做这个手术",
+        "肺癌怎么办",
+        "我最近很抑郁",
+        "焦虑得睡不着",
+    ],
+)
+def test_medical_intent_covers_bare_terms(question: str) -> None:
+    """**裸词**也要拦得住。
+
+    家属说的是「肺癌」「要不要做手术」「我抑郁了」，
+    而词表若只写「癌症」「抑郁症」就匹配不上 —— 漏拦等于没拦。
+    """
+    verdict = guard.scan_input(question)
+    assert verdict.medical is True, f"「{question}」未被识别为医疗意图"
 
 
 @pytest.mark.parametrize(

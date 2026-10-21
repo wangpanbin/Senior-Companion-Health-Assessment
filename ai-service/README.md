@@ -56,10 +56,17 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8081
 | `LLM_API_KEY` | 空 | Ollama 场景填 `ollama` 即可 |
 | `LLM_MODEL` | 空 | 模型名。留空时即使配了 base_url 也走降级 |
 | `LLM_TIMEOUT_SECONDS` | `30` | 单次调用超时 |
-| `NIANGLIN_COMPLIANCE_WORDS_PATH` | `../backend/src/main/resources/compliance/medical-advice-words.txt` | 共享合规词表路径 |
+| `NIANGLIN_COMPLIANCE_WORDS_PATH` | `../backend/src/main/resources/compliance/medical-advice-words.txt` | 共享**医疗建议禁用词**路径 |
+| `NIANGLIN_SENSITIVE_WORDS_PATH` | `../backend/src/main/resources/compliance/sensitive-words.txt` | 共享**辱骂 / 违规引流词**路径 |
+| `NIANGLIN_REFUSAL_TEMPLATE_PATH` | `../backend/src/main/resources/compliance/refusal-template.txt` | 共享**固定拒答模板**路径 |
 | `NIANGLIN_FAQ_PATH` | `knowledge/faq.json` | FAQ 路径 |
 
 样例见 [`.env.example`](./.env.example)。
+
+> 📌 路径类变量写在 `.env` 里**同样有效** —— 它们经 `pydantic-settings` 读取，
+> `.env` 与环境变量都会被读。（曾踩过一个坑：早先直接读 `os.environ`，
+> 而 `.env` **不会**注入 `os.environ`，于是「文档教用户写 .env、代码却看不见」，
+> 症状是「配了没反应」。）
 
 ### 接本地 Ollama
 
@@ -116,16 +123,21 @@ ai-service/
 **为什么不能只靠 prompt**：prompt 是「君子协定」，模型不保证遵守；
 而合规红线一旦漏放，平台就成了医疗建议的发布渠道。
 
-### 5.2 共享合规词表
+### 5.2 共享合规资产（三份）
 
-Java（`backend/.../util/ComplianceCheckUtil.java`）与 Python（`app/paths.py`）读**同一个文件**：
+Java 与 Python 读**同样的文件**：
 
-```
-backend/src/main/resources/compliance/medical-advice-words.txt
-```
+| 文件 | 内容 | Java 侧 | Python 侧 |
+|---|---|---|---|
+| `compliance/medical-advice-words.txt` | 医疗建议禁用词（17 词） | `ComplianceCheckUtil` | `app/paths.py` |
+| `compliance/sensitive-words.txt` | 辱骂 / 违规引流词（14 词） | `SensitiveWordUtil` | `app/paths.py` |
+| `compliance/refusal-template.txt` | 固定拒答模板 | `ComplianceCheckUtil#refusalTemplate()` | `app/guard.py` |
 
 **读不到 / 读空 / 读错 → 服务拒绝启动。** 理由：词表读空 = 护栏静默失效 =
 所有医疗回答放行，而且看起来一切正常 —— 这是最危险的一类故障。
+
+拒答模板也共享，是因为**它本身不得含任何禁用词** —— 两侧各写一份，
+早晚有一侧把自己拦下。
 
 生产部署时把**同一份文件**挂给两个服务。
 

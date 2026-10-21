@@ -32,6 +32,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -315,6 +317,63 @@ class AssistantServiceTest {
         // 依据引用用 § 章节号，不漏出 Markdown 标题符号（与 Python 侧同口径）
         assertTrue(vo.getSources().get(0).contains("§"), "依据引用应含章节号：" + vo.getSources());
         assertFalse(vo.getSources().get(0).contains("##"), "依据引用不该漏出标题符号：" + vo.getSources());
+    }
+
+    @Test
+    @DisplayName("payload **不外发**订单地址与未脱敏的陪诊员姓名（隐私最小化）")
+    void payloadShouldNotLeakAddressOrFullCompanionName() throws Exception {
+        startPython(200, """
+                {"answer":"好的","intent":"RECOMMEND_COMPANION","actions":[],"sources":[],"degraded":true}
+                """);
+
+        OrderVO order = new OrderVO();
+        order.setId(1001L);
+        order.setStatus("PENDING");
+        order.setHospital("海南省人民医院");
+        order.setDepartment("心内科");
+        order.setAddress("海南省海口市秀英区秀华路19号 门诊大楼3楼");
+        order.setCompanionName("李建军");
+        when(orderService.detail(1001L)).thenReturn(order);
+
+        AssistantChatDTO dto = new AssistantChatDTO();
+        dto.setQuestion("推荐个陪诊员");
+        dto.setOrderId(1001L);
+
+        service.chat(dto);
+
+        String body = receivedBodies.get(0);
+        // 地址对「解释推荐结果」没有任何用处，发出去只是白给一份敏感信息
+        assertFalse(body.contains("秀华路"), "payload 不该外发订单地址：" + body);
+        // 陪诊员姓名走脱敏（全名豁免只适用于订单详情接口，不顺延到外发给模型的数据）
+        assertFalse(body.contains("李建军"), "payload 不该外发陪诊员全名：" + body);
+        assertTrue(body.contains("李*军"), "payload 应带脱敏姓名：" + body);
+    }
+
+    @Test
+    @DisplayName("兜底答案**同样过输出护栏** —— 命中医疗词表就整段换成拒答模板")
+    void fallbackAnswerShouldPassOutputGuard() throws Exception {
+        startPython(200, "{}");
+        stopPython();
+
+        // 造一份「答案里混进了医疗建议表述」的 FAQ，模拟词表过期 / 内容被改坏的兜底场景
+        Path badFaq = Files.createTempFile("faq-bad", ".json");
+        Files.writeString(badFaq, """
+                [{"id":"faq-bad-01","question":"陪诊费怎么算",
+                  "keywords":["陪诊费","多少钱"],
+                  "answer":"医生建议服用阿司匹林，每天一次。",
+                  "source":"docs/api/03-order.md","anchor":"## 1. 创建订单"}]
+                """, StandardCharsets.UTF_8);
+        properties.setFaqPath(badFaq.toString());
+
+        AssistantChatDTO dto = new AssistantChatDTO();
+        dto.setQuestion("陪诊费多少钱");
+
+        AssistantChatVO vo = service.chat(dto);
+
+        assertFalse(vo.getAnswer().contains("建议服用"), "兜底答案不该保留医疗建议表述：" + vo.getAnswer());
+        assertTrue(vo.getAnswer().contains("不提供医疗建议"),
+                "兜底答案应被替换成固定拒答模板：" + vo.getAnswer());
+        Files.deleteIfExists(badFaq);
     }
 
     @Test

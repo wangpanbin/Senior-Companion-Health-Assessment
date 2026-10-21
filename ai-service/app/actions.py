@@ -213,8 +213,13 @@ def _resolve_time(text: str) -> tuple[int, int, int] | None:
     return hour, minute, 0
 
 
-def extract_visit_time(text: str, today: date | None = None) -> str | None:
+def extract_visit_time(text: str, today: date) -> str | None:
     """抽取就诊时间，输出 ``yyyy-MM-dd HH:mm:ss``。
+
+    ⚠️ ``today`` 是**必填**参数，不是带默认值的可选参数 ——
+    「周三」「下周三」这类相对日期必须锚在一个明确的「今天」上，
+    而**取时钟这件事属于编排层**（``service.py``），不该藏在纯函数里
+    （AGENTS.md §2.11：纯函数不碰时钟）。
 
     **日期与时刻必须同时存在**才算抽到 —— 只知道「周三」不知道几点，
     猜一个时间比留空更危险（用户会以为平台已经安排好了）。
@@ -224,8 +229,7 @@ def extract_visit_time(text: str, today: date | None = None) -> str | None:
     """
     if not text:
         return None
-    anchor = today or date.today()
-    day = _resolve_date(text, anchor)
+    day = _resolve_date(text, today)
     moment = _resolve_time(text)
     if day is None:
         return None
@@ -245,11 +249,13 @@ def extract_draft(
     ``elders`` 是当前家属绑定的老人列表（``{"id":..., "name":...}``）。
     **只有恰好一位老人时才自动填 elderId** —— 多位时由前端让用户选，
     猜错人比不填更糟。
+
+    ``today`` 留空时回落到当前日期；生产链路由编排层显式传入。
     """
     extraction = DraftExtraction(
         hospital=extract_hospital(text),
         department=extract_department(text),
-        visit_time=extract_visit_time(text, today=today),
+        visit_time=extract_visit_time(text, today or date.today()),
     )
     if elders and len(elders) == 1:
         elder = elders[0]

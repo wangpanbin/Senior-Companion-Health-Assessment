@@ -36,7 +36,8 @@ class AssistantPropertiesTest {
         assertEquals(10, properties.getRateLimitPerMinute());
         assertEquals(60000, properties.getReadTimeoutMs());
         assertEquals(3000, properties.getConnectTimeoutMs());
-        assertEquals(6, properties.getMaxHistoryTurns());
+        // 6 轮 = 12 条消息（user 1 条 + assistant 1 条）
+        assertEquals(12, properties.getMaxHistoryMessages());
         assertEquals(500, properties.getMaxQuestionLength());
         assertTrue(properties.isEnabled());
         assertTrue(properties.isFallbackOnError());
@@ -76,13 +77,13 @@ class AssistantPropertiesTest {
     }
 
     @Test
-    @DisplayName("历史轮数为负 → 启动失败")
-    void negativeHistoryTurnsShouldFail() {
+    @DisplayName("历史条数为负 → 启动失败")
+    void negativeHistoryMessagesShouldFail() {
         AssistantProperties properties = new AssistantProperties();
-        properties.setMaxHistoryTurns(-1);
+        properties.setMaxHistoryMessages(-1);
 
         IllegalStateException e = assertThrows(IllegalStateException.class, properties::validate);
-        assertTrue(e.getMessage().contains("max-history-turns"),
+        assertTrue(e.getMessage().contains("max-history-messages"),
                 "失败消息应指明配置键名，实际：" + e.getMessage());
     }
 

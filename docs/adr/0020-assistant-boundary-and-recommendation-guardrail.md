@@ -2,7 +2,7 @@
 
 > **状态**：已接受 · 2026-10-21
 > **相关**：[V3.7-assistant-spec.md](../spec/V3.7-assistant-spec.md) · [V3.7-tickets.md](../spec/V3.7-tickets.md) · [ADR-0016](0016-matching-structured-and-explainable.md) · [ADR-0011](0011-order-chat.md) · 仓库 `plans/迭代计划.md` §40 / §60 / §61.3
-> **影响范围**：`ai-service/**`（新增独立进程）· `backend/.../controller/assistant/**` · `backend/.../service/impl/AssistantServiceImpl.java` · `backend/.../util/ComplianceCheckUtil.java` · `backend/src/main/resources/compliance/medical-advice-words.txt` · `frontend/src/views/family/assistant.vue` · `frontend/src/api/assistant.js` · `GET /api/assistant/chat`
+> **影响范围**：`ai-service/**`（新增独立进程）· `backend/.../controller/assistant/**` · `backend/.../service/impl/AssistantServiceImpl.java` · `backend/.../util/ComplianceCheckUtil.java` · `backend/src/main/resources/compliance/medical-advice-words.txt` · `frontend/src/views/family/assistant.vue` · `frontend/src/api/assistant.js` · `POST /api/assistant/chat`
 
 ---
 
@@ -100,6 +100,11 @@ backend/src/main/resources/compliance/medical-advice-words.txt
 
 - **Java**：`ComplianceCheckUtil` 静态初始化读该资源，**签名与行为完全不变**，17 词一字不改；
 - **Python**：`ai-service/app/paths.py` 解析该文件的**可配置路径**（默认 `../backend/src/main/resources/compliance/medical-advice-words.txt`，相对 `ai-service/`），生产部署时把**同一份文件**挂给两个服务。
+
+> **同批抽出的还有两份**（收口评审时补上，纪律相同）：
+> `compliance/sensitive-words.txt`（辱骂 / 违规引流词，Java `SensitiveWordUtil` + Python `guard.py` 共读）
+> 与 `compliance/refusal-template.txt`（固定拒答模板，Java `ComplianceCheckUtil#refusalTemplate()` + Python `guard.REFUSAL_TEMPLATE` 共读）。
+> 拒答模板也共享，是因为**它本身不得含任何禁用词** —— 两侧各写一份，早晚有一侧把自己拦下。
 
 ### 理由
 

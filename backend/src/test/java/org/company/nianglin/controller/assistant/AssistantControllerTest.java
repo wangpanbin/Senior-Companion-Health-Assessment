@@ -105,20 +105,50 @@ class AssistantControllerTest {
     }
 
     @Test
-    @DisplayName("历史轮数超限（>6） → 400 + PARAM_ERROR")
+    @DisplayName("历史轮数超限（>12 条 = >6 轮） → 400 + PARAM_ERROR")
     void shouldRejectTooManyHistoryTurns() throws Exception {
         String body = """
                 {"question":"陪诊费多少钱","history":[
-                  {"role":"user","content":"1"},{"role":"user","content":"2"},
-                  {"role":"user","content":"3"},{"role":"user","content":"4"},
-                  {"role":"user","content":"5"},{"role":"user","content":"6"},
-                  {"role":"user","content":"7"}]}
+                  {"role":"user","content":"1"},{"role":"assistant","content":"2"},
+                  {"role":"user","content":"3"},{"role":"assistant","content":"4"},
+                  {"role":"user","content":"5"},{"role":"assistant","content":"6"},
+                  {"role":"user","content":"7"},{"role":"assistant","content":"8"},
+                  {"role":"user","content":"9"},{"role":"assistant","content":"10"},
+                  {"role":"user","content":"11"},{"role":"assistant","content":"12"},
+                  {"role":"user","content":"13"}]}
                 """;
         mockMvc.perform(post("/api/assistant/chat")
                         .contentType("application/json")
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(ResultCode.PARAM_ERROR.getCode()));
+    }
+
+    @Test
+    @DisplayName("历史刚好 12 条（6 轮） → 200，**不能**被拦")
+    void shouldAcceptTwelveHistoryMessages() throws Exception {
+        // ⚠️ 曾经踩过的坑：后端按「条」卡却写成 6，前端每轮发 2 条，
+        //    结果问到第 5 轮就 400 —— 用得越久越坏，而只测 1–2 轮时完全看不出来。
+        AssistantChatVO vo = new AssistantChatVO()
+                .setAnswer("好的")
+                .setIntent("FAQ_PLATFORM")
+                .setDegraded(Boolean.TRUE);
+        when(assistantService.chat(any())).thenReturn(vo);
+
+        StringBuilder history = new StringBuilder();
+        for (int i = 0; i < 12; i++) {
+            if (i > 0) {
+                history.append(',');
+            }
+            history.append("{\"role\":\"user\",\"content\":\"c").append(i).append("\"}");
+        }
+        String body = "{\"question\":\"陪诊费多少钱\",\"history\":[" + history + "]}";
+
+        mockMvc.perform(post("/api/assistant/chat")
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.SUCCESS.getCode()));
     }
 
     @Test

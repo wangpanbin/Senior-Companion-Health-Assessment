@@ -198,9 +198,14 @@ V3.7 智能助手涉及的环境变量（**全部可留空**：留空即基础�
 | `LLM_BASE_URL` | ai-service | `https://<your-endpoint>/v1` | OpenAI 兼容端点；**留空 = 基础模式**（回答直接给标准答案原文） |
 | `LLM_API_KEY` | ai-service | `CHANGE_ME` | 模型服务 key；本地 Ollama 填任意占位串即可。**不要写真实 key** |
 | `LLM_MODEL` | ai-service | `CHANGE_ME` | 模型名；**刻意不给代码默认值**，留空即走基础模式 |
-| `NIANGLIN_COMPLIANCE_WORDS_PATH` | ai-service | `../backend/src/main/resources/compliance/medical-advice-words.txt` | 共享合规词表路径（Java 与 Python 读同一份）；**读不到即启动失败** |
+| `NIANGLIN_COMPLIANCE_WORDS_PATH` | ai-service | `../backend/src/main/resources/compliance/medical-advice-words.txt` | 共享**医疗建议禁用词**路径（Java 与 Python 读同一份）；**读不到即启动失败** |
+| `NIANGLIN_SENSITIVE_WORDS_PATH` | ai-service | `../backend/src/main/resources/compliance/sensitive-words.txt` | 共享**辱骂 / 违规引流词**路径（同上） |
+| `NIANGLIN_REFUSAL_TEMPLATE_PATH` | ai-service | `../backend/src/main/resources/compliance/refusal-template.txt` | 共享**固定拒答模板**路径（同上） |
 
 > ⚠️ 真实 key / 口令只放环境变量或本地未入库文件，**不要**写进本文件或任何入库文件。
+>
+> 📌 路径类变量写在 `ai-service/.env` 里**同样有效**（经 pydantic-settings 读取，
+> `.env` 与环境变量都会被读）—— 但写 `.env` 只对本机有效，生产仍应走环境变量。
 
 ---
 

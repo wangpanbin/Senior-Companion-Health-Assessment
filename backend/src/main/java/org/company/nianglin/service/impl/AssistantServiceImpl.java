@@ -15,6 +15,8 @@ import org.company.nianglin.service.AssistantService;
 import org.company.nianglin.service.ElderService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.support.AssistantFallbackFaq;
+import org.company.nianglin.util.ComplianceCheckUtil;
+import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.vo.AssistantActionVO;
 import org.company.nianglin.vo.AssistantChatVO;
 import org.company.nianglin.vo.CompanionMatchVO;
@@ -185,7 +187,7 @@ public class AssistantServiceImpl implements AssistantService {
         if (history == null) {
             return list;
         }
-        int max = assistantProperties.getMaxHistoryTurns();
+        int max = assistantProperties.getMaxHistoryMessages();
         for (AssistantHistoryTurn turn : history) {
             if (turn == null || turn.getRole() == null || turn.getContent() == null) {
                 continue;
@@ -221,7 +223,17 @@ public class AssistantServiceImpl implements AssistantService {
         return list;
     }
 
-    /** 订单上下文摘要。字段全部来自 OrderVO，不额外补充。 */
+    /**
+     * 订单上下文摘要。字段全部来自 OrderVO，不额外补充。
+     *
+     * <p>⚠️ <b>刻意不外发「地址」与未脱敏的「陪诊员姓名」</b>：
+     * 这个 payload 会被 Python 侧转交给外部大模型，而助手解释推荐结果时
+     * <b>根本不需要地址</b>（匹配已在 Java 侧算完）。发出去只是白给一份
+     * 不必要的敏感信息。陪诊员姓名走 {@code MaskUtil.name()} 脱敏 ——
+     * 候选列表里本来就是脱敏的（{@code CompanionMatchVO.companionName}），
+     * 订单详情里的全名豁免（{@code OrderVO#ofDetail}）只适用于<b>详情接口</b>，
+     * 不该顺延到外发给模型的数据里。</p>
+     */
     private Map<String, Object> orderBrief(OrderVO order) {
         Map<String, Object> brief = new LinkedHashMap<>();
         brief.put("id", order.getId());
@@ -231,8 +243,7 @@ public class AssistantServiceImpl implements AssistantService {
         brief.put("hospital", order.getHospital());
         brief.put("department", order.getDepartment());
         brief.put("visitTime", formatTime(order.getVisitTime()));
-        brief.put("address", order.getAddress());
-        brief.put("companionName", order.getCompanionName());
+        brief.put("companionName", MaskUtil.name(order.getCompanionName()));
         return brief;
     }
 
@@ -369,12 +380,16 @@ public class AssistantServiceImpl implements AssistantService {
      *
      * <p>读的是<b>同一份</b> FAQ 文件，所以兜底答案与大模型模式下的答案口径一致。
      * 命中不了任何条目时返回 10002（而不是编一个答案）。</p>
+     *
+     * <p>⚠️ 兜底答案**同样要过输出护栏**：Python 侧的降级路径过了
+     * {@code guard.scan_output}，Java 侧不能漏 —— 否则「Python 挂了就没人管」
+     * 恰好成了绕过护栏的路径。</p>
      */
     private AssistantChatVO fallbackAnswer(String question) {
         return fallbackFaq.bestMatch(question)
                 .map(entry -> {
                     AssistantChatVO vo = new AssistantChatVO();
-                    vo.setAnswer(entry.answer());
+                    vo.setAnswer(guardAnswer(entry.answer()));
                     vo.setIntent("FAQ_PLATFORM");
                     vo.setDegraded(Boolean.TRUE);
                     if (!entry.sourceRef().isBlank()) {
@@ -383,6 +398,21 @@ public class AssistantServiceImpl implements AssistantService {
                     return vo;
                 })
                 .orElseThrow(() -> new BusinessException(ResultCode.ASSISTANT_UNAVAILABLE));
+    }
+
+    /**
+     * 对一段要返回给家属的文字做**输出护栏**。
+     *
+     * <p>命中医疗建议类表述 → 整段替换为固定拒答模板（沿用
+     * {@code ComplianceCheckUtil} 的「命中即拒、不打码」决策）。</p>
+     */
+    private String guardAnswer(String text) {
+        String hit = ComplianceCheckUtil.firstHit(text);
+        if (hit != null) {
+            log.warn("助手兜底答案命中合规词表，已整段替换为拒答模板 | hit={}", hit);
+            return ComplianceCheckUtil.refusalTemplate();
+        }
+        return text;
     }
 
     /** 供测试与排障查看当前是否可用。 */

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any
 
 from . import actions as actions_mod
@@ -167,7 +168,8 @@ class AssistantService:
         elders = [
             {"id": elder.id, "name": elder.name} for elder in (request.elders or [])
         ]
-        extraction = actions_mod.extract_draft(question, elders)
+        # ⚠️ 「今天」由**编排层**取，抽取函数本身保持纯函数（AGENTS.md §2.11：不碰时钟）
+        extraction = actions_mod.extract_draft(question, elders, today=date.today())
         if extraction.is_empty():
             return []
         payload = extraction.to_payload()
@@ -222,7 +224,6 @@ def render_facts_text(facts: dict[str, Any]) -> str:
             "hospital",
             "department",
             "visitTime",
-            "address",
             "companionName",
         ):
             value = order.get(key)

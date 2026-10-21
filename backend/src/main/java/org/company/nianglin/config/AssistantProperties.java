@@ -42,8 +42,14 @@ public class AssistantProperties {
     /** 每个用户每分钟允许的提问次数。 */
     private int rateLimitPerMinute = 10;
 
-    /** 允许携带的历史轮数上限。 */
-    private int maxHistoryTurns = 6;
+    /**
+     * 允许携带的历史<b>消息条数</b>上限。
+     *
+     * <p>⚠️ 单位是「条」不是「轮」：一轮 = user 一条 + assistant 一条 = 2 条。
+     * 6 轮 = 12 条。写成「轮」而实际按「条」卡，会让用户问到第 5 轮就被拦成 400
+     * ——<b>用得越久越坏</b>，而且只测 1–2 轮时完全看不出来。</p>
+     */
+    private int maxHistoryMessages = 12;
 
     /** 单条问题的长度上限。 */
     private int maxQuestionLength = 500;
@@ -80,9 +86,9 @@ public class AssistantProperties {
             throw new IllegalStateException(
                     "nianglin.assistant.rate-limit-per-minute 必须大于等于 1，当前为 " + rateLimitPerMinute);
         }
-        if (maxHistoryTurns < 0) {
+        if (maxHistoryMessages < 0) {
             throw new IllegalStateException(
-                    "nianglin.assistant.max-history-turns 不能为负，当前为 " + maxHistoryTurns);
+                    "nianglin.assistant.max-history-messages 不能为负，当前为 " + maxHistoryMessages);
         }
         if (maxQuestionLength < 1) {
             throw new IllegalStateException(
