@@ -679,4 +679,4 @@ Default five canonical roles: `needs-triage`, `needs-info`, `ready-for-agent`, `
 
 ### Domain docs
 
-Single-context layout: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context layout: one `CONTEXT.md` (glossary — single source of truth) + `docs/adr/` at the repo root. `GLOSSARY.md` is an alias pointer to `CONTEXT.md`, not a second glossary — add terms to `CONTEXT.md` only. See `docs/agents/domain.md`.
