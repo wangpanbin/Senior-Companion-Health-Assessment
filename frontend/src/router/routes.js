@@ -216,6 +216,23 @@ export const routes = [
         }
       },
       {
+        // V3.7 家属智能助手（M14）
+        // ⚠️ 仅 FAMILY：老人账号只读是项目硬规则，助手是家属代问的工具，
+        //    不给老人开入口（服务端 @PreAuthorize 同样只放行 FAMILY）。
+        // ⚠️ elderlyHidden：老人模式下隐藏该入口。
+        path: 'family/assistant',
+        name: 'FamilyAssistant',
+        component: () => import('@/views/family/assistant.vue'),
+        meta: {
+          title: '智能助手',
+          icon: 'ChatDotRound',
+          roles: ['FAMILY'],
+          module: 'M14',
+          elderlyHidden: true,
+          code: 'M-33'
+        }
+      },
+      {
         path: 'family/message',
         name: 'FamilyMessage',
         component: () => import('@/views/companion/message.vue'),

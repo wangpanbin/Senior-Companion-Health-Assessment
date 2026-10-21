@@ -187,6 +187,35 @@ public enum ResultCode {
     /* ==================== 9xxx 数据统计与导出 ==================== */
     EXPORT_LIMIT_EXCEEDED(9001, "导出数据量超过上限，请缩小筛选范围"),
     STAT_RANGE_INVALID(9002, "统计时间区间不合法"),
+
+    /* ==================== 10xxx 家属智能助手（M14 · V3.7） ==================== */
+    /**
+     * 提问过于频繁。
+     *
+     * <p>限流不是安全边界，是成本保护措施 —— 所以文案只说「过于频繁」，
+     * 不泄漏具体阈值与计数，避免被反向试探。</p>
+     */
+    ASSISTANT_RATE_LIMITED(10001, "提问过于频繁，请稍后再试"),
+    /**
+     * 智能助手服务不可用。
+     *
+     * <p>触发条件：Python 助手服务不可达，<b>且</b>本地 FAQ 兜底也读不到。
+     * 正常情况下 Python 挂了会先走本地兜底，只有兜底也失效才报这个码。</p>
+     */
+    ASSISTANT_UNAVAILABLE(10002, "智能助手暂时不可用，请稍后再试"),
+    /**
+     * 问题内容包含违规表述（辱骂 / 违规引流）。
+     *
+     * <p>与 {@code 6003 CONTENT_SENSITIVE}、{@code 7004 CHAT_CONTENT_ILLEGAL}
+     * 是**不同的表**，不可合并：
+     * 本码拦的是<b>辱骂 / 违规引流</b>（与 {@code SensitiveWordUtil} 同源）。</p>
+     *
+     * <p>⚠️ {@code 6003} 实际<b>两种语义兼用</b>：评价 / 投诉内容走
+     * {@code SensitiveWordUtil}（辱骂），而催单备注 / 改派理由走
+     * {@code ComplianceCheckUtil}（医疗建议类表述）。
+     * 读 {@code 6003} 的错误消息时不要默认它只拦一种东西。</p>
+     */
+    ASSISTANT_QUESTION_ILLEGAL(10003, "问题内容包含违规表述，请重新描述"),
     ;
 
     private final Integer code;

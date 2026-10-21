@@ -42,6 +42,13 @@ public final class RedisKeyConstants {
     /** 封禁标记：{@code user:banned:{userId}} → 1，用于让已签发令牌立即失效（M9） */
     public static final String USER_BANNED_PREFIX = "user:banned:";
 
+    /**
+     * 助手问答限流：{@code assistant:rl:{userId}:{yyyyMMddHHmm}} → 次数，TTL 2 分钟。
+     *
+     * <p>按分钟分桶，所以桶自然过期，不需要额外的清理任务。</p>
+     */
+    public static final String ASSISTANT_RATE_LIMIT_PREFIX = "assistant:rl:";
+
     public static String captcha(String captchaKey) {
         return CAPTCHA_PREFIX + captchaKey;
     }
@@ -81,5 +88,15 @@ public final class RedisKeyConstants {
     /** 某用户的封禁标记 */
     public static String userBanned(Long userId) {
         return USER_BANNED_PREFIX + userId;
+    }
+
+    /**
+     * 某用户的助手问答限流计数。
+     *
+     * @param userId 用户 ID
+     * @param minuteBucket 分钟桶，形如 {@code 202610211530}
+     */
+    public static String assistantRateLimit(Long userId, String minuteBucket) {
+        return ASSISTANT_RATE_LIMIT_PREFIX + userId + ":" + minuteBucket;
     }
 }

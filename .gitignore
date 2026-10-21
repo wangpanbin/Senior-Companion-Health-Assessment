@@ -99,6 +99,15 @@ backend/sql/tools/jmeter_fixture_snapshot.json
 # Python 字节码缓存（tools/e2e/ 的脚本已入库，缓存不入库）
 __pycache__/
 *.pyc
+# ── V3.7 ai-service（Python 助手服务）────────────────────────────────────
+# ⚠️ ai-service/.env 可能含真实模型 API Key —— 与 /reports/ 同级红线，绝不入库。
+#    入库的只有 .env.example（全部占位串）。
+ai-service/.env
+# 虚拟环境与测试产物（纯本地产物，不应入库）
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
 # 临时调试 SQL / 根目录孤儿 package.json（前端真实 package.json 在 frontend/）
 /.tmp_q.sql
 /package.json

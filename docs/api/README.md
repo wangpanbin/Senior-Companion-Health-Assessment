@@ -25,6 +25,7 @@
 | [10-file-upload.md](./10-file-upload.md) | 通用文件上传（资质证件 / 投诉证据 / 头像） | M5 / M9 |
 | [11-order-chat.md](./11-order-chat.md) | 订单聊天：家属↔陪诊员（ELDER 只读 / ADMIN 仲裁只读） | M13（二期） |
 | [12-elder-health.md](./12-elder-health.md) | 老人健康协同：家庭健康首页 / 健康概览 / 健康时间线 / 老人端 | M3（V3.2） |
+| [13-assistant.md](./13-assistant.md) | 家属智能助手（问答 / 推荐解释 / 下单草稿回填） | M14 |
 
 > **接口先行约定**：后端先按本文档出接口与 Mock 数据，前端用 Mock 开发，不等后端写完。
 > 接口一旦变更，必须在群内提前通知前端，并同步更新本文档与 Knife4j 注解。
@@ -326,6 +327,17 @@
 | 9001 | 导出数据量超过上限，请缩小筛选范围 |
 | 9002 | 统计时间区间不合法 |
 
+### 4.11 10xxx 智能助手（M14）
+
+| code | 含义 | 触发条件 |
+|---|---|---|
+| 10001 | 提问过于频繁，请稍后再试 | 同一用户单位时间内提问次数超过配置上限（`nianglin.assistant.rate-limit-per-minute`，默认 10 次/分钟） |
+| 10002 | 智能助手暂时不可用，请稍后再试 | Python 助手服务不可用**且**本地 FAQ 兜底也失败 |
+| 10003 | 问题内容包含违规表述，请重新描述 | 输入命中辱骂 / 违规引流词 |
+
+> 1xxx–9xxx 已用满，9xxx 语义固定为统计导出，故新开 **10xxx** 段（AGENTS.md §2.7 段位纪律）。
+> 通用 `400` / `401` / `403` / `3004` / `2006` 复用既有语义。
+
 ---
 
 ## 五、角色与权限矩阵
@@ -347,6 +359,7 @@
 | 数据统计 `/api/statistics/**`（ADMIN 段） | — | — | — | 全部 |
 | 陪诊员工作台统计 `/api/statistics/companion/**` | — | — | **读（仅本人，companionId 入参被忽略）** | — |
 | 候选陪诊员推荐 `/api/order/{id}/recommend-companions` | — | **读（仅本单下单家属；他人 3004）** | — | — |
+| 家属智能助手 `/api/assistant/**` | — | 读写（**仅下单家属可用问答**） | — | — |
 | 运营驾驶舱 `/api/admin/operations/**` | — | — | — | 全部（概览 / 异常中心 / 趋势 / 健康度 / 供给缺口 / 干预效果） |
 | 指标字典导出 `/api/admin/metrics` | — | — | — | 全部（**只读**，导出的是口径定义而非统计值） |
 
@@ -567,3 +580,4 @@ M4 继续追加**订单状态机与相关方边界**：
 | v0.6.0 | 2026-10-18 | **安全加固（SEC-2026-10-18-001）**：生产 profile 与密钥类配置改为「无默认值、缺失即启动失败」（`SPRING_PROFILES_ACTIVE` / `JWT_SECRET` / `ID_CARD_AES_KEY` / `DEFAULT_RESET_PASSWORD` / `REDIS_PASSWORD`，见 §十）；`08-admin.md` §7 重置密码响应**不再回传**默认口令 | — |
 | v0.7.0 | 2026-10-20 | **V3.3 – V3.6 四版迭代**（[总报告](../agents/reports/V3.3-V3.6-iteration-summary.md)）：<br>· **V3.3 陪诊员工作台** —— 新增 `GET /api/statistics/companion/me`、`/me/trend`、`/me/profile`、`/me/income`（仅 `COMPANION`，仅本人；`companionId` 入参被忽略）；`09-statistics-export.md` 新增 §8<br>· **V3.4 智能调度** —— 新增 `GET /api/order/{id}/recommend-companions`（仅下单家属，他人 `3004`）；`GET /api/order/hall?sortBy=` 开放 `DISTANCE` / `TIME_MATCH`（`INCOME` 仍 `400`）；`03-order.md` 新增 §13<br>· **V3.5 运营驾驶舱** —— 新增 `GET /api/admin/operations/overview`、`/exceptions`、`/trend`、`/health`（仅 `ADMIN`）；`08-admin.md` 新增 §17 – §20<br>· **V3.6 数据闭环** —— 新增 `GET /api/admin/operations/gap`、`/effect`（仅 `ADMIN`）；`08-admin.md` 新增 §21 – §23；新增端点↔指标机器面 `metrics/endpoints.yml` 与双向校验<br>**四版均零新增错误码**（复用 `200` / `400` / `401` / `403` / `3004` / `9002`） | — |
 | v0.8.0 | 2026-10-21 | **评审收口补漏**：<br>· **V3.6 兑现预写 spec** —— 实现 `GET /api/admin/metrics`（指标字典只读导出，仅 `ADMIN`；`08-admin.md` 新增 §24）<br>· **候选可解释性拆三段** —— `CompanionMatchVO` 新增 `mismatches`（该维度得 0 分的原因，如「超出服务半径」），`reasons` 收窄为「得分大于 0 的命中理由」，`notes`（降级说明）语义不变（`03-order.md` §13）<br>· 供给缺口 2 条指标的「统计范围」措辞与实现对齐（universe 明确为 `APPROVED + AVAILABLE`），口径值未变<br>**零新增错误码** | — |
+| v0.9.0 | 2026-10-21 | **V3.7 家属智能助手**（[ADR-0020](../adr/0020-assistant-boundary-and-recommendation-guardrail.md)）：新增 `POST /api/assistant/chat`（仅 FAMILY）；新开 10xxx 错误码段（10001 / 10002 / 10003）；新增 `ai-service` 独立 Python 服务（LangChain + FastAPI，8081 端口） | — |

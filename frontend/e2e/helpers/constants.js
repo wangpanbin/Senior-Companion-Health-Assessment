@@ -99,6 +99,8 @@ export const ROUTES = {
   chatSessions: '/chat',
   chatRoom: (orderId) => `/chat/${orderId}`,
   adminChatViewer: '/admin/chat',
+  /** V3.7 家属智能助手（M14）：只对 FAMILY 开放 */
+  assistant: '/family/assistant',
   error403: '/error/403',
   error404: '/error/404'
 }

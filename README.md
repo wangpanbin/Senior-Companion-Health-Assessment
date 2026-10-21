@@ -10,10 +10,10 @@
 
 ```
 Senior Companion Health Assessment/
-├── plan.md                     # 项目开发计划书（14 个模块拆分 + 环境需求 + 验收标准）
+├── plan.md                     # 项目开发计划书（15 个模块拆分 + 环境需求 + 验收标准）
 ├── 银龄伴诊项目计划书.docx       # 课程原始计划书
 ├── docs/
-│   └── api/                    # 接口设计文档（全局约定 + 9 个模块）
+│   └── api/                    # 接口设计文档（全局约定 + 13 个模块）
 ├── backend/                    # Spring Boot 3.x 后端工程
 │   ├── pom.xml
 │   └── src/main/java/org/company/nianglin/
@@ -31,7 +31,7 @@ Senior Companion Health Assessment/
 │       ├── task/               # 定时任务（M6）
 │       ├── websocket/          # 实时推送（M5 / M8）
 │       └── util/               # 工具类
-└── frontend/                   # Vue 3 + Vite 前端工程
+├── frontend/                   # Vue 3 + Vite 前端工程
     ├── package.json
     ├── vite.config.js
     └── src/
@@ -43,6 +43,11 @@ Senior Companion Health Assessment/
         ├── styles/             # 全局样式 + 适老化变量
         ├── layouts/            # 布局组件
         └── views/              # 页面（login / elder / family / companion / admin）
+├── ai-service/                 # V3.7 AI 助手服务（独立 Python 进程，8081）
+│   ├── app/                    # FastAPI 应用（护栏 / 意图 / 检索 / 叙述）
+│   ├── knowledge/faq.json      # FAQ 知识库（每条带文档锚点）
+│   ├── tests/                  # pytest 单测
+│   └── requirements.txt        # 依赖清单（经人工逐项批准并冻结）
 ```
 
 ---
@@ -65,6 +70,7 @@ Senior Companion Health Assessment/
 | 报表导出 | EasyExcel |
 | 构建 | Maven / Vite |
 | 端到端测试 | Playwright（`@playwright/test`，套件在 `frontend/e2e/`，见 `docs/agents/FRONTEND_CONTRACT.md` §13） |
+| AI 助手服务 | Python 3.12 + FastAPI + LangChain（独立进程，8081） |
 
 ---
 
@@ -156,6 +162,18 @@ pnpm exec playwright test         # E2E（前置：MySQL/Redis + 后端 8080 + t
 
 > 启动前端前请先启动后端，否则首页的「前后端链路连通性」会提示未连通（不影响页面浏览）。
 
+### AI 助手服务（V3.7 · 可选启动）
+
+```bash
+cd ai-service
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8081
+```
+
+- **不配置 LLM 也能跑**：不设 `LLM_BASE_URL` / `LLM_MODEL` 时助手进入**基础模式**，回答直接给 FAQ 条目的**标准答案原文**（`degraded=true`），功能完整可用。
+- 该服务**只监听 `127.0.0.1`**，不直接对浏览器开放；浏览器只与 `/api` 说话。
+- 后端通过 `AI_SERVICE_URL` 找它（默认 `http://127.0.0.1:8081`）。**不启动它时后端会兜底**，本地 FAQ 也读不到才返回 `10002`。
+
 ---
 
 ## 端口规划
@@ -165,7 +183,29 @@ pnpm exec playwright test         # E2E（前置：MySQL/Redis + 后端 8080 + t
 | MySQL | 3306 |
 | Redis | 6379 |
 | 后端 Spring Boot | 8080 |
+| AI 助手服务 | 8081 |
 | 前端 Vite Dev | 5141 |
+
+---
+
+## 环境变量
+
+V3.7 智能助手涉及的环境变量（**全部可留空**：留空即基础模式，不是错误状态）：
+
+| 变量 | 归属 | 占位值示例 | 说明 |
+|---|---|---|---|
+| `AI_SERVICE_URL` | Java 后端 | `http://127.0.0.1:8081` | Python 助手服务地址；后端连不上时会兜底，最终返回 `10002` |
+| `LLM_BASE_URL` | ai-service | `https://<your-endpoint>/v1` | OpenAI 兼容端点；**留空 = 基础模式**（回答直接给标准答案原文） |
+| `LLM_API_KEY` | ai-service | `CHANGE_ME` | 模型服务 key；本地 Ollama 填任意占位串即可。**不要写真实 key** |
+| `LLM_MODEL` | ai-service | `CHANGE_ME` | 模型名；**刻意不给代码默认值**，留空即走基础模式 |
+| `NIANGLIN_COMPLIANCE_WORDS_PATH` | ai-service | `../backend/src/main/resources/compliance/medical-advice-words.txt` | 共享**医疗建议禁用词**路径（Java 与 Python 读同一份）；**读不到即启动失败** |
+| `NIANGLIN_SENSITIVE_WORDS_PATH` | ai-service | `../backend/src/main/resources/compliance/sensitive-words.txt` | 共享**辱骂 / 违规引流词**路径（同上） |
+| `NIANGLIN_REFUSAL_TEMPLATE_PATH` | ai-service | `../backend/src/main/resources/compliance/refusal-template.txt` | 共享**固定拒答模板**路径（同上） |
+
+> ⚠️ 真实 key / 口令只放环境变量或本地未入库文件，**不要**写进本文件或任何入库文件。
+>
+> 📌 路径类变量写在 `ai-service/.env` 里**同样有效**（经 pydantic-settings 读取，
+> `.env` 与环境变量都会被读）—— 但写 `.env` 只对本机有效，生产仍应走环境变量。
 
 ---
 
@@ -208,7 +248,7 @@ pnpm exec playwright test         # E2E（前置：MySQL/Redis + 后端 8080 + t
 | [`docs/prd/PRD.md`](docs/prd/PRD.md) | **产品视角（顶层）** | 愿景、用户画像、用户旅程、NFR、业务规则、成功度量、风险与依赖。版本锁对齐 W7/W12/W17 三个竞讲节点（详见 [ADR-0006](docs/adr/0006-prd-version-locking.md)） |
 | [`plan.md`](plan.md) | 工程视角 | 模块拆分、验收标准、范围调整（§〇） |
 | [`docs/api/README.md`](docs/api/README.md) | 接口契约 | 接口全局约定与错误码 |
-| `docs/api/01` ~ `09` | 接口契约 | 各业务模块接口明细 |
+| `docs/api/01` ~ `13` | 接口契约 | 各业务模块接口明细（`13` = V3.7 家属智能助手） |
 | `docs/agents/designs/M4` ~ `M10` | 模块设计评审 | 7 个核心模块（M4 订单 / M5 执行 / M6 用药 / M7 评价 / M8 站内信 / M9 管理 / M10 统计） |
 | `docs/adr/0001` ~ `0003` / `0005` ~ `0006` | 架构决策记录 | 5 个 ADR（WebSocket 鉴权 / Redis 锁 / 统计缓存 / **PRD 与 plan.md 分层** / **PRD 版本锁**） |
 | `docs/db/` | 数据视角 | ER 图 / 数据字典 / EXPLAIN / 种子说明 |

@@ -8,6 +8,81 @@
 
 ---
 
+## [V3.7] · 2026-10-21 · 家属智能助手
+
+让家属**用自然语言**问到平台规则，并看懂「为什么推荐这位陪诊员」。
+产品与工程契约见 [PRD](docs/prd/PRD-V3.7-家属智能助手.md) /
+[spec](docs/spec/V3.7-assistant-spec.md) /
+[ADR-0020](docs/adr/0020-assistant-boundary-and-recommendation-guardrail.md)。
+
+### Added · 新增
+
+**独立 `ai-service`（Python 3.12 + FastAPI + LangChain）**
+
+- `ai-service/app/` —— FastAPI 应用（`main` / `intents` / `knowledge` / `guard` / `llm` / `prompts` / `actions` / `service`）
+- 端口 **8081**，**只监听 `127.0.0.1`**；浏览器只与 `/api` 说话
+- **不配置 LLM 也能跑**：未配置 `LLM_BASE_URL` 时降级为**基础模式**，回答直接给 FAQ 标准答案原文（`degraded=true`）
+- 决策链**写死在代码里**（输入护栏 → 意图分类 → FAQ 检索 → 事实装配 → 叙述 → 输出护栏），**不使用自主 Agent**
+
+**后端门面**
+
+- `POST /api/assistant/chat` —— **仅 `FAMILY`**（ELDER / COMPANION / ADMIN → 403）
+- 新开 **10xxx** 错误码段：`10001` 提问过于频繁 / `10002` 智能助手暂时不可用 / `10003` 问题内容包含违规表述
+- `config/AssistantProperties` —— 配置化 + **启动期校验**（配错即启动失败）
+
+**共享合规词表抽出**
+
+- `backend/src/main/resources/compliance/medical-advice-words.txt` —— 禁用词从 `ComplianceCheckUtil` 硬编码抽出为**共享资源文件**
+- Java 与 Python **读同一份**，两侧都**启动期 fail-fast**（读不到 / 词数过少 → 启动失败）
+- **命中即拒，不打码后放行**
+
+**FAQ 知识库**
+
+- `ai-service/knowledge/faq.json` —— **30 条**，每条带 `source` + `anchor` 指向 `docs/api` 真实锚点
+- `tools/check_faq_anchors.py` —— 校验条目格式、锚点是否仍存在、答案是否含禁用词（**FAQ 过期会静默失真，这道闸门是硬失败**）
+
+**前端**
+
+- `views/family/assistant.vue` + `api/assistant.js` —— 家属端 `/family/assistant` 页面
+- 路由 `module: M14` / `code: M-33` / `elderlyHidden: true`
+- 助手**只填下单草稿**，**永不自动建单**；推荐叙述**只转述** `reasons` / `mismatches` / `notes` 三段
+
+**CI**
+
+- `.github/workflows/ci.yml` 新增 `ai-service` job（`setup-python` + pip 缓存 + `pytest tests -q`）
+
+### Fixed · 评审收口（2026-10-21 第二轮）
+
+> 详见 [评审报告](docs/review/2026-10-21-v3.7-assistant.md)。两轴共 **9 项确认缺陷**，全部已修并被测试锁住。
+
+- ★ **LLM 路径从未真正跑过** —— `app/llm.py` 从 `langchain.prompts` 导入，而 **LangChain 1.x 已移除该模块**
+  （模板类搬到 `langchain_core.prompts`），导入失败被兜底逻辑吞成 `NullProvider`：
+  模型配得好好的，回答却永远是 FAQ 原文，且**所有测试都绿、所有日志都说「已启用」**
+- **`UNKNOWN` 不经大模型** —— 此前模型会拿着「没命中任何 FAQ」的事实**硬编一个答案**
+  （实测编出五步下单流程，且 `sources` 为空）。改为固定澄清话术
+- **推荐无候选不走模型** —— 此前模型会生成「**命中理由** - 现有事实中未提供具体陪诊员的画像…」这种三段空壳
+- **输出护栏新增距离措辞拦截** —— 「离得近 / 就在附近 / 距离近」→ 纠正为「距离维度无法计算（陪诊员尚未填写坐标）」。
+  该纪律原先只写在 prompt 里，**代码层零兜底**；而把「算不出来」说成「很近」会让**正在挑陪诊员的家属**据此做决定
+- **草稿只在真的抽到就诊信息时产出** —— `elderId` 是会话上下文自动补的，不算「抽到」
+- **草稿不再凭空补 `09:00:00`** —— 只找到日期没找到时刻时留空，让家属在确认页自己补
+- **回答统一去除 Markdown 标记** —— 前端是纯文本渲染，不解析 Markdown
+- **Java 本地兜底路径同样过派单措辞护栏** —— 此前只做医疗词表整段替换，契约要求的护栏只兑现了一半
+- **限流提示显示后端给的真实原因** —— 统一显示「助手暂时没有响应」会让用户以为服务挂了
+- **`check_faq_anchors.py` 改为读共享合规词表** —— 原先内嵌一份副本，违反「不要另抄一份词表」；
+  且真源加词时这道门禁**不会红**
+
+### Added · FAQ 关键词覆盖
+
+- `ai-service/knowledge/faq-question-pool.json` —— **179 条**模拟问法（30 条 FAQ × 6 条，剔除 1 条医疗意图问法）
+- `tools/gen_faq_questions.py` —— 生成与回填工具（**默认不联网、不写文件**）
+- `ai-service/tests/test_faq_coverage.py` —— 覆盖门禁（召回 / 不抢占 / 无医疗意图 / 关键词上限 / 易混对）
+- 关键词回填后，问法池召回率 **34.4% → 97.2%**，抢占 **0**
+- ⚠️ 问法是**大模型生成的模拟问法，不是真实用户数据** ——
+  PRD 风险表第 5 条「FAQ 覆盖面未经真实用户验证」**保持未关闭**，
+  只能靠上线后的未命中问题回流关闭
+
+---
+
 ## [V3.3 – V3.6 评审收口] · 2026-10-21 · 代码评审发现项修复
 
 对 `c735693..de994b3`（V3.3 – V3.6 四版）做 Standards / Spec 两轴评审后的收口。

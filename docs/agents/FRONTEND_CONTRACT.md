@@ -147,7 +147,7 @@ props：`status`（枚举值）、`scope`（域，默认 `order`）、`text`（�
 ## 3 · 接口清单（前端已封装，直接 import 用）
 
 `@/api` 统一出口按域导出：`healthApi authApi userApi orderApi executionApi
-medicationApi reviewApi messageApi adminApi statisticsApi`。
+medicationApi reviewApi messageApi adminApi statisticsApi assistantApi`。
 **也可以直接从具体文件 import**（现有页面都是这么写的，推荐）：
 
 ```js
@@ -327,6 +327,13 @@ URL.revokeObjectURL(url)
 
 ⚠️ 后端导出有行数上限，超限会拒绝而不是截断 —— 页面上要给出日期区间提示。
 
+### `@/api/assistant`（V3.7 · M14）
+| 函数 | 端点 | 说明 |
+|---|---|---|
+| `chatAssistant(data)` | `POST /assistant/chat`（**仅 FAMILY**） | 家属智能助手问答；**超时按请求覆写为 60s**（`{ timeout: 60000 }`），不改 `request.js` 的全局 15s。返回 `{ answer, intent, actions, sources, degraded }` |
+
+⚠️ 助手**只填下单草稿**（`FILL_ORDER_DRAFT` → `orderDraft` store），**永不自动建单**；页面**不得**出现「已指派 / 已分配 / 自动派单」。
+
 ---
 
 ## 4 · 组件契约
@@ -443,6 +450,7 @@ onBeforeUnmount(() => polling?.stop())
 | `/family/order/:id` | `family/order-detail.vue` | FAMILY（**已完成**） |
 | `/family/order/:id/review` | `family/order-review.vue` | FAMILY |
 | `/family/order/:id/complaint` | `family/order-complaint.vue` | FAMILY |
+| `/family/assistant` | `family/assistant.vue` | FAMILY（**V3.7** 智能助手；`name: FamilyAssistant` / `module: M14` / `code: M-33` / `elderlyHidden: true`） |
 | `/companion/hall` | `companion/hall.vue` | COMPANION |
 | `/companion/entry` | `companion/entry.vue` | COMPANION |
 | `/companion/execute/:id` | `companion/execute.vue` | COMPANION |

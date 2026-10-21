@@ -20,7 +20,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Bell,
-  Calendar, ChatDotRound, FirstAidKit as Med, Clock, Plus, TrendCharts
+  Calendar, ChatDotRound, FirstAidKit as Med, Clock, Plus, Service, TrendCharts
 } from '@element-plus/icons-vue'
 import {
   NlPhoneShell, NlDesktopShell, NlAppTabBar, NlCard, NlAvatar, NlStatusChip,
@@ -133,12 +133,20 @@ async function refreshUnread() {
 }
 
 /* ---------------- 导航 ---------------- */
+/**
+ * 快捷入口。
+ *
+ * V3.7 增「智能助手」一格 → 共 6 格：
+ * 移动端 2 列 → 3×2；桌面端 3 列 → 2×3（见 .desktop-quick）。
+ * 两边都排满整行，不留半截行。
+ */
 const quickEntries = [
-  { key: 'order',   icon: Calendar,     label: '预约挂号', tone: 'primary', path: '/family/order/step1' },
-  { key: 'health',  icon: TrendCharts,  label: '家庭健康', tone: 'primary', path: '/family/health' },
-  { key: 'chat',    icon: ChatDotRound, label: '订单沟通', tone: 'info',    path: '/chat' },
-  { key: 'med',     icon: Med,          label: '用药计划', tone: 'success', path: '/family/medication' },
-  { key: 'track',   icon: Clock,        label: '进度查看', tone: 'warning', path: '/family/order' }
+  { key: 'order',     icon: Calendar,     label: '预约挂号', tone: 'primary', path: '/family/order/step1' },
+  { key: 'health',    icon: TrendCharts,  label: '家庭健康', tone: 'primary', path: '/family/health' },
+  { key: 'chat',      icon: ChatDotRound, label: '订单沟通', tone: 'info',    path: '/chat' },
+  { key: 'med',       icon: Med,          label: '用药计划', tone: 'success', path: '/family/medication' },
+  { key: 'track',     icon: Clock,        label: '进度查看', tone: 'warning', path: '/family/order' },
+  { key: 'assistant', icon: Service,      label: '智能助手', tone: 'info',    path: '/family/assistant' }
 ]
 
 /**
@@ -899,7 +907,8 @@ v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
 
 .desktop-quick {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* 6 个入口排 2×3（V3.7 增「智能助手」后由 4 列改 3 列，两行都排满） */
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--nl-space-3);
   padding: 0;
   margin: 0;

@@ -414,6 +414,12 @@ onBeforeUnmount(() => {
           <NlStatusChip :status="order.status" :text="order.statusLabel" />
         </div>
         <el-button v-if="order.companionId" type="primary" plain @click="router.push(`/chat/${orderId}`)">联系对方</el-button>
+        <!-- V3.7 智能助手：带上本单 ID 进去，助手才能解释这一单的候选陪诊员
+             （匹配结果是订单锚定的 —— 没有 orderId 就只能讲平台规则）。
+             ⚠️ 助手只解释、不改排序，也不产生任何订单状态变更。 -->
+        <el-button type="primary" plain @click="router.push(`/family/assistant?orderId=${orderId}`)">
+          问助手
+        </el-button>
       </NlCard>
 
       <!-- 候选陪诊员推荐（V3.4 · T9）

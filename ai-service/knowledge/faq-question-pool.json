@@ -1,0 +1,1439 @@
+[
+  {
+    "question": "咋给老人约个陪诊啊",
+    "expectId": "faq-order-create-01",
+    "keywords": [
+      "咋给老人",
+      "约个陪诊"
+    ]
+  },
+  {
+    "question": "帮老人预约陪诊要咋弄",
+    "expectId": "faq-order-create-01",
+    "keywords": [
+      "帮老人预约",
+      "要咋弄"
+    ]
+  },
+  {
+    "question": "家属端怎么走单",
+    "expectId": "faq-order-create-01",
+    "keywords": [
+      "家属端",
+      "走单"
+    ]
+  },
+  {
+    "question": "怎么给来人下单陪诊",
+    "expectId": "faq-order-create-01",
+    "keywords": [
+      "来人下单",
+      "下单陪诊"
+    ]
+  },
+  {
+    "question": "我想给家里老人约个陪诊 在哪个页面操作 需要填哪些东西",
+    "expectId": "faq-order-create-01",
+    "keywords": [
+      "哪个页面",
+      "填哪些"
+    ]
+  },
+  {
+    "question": "老人单咋下",
+    "expectId": "faq-order-create-01",
+    "keywords": [
+      "老人单",
+      "咋下"
+    ]
+  },
+  {
+    "question": "下单得填啥呀",
+    "expectId": "faq-order-create-02",
+    "keywords": [
+      "填啥",
+      "下单"
+    ]
+  },
+  {
+    "question": "下单前要准备哪些资料",
+    "expectId": "faq-order-create-02",
+    "keywords": [
+      "准备哪些",
+      "资料"
+    ]
+  },
+  {
+    "question": "下单信息要录哪几项",
+    "expectId": "faq-order-create-02",
+    "keywords": [
+      "录哪几项",
+      "下单信息"
+    ]
+  },
+  {
+    "question": "下单的时候那些信息都要填吗",
+    "expectId": "faq-order-create-02",
+    "keywords": [
+      "都要填吗",
+      "下单的时候"
+    ]
+  },
+  {
+    "question": "我第一次用这个平台下单 不知道要填哪些内容 老人信息医院科室时间地址这些都得填吗",
+    "expectId": "faq-order-create-02",
+    "keywords": [
+      "第一次下单",
+      "填哪些内容",
+      "老人信息"
+    ]
+  },
+  {
+    "question": "填哪些项",
+    "expectId": "faq-order-create-02",
+    "keywords": [
+      "填哪些项"
+    ]
+  },
+  {
+    "question": "陪诊一次收多少钱啊",
+    "expectId": "faq-order-fee-01",
+    "keywords": [
+      "陪诊一次",
+      "收多少钱"
+    ]
+  },
+  {
+    "question": "这个收费是怎么个算法",
+    "expectId": "faq-order-fee-01",
+    "keywords": [
+      "收费",
+      "算法"
+    ]
+  },
+  {
+    "question": "加价时段怎么算",
+    "expectId": "faq-order-fee-01",
+    "keywords": [
+      "加价时段",
+      "怎么算"
+    ]
+  },
+  {
+    "question": "服务废是多少钱",
+    "expectId": "faq-order-fee-01",
+    "keywords": [
+      "服务废",
+      "多少"
+    ]
+  },
+  {
+    "question": "我想问下你们这个陪诊服务是怎么收费的，晚上和周末是不是要贵一些",
+    "expectId": "faq-order-fee-01",
+    "keywords": [
+      "陪诊服务",
+      "晚上周末",
+      "贵一些"
+    ]
+  },
+  {
+    "question": "费用多少",
+    "expectId": "faq-order-fee-01",
+    "keywords": [
+      "费用",
+      "多少"
+    ]
+  },
+  {
+    "question": "除了服务费还要掏别的钱不",
+    "expectId": "faq-order-fee-02",
+    "keywords": [
+      "服务费",
+      "别的钱",
+      "还要掏"
+    ]
+  },
+  {
+    "question": "服务费之外还有没有额外收费",
+    "expectId": "faq-order-fee-02",
+    "keywords": [
+      "额外收费",
+      "之外",
+      "服务费"
+    ]
+  },
+  {
+    "question": "代垫的钱算在服务费里吗",
+    "expectId": "faq-order-fee-02",
+    "keywords": [
+      "代垫",
+      "算在",
+      "服务费"
+    ]
+  },
+  {
+    "question": "服务费以外还有代垫费吗",
+    "expectId": "faq-order-fee-02",
+    "keywords": [
+      "代垫费",
+      "以外",
+      "服务费"
+    ]
+  },
+  {
+    "question": "我想问下这单除了服务费还会不会产生其他费用 比如挂号缴费那些钱是另外算的吗",
+    "expectId": "faq-order-fee-02",
+    "keywords": [
+      "其他费用",
+      "另外算",
+      "挂号缴费"
+    ]
+  },
+  {
+    "question": "还有别的费用吗",
+    "expectId": "faq-order-fee-02",
+    "keywords": [
+      "别的费用",
+      "还有"
+    ]
+  },
+  {
+    "question": "刚下的单能取消不",
+    "expectId": "faq-order-cancel-01",
+    "keywords": [
+      "刚下的单",
+      "能取消不"
+    ]
+  },
+  {
+    "question": "预约完了还能撤吗",
+    "expectId": "faq-order-cancel-01",
+    "keywords": [
+      "预约完了",
+      "还能撤"
+    ]
+  },
+  {
+    "question": "待接单状态下能退不",
+    "expectId": "faq-order-cancel-01",
+    "keywords": [
+      "待接单",
+      "能退不"
+    ]
+  },
+  {
+    "question": "下单了不想去了怎么取肖",
+    "expectId": "faq-order-cancel-01",
+    "keywords": [
+      "不想去了",
+      "取肖"
+    ]
+  },
+  {
+    "question": "我刚刚在平台上下了一单但是临时有事去不了请问还能不能取消掉",
+    "expectId": "faq-order-cancel-01",
+    "keywords": [
+      "临时有事",
+      "去不了",
+      "取消掉"
+    ]
+  },
+  {
+    "question": "能撤单吗",
+    "expectId": "faq-order-cancel-01",
+    "keywords": [
+      "撤单"
+    ]
+  },
+  {
+    "question": "陪诊员都接单了我这边还能撤吗",
+    "expectId": "faq-order-cancel-02",
+    "keywords": [
+      "接单了",
+      "还能撤"
+    ]
+  },
+  {
+    "question": "人已经接单了想退掉这个单子行不行",
+    "expectId": "faq-order-cancel-02",
+    "keywords": [
+      "退掉这个单",
+      "接单了想退"
+    ]
+  },
+  {
+    "question": "接单后想反悔怎么整",
+    "expectId": "faq-order-cancel-02",
+    "keywords": [
+      "接单后",
+      "反悔"
+    ]
+  },
+  {
+    "question": "陪诊师接单后还能不能取消订单啊",
+    "expectId": "faq-order-cancel-02",
+    "keywords": [
+      "陪诊师接单",
+      "取消订单"
+    ]
+  },
+  {
+    "question": "我看陪诊员已经接了我的单子 现在家里临时有事不需要了 这种情况我还能自己点取消吗",
+    "expectId": "faq-order-cancel-02",
+    "keywords": [
+      "已经接了",
+      "临时有事",
+      "自己点取消"
+    ]
+  },
+  {
+    "question": "接单了还能退不",
+    "expectId": "faq-order-cancel-02",
+    "keywords": [
+      "接单了",
+      "还能退"
+    ]
+  },
+  {
+    "question": "订单状态都有哪些啊",
+    "expectId": "faq-order-status-01",
+    "keywords": [
+      "状态都有哪些",
+      "订单状态"
+    ]
+  },
+  {
+    "question": "单子一共分几种情况",
+    "expectId": "faq-order-status-01",
+    "keywords": [
+      "单子",
+      "分几种情况"
+    ]
+  },
+  {
+    "question": "订单生命周期怎么走的",
+    "expectId": "faq-order-status-01",
+    "keywords": [
+      "生命周期",
+      "怎么走"
+    ]
+  },
+  {
+    "question": "订单有那些壮态",
+    "expectId": "faq-order-status-01",
+    "keywords": [
+      "那些壮态",
+      "订单"
+    ]
+  },
+  {
+    "question": "我想知道下了单之后订单会依次变成哪几种状态",
+    "expectId": "faq-order-status-01",
+    "keywords": [
+      "依次变成",
+      "哪几种状态"
+    ]
+  },
+  {
+    "question": "状态几种",
+    "expectId": "faq-order-status-01",
+    "keywords": [
+      "状态几种"
+    ]
+  },
+  {
+    "question": "这单现在走到哪一步了",
+    "expectId": "faq-order-status-02",
+    "keywords": [
+      "走到哪一步",
+      "这单",
+      "哪一步"
+    ]
+  },
+  {
+    "question": "订单状态是按什么顺序走的",
+    "expectId": "faq-order-status-02",
+    "keywords": [
+      "什么顺序",
+      "状态",
+      "走的"
+    ]
+  },
+  {
+    "question": "单子流转到哪个节点了",
+    "expectId": "faq-order-status-02",
+    "keywords": [
+      "流转",
+      "节点",
+      "单子"
+    ]
+  },
+  {
+    "question": "订单进度条到那了",
+    "expectId": "faq-order-status-02",
+    "keywords": [
+      "进度条",
+      "到那了",
+      "订单"
+    ]
+  },
+  {
+    "question": "我想问一下订单从下单开始到最后评价中间要经过哪些状态变化",
+    "expectId": "faq-order-status-02",
+    "keywords": [
+      "经过哪些",
+      "状态变化",
+      "下单开始"
+    ]
+  },
+  {
+    "question": "到哪步了",
+    "expectId": "faq-order-status-02",
+    "keywords": [
+      "到哪步",
+      "哪步了"
+    ]
+  },
+  {
+    "question": "下单半天了咋还没人接啊",
+    "expectId": "faq-order-wait-01",
+    "keywords": [
+      "半天了",
+      "咋还没人接"
+    ]
+  },
+  {
+    "question": "订单挂出去一直没人理是啥情况",
+    "expectId": "faq-order-wait-01",
+    "keywords": [
+      "挂出去",
+      "没人理"
+    ]
+  },
+  {
+    "question": "这单一直处于待接状态啥意思",
+    "expectId": "faq-order-wait-01",
+    "keywords": [
+      "待接状态",
+      "这单一直"
+    ]
+  },
+  {
+    "question": "下了单都过老半天了怎么还莫得人接单",
+    "expectId": "faq-order-wait-01",
+    "keywords": [
+      "过老半天",
+      "莫得人接单"
+    ]
+  },
+  {
+    "question": "我上午在平台下的陪诊单到现在都没陪诊员确认接单这个要怎么办",
+    "expectId": "faq-order-wait-01",
+    "keywords": [
+      "上午下的",
+      "没陪诊员确认",
+      "这个要怎么办"
+    ]
+  },
+  {
+    "question": "咋还没人接",
+    "expectId": "faq-order-wait-01",
+    "keywords": [
+      "咋还没人接"
+    ]
+  },
+  {
+    "question": "能催一下陪诊员吗",
+    "expectId": "faq-order-urge-01",
+    "keywords": [
+      "催一下",
+      "陪诊员"
+    ]
+  },
+  {
+    "question": "订单一直没人接能催催不",
+    "expectId": "faq-order-urge-01",
+    "keywords": [
+      "没人接",
+      "催催"
+    ]
+  },
+  {
+    "question": "这单能不能加急派",
+    "expectId": "faq-order-urge-01",
+    "keywords": [
+      "加急派",
+      "这单"
+    ]
+  },
+  {
+    "question": "催单健在哪点啊",
+    "expectId": "faq-order-urge-01",
+    "keywords": [
+      "催单健",
+      "在哪点"
+    ]
+  },
+  {
+    "question": "我看订单挂那半天了想问问能不能帮忙催一下接单的师傅",
+    "expectId": "faq-order-urge-01",
+    "keywords": [
+      "挂那半天",
+      "接单的师傅"
+    ]
+  },
+  {
+    "question": "催个单",
+    "expectId": "faq-order-urge-01",
+    "keywords": [
+      "催个单"
+    ]
+  },
+  {
+    "question": "催单能催几次啊",
+    "expectId": "faq-order-urge-02",
+    "keywords": [
+      "催几次",
+      "催单"
+    ]
+  },
+  {
+    "question": "一直催会不会有上限",
+    "expectId": "faq-order-urge-02",
+    "keywords": [
+      "催上限",
+      "一直催"
+    ]
+  },
+  {
+    "question": "催单冷却多久",
+    "expectId": "faq-order-urge-02",
+    "keywords": [
+      "冷却",
+      "催单"
+    ]
+  },
+  {
+    "question": "催单次数用完了咋办",
+    "expectId": "faq-order-urge-02",
+    "keywords": [
+      "次数用完",
+      "催单次数"
+    ]
+  },
+  {
+    "question": "我想问一下同一个订单最多可以催几次 催多了会不会被限制",
+    "expectId": "faq-order-urge-02",
+    "keywords": [
+      "最多催几次",
+      "催多了",
+      "被限制"
+    ]
+  },
+  {
+    "question": "催太频繁了",
+    "expectId": "faq-order-urge-02",
+    "keywords": [
+      "催太频繁",
+      "频繁"
+    ]
+  },
+  {
+    "question": "推荐陪诊员是咋排出来的",
+    "expectId": "faq-companion-recommend-01",
+    "keywords": [
+      "推荐陪诊员",
+      "排出来"
+    ]
+  },
+  {
+    "question": "陪诊员是怎么匹配到我的",
+    "expectId": "faq-companion-recommend-01",
+    "keywords": [
+      "匹配到我",
+      "陪诊员"
+    ]
+  },
+  {
+    "question": "陪诊员推荐权重咋分配的",
+    "expectId": "faq-companion-recommend-01",
+    "keywords": [
+      "权重",
+      "推荐"
+    ]
+  },
+  {
+    "question": "推荐陪珍员是按啥算的",
+    "expectId": "faq-companion-recommend-01",
+    "keywords": [
+      "推荐陪珍员",
+      "按啥算"
+    ]
+  },
+  {
+    "question": "我想知道系统给我推荐陪诊员的时候是根据哪些条件来选的",
+    "expectId": "faq-companion-recommend-01",
+    "keywords": [
+      "系统给我推荐",
+      "哪些条件"
+    ]
+  },
+  {
+    "question": "推荐依据是啥",
+    "expectId": "faq-companion-recommend-01",
+    "keywords": [
+      "推荐依据"
+    ]
+  },
+  {
+    "question": "系统推的陪诊员是不是就自动接单了",
+    "expectId": "faq-companion-recommend-02",
+    "keywords": [
+      "自动接单",
+      "推的陪诊员",
+      "是不是就"
+    ]
+  },
+  {
+    "question": "推荐名单里的人算不算已经答应接单了",
+    "expectId": "faq-companion-recommend-02",
+    "keywords": [
+      "推荐名单",
+      "答应接单",
+      "算不算"
+    ]
+  },
+  {
+    "question": "推荐池里的人是不是默认接单",
+    "expectId": "faq-companion-recommend-02",
+    "keywords": [
+      "推荐池",
+      "默认接单"
+    ]
+  },
+  {
+    "question": "系统推荐了陪诊员是不是就回直接接单啊",
+    "expectId": "faq-companion-recommend-02",
+    "keywords": [
+      "回直接接单",
+      "系统推荐了"
+    ]
+  },
+  {
+    "question": "我看到平台给我推荐了几个陪诊员 这个推荐是不是表示他们已经同意接我这个单子了",
+    "expectId": "faq-companion-recommend-02",
+    "keywords": [
+      "推荐了几个"
+    ]
+  },
+  {
+    "question": "推了就接吗",
+    "expectId": "faq-companion-recommend-02",
+    "keywords": [
+      "推了就接"
+    ]
+  },
+  {
+    "question": "你们陪诊员都是怎么审核的呀",
+    "expectId": "faq-companion-audit-01",
+    "keywords": [
+      "陪诊员审核",
+      "怎么审核"
+    ]
+  },
+  {
+    "question": "陪诊员身份要审核吗",
+    "expectId": "faq-companion-audit-01",
+    "keywords": [
+      "陪诊员身份",
+      "要审核"
+    ]
+  },
+  {
+    "question": "陪诊员资质审核严不严",
+    "expectId": "faq-companion-audit-01",
+    "keywords": [
+      "资质审核",
+      "严不严"
+    ]
+  },
+  {
+    "question": "陪珍员审核要多久",
+    "expectId": "faq-companion-audit-01",
+    "keywords": [
+      "陪珍员",
+      "审核要多久"
+    ]
+  },
+  {
+    "question": "我想知道平台对陪诊员提交的资料是怎么审的",
+    "expectId": "faq-companion-audit-01",
+    "keywords": [
+      "提交的资料",
+      "怎么审"
+    ]
+  },
+  {
+    "question": "陪诊咋审",
+    "expectId": "faq-companion-audit-01",
+    "keywords": [
+      "陪诊咋审"
+    ]
+  },
+  {
+    "question": "这陪诊员靠不靠谱啊",
+    "expectId": "faq-companion-public-01",
+    "keywords": [
+      "陪诊员",
+      "靠不靠谱"
+    ]
+  },
+  {
+    "question": "咋看陪诊员人品行不行",
+    "expectId": "faq-companion-public-01",
+    "keywords": [
+      "人品行不行",
+      "陪诊员"
+    ]
+  },
+  {
+    "question": "陪诊员资质咋查",
+    "expectId": "faq-companion-audit-01",
+    "keywords": [
+      "资质咋查",
+      "陪诊员"
+    ],
+    "labelCorrected": true,
+    "labelCorrectionReason": "问的是「资质」，属审核口径；且 audit-01 的 2-gram 重合度更高（0.154 vs 0.143），检索判给 audit-01 是对的"
+  },
+  {
+    "question": "陪珍员评分在哪看",
+    "expectId": "faq-companion-public-01",
+    "keywords": [
+      "陪珍员",
+      "评分"
+    ]
+  },
+  {
+    "question": "我想先看看这个陪诊员服务过多少单评分高不高再接单",
+    "expectId": "faq-companion-public-01",
+    "keywords": [
+      "服务过多少单",
+      "评分高不高"
+    ]
+  },
+  {
+    "question": "陪诊员评分",
+    "expectId": "faq-companion-public-01",
+    "keywords": [
+      "陪诊员评分"
+    ]
+  },
+  {
+    "question": "打卡是啥意思啊",
+    "expectId": "faq-execution-checkin-01",
+    "keywords": [
+      "打卡是啥",
+      "啥意思"
+    ]
+  },
+  {
+    "question": "陪诊员那个签到是干嘛的",
+    "expectId": "faq-execution-checkin-01",
+    "keywords": [
+      "签到",
+      "干嘛的"
+    ]
+  },
+  {
+    "question": "六个节点都哪些",
+    "expectId": "faq-execution-checkin-01",
+    "keywords": [
+      "六个节点",
+      "哪些"
+    ]
+  },
+  {
+    "question": "打咔记录在哪看",
+    "expectId": "faq-execution-checkin-01",
+    "keywords": [
+      "打咔记录",
+      "在哪看"
+    ]
+  },
+  {
+    "question": "我想知道老人现在走到哪一步了 订单里能看到吗",
+    "expectId": "faq-order-status-02",
+    "keywords": [
+      "走到哪一步",
+      "订单里"
+    ],
+    "labelCorrected": true,
+    "labelCorrectionReason": "问的是「订单里能看到吗」—— 订单进度时间线，不是「打卡是什么」；检索判给 order-status-02 是对的"
+  },
+  {
+    "question": "节点有哪几个",
+    "expectId": "faq-execution-checkin-01",
+    "keywords": [
+      "节点",
+      "哪几个"
+    ]
+  },
+  {
+    "question": "陪诊员到了就算打卡成功吗",
+    "expectId": "faq-execution-checkin-02",
+    "keywords": [
+      "陪诊员到了",
+      "打卡成功"
+    ]
+  },
+  {
+    "question": "人到了打卡就自动算数了吧",
+    "expectId": "faq-execution-checkin-02",
+    "keywords": [
+      "自动算数",
+      "人到了"
+    ]
+  },
+  {
+    "question": "虚打卡会被系统识别出来不",
+    "expectId": "faq-execution-checkin-02",
+    "keywords": [
+      "虚打卡",
+      "识别"
+    ]
+  },
+  {
+    "question": "陪诊员到地方了打卡算不算数啊",
+    "expectId": "faq-execution-checkin-02",
+    "keywords": [
+      "到地方了",
+      "算不算数"
+    ]
+  },
+  {
+    "question": "我想确认一下陪诊员到了医院之后点打卡是不是就直接算成功还是要看距离",
+    "expectId": "faq-execution-checkin-02",
+    "keywords": [
+      "点打卡",
+      "看距离"
+    ]
+  },
+  {
+    "question": "打卡算成功吗",
+    "expectId": "faq-execution-checkin-02",
+    "keywords": [
+      "打卡",
+      "成功"
+    ]
+  },
+  {
+    "question": "陪诊完了咋给师傅打分",
+    "expectId": "faq-review-submit-01",
+    "keywords": [
+      "陪诊完",
+      "师傅打分"
+    ]
+  },
+  {
+    "question": "订单做完以后在哪给陪诊员评星",
+    "expectId": "faq-review-submit-01",
+    "keywords": [
+      "订单做完",
+      "评星"
+    ]
+  },
+  {
+    "question": "给陪诊师写点评在哪写",
+    "expectId": "faq-review-submit-01",
+    "keywords": [
+      "陪诊师",
+      "写点评"
+    ]
+  },
+  {
+    "question": "服务完想给陪诊员评介一下",
+    "expectId": "faq-review-submit-01",
+    "keywords": [
+      "评介",
+      "服务完"
+    ]
+  },
+  {
+    "question": "我想给这次陪诊的陪诊员打个五星好评顺便写几句评价 从哪里进去弄",
+    "expectId": "faq-review-submit-01",
+    "keywords": [
+      "五星好评",
+      "从哪里进去"
+    ]
+  },
+  {
+    "question": "咋评星",
+    "expectId": "faq-review-submit-01",
+    "keywords": [
+      "评星"
+    ]
+  },
+  {
+    "question": "陪诊员能回评价不",
+    "expectId": "faq-review-reply-01",
+    "keywords": [
+      "回评价",
+      "陪诊员能回"
+    ]
+  },
+  {
+    "question": "评价底下陪诊员能回话吗",
+    "expectId": "faq-review-reply-01",
+    "keywords": [
+      "评价底下",
+      "回话"
+    ]
+  },
+  {
+    "question": "陪诊师能对评价做回评吗",
+    "expectId": "faq-review-reply-01",
+    "keywords": [
+      "陪诊师",
+      "回评"
+    ]
+  },
+  {
+    "question": "陪诊员可以给评价写回复么",
+    "expectId": "faq-review-reply-01",
+    "keywords": [
+      "写回复",
+      "评价写"
+    ]
+  },
+  {
+    "question": "我想问问家属给陪诊员打完分以后陪诊员自己能不能在评价下面回一段话",
+    "expectId": "faq-review-reply-01",
+    "keywords": [
+      "打完分",
+      "评价下面",
+      "回一段话"
+    ]
+  },
+  {
+    "question": "能回评吗",
+    "expectId": "faq-review-reply-01",
+    "keywords": [
+      "回评吗",
+      "能回评"
+    ]
+  },
+  {
+    "question": "这服务太差了我上哪投诉啊",
+    "expectId": "faq-complaint-submit-01",
+    "keywords": [
+      "服务太差",
+      "上哪投诉"
+    ]
+  },
+  {
+    "question": "对陪诊员不满意想反映一下怎么弄",
+    "expectId": "faq-complaint-submit-01",
+    "keywords": [
+      "不满意",
+      "反映一下"
+    ]
+  },
+  {
+    "question": "订单里咋发起工单",
+    "expectId": "faq-complaint-submit-01",
+    "keywords": [
+      "发起工单"
+    ]
+  },
+  {
+    "question": "我想投述陪诊员在哪提交",
+    "expectId": "faq-complaint-submit-01",
+    "keywords": [
+      "投述",
+      "在哪提交"
+    ]
+  },
+  {
+    "question": "陪诊员迟到还态度不好我想在订单里投诉他需要写什么内容",
+    "expectId": "faq-complaint-submit-01",
+    "keywords": [
+      "态度不好",
+      "写什么内容"
+    ]
+  },
+  {
+    "question": "咋投诉",
+    "expectId": "faq-complaint-submit-01",
+    "keywords": [
+      "咋投诉"
+    ]
+  },
+  {
+    "question": "投诉交上去了在哪看进度啊",
+    "expectId": "faq-complaint-process-01",
+    "keywords": [
+      "投诉交上去",
+      "看进度"
+    ]
+  },
+  {
+    "question": "投诉完了怎么知道处理到哪一步了",
+    "expectId": "faq-complaint-process-01",
+    "keywords": [
+      "处理到哪一步",
+      "投诉完了"
+    ]
+  },
+  {
+    "question": "投诉单子状态怎么流转的",
+    "expectId": "faq-complaint-process-01",
+    "keywords": [
+      "投诉单子",
+      "状态流转"
+    ]
+  },
+  {
+    "question": "我投述提交了后续咋跟进",
+    "expectId": "faq-complaint-process-01",
+    "keywords": [
+      "投述提交",
+      "咋跟进"
+    ]
+  },
+  {
+    "question": "我前几天提交了一个投诉到现在还是待处理想问下后面会怎么变化我怎么查",
+    "expectId": "faq-complaint-process-01",
+    "keywords": [
+      "怎么查"
+    ]
+  },
+  {
+    "question": "投诉怎么跟进",
+    "expectId": "faq-complaint-process-01",
+    "keywords": [
+      "投诉跟进"
+    ]
+  },
+  {
+    "question": "老人档案在哪建啊",
+    "expectId": "faq-elder-profile-01",
+    "keywords": [
+      "老人档案",
+      "在哪建"
+    ]
+  },
+  {
+    "question": "咋给家里老人弄个档案",
+    "expectId": "faq-elder-profile-01",
+    "keywords": [
+      "弄个档案",
+      "家里老人"
+    ]
+  },
+  {
+    "question": "建档入口在哪",
+    "expectId": "faq-elder-profile-01",
+    "keywords": [
+      "建档入口"
+    ]
+  },
+  {
+    "question": "怎么建挡老人资料",
+    "expectId": "faq-elder-profile-01",
+    "keywords": [
+      "建挡",
+      "老人资料"
+    ]
+  },
+  {
+    "question": "我想给老人建个档填完信息是不是就自动绑到我账号上了",
+    "expectId": "faq-elder-profile-01",
+    "keywords": [
+      "自动绑",
+      "填完信息"
+    ]
+  },
+  {
+    "question": "建档咋弄",
+    "expectId": "faq-elder-profile-01",
+    "keywords": [
+      "建档咋弄"
+    ]
+  },
+  {
+    "question": "老人账号咋绑上啊",
+    "expectId": "faq-elder-bind-01",
+    "keywords": [
+      "账号咋绑",
+      "老人账号"
+    ]
+  },
+  {
+    "question": "我想把我妈的号挂到我这边 咋整",
+    "expectId": "faq-elder-bind-01",
+    "keywords": [
+      "我妈的号",
+      "挂到我这边"
+    ]
+  },
+  {
+    "question": "家属关联老人咋弄",
+    "expectId": "faq-elder-bind-01",
+    "keywords": [
+      "家属关联",
+      "关联老人"
+    ]
+  },
+  {
+    "question": "邦定老人账号在哪弄",
+    "expectId": "faq-elder-bind-01",
+    "keywords": [
+      "邦定",
+      "账号在哪弄"
+    ]
+  },
+  {
+    "question": "我注册好了想把家里老人的手机号加到我账号下面应该点哪里",
+    "expectId": "faq-elder-bind-01",
+    "keywords": [
+      "加到我账号",
+      "点哪里"
+    ]
+  },
+  {
+    "question": "绑老人号",
+    "expectId": "faq-elder-bind-01",
+    "keywords": [
+      "绑老人号"
+    ]
+  },
+  {
+    "question": "吃药提醒咋弄啊",
+    "expectId": "faq-medication-remind-01",
+    "keywords": [
+      "吃药提醒",
+      "咋弄"
+    ]
+  },
+  {
+    "question": "那个用药提醒功能在哪里设置",
+    "expectId": "faq-medication-remind-01",
+    "keywords": [
+      "用药提醒",
+      "设置"
+    ]
+  },
+  {
+    "question": "用药计划怎么建",
+    "expectId": "faq-medication-remind-01",
+    "keywords": [
+      "用药计划",
+      "怎么建"
+    ]
+  },
+  {
+    "question": "吃要提醒怎么用",
+    "expectId": "faq-medication-remind-01",
+    "keywords": [
+      "吃要提醒",
+      "怎么用"
+    ]
+  },
+  {
+    "question": "我想给老人设个每天按时吃药的提醒 这个在平台上要怎么操作",
+    "expectId": "faq-medication-remind-01",
+    "keywords": [
+      "按时吃药",
+      "怎么操作"
+    ]
+  },
+  {
+    "question": "漏服咋算",
+    "expectId": "faq-medication-remind-01",
+    "keywords": [
+      "漏服",
+      "咋算"
+    ]
+  },
+  {
+    "question": "这药咋吃平台能说不",
+    "expectId": "faq-medication-boundary-01",
+    "keywords": [
+      "咋吃",
+      "平台能说"
+    ]
+  },
+  {
+    "question": "适应症判断你们做不做",
+    "expectId": "faq-medication-boundary-01",
+    "keywords": [
+      "适应症",
+      "做不做"
+    ]
+  },
+  {
+    "question": "这个药怎么用能问你们吗",
+    "expectId": "faq-medication-boundary-01",
+    "keywords": [
+      "怎么用",
+      "问你们"
+    ]
+  },
+  {
+    "question": "我想知道平台上能不能查这个药具体怎么吃要不要调整",
+    "expectId": "faq-medication-boundary-01",
+    "keywords": [
+      "具体怎么吃",
+      "要不要调整"
+    ]
+  },
+  {
+    "question": "能指导用药吗",
+    "expectId": "faq-medication-boundary-01",
+    "keywords": [
+      "指导用药"
+    ]
+  },
+  {
+    "question": "咋跟陪诊员聊两句啊",
+    "expectId": "faq-chat-usage-01",
+    "keywords": [
+      "聊两句",
+      "陪诊员"
+    ]
+  },
+  {
+    "question": "想联系接单的陪诊员咋弄",
+    "expectId": "faq-chat-usage-01",
+    "keywords": [
+      "联系接单",
+      "陪诊员"
+    ]
+  },
+  {
+    "question": "订单里那个会话框在哪进",
+    "expectId": "faq-chat-usage-01",
+    "keywords": [
+      "会话框",
+      "订单里"
+    ]
+  },
+  {
+    "question": "陪诊员接单了我怎么给他发信息",
+    "expectId": "faq-chat-usage-01",
+    "keywords": [
+      "接单了",
+      "发信息"
+    ]
+  },
+  {
+    "question": "我在订单详情里找不到能跟陪诊员说话的地方是不是还没人接单",
+    "expectId": "faq-chat-usage-01",
+    "keywords": [
+      "说话的地方",
+      "还没人接单"
+    ]
+  },
+  {
+    "question": "会话没建咋回事",
+    "expectId": "faq-chat-usage-01",
+    "keywords": [
+      "会话没建",
+      "咋回事"
+    ]
+  },
+  {
+    "question": "聊天记录都谁能看见啊",
+    "expectId": "faq-chat-usage-02",
+    "keywords": [
+      "聊天记录",
+      "谁能看见"
+    ]
+  },
+  {
+    "question": "这个聊天是只有平台能看还是别人也能看到",
+    "expectId": "faq-chat-usage-02",
+    "keywords": [
+      "平台能看",
+      "别人也能看"
+    ]
+  },
+  {
+    "question": "会话记录是全员可见吗",
+    "expectId": "faq-chat-usage-02",
+    "keywords": [
+      "会话记录",
+      "全员可见"
+    ]
+  },
+  {
+    "question": "聊天记陆有几个人能看到",
+    "expectId": "faq-chat-usage-02",
+    "keywords": [
+      "聊天记陆",
+      "几个人能看到"
+    ]
+  },
+  {
+    "question": "我想问一下我在聊天里说的话平台管理员能不能看到",
+    "expectId": "faq-chat-usage-02",
+    "keywords": [
+      "管理员能不能",
+      "聊天里说的话"
+    ]
+  },
+  {
+    "question": "聊天谁可见",
+    "expectId": "faq-chat-usage-02",
+    "keywords": [
+      "聊天",
+      "谁可见"
+    ]
+  },
+  {
+    "question": "站内信是啥玩意",
+    "expectId": "faq-message-notice-01",
+    "keywords": [
+      "站内信",
+      "啥玩意"
+    ]
+  },
+  {
+    "question": "平台通知都发在哪儿啊",
+    "expectId": "faq-message-notice-01",
+    "keywords": [
+      "平台通知",
+      "发在哪儿"
+    ]
+  },
+  {
+    "question": "那个红点提醒怎么关",
+    "expectId": "faq-message-notice-01",
+    "keywords": [
+      "红点提醒",
+      "怎么关"
+    ]
+  },
+  {
+    "question": "站内新在哪里看啊",
+    "expectId": "faq-message-notice-01",
+    "keywords": [
+      "站内新",
+      "哪里看"
+    ]
+  },
+  {
+    "question": "我想知道订单有变化的时候平台会怎么告诉我",
+    "expectId": "faq-message-notice-01",
+    "keywords": [
+      "订单有变化",
+      "怎么告诉"
+    ]
+  },
+  {
+    "question": "未读消息在哪",
+    "expectId": "faq-message-notice-01",
+    "keywords": [
+      "未读消息",
+      "在哪"
+    ]
+  },
+  {
+    "question": "怎么退出登录啊",
+    "expectId": "faq-account-login-01",
+    "keywords": [
+      "退出登录",
+      "退出"
+    ]
+  },
+  {
+    "question": "登出以后别的设备会不会也掉线",
+    "expectId": "faq-account-login-01",
+    "keywords": [
+      "别的设备",
+      "掉线"
+    ]
+  },
+  {
+    "question": "token过期了咋整",
+    "expectId": "faq-account-login-01",
+    "keywords": [
+      "token",
+      "过期"
+    ]
+  },
+  {
+    "question": "登陆的时候验证码老是不对咋回事",
+    "expectId": "faq-account-login-01",
+    "keywords": [
+      "登陆",
+      "验证码",
+      "不对"
+    ]
+  },
+  {
+    "question": "我在手机上登录了同一个账号网页端会不会被踢下来",
+    "expectId": "faq-account-login-01",
+    "keywords": [
+      "网页端",
+      "踢下来",
+      "同一账号"
+    ]
+  },
+  {
+    "question": "怎么登出",
+    "expectId": "faq-account-login-01",
+    "keywords": [
+      "登出"
+    ]
+  },
+  {
+    "question": "你们平台都能干啥呀",
+    "expectId": "faq-platform-boundary-01",
+    "keywords": [
+      "都能干啥",
+      "平台干啥"
+    ]
+  },
+  {
+    "question": "平台管哪些事不管哪些事",
+    "expectId": "faq-platform-boundary-01",
+    "keywords": [
+      "管哪些事",
+      "不管哪些事"
+    ]
+  },
+  {
+    "question": "陪诊这块你们包到哪一步",
+    "expectId": "faq-platform-boundary-01",
+    "keywords": [
+      "包到哪一步",
+      "陪诊范围"
+    ]
+  },
+  {
+    "question": "你们能帮拿药不 会不会给点吃药的主意",
+    "expectId": "faq-platform-boundary-01",
+    "keywords": [
+      "帮拿药",
+      "吃药主意"
+    ]
+  },
+  {
+    "question": "我想知道你们除了陪着去医院还能做别的吗 比如帮我看看报告单",
+    "expectId": "faq-platform-boundary-01",
+    "keywords": [
+      "陪着去医院",
+      "看看报告单"
+    ]
+  },
+  {
+    "question": "能付钱不",
+    "expectId": "faq-platform-boundary-01",
+    "keywords": [
+      "能付钱",
+      "在线付"
+    ]
+  }
+]
