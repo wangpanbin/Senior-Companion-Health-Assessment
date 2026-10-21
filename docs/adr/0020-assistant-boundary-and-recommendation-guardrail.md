@@ -1,7 +1,7 @@
 # ADR-0020 · V3.7 家属智能助手：边界对齐「谨慎使用」档、推荐由规则引擎负责、合规词表单一真源
 
 > **状态**：已接受 · 2026-10-21
-> **相关**：[V3.7-assistant-spec.md](../spec/V3.7-assistant-spec.md) · [V3.7-tickets.md](../spec/V3.7-tickets.md) · [ADR-0016](0016-matching-structured-and-explainable.md) · [ADR-0011](0011-order-chat.md) · 仓库 `plans/迭代计划.md` §40 / §60 / §61.3
+> **相关**：[V3.7-assistant-spec.md](../spec/V3.7-assistant-spec.md) · [V3.7-tickets.md](../spec/V3.7-tickets.md) · [ADR-0016](0016-matching-structured-and-explainable.md) · [ADR-0011](0011-order-chat.md) · 仓库 `docs/plan/iteration-plan.md` §40 / §60 / §61.3
 > **影响范围**：`ai-service/**`（新增独立进程）· `backend/.../controller/assistant/**` · `backend/.../service/impl/AssistantServiceImpl.java` · `backend/.../util/ComplianceCheckUtil.java` · `backend/src/main/resources/compliance/medical-advice-words.txt` · `frontend/src/views/family/assistant.vue` · `frontend/src/api/assistant.js` · `POST /api/assistant/chat`
 
 ---
@@ -13,13 +13,13 @@
 | 家属的处境 | 平台今天的形态 |
 |---|---|
 | 想找陪诊员 | 订单进大厅后，家属只能在订单详情页看 V3.4 的「系统正在为你匹配」卡片。那是规则引擎的五维分，**但它是给「看」的，不是给「问」的**——家属不会知道自己该问什么，也不知道匹配结果该怎么理解 |
-| 问平台规则 | 平台规则散落在 `docs/api/*.md` 与 `plan.md` 里，**没有任何问答入口**。费用口径（工作日 128 / 夜间周末 158）、取消规则、投诉入口全靠人肉翻文档 |
+| 问平台规则 | 平台规则散落在 `docs/api/*.md` 与 `docs/plan/plan.md` 里，**没有任何问答入口**。费用口径（工作日 128 / 夜间周末 158）、取消规则、投诉入口全靠人肉翻文档 |
 
 需求是加一个「家属端智能助手」，用 **Python + LangChain + FastAPI** 实现。
 
 但这件事有三处不能拍脑袋：
 
-1. **仓库对 AI 能力有明确分级**（`plans/迭代计划.md` §60），本能力落在哪一档决定了要不要护栏；
+1. **仓库对 AI 能力有明确分级**（`docs/plan/iteration-plan.md` §60），本能力落在哪一档决定了要不要护栏；
 2. **V3.4 已把「推荐必须可解释」写成硬约束**（ADR-0016），引入 LLM 会不会破坏它；
 3. **合规词表只有一份，在 Java 里**（`ComplianceCheckUtil`），而它的 javadoc 明写「不要另起一份词表」。
 
@@ -29,7 +29,7 @@
 
 ### 决策
 
-本助手的 AI 能力**全部落在 `plans/迭代计划.md` §60 的「谨慎使用」档**：
+本助手的 AI 能力**全部落在 `docs/plan/iteration-plan.md` §60 的「谨慎使用」档**：
 
 | 档位 | §60 原文 | 本助手的关系 |
 |---|---|---|

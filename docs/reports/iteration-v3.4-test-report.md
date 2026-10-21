@@ -6,7 +6,7 @@
 | 日期 | 2026-10-20 |
 | 分支 | `feature/v3.4-matching`（从 `main` @ `23bd591` 切出） |
 | 上游契约 | `docs/spec/V3.4-matching-spec.md` §五 测试矩阵 · `docs/spec/V3.4-tickets.md` T1–T10 |
-| 设计决策 | [ADR-0016](../../adr/0016-matching-structured-and-explainable.md) |
+| 设计决策 | [ADR-0016](../adr/0016-matching-structured-and-explainable.md) |
 
 ---
 

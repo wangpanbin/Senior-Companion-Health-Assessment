@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlTabBar · 底部胶囊 Tab Bar（design.md §3.5）
+ * NlTabBar · 底部胶囊 Tab Bar（docs/design/design.md §3.5）
  *
  * 容器：全宽 · padding 12 21 21 · 白底 + --nl-shadow-float
  * 胶囊：高 62 · fill_container 宽 · 圆角 36 · 1px --nl-border · 内 padding 4

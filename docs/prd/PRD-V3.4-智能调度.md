@@ -9,11 +9,11 @@
 | 版本 | V3.4 |
 | 日期 | 2026-10-20 |
 | 负责模块 | M4 陪诊订单与状态机（大厅排序 + 家属端候选推荐） |
-| 上游依据 | [`V3.4-matching-spec.md`](../spec/V3.4-matching-spec.md)（工程契约）· [`V3.4-tickets.md`](../spec/V3.4-tickets.md)（T1–T10）· [`V3.x-roadmap-spec.md`](../spec/V3.x-roadmap-spec.md) §3.4 / §4.4 · 仓库 [`plans/迭代计划.md`](../../plans/迭代计划.md) §36 – §40 |
+| 上游依据 | [`V3.4-matching-spec.md`](../spec/V3.4-matching-spec.md)（工程契约）· [`V3.4-tickets.md`](../spec/V3.4-tickets.md)（T1–T10）· [`V3.x-roadmap-spec.md`](../spec/V3.x-roadmap-spec.md) §3.4 / §4.4 · 仓库 [`docs/plan/iteration-plan.md`](../plan/iteration-plan.md) §36 – §40 |
 | 接口契约 | [`docs/api/03-order.md`](../api/03-order.md) §3 / §12 |
 | 指标登记 | [`metric-dictionary.md`](../spec/metric-dictionary.md) §2.5（人读面 v1.2） |
 | 关联 ADR | [0016 匹配结构化与可解释](../adr/0016-matching-structured-and-explainable.md)（本版核心决策）· [0013 大厅单一推荐序](../adr/0013-hall-single-recommend-order.md)（被本版升级） |
-| 测试报告 | [`iteration-v3.4-test-report.md`](../agents/reports/iteration-v3.4-test-report.md) |
+| 测试报告 | [`iteration-v3.4-test-report.md`](../reports/iteration-v3.4-test-report.md) |
 
 ---
 

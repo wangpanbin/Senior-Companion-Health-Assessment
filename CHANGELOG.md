@@ -1,10 +1,43 @@
 # Changelog
 
 本文件记录每个版本的变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
-版本号对齐 `迭代计划.md` 的 Vx.y 里程碑（不是 Git 标签）。
+版本号对齐 `docs/plan/iteration-plan.md` 的 Vx.y 里程碑（不是 Git 标签）。
 
 > 与 `docs/api/README.md §变更记录` 的分工：那边只记**接口契约**的变更（端点、错误码、字段），
 > 本文件记**全部**变更，包括内部重构、测试与文档。两者可交叉引用，但本文件不替代接口变更记录。
+
+---
+
+## [Unreleased] · 文档收敛
+
+把散落在仓库各处的文档收敛到 **根目录三入口 + `docs/` 分区** 的结构。
+
+### Changed · 文档归档
+
+- **根目录只保留三个入口**：`README.md`（对外基线）· `AGENTS.md`（AI 协作规范）· `GLOSSARY.md`（领域词汇表）。
+  `CHANGELOG.md` 按通用惯例留在根目录。
+- **`docs/plan/plan.md`** —— 原根目录 `plan.md`（模块拆分 + 验收标准），与 PRD 同层归入工程计划区。
+- **`docs/design/design.md`** —— 原根目录 `design.md`（前端设计规范，视觉唯一真源）。
+- **`docs/reports/`** —— 原根目录 `TEST_REPORT.md` + 原 `docs/agents/reports/`（21 份测试 / 基线 / 压测报告）合并为单一报告区。
+- **`docs/plan/iteration-plan.md`** —— 原 `plans/迭代计划.md`（V3.x 迭代规划）。
+- **`docs/plan/ui-rework.md`** —— 原 `plans/ui-rework.md`（R4 / R5 / R6 UI 重构计划）。
+- **`docs/plan/archive/`** —— 原 `docs/superpowers/plans/`（已执行完毕的收敛迭代实施计划存档）。
+- **`docs/README.md`** —— 新增：文档总索引（分区表 + 阅读路径 + 命名约定 + 维护约定）。
+
+### Changed · 术语表唯一真源
+
+- **`GLOSSARY.md` 现在是术语表正文**，原 `CONTEXT.md` 的全部术语内容已并入，**`CONTEXT.md` 予以删除**。
+- 原因：本机安装的工程技能（`/domain-modeling` 写入方与 `/tdd`、`/diagnosing-bugs`、`/improve-codebase-architecture`、`/wait-what`、`/pr`、`/codebase-design` 读取方）**读写两端都硬编码 `GLOSSARY.md`**。原先「`CONTEXT.md` 为正文、`GLOSSARY.md` 为别名指针」的安排已与实际技能契约漂移 —— 读取方拿到的是指针而非术语。
+- `docs/agents/domain.md` 与 `AGENTS.md` §Agent skills 同步改为「唯一真源，无别名文件」。
+
+### Fixed · 引用一致性
+
+- 全仓文档引用随文件移动同步重写（Markdown 链接按相对位置几何重算，非字符串替换）。
+- 顺带修好 14 处历史断链（原指向 `plans/迭代计划.md`、`docs/agents/reports/` 的失效链接）。
+- `backend/sql/tools/`、`frontend/`、`ai-service/` 中指向文档的注释与路径字面量同步更新。
+
+> ⚠️ **未改动**：`docs/api/**`、`docs/spec/metric-dictionary.md`（CI 门禁真源）、`docs/db/**`（脚本生成物）——
+> 这三处被 CI 与后端工具硬编码引用，迁移会静默失效。
 
 ---
 

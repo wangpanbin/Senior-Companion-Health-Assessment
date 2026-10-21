@@ -10,7 +10,7 @@
 且 `AGENTS.md` §0.1 要求示例数据用合规占位串。设 `NIANGLIN_SEED_PASSWORD`
 环境变量可覆盖为本地实际值，避免真机连本地库时把仓库里的默认值当真口令用。
 
-对应约束见 `docs/agents/reports/BASELINE_2026-09-28.md` §6.1。
+对应约束见 `docs/reports/BASELINE_2026-09-28.md` §6.1。
 """
 
 import os

@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlSection · 流程页面区块包装（design.md §4）
+ * NlSection · 流程页面区块包装（docs/design/design.md §4）
  *
  * 用于非卡片化的页面结构（如信息确认行），与 NlCard 配套使用
  * - card 模式：白底 + 边框 + 圆角 + 投影

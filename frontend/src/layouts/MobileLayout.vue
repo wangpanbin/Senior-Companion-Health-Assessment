@@ -1,6 +1,6 @@
 <script setup>
 /**
- * MobileLayout · 移动形态顶层布局（design.md §4 骨架 · 390×844）
+ * MobileLayout · 移动形态顶层布局（docs/design/design.md §4 骨架 · 390×844）
  *
  * 依据：`docs/adr/0007-desktop-form-factor.md`（形态与角色解耦）
  * 命名：由旧的手机端布局文件更名而来，语义与形态对齐；旧文件已删除。

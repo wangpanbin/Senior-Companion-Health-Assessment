@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlStatusChip · 业务状态 Chip（design.md §3.3 + §2.2）
+ * NlStatusChip · 业务状态 Chip（docs/design/design.md §3.3 + §2.2）
  *
  * 统一的高度 22 / 圆角 6 / padding 0 8 / 字号 12/500
  * 颜色直接走预设 enum（订单 / 用药 / 资质 / 投诉 / 用户），与后端枚举保持一致

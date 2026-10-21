@@ -1,6 +1,6 @@
 /**
  * 组件库统一出口
- * 与 design.md §3 / §7 命名约定一致：以 nl- 前缀
+ * 与 docs/design/design.md §3 / §7 命名约定一致：以 nl- 前缀
  */
 export { default as NlCard } from './NlCard.vue'
 export { default as NlStatusChip } from './NlStatusChip.vue'

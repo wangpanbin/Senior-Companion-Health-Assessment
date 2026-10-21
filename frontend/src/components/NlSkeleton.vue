@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlSkeleton · 骨架屏（design.md §3.6）
+ * NlSkeleton · 骨架屏（docs/design/design.md §3.6）
  *
  * 卡片轮廓 + 灰色渐变扫光，禁用整页转圈
  */

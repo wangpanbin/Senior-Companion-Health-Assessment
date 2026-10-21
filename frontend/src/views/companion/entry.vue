@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 陪诊员入驻 · 资质提交（M-20 · design.md §1.2 P1）
+ * 陪诊员入驻 · 资质提交（M-20 · docs/design/design.md §1.2 P1）
  *
  * 数据来源：
  *   - GET  /user/companion/application → getMyCompanionApplication（我的资质状态）
@@ -80,7 +80,7 @@ function removeCert(i) {
 
 /**
  * 证件材料真实上传：COMPANION_CERT。
- * 前端预校验大小（≤10MB，design.md §2.6）；超限直接提示，不发起请求。
+ * 前端预校验大小（≤10MB，docs/design/design.md §2.6）；超限直接提示，不发起请求。
  * 失败（含 403 / 参数错误）时 url 不写入、保留原值，仅由拦截器统一弹错。
  */
 function onCertFileChange(i, e) {

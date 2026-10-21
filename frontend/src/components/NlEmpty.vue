@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlEmpty · 空状态（design.md §3.6）
+ * NlEmpty · 空状态（docs/design/design.md §3.6）
  *
  * 80px 线性插画（用 SVG）+ 「暂无数据」+ 一句行动引导
  * 错误状态切换文案：403 / 404 / 网络异常

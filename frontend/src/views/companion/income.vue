@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 陪诊员·我的收入（M-21 · design.md §1.2 P1 · V3.3 改造）
+ * 陪诊员·我的收入（M-21 · docs/design/design.md §1.2 P1 · V3.3 改造）
  *
  * V3.3 起本页分两段数据源，口径各归其位：
  *

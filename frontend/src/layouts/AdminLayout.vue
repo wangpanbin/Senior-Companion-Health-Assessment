@@ -1,6 +1,6 @@
 <script setup>
 /**
- * AdminLayout · 管理后台桌面端布局（design.md §4 · 1440×900）
+ * AdminLayout · 管理后台桌面端布局（docs/design/design.md §4 · 1440×900）
  *
  * - 左栏自适应：auto 模式按 useResponsive().isMd 翻转（<1280 收起 / ≥1280 展开）
  *   手动态 'expanded' / 'collapsed' 强制覆盖，偏好写 localStorage（reload 保持）

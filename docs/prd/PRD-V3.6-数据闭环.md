@@ -9,11 +9,11 @@
 | 版本 | V3.6 |
 | 日期 | 2026-10-20 |
 | 负责模块 | M10 数据统计、可视化与导出（口径收敛与闭环分析） |
-| 上游依据 | [`V3.6-data-loop-spec.md`](../spec/V3.6-data-loop-spec.md)（工程契约）· [`V3.6-tickets.md`](../spec/V3.6-tickets.md)（T1–T9）· [`V3.x-roadmap-spec.md`](../spec/V3.x-roadmap-spec.md) §3.6 / §4.6 · 仓库 [`plans/迭代计划.md`](../../plans/迭代计划.md) §46 – §49 |
+| 上游依据 | [`V3.6-data-loop-spec.md`](../spec/V3.6-data-loop-spec.md)（工程契约）· [`V3.6-tickets.md`](../spec/V3.6-tickets.md)（T1–T9）· [`V3.x-roadmap-spec.md`](../spec/V3.x-roadmap-spec.md) §3.6 / §4.6 · 仓库 [`docs/plan/iteration-plan.md`](../plan/iteration-plan.md) §46 – §49 |
 | 接口契约 | [`docs/api/08-admin.md`](../api/08-admin.md) §21 – §23 |
 | 指标登记 | [`metric-dictionary.md`](../spec/metric-dictionary.md) §2.7（人读面 v1.3，由机器面生成） |
 | 关联 ADR | [0017 端点↔指标机器契约](../adr/0017-metric-endpoint-machine-contract.md)（本版核心决策）· [0014 用药三桶唯一真源](../adr/0014-medication-bucket-single-source.md) |
-| 测试报告 | [`iteration-v3.6-test-report.md`](../agents/reports/iteration-v3.6-test-report.md) |
+| 测试报告 | [`iteration-v3.6-test-report.md`](../reports/iteration-v3.6-test-report.md) |
 
 ---
 

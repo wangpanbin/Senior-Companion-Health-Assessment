@@ -25,7 +25,7 @@ export const SIDEBAR_MODE_AUTO = 'auto'
 export const SIDEBAR_MODE_EXPANDED = 'expanded'
 export const SIDEBAR_MODE_COLLAPSED = 'collapsed'
 
-/** 默认展开宽度（与 design.md / variables.scss $sidebar-width 一致） */
+/** 默认展开宽度（与 docs/design/design.md / variables.scss $sidebar-width 一致） */
 export const SIDEBAR_WIDTH_EXPANDED = 220
 /** 默认收起宽度（与 $sidebar-width-collapsed 一致） */
 export const SIDEBAR_WIDTH_COLLAPSED = 64

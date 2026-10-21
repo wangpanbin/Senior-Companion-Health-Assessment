@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 我的（M-22 · design.md §1.2 P1 · 4 角色共用）
+ * 我的（M-22 · docs/design/design.md §1.2 P1 · 4 角色共用）
  *
  * - 顶部：头像 / 昵称 / 角色徽标（真实，来自 getProfile）
  * - 老人模式开关（本地偏好，非接口）

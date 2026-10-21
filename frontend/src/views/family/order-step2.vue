@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 下单 · Step2（M-08 · design.md §4）
+ * 下单 · Step2（M-08 · docs/design/design.md §4）
  *
  * - 顶部 NlStepHeader 2-2-3
  * - 医院列表（名称 + 等级 chip + 地址文字，禁止地图）

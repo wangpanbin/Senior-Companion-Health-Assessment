@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 接单大厅（M-10 · design.md §4 · PRD §4.1 陪诊员主旅程）
+ * 接单大厅（M-10 · docs/design/design.md §4 · PRD §4.1 陪诊员主旅程）
  *
  * 数据来源：
  *   - GET /order/hall        → listOrderHall（待接单订单，sortBy 决定排序维度）

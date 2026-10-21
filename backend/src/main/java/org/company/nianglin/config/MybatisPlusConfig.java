@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 /**
  * MyBatis-Plus 配置。
  *
- * <p>三个插件的用途（对应 plan.md 技术亮点）：</p>
+ * <p>三个插件的用途（对应 docs/plan/plan.md 技术亮点）：</p>
  * <ol>
  *   <li>{@link PaginationInnerInterceptor} —— 分页插件，所有列表接口统一用它</li>
  *   <li>{@link OptimisticLockerInnerInterceptor} —— <b>乐观锁，防陪诊员超卖接单</b>（M4 核心验收项）</li>

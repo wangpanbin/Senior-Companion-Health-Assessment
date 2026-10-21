@@ -408,7 +408,7 @@ def doc_readme(tables, counts):
     L.append("| `backend/sql/tools/` | 本文档的生成脚本、数据校验 SQL、EXPLAIN 脚本（含 README） |")
     L.append("| `docs/api/` | 接口设计文档（9 篇，按模块拆分） |")
     L.append("| `AGENTS.md` | AI 协作与编码规范（项目宪法） |")
-    L.append("| `plan.md` | 模块拆分与验收标准 |")
+    L.append("| `docs/plan/plan.md` | 模块拆分与验收标准 |")
     L.append("")
     L.append("本文档**由脚本生成**（`python backend/sql/tools/gen_db_docs.py render`）。")
     L.append("改完 DDL 请重新生成，不要手工编辑本目录下的文件，否则会与代码漂移。")

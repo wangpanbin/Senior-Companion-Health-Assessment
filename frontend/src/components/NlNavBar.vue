@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlNavBar · 移动端顶部导航栏（design.md §4 骨架第 2 步）
+ * NlNavBar · 移动端顶部导航栏（docs/design/design.md §4 骨架第 2 步）
  *
  * 高度 56（老人模式 64），左侧返回箭头（可选），中间标题 22/600，左对齐
  * 右侧操作图标（最多 1 个）

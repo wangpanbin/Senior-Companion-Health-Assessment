@@ -2292,9 +2292,9 @@ V3.1 Release
 
 # 74. V3.7 —— 家属智能助手
 
-> **2026-10-21 交付**。规格见 [`docs/spec/V3.7-assistant-spec.md`](../docs/spec/V3.7-assistant-spec.md)，
-> 边界决策见 [`docs/adr/0020-assistant-boundary-and-recommendation-guardrail.md`](../docs/adr/0020-assistant-boundary-and-recommendation-guardrail.md)，
-> 接口契约见 [`docs/api/13-assistant.md`](../docs/api/13-assistant.md)。
+> **2026-10-21 交付**。规格见 [`docs/spec/V3.7-assistant-spec.md`](../spec/V3.7-assistant-spec.md)，
+> 边界决策见 [`docs/adr/0020-assistant-boundary-and-recommendation-guardrail.md`](../adr/0020-assistant-boundary-and-recommendation-guardrail.md)，
+> 接口契约见 [`docs/api/13-assistant.md`](../api/13-assistant.md)。
 >
 > ⚠️ **本节是追加的，不重编号既有章节。**
 > `docs/spec/V3.x-roadmap-spec.md` 引用了《迭代计划》§32 / §50 / §53 / §54 / §56 / §58 / §61 / §64 / §66 ——
@@ -2302,7 +2302,7 @@ V3.1 Release
 
 ## 74.1 版本目标
 
-平台的服务规则（费用、取消、投诉、评价、打卡、推荐逻辑）散落在 `docs/api/*.md` 与 `plan.md` 里，
+平台的服务规则（费用、取消、投诉、评价、打卡、推荐逻辑）散落在 `docs/api/*.md` 与 `docs/plan/plan.md` 里，
 **没有任何问答入口** —— 家属只能自己翻文档。
 
 V3.7 给家属端加一个**智能助手**：用自然语言问到平台规则，并看懂「为什么推荐这位陪诊员」。

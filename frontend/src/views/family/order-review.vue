@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 评价订单（M-17 · design.md §4 / PRD §M7）
+ * 评价订单（M-17 · docs/design/design.md §4 / PRD §M7）
  *
  * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
  *

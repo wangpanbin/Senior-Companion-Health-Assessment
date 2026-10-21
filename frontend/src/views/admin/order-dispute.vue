@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 订单纠纷仲裁（W-03 · design.md §4 / PRD §M9）
+ * 订单纠纷仲裁（W-03 · docs/design/design.md §4 / PRD §M9）
  *
  * 数据来源：纠纷列表直接复用 listAllOrders（与订单管理同源，便于管理员对任意订单强制改终态）。
  * 仲裁动作走 arbitrateOrder，入参严格对齐后端 ArbitrateDTO：

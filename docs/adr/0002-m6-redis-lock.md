@@ -12,7 +12,7 @@
 
 ## 背景
 
-M6 有两个定时任务在多实例运行时必须单实例执行（plan.md M6 验收：「并发启动 2 个后端实例，定时任务仅 1 个实例实际执行（日志可证）」）：
+M6 有两个定时任务在多实例运行时必须单实例执行（docs/plan/plan.md M6 验收：「并发启动 2 个后端实例，定时任务仅 1 个实例实际执行（日志可证）」）：
 
 1. **每日 07:00**：`MedicationScheduler.generateDailyTasks` 生成当日 `medication_task`
 2. **每 30 分钟**：`MedicationScheduler.scanMissedTasks` 扫描漏服任务
@@ -139,4 +139,4 @@ M6 有两个定时任务在多实例运行时必须单实例执行（plan.md M6 
 
 ## 环境约束来源
 
-`plan.md §4.4-②`：本机 Redis 是 Windows 移植版，无法真正 fork，**不要依赖 Redisson 高级特性**。
+`docs/plan/plan.md §4.4-②`：本机 Redis 是 Windows 移植版，无法真正 fork，**不要依赖 Redisson 高级特性**。

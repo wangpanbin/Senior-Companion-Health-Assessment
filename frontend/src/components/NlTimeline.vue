@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlTimeline · 6 节点时间线（design.md §4 · M11 陪诊员端）
+ * NlTimeline · 6 节点时间线（docs/design/design.md §4 · M11 陪诊员端）
  *
  * 节点状态：done / current / todo
  * done: 实心主色圆点 + 完成时间

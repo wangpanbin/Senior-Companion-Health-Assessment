@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 我的老人（M-19 列表 · design.md §1.2 P1）
+ * 我的老人（M-19 列表 · docs/design/design.md §1.2 P1）
  *
  * 数据来源：
  *   - `GET /user/elder` 列表（`listElder`，分页 page/size ≤ 100）→ 我绑定的老人

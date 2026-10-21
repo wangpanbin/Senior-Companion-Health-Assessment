@@ -24,7 +24,7 @@ import java.util.Set;
  *   <li>仅 ADMIN 可通过「纠纷处理」强制改变终态，且必须写操作日志</li>
  * </ol>
  *
- * <p>对应验收标准（plan.md · M4）：跳级调用必须返回 {@code 3002}，数据库状态不变。</p>
+ * <p>对应验收标准（docs/plan/plan.md · M4）：跳级调用必须返回 {@code 3002}，数据库状态不变。</p>
  *
  * @author 银龄伴诊团队
  */

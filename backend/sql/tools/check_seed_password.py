@@ -43,7 +43,7 @@ ALLOWLIST = [
     ("backend/sql/V2__seed_data.sql",
      "⚠️ 已执行的 Flyway 脚本，**不得修改**（validate-on-migrate 校验 checksum）；"
      "改口令需新开 V5__*.sql 走 UPDATE"),
-    ("docs/agents/reports/BASELINE_2026-09-28.md",
+    ("docs/reports/BASELINE_2026-09-28.md",
      "实测报告，如实记录当时的命中分布（§6.1）"),
     ("docs/plan/convergence-2026-09.md",
      "迭代计划，收尾标准里引用了检索串本身"),

@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 陪诊员订单列表（M-15 · design.md §1.2 P1）
+ * 陪诊员订单列表（M-15 · docs/design/design.md §1.2 P1）
  *
  * 数据来源：GET /order（listMyOrders，按当前角色自动返回陪诊员接的的单）
  *

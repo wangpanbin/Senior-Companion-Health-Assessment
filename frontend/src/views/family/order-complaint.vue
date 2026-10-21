@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 我要投诉（M-18 · design.md §4 / PRD §M7）
+ * 我要投诉（M-18 · docs/design/design.md §4 / PRD §M7）
  *
  * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
  *
@@ -101,7 +101,7 @@ function onEvidenceChange(e) {
     e.target.value = ''
     return
   }
-  // 前端预校验大小（≤10MB，design.md §2.6）
+  // 前端预校验大小（≤10MB，docs/design/design.md §2.6）
   if (file.size > 10 * 1024 * 1024) {
     ElMessage.warning('单张证据超过 10MB，无法上传')
     e.target.value = ''

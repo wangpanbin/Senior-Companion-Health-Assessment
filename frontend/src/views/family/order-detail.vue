@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 订单详情（M-16 · design.md §4）
+ * 订单详情（M-16 · docs/design/design.md §4）
  *
  * - 订单状态条 + 订单号
  * - 服务进度时间线（NlTimeline：6 打卡节点 + 订单终态，WebSocket 实时更新）

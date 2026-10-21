@@ -1,8 +1,8 @@
 <script setup>
 /**
- * 注册（M-02 · design.md §1.2 P1）
+ * 注册（M-02 · docs/design/design.md §1.2 P1）
  *
- * - 角色二选一卡片（家属 / 陪诊员）—— 按 design.md 保持两张卡
+ * - 角色二选一卡片（家属 / 陪诊员）—— 按 docs/design/design.md 保持两张卡
  *   - 陪诊员注册后引导去资质提交（M-20）
  * - 表单字段严格对齐后端 `RegisterDTO`（见 docs/api/01-auth-user.md §2）：
  *     username（4-20 位字母数字下划线）/ phone / password / nickname / role

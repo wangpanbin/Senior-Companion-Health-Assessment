@@ -6,8 +6,8 @@
 | 日期 | 2026-10-21 |
 | 分支 | `feature/assistant-v37-ai-service`（从 `main` @ `4332b66` 切出，领先 3 个 commit） |
 | 上游契约 | `docs/spec/V3.7-assistant-spec.md` §七 验收标准 · `docs/spec/V3.7-tickets.md` T1–T11 |
-| 设计决策 | [ADR-0020](../../adr/0020-assistant-boundary-and-recommendation-guardrail.md) |
-| 评审报告 | [两轴评审报告](../../review/2026-10-21-v3.7-assistant.md) |
+| 设计决策 | [ADR-0020](../adr/0020-assistant-boundary-and-recommendation-guardrail.md) |
+| 评审报告 | [两轴评审报告](../review/2026-10-21-v3.7-assistant.md) |
 
 ---
 
@@ -79,13 +79,13 @@ V3.7 联调已抓到两次关键词缺口（前端自己的首个预设问题「
 工具直接 import `app.knowledge` 的**真实检索实现**，不重写打分逻辑。
 
 ⚠️ **问法是模拟数据不是真实用户数据** —— PRD 风险第 5 条**保持未关闭**。
-详见 [V3.7-faq-question-pool.md](../../spec/V3.7-faq-question-pool.md)。
+详见 [V3.7-faq-question-pool.md](../spec/V3.7-faq-question-pool.md)。
 
 ---
 
 ## 三、评审发现项的修复与复验（两轴 9 项，全部已修）
 
-Standards 轴 2 条硬违规 + 7 条判断题；Spec 轴 3 + 1 + 4 条。逐条处置见[评审报告](../../review/2026-10-21-v3.7-assistant.md)。
+Standards 轴 2 条硬违规 + 7 条判断题；Spec 轴 3 + 1 + 4 条。逐条处置见[评审报告](../review/2026-10-21-v3.7-assistant.md)。
 本报告只列**改变了行为**的几条：
 
 | # | 缺陷 | 处置 |
@@ -155,7 +155,7 @@ E2E 跑完应当恢复基线（仓库自带 `tools/e2e/restore_clean_baseline.py
 |---|---|
 | 本特性（`main` → 工作区） | 77 文件 / 9480 增 / 49 删 |
 | 本轮收口（相对本特性起点） | 评审修复 9 项 + FAQ 问法池（+128 关键词）+ 文档同步 7 处 |
-| 新增文件 | `tools/gen_faq_questions.py`、`ai-service/knowledge/faq-question-pool.json`、`ai-service/tests/test_faq_coverage.py`、`docs/spec/V3.7-faq-question-pool.md`、`docs/agents/reports/iteration-v3.7-test-report.md`、`docs/review/2026-10-21-v3.7-assistant.md`、`backend/.../impl/AssistantServiceImplGuardTest.java` |
+| 新增文件 | `tools/gen_faq_questions.py`、`ai-service/knowledge/faq-question-pool.json`、`ai-service/tests/test_faq_coverage.py`、`docs/spec/V3.7-faq-question-pool.md`、`docs/reports/iteration-v3.7-test-report.md`、`docs/review/2026-10-21-v3.7-assistant.md`、`backend/.../impl/AssistantServiceImplGuardTest.java` |
 | 新增依赖 | **零**（`langchain-core>=0.1` 是已批准的**显式声明**，不是新第三方库） |
 | 新增错误码 | **零**（复用 10xxx 段） |
 | 数据库迁移 | **零**（V3.7 无迁移） |

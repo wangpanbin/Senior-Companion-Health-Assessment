@@ -9,11 +9,11 @@
 | 版本 | V3.3 |
 | 日期 | 2026-10-20 |
 | 负责模块 | M10 数据统计、可视化与导出（陪诊员视角扩展） |
-| 上游依据 | [`V3.3-companion-workbench-spec.md`](../spec/V3.3-companion-workbench-spec.md)（工程契约）· [`V3.3-tickets.md`](../spec/V3.3-tickets.md)（T1–T10）· [`V3.x-roadmap-spec.md`](../spec/V3.x-roadmap-spec.md) §3.3 / §4.3 · 仓库 [`plans/迭代计划.md`](../../plans/迭代计划.md) §30 – §35 |
+| 上游依据 | [`V3.3-companion-workbench-spec.md`](../spec/V3.3-companion-workbench-spec.md)（工程契约）· [`V3.3-tickets.md`](../spec/V3.3-tickets.md)（T1–T10）· [`V3.x-roadmap-spec.md`](../spec/V3.x-roadmap-spec.md) §3.3 / §4.3 · 仓库 [`docs/plan/iteration-plan.md`](../plan/iteration-plan.md) §30 – §35 |
 | 接口契约 | [`docs/api/09-statistics-export.md`](../api/09-statistics-export.md) §8 |
 | 指标登记 | [`metric-dictionary.md`](../spec/metric-dictionary.md) §2.4（人读面 v1.1） |
 | 关联 ADR | [0018 工作台口径与字段名](../adr/0018-companion-workbench-caliber.md)（本版核心决策）· [0009 订单费用项模型](../adr/0009-order-fee-item-model.md) · [0006 PRD 版本锁](../adr/0006-prd-version-locking.md) |
-| 测试报告 | [`iteration-v3.3-test-report.md`](../agents/reports/iteration-v3.3-test-report.md) |
+| 测试报告 | [`iteration-v3.3-test-report.md`](../reports/iteration-v3.3-test-report.md) |
 | 为什么不直接改 `PRD.md` | PRD 版本锁在 W7 / W12 / W17 三个竞讲节点（[ADR-0006](../adr/0006-prd-version-locking.md)）。V3.3 不是节点，因此以独立版本 PRD 记录，宪法条款不动 |
 
 ---

@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 站内信（M-14 · design.md §4 · 三角色共用：/elder/message /family/message /companion/message）
+ * 站内信（M-14 · docs/design/design.md §4 · 三角色共用：/elder/message /family/message /companion/message）
  *
  * 数据来源（@/api/message）：
  *   - listMessages({page,size,type}) → 站内信列表

@@ -140,7 +140,7 @@
 | 4 角色 × 3 类接口越权矩阵扩到全部模块 | ✅ **9 个矩阵**覆盖 M2–M10（新增 Execution 15 / Medication 25 / Review 31 / Message 21 / Admin 13 / Statistics 16 = **121 项**，与既有 105 项合计 **226 项**） | ✅ 达标 |
 | 各模块 Service 单测 ≥ 60% 覆盖 | ✅ M6–M10 单测补齐（Medication 23 / Review 12 / Complaint 13 / Message 12 / Admin 13 / Statistics 11 / Export 6） | ✅ 达标 |
 | JMeter 压测脚本（M4 50 并发 / M5 WS 重连 / M6 并发任务） | ✅ 4 个 `.jmx`；**M5/M6 两个为本轮新增并已实际跑过**（300 / 150 样本，Err 均 0.00%），见 §7.3 | ✅ 达标（WS 握手本身未压，理由见压测记录 §6） |
-| 三个迭代测试报告归档 | ✅ `docs/agents/reports/iteration-test-report-1/2/3.md` | ✅ 达标 |
+| 三个迭代测试报告归档 | ✅ `docs/reports/iteration-test-report-1/2/3.md` | ✅ 达标 |
 | 遗留 Bug 清单 P0/P1 W16 前清零 | ✅ `docs/agents/BUG_LIST.md`（P0 = 0；唯一 P1 是测试环境残留数据，见 L1） | 🟡 P1 仍剩 1 项 |
 
 ### 3.3 设计评审文档 🔴 全缺
@@ -337,7 +337,7 @@ f464fcd chore(M2): 错误码、安全配置与 Jackson 注释微调
 | `jmeter_m5_reconnect.jmx` | 50 × 3 轮 | 300 | 447.8 req/s | **0.00%** | 重连补齐风暴下 `code` 全为 200 |
 | `jmeter_m6_concurrent_confirm.jmx` | 50 + 20×5 | 150 | 309~363 req/s | **0.00%** | 同一任务 50 并发：**恰好 1 次生效**，其余全为 5003，零 500 |
 
-完整记录（含夹具快照/还原、复现步骤、未覆盖范围）见 `docs/agents/reports/pressure-test-m5-m6.md`。
+完整记录（含夹具快照/还原、复现步骤、未覆盖范围）见 `docs/reports/pressure-test-m5-m6.md`。
 
 ### 7.4 仍然偏薄的地方（如实标注）
 

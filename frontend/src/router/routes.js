@@ -1,14 +1,14 @@
 /**
  * 路由表
  *
- * 设计约定（AGENTS.md / design.md §1.4）：
+ * 设计约定（AGENTS.md / docs/design/design.md §1.4）：
  *   - meta.title          菜单与页面标题
  *   - meta.icon           Element Plus 图标组件名
  *   - meta.roles          允许访问的角色数组；不写表示所有已登录角色可访问
  *   - meta.public         true 表示无需登录
  *   - meta.elderlyHidden  老人模式下从菜单中隐藏（菜单精简，M11）
  *   - meta.module         该页面归属的模块编号
- *   - meta.code           页面编号，如 M-04（与 design.md §1.2/1.3 对齐）
+ *   - meta.code           页面编号，如 M-04（与 docs/design/design.md §1.2/1.3 对齐）
  *   - meta.mobileOnly     true 表示仅适配手机形态；桌面形态下由 NlDesktopShell
  *                         整体替换为 NlMobileOnlyNotice（ADR-0008）
  *
@@ -565,7 +565,7 @@ export const routes = [
           title: '履约风险',
           icon: 'AlarmClock',
           roles: ['ADMIN'],
-          // 履约保障是 V3.1 新增模块，plan.md 的模块编号只到 M13；
+          // 履约保障是 V3.1 新增模块，docs/plan/plan.md 的模块编号只到 M13；
           // 本页挂在管理后台（M9）名下，与同组的订单 / 投诉页保持一致
           module: 'M9',
           code: 'W-10'

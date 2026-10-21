@@ -9,7 +9,7 @@
 | 版本 | V3.7 |
 | 日期 | 2026-10-21 |
 | 负责模块 | M14 家属智能助手（问答 / 推荐叙述 / 下单草稿回填） |
-| 上游依据 | [`ADR-0020` 助手边界与推荐护栏](../adr/0020-assistant-boundary-and-recommendation-guardrail.md)（本版核心决策）· [`V3.7-assistant-spec.md`](../spec/V3.7-assistant-spec.md)（工程契约）· [`V3.7-tickets.md`](../spec/V3.7-tickets.md)（工单，与本版同批产出）· [`V3.x-roadmap-spec.md`](../spec/V3.x-roadmap-spec.md) · 仓库 [`plans/迭代计划.md`](../../plans/迭代计划.md) §40 / §60 / §61.3 |
+| 上游依据 | [`ADR-0020` 助手边界与推荐护栏](../adr/0020-assistant-boundary-and-recommendation-guardrail.md)（本版核心决策）· [`V3.7-assistant-spec.md`](../spec/V3.7-assistant-spec.md)（工程契约）· [`V3.7-tickets.md`](../spec/V3.7-tickets.md)（工单，与本版同批产出）· [`V3.x-roadmap-spec.md`](../spec/V3.x-roadmap-spec.md) · 仓库 [`docs/plan/iteration-plan.md`](../plan/iteration-plan.md) §40 / §60 / §61.3 |
 | 接口契约 | [`docs/api/13-assistant.md`](../api/13-assistant.md)（先行契约，与本版同批产出） |
 | 指标登记 | 本版**不新增指标**（不新增表、不新增统计口径，见 §七.3） |
 | 关联 ADR | [0020 助手边界与推荐护栏](../adr/0020-assistant-boundary-and-recommendation-guardrail.md)（本版核心决策）· [0016 匹配结构化与可解释](../adr/0016-matching-structured-and-explainable.md)（推荐可解释性的来源）· [0011 订单聊天](../adr/0011-order-chat.md)（`/api/chat/**` 已被 M13 占用）· [0006 PRD 版本锁](../adr/0006-prd-version-locking.md) |
@@ -27,7 +27,7 @@
 | 家属的处境 | 平台今天的形态 |
 |---|---|
 | 找不到合适的陪诊员 | 家属端**没有可浏览的陪诊员列表**（`/api/order/hall` 是陪诊员专属）。订单进大厅后，家属只能在订单详情页看 V3.4 的「系统正在为你匹配」卡片 —— 那是规则引擎的五维分，**是给「看」的，不是给「问」的**：家属不知道该问什么，也不知道匹配结果该怎么理解 |
-| 规则看不懂 | 平台规则散落在 `docs/api/*.md` 与 `plan.md` 里，**没有任何问答入口**。费用口径（工作日 `128.00`、夜间或周末 `158.00`）、取消规则、投诉入口全靠人肉翻文档 |
+| 规则看不懂 | 平台规则散落在 `docs/api/*.md` 与 `docs/plan/plan.md` 里，**没有任何问答入口**。费用口径（工作日 `128.00`、夜间或周末 `158.00`）、取消规则、投诉入口全靠人肉翻文档 |
 | 没人可问 | 家属↔陪诊员的订单聊天（M13，`/api/chat/**`）是**订单内双方沟通**，不是平台规则问答；老人账号只读、管理员仲裁只读，都不能回答「这单多少钱」 |
 
 这不是「缺一个聊天框」的问题，是**平台没有把「可解释的匹配结果」和「可检索的服务规则」翻译成家属能直接消费的话**的问题。
@@ -161,7 +161,7 @@
 
 ## 四、合规边界（本版重点）
 
-### 4.1 与 `plans/迭代计划.md` §60 三档的对照
+### 4.1 与 `docs/plan/iteration-plan.md` §60 三档的对照
 
 | 档位 | §60 原文 | 本助手的关系 |
 |---|---|---|

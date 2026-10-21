@@ -2,7 +2,7 @@
 
 > **版本**：v1.5 · 2026-10-21
 > **机器面**：[`backend/src/main/resources/metrics/metric-dictionary.yml`](../../backend/src/main/resources/metrics/metric-dictionary.yml)（`MetricDictionary` 加载，`MetricDictionaryTest` 双向校验）
-> **上游依据**：[`V3.x-roadmap-spec.md`](./V3.x-roadmap-spec.md) §4.2 决策 2.6、§4.6 决策 6.1 / 6.3 · [`迭代计划.md`](../../plans/迭代计划.md) §48 / §49
+> **上游依据**：[`V3.x-roadmap-spec.md`](./V3.x-roadmap-spec.md) §4.2 决策 2.6、§4.6 决策 6.1 / 6.3 · [`迭代计划.md`](../plan/iteration-plan.md) §48 / §49
 > **不在本文件范围**：各版的具体接口契约（见 `docs/api/`）· 订单状态机语义（见 ADR-0010）
 
 ---

@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 老人端首页（M-04 / M-05 · design.md §4）
+ * 老人端首页（M-04 / M-05 · docs/design/design.md §4）
  *
  * 聚合展示，只读。数据来源：
  *  - getProfile()            → 当前老人自己的脱敏资料（姓名 / 头像 / 角色）

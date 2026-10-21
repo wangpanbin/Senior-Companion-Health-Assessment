@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 绑定 / 新建老人（M-19 · design.md §1.2 P1）
+ * 绑定 / 新建老人（M-19 · docs/design/design.md §1.2 P1）
  *
  * 两个入口（顶部 Tab 切换）：
  *   1. 绑定已有老人 —— `POST /user/elder/bind`，入参 ElderBindDTO：

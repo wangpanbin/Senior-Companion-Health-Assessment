@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 登录页（M-01 · design.md §1.2）
+ * 登录页（M-01 · docs/design/design.md §1.2）
  *
  * - 顶部品牌区（医疗蓝渐变 + 心形 SVG logo + slogan）
  * - 角色快速选择（4 角色卡片，选中切换对应演示账号）

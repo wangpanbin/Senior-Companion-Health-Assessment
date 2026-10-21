@@ -4,7 +4,7 @@ import prettierConfig from 'eslint-config-prettier'
 
 /**
  * ESLint 9 扁平配置。
- * 规范来源：plan.md · 协作规则「前端 ESLint + Prettier，不通过不许提交」。
+ * 规范来源：docs/plan/plan.md · 协作规则「前端 ESLint + Prettier，不通过不许提交」。
  */
 export default [
   {

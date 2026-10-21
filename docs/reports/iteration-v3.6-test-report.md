@@ -6,7 +6,7 @@
 | 日期 | 2026-10-20 |
 | 分支 | `feature/v3.6-data-loop`（从 `feature/v3.5-operations-cockpit` @ `260301d` 切出） |
 | 上游契约 | `docs/spec/V3.6-data-loop-spec.md` §五 测试矩阵 · `docs/spec/V3.6-tickets.md` T1–T9 |
-| 设计决策 | [ADR-0017](../../adr/0017-metric-endpoint-machine-contract.md) |
+| 设计决策 | [ADR-0017](../adr/0017-metric-endpoint-machine-contract.md) |
 
 ---
 

@@ -1,4 +1,4 @@
-"""M10 统计接口万条数据压测（对应 plan.md L387）。
+"""M10 统计接口万条数据压测（对应 docs/plan/plan.md L387）。
 
 **验收标准**：统计接口在 1 万条订单数据下响应时间 < 2s。
 
@@ -9,7 +9,7 @@
 **数据安全**：造的数据全部带 `PERF%` 前缀，测完在 finally 里物理删除；
 不碰任何种子数据。脚本可重复执行。
 
-对应约束见 `docs/agents/reports/BASELINE_2026-09-28.md` §6.1（凭据单一真源）。
+对应约束见 `docs/reports/BASELINE_2026-09-28.md` §6.1（凭据单一真源）。
 """
 import json
 import os
@@ -202,7 +202,7 @@ def cleanup() -> None:
 
 def main():
     print("=" * 72)
-    print("M10 统计接口万条压测（plan.md L387）")
+    print("M10 统计接口万条压测（docs/plan/plan.md L387）")
     print("=" * 72)
 
     token = login("admin")

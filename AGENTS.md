@@ -2,10 +2,10 @@
 
 > **本文件是 AI 编码助手（Claude Code、Cursor、Copilot、通义灵码等）在本仓库内生成、修改、补全代码时必须遵守的规范总览。**
 >
-> 它从 `plan.md`、`README.md`、`docs/api/README.md` 以及现有骨架代码中提炼而来，等同于"机读版项目宪法"。
+> 它从 `docs/plan/plan.md`、`README.md`、`docs/api/README.md` 以及现有骨架代码中提炼而来，等同于"机读版项目宪法"。
 > AI 在回答或写入本仓库前，必须先完整读取并理解本文件，再按其中的规则行事。
 >
-> 配套阅读：`README.md`（项目基线）、`plan.md`（模块拆分与验收标准）、`docs/api/README.md`（接口全局约定）。
+> 配套阅读：`README.md`（项目基线）、`docs/plan/plan.md`（模块拆分与验收标准）、`docs/api/README.md`（接口全局约定）。
 
 ---
 
@@ -20,7 +20,7 @@
 | 前端包管理器 | **pnpm**（lockfile 为 `frontend/pnpm-lock.yaml`；禁止把 `package-lock.json` 重新引入仓库） |
 | 接口前缀 | 所有后端接口统一 `/api` 前缀 |
 
-### 0.1 三条不可逾越的合规红线（每条都是 plan.md 计划书"合规与隐私说明"里的硬约束）
+### 0.1 三条不可逾越的合规红线（每条都是 docs/plan/plan.md 计划书"合规与隐私说明"里的硬约束）
 
 1. **不做诊断、不开药方**。药品字典只返回通用信息（名称、规格、通用说明），接口与页面必须出现免责声明文案。**禁止**出现"建议服用""推荐剂量""诊断为""可能是 XX 病"等表述。
 2. **隐私最小化**。密码 BCrypt 存储（值以 `$2a$` 开头）；接口返回时手机号 `138****8888`、身份证号 `110101********4567`、姓名按场景脱敏；本地存储（localStorage）**禁止**写入密码、身份证号、完整手机号。
@@ -47,7 +47,7 @@
 
 - 任何代码改动落地前，**先说明思路与改动文件清单**，再开始改。
 - **新增功能 / 编写代码必须在独立分支上完成**：动手写代码前先新建分支（功能用 `feature/<module>-<name>`、修 bug 用 `bugfix/<module>-<name>`、改文档用 `docs/<name>`），全程在该分支上提交，**禁止直接在 `main` / `develop` 上编写或提交代码**；任务完成、检查通过后再按 §7.1 合并回主分支并删除该分支。仅改动文档、配置且不涉及代码生成时可经用户确认后免开分支。
-- **不要删除** `plan.md`、`README.md`、`docs/api/*`、`.gitignore`、`pom.xml`、`package.json`、根目录 `.workbuddy/`；这些是项目根骨。
+- **不要删除** `docs/plan/plan.md`、`README.md`、`docs/api/*`、`.gitignore`、`pom.xml`、`package.json`、根目录 `.workbuddy/`；这些是项目根骨。
 - **不要执行破坏性命令**：`rm -rf`、强制 `git push --force` 到 `main` / `develop`、直接 drop database、`mvn clean install -DskipTests` 之外的危险 Maven 目标。对 `git commit`、`git push`、`git reset`、`git clean`、重启服务、删容器等动作必须**先确认**。
 - **不要在仓库中留下明文密码 / 真实手机号 / 真实身份证号**。所有示例数据用合规占位串（如 `13800000000`、`110101199001010001`）。
 - **不要"自创"技术栈**：不得引入 README / pom.xml / package.json 之外的依赖。需要新增依赖时，在回复中明确说明理由，由人工确认后再写。（V3.7 的 Python 助手服务依赖清单是**已记录的例外**，见 §0.1。）
@@ -65,11 +65,23 @@
 
 ```
 Senior Companion Health Assessment/
-├── AGENT.md                         ← 本文件，AI 必读
-├── README.md                        ← 项目基线
-├── plan.md                          ← 模块拆分与验收标准
+├── AGENTS.md                        ← 本文件，AI 必读（协作规范）
+├── README.md                        ← 项目基线（对外入口）
+├── GLOSSARY.md                      ← 领域词汇表（唯一真源）
+├── CHANGELOG.md                     ← 版本变更记录
 ├── 银龄伴诊项目计划书.docx           ← 课程原始计划书（不要改）
-├── docs/api/                        ← 接口文档（先于代码）
+├── docs/
+│   ├── api/                         ← 接口文档（先于代码）
+│   ├── prd/                         ← 产品需求（PRD 逐版）
+│   ├── spec/                        ← 工程规格 + 工单 + 指标字典
+│   ├── adr/                         ← 架构决策记录
+│   ├── db/                          ← 数据字典 / ER 图 / 索引（由脚本生成）
+│   ├── design/                      ← 前端设计规范
+│   ├── plan/                        ← 项目计划书 + 迭代计划
+│   ├── agents/                      ← AI 协作契约（前端契约 / 领域文档规则）
+│   ├── review/                      ← 评审记录
+│   ├── security/                    ← 安全评估
+│   └── reports/                     ← 测试报告 / 验收基线 / 压测
 ├── backend/
 │   ├── pom.xml
 │   ├── sql/                          ← Flyway 脚本唯一真源
@@ -413,7 +425,7 @@ public class OrderServiceImpl implements OrderService {
 
 ### 3.9 路由与守卫
 
-- 路由表集中在 `frontend/src/router/routes.js`，每个路由必须带 `meta.module`（对应 `plan.md` 的模块编号）。
+- 路由表集中在 `frontend/src/router/routes.js`，每个路由必须带 `meta.module`（对应 `docs/plan/plan.md` 的模块编号）。
 - 角色守卫在 `router/index.js` 的 `beforeEach`，通过 `AUTH_ENABLED` 开关开启（M2 交付后置 `true`）。
 - `meta.roles` 为空数组表示所有已登录角色可访问；不要在路由组件内部再判角色。
 - 老人模式下 `meta.elderlyHidden: true` 的路由会从菜单中隐藏，但**仍可通过 URL 进入**——这是设计如此（老人模式下也需要排障入口）。
@@ -652,7 +664,7 @@ AI 在任何"新增 / 修改 / 删除接口"的场景下，必须：
 
 ### ✅ DO
 
-- 先读本文件 + `README.md` + `plan.md` + 对应 `docs/api/<module>.md`，再动手。
+- 先读本文件 + `README.md` + `docs/plan/plan.md` + 对应 `docs/api/<module>.md`，再动手。
 - 接口改动先文档、后代码、再前端。
 - 业务失败一律 `throw new BusinessException(ResultCode.X)`，不要在 Controller 吞异常。
 - 脱敏**先**调 `MaskUtil`，**再**拼字符串。
@@ -689,7 +701,7 @@ AI 在任何"新增 / 修改 / 删除接口"的场景下，必须：
 - [ ] 老人模式（`<html class="elderly-mode">`）下字号 / 触控区域 / 菜单隐藏行为符合预期。
 - [ ] 后端 `mvn -q -DskipTests compile` 通过；前端 `pnpm lint` 0 警告。
 - [ ] 没有把 `.env*` / `application-local.*` / 含真实密码的配置提交。
-- [ ] 没有改 `plan.md` / `README.md` / `.gitignore` / `pom.xml` / `package.json` / `.workbuddy/` 之外的非业务文件（除非用户明确要求）。
+- [ ] 没有改 `docs/plan/plan.md` / `README.md` / `.gitignore` / `pom.xml` / `package.json` / `.workbuddy/` 之外的非业务文件（除非用户明确要求）。
 - [ ] 没有出现"建议服用 / 推荐剂量 / 诊断为 / 可能是 XX 病"等违反合规的文案。
 
 ---
@@ -715,4 +727,4 @@ Default five canonical roles: `needs-triage`, `needs-info`, `ready-for-agent`, `
 
 ### Domain docs
 
-Single-context layout: one `CONTEXT.md` (glossary — single source of truth) + `docs/adr/` at the repo root. `GLOSSARY.md` is an alias pointer to `CONTEXT.md`, not a second glossary — add terms to `CONTEXT.md` only. See `docs/agents/domain.md`.
+Single-context layout: one `GLOSSARY.md` (glossary — single source of truth) + `docs/adr/` at the repo root. There is **no** second glossary and no alias file — the writing side (`/domain-modeling`) and the reading side (`/tdd`, `/diagnosing-bugs`, `/improve-codebase-architecture`, `/wait-what`, `/pr`) both hardcode `GLOSSARY.md`. Add terms to `GLOSSARY.md` only. See `docs/agents/domain.md`.

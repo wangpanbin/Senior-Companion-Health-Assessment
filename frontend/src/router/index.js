@@ -5,7 +5,7 @@ import { useUserStore } from '@/store/modules/user'
 /**
  * 路由实例 + 全局守卫
  *
- * 设计依据：AGENTS.md §3.9 / design.md §1.4
+ * 设计依据：AGENTS.md §3.9 / docs/design/design.md §1.4
  *
  * - 公开页（meta.public）直接放行
  * - 未登录访问业务页 → /login?redirect=<原地址>

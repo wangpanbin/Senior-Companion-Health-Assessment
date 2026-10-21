@@ -6,14 +6,14 @@
 | 日期 | 2026-09-28 |
 | 决策者 | 项目负责人 |
 | 关联模块 | M4 陪诊订单 / M9 管理后台纠纷处理 |
-| 关联文档 | `AGENTS.md` §4.1 · `plan.md` §M4-3 · `docs/agents/designs/M4-order.md` |
+| 关联文档 | `AGENTS.md` §4.1 · `docs/plan/plan.md` §M4-3 · `docs/agents/designs/M4-order.md` |
 | 相关 ADR | 0009（费用明细模型） |
 
 ---
 
 ## 背景
 
-`plan.md` §M4 验收标准把订单状态机列为**全局瓶颈模块**（关键路径 `M0 → M1 → M2 → M3 → M4 → M9`），并给了三条铁律：
+`docs/plan/plan.md` §M4 验收标准把订单状态机列为**全局瓶颈模块**（关键路径 `M0 → M1 → M2 → M3 → M4 → M9`），并给了三条铁律：
 
 1. 禁止跳级：待接单不能直接变已完成
 2. 禁止回退：已接单不能退回待接单
@@ -107,7 +107,7 @@ OrderTransitionService.transition(
 ### C. 引入 Spring StateMachine 框架
 
 - **优点**：状态机是一等公民，配置化声明，生态成熟。
-- **缺点**：为一个 6 状态单链状态机引入整套框架，配置与现有 `@Version` 乐观锁、`MaskUtil` 脱敏、`ResultCode` 错误码体系都要重新对接；`plan.md` 技术栈清单里没有它，属于「自创技术栈」，违反 `AGENTS.md` §0.2「不得引入 pom.xml / package.json 之外的依赖，需人工确认」。**收益不抵成本。**
+- **缺点**：为一个 6 状态单链状态机引入整套框架，配置与现有 `@Version` 乐观锁、`MaskUtil` 脱敏、`ResultCode` 错误码体系都要重新对接；`docs/plan/plan.md` 技术栈清单里没有它，属于「自创技术栈」，违反 `AGENTS.md` §0.2「不得引入 pom.xml / package.json 之外的依赖，需人工确认」。**收益不抵成本。**
 
 ---
 

@@ -1,7 +1,7 @@
 # 前端桌面端适配执行计划 · 2026-09-18
 
 > **来源**:经过 grill-with-docs 三轮 12 题决议落地。
-> **关联**:`CONTEXT.md` · `docs/adr/0007-desktop-form-factor.md` · `docs/adr/0008-mobile-only-pages.md` · `AGENTS.md`
+> **关联**:`GLOSSARY.md` · `docs/adr/0007-desktop-form-factor.md` · `docs/adr/0008-mobile-only-pages.md` · `AGENTS.md`
 > **目的**:把"全员响应式 + 居中限宽 720 + 形态解耦"做成可执行的 3 阶段计划。
 
 ---
@@ -164,7 +164,7 @@ const { isMobile } = useDevice()
 
 4. **文档收尾**:
    - 在 `AGENTS.md` §3 新增"§3.11 形态与响应式"小节,描述 Mobile/Desktop 形态
-   - 在 `CONTEXT.md` 末尾补一节"v1 落地状态"(Stage 3 完成后填)
+   - 在 `GLOSSARY.md` 末尾补一节"v1 落地状态"(Stage 3 完成后填)
    - 给 28 个 view 各打一份"已响应式 / mobile-only" 状态标签
 
 5. **测试**:
@@ -315,7 +315,7 @@ const { isMobile } = useDevice()
 | 4 | **ADR-0007 决策 6：「routes.js 不改」** | 计划 Stage 1 却要求改 import + 加 4 处 `meta` | **两份文档自相矛盾**；本轮按计划改了 `routes.js`，ADR 该条应订正 |
 | 5 | 「mobile-only 由 NlDesktopShell 检测 meta 后整体替换」（ADR-0008 同） | mobile-only 的 view **永远不会渲染 NlDesktopShell**（它们只有手机版模板），`meta.mobileOnly` 形同虚设 | **必须新增 `NlMobileOnlyPage`** 在更外层兜住。实测未加时，1280 宽屏打开 `/profile` 仍是被拉满的大号手机 |
 | 6 | Stage 1：「`DesktopLayout` 根据 `isMobile` 判断是否 redirect 到 `MobileLayout`」 | Vue 单文件组件**不能把自身递归渲染成另一种形态**（`MobileLayout` 渲染 view，view 再渲染 `DesktopLayout` → 无限递归） | 未采用 redirect 路线，改为 view 内 `isMobile` 二分（与 Q3 = b「组件内响应式」一致）；`DesktopLayout` 降级为可选入口 |
-| 7 | §2 关键约束 2：「不要引入 element-plus 复杂组件（不要用 `el-table`）」 | `CONTEXT.md` 视图层级一节写「Desktop 形态可直接用 `el-table`」 | **文档冲突**；本轮遵守计划（未用 `el-table`，沿用 `NlCard` + 手写列表行），`CONTEXT.md` 该句应订正 |
+| 7 | §2 关键约束 2：「不要引入 element-plus 复杂组件（不要用 `el-table`）」 | `GLOSSARY.md` 视图层级一节写「Desktop 形态可直接用 `el-table`」 | **文档冲突**；本轮遵守计划（未用 `el-table`，沿用 `NlCard` + 手写列表行），`GLOSSARY.md` 该句应订正 |
 | 8 | Stage 3：「`useDevice.js` / `NlDesktopShell.vue` / `NlMobileOnlyNotice.vue` 单测（Vitest）」 | `frontend/package.json` **没有 vitest / jsdom**，且 AGENTS.md §0.2 禁止擅自加依赖 | **未做**，需先获批加依赖 |
 
 ### 9.4 验证证据

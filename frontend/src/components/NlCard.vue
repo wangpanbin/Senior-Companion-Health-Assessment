@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlCard · 通用卡片（design.md §3.2）
+ * NlCard · 通用卡片（docs/design/design.md §3.2）
  *
  * 视觉公式：白底 + 1px --nl-border + radius 14 + padding 16 + 内部 gap 12（无投影，靠边框分层）
  * 禁止：再嵌套投影卡片（层级最多 2 层）；禁止跨卡片强投影

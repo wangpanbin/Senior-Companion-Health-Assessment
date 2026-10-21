@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlPhoneShell · 移动端页面壳（design.md §4 骨架）
+ * NlPhoneShell · 移动端页面壳（docs/design/design.md §4 骨架）
  *
  * 把 状态栏 + 顶部导航 + 内容区 + 底部 Tab Bar 统一包起来。
  * 用于保持页面与设计骨架 1:1 对齐，并支持后续老人模式 / 适老化统一处理。

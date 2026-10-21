@@ -2,12 +2,12 @@
 
 | | |
 |---|---|
-| 状态 | **已收尾**（阶段 1–5 全部落地；2026-09-29 收尾验证复核，报告见 `docs/agents/reports/CLOSEOUT_2026-09-29.md`） |
+| 状态 | **已收尾**（阶段 1–5 全部落地；2026-09-29 收尾验证复核，报告见 `docs/reports/CLOSEOUT_2026-09-29.md`） |
 | 立项日期 | 2026-09-28 |
-| 关联 | `plan.md` 迭代四/五/六 · `AGENTS.md` · `docs/adr/0007` `0009` `0010` |
-| 产出定位 | 一次性补齐 plan.md 迭代四/五/六的交付缺口，让「代码做完了」变成「可验收、可展示」 |
-| 验收基线 | **`docs/agents/reports/BASELINE_2026-09-28.md`**（每个数字带复现命令） |
-| 收尾复核 | **`docs/agents/reports/CLOSEOUT_2026-09-29.md`**（五阶段收敛后的复核 + 本轮修复清单） |
+| 关联 | `docs/plan/plan.md` 迭代四/五/六 · `AGENTS.md` · `docs/adr/0007` `0009` `0010` |
+| 产出定位 | 一次性补齐 docs/plan/plan.md 迭代四/五/六的交付缺口，让「代码做完了」变成「可验收、可展示」 |
+| 验收基线 | **`docs/reports/BASELINE_2026-09-28.md`**（每个数字带复现命令） |
+| 收尾复核 | **`docs/reports/CLOSEOUT_2026-09-29.md`**（五阶段收敛后的复核 + 本轮修复清单） |
 
 ---
 
@@ -18,13 +18,13 @@
 | 口径 | 数值 | 事实源 |
 |---|---|---|
 | 代码完成度 | M0–M12 约 95% | 后端 13 模块全落地；前端 38 个 view 零静态壳、零漏 import；`src/api/` 80 个函数 0 mock；`docs/api/` 抽样 74 端点与代码 100% 命中 |
-| 验收清单完成度 | **0 / 78**（**2026-09-28 起点**；现已 **79 / 79 全勾**） | `plan.md` 的 78 个 `- [ ]` 当时一个都没勾；2026-09-29 实测 `Select-String plan.md '^- \[ \]'` → **0 个未勾、79 个已勾** |
+| 验收清单完成度 | **0 / 78**（**2026-09-28 起点**；现已 **79 / 79 全勾**） | `docs/plan/plan.md` 的 78 个 `- [ ]` 当时一个都没勾；2026-09-29 实测 `Select-String docs/plan/plan.md '^- \[ \]'` → **0 个未勾、79 个已勾** |
 | 交付物完成度 | 测试报告 3/4，用例图 0，架构图 0，原型图 0 | 无任何 `.drawio` / `.puml`；`reports/` 被 gitignore，E2E 截图无法入库 |
 
 **「完成度」有三个互不相干的口径，本文一律显式标注用哪个**，不再混用。
 
 > ⚠️ **本节是 2026-09-28 的起点快照，数字反映的是「立项当时」，不是当前状态。**
-> 当前实测见 §五 各阶段「实测结果」小节与 `docs/agents/reports/CLOSEOUT_2026-09-29.md`。
+> 当前实测见 §五 各阶段「实测结果」小节与 `docs/reports/CLOSEOUT_2026-09-29.md`。
 
 **触发原因（真实缺口，不是臆想）：**
 
@@ -32,7 +32,7 @@
    - `AGENTS.md` §4.1「所有状态流转必须通过 `canTransitTo`，禁止硬编码」→ 生产代码零调用，`OrderServiceImpl` 实测 **4 处**硬编码 `from != X` 守卫（L316 / L359 / L442 / L480）+ 终态守卫（L599–L607）。`OrderStatusTest` 86 行测的是一个没人调用的方法，转移表改了不会有任何测试失败。
    - `AGENTS.md` §3.5 老人模式硬约束 → 代码在 ≥768px 强制关闭（**此项已由 ADR-0007 Q4=II 决策**，是 `AGENTS.md` 未同步，见 §四）。
 
-2. **交付缺口是被主动砍掉的，不是漏的。** commit `6150373`(2026-09-20)「docs: 清理文档中部署/PPT 撰写相关信息」把 `plan.md` 改成"专注代码编写，排除答辩交付物"。该决策本轮**推翻**。
+2. **交付缺口是被主动砍掉的，不是漏的。** commit `6150373`(2026-09-20)「docs: 清理文档中部署/PPT 撰写相关信息」把 `docs/plan/plan.md` 改成"专注代码编写，排除答辩交付物"。该决策本轮**推翻**。
 
 3. **README 快速开始跑不通。** `application-dev.yml` 用 `${MYSQL_PASSWORD:CHANGE_ME}`，注释让建的 `application-local.yml` 根本不存在。新人照 README 跑到启动必挂 `Access denied`。
 
@@ -45,7 +45,7 @@
 | Q1 | 本轮主线 | **A** 先验收 → 收口硬约束 → 补交付物 → 补功能 |
 | Q2 | 老人模式 ≥768px 禁用怎么裁 | **B** 保留豁免，把 `AGENTS.md` 对齐到已决策状态（**非新决策，见 §四**） |
 | Q3 | 答辩交付物是否在本轮范围 | **A** 全量复活，P0 = 测试报告 + 截图入库，P1 = 三张图 |
-| Q4 | 收尾标准用什么形式 | **A + B** 每步绑可执行命令；通过的事实回填 `plan.md` checkbox |
+| Q4 | 收尾标准用什么形式 | **A + B** 每步绑可执行命令；通过的事实回填 `docs/plan/plan.md` checkbox |
 | Q5 | git 模型怎么收敛 | **A** 就地收敛到 `main` / `develop` + tag |
 
 **项目决策（用户拍板）：**
@@ -97,7 +97,7 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 盘点时发现 `AGENTS.md` §3.5 与代码冲突，追查后确认：
 
 - `docs/adr/0007-desktop-form-factor.md` **已记录** Q4 = II（桌面端禁用老人模式），2026-09-18 用户拍板；
-- `CONTEXT.md` §模式开关**已写明**「生效范围（本轮决策后）：仅 Mobile 形态生效」；
+- `GLOSSARY.md` §模式开关**已写明**「生效范围（本轮决策后）：仅 Mobile 形态生效」；
 - 代码三重防御**已实装**：`app.js:53` action 直接 return、`applyElderlyClass()` 摘 class、`elderly.scss:155` ≥768px `!important` 兜底。
 
 **唯一不同步的是 `AGENTS.md` §3.5。** 所以 Q2 的落点不是写新 ADR，而是：
@@ -134,7 +134,7 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 | 1.2 | 后端构建基线 | `mvn -q clean package` 成功；`java -jar` 启动后 `GET /api/health` 返回 200 且 body 含 `"code":200` |
 | 1.3 | 前端基线 | `pnpm lint` 0 警告 → `pnpm build` 成功 → dev server `/` 返回 200 |
 | 1.4 | **E2E 基线（最重）** | 按 `docs/agents/FRONTEND_CONTRACT.md` §13 起服务 → `pnpm exec playwright test`；**若红，停下来定位，不往后走** |
-| 1.5 | 基线报告落盘 | `docs/agents/reports/BASELINE_2026-09-28.md` 存在，每个数字后面跟着能复现它的命令 |
+| 1.5 | 基线报告落盘 | `docs/reports/BASELINE_2026-09-28.md` 存在，每个数字后面跟着能复现它的命令 |
 
 > **⚠️ PowerShell + Maven 陷阱**：任何 `-Dkey=value` 形态参数（`-Dtest=`、`-Dmaven.repo.local=`、`-DskipTests`）在 PowerShell 下会被解析成赋值，必须用 `cmd /c 'cd /d <backend> && mvn.cmd ...'` 包装。
 
@@ -148,7 +148,7 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 | 1.2 | ✅ | package EXIT=0（84.5MB jar）· `/api/health` HTTP 200 body `"code":200` · Flyway 1/2/3 全 success |
 | 1.3 | ✅ | lint 0 警告 · build EXIT=0 · dev server 5141 返回 200 |
 | 1.4 | ✅ | 首跑 163 passed/**1 failed** → 定位修复 → **164 passed** |
-| 1.5 | ✅ | `docs/agents/reports/BASELINE_2026-09-28.md`（347 行） |
+| 1.5 | ✅ | `docs/reports/BASELINE_2026-09-28.md`（347 行） |
 
 **闸门 1 达成，阶段 2 可启动。** 本阶段暴露 3 个此前无人知晓的阻断项（均已修复）：
 
@@ -220,7 +220,7 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 
 | # | ticket | 收尾标准（可执行） |
 |---|---|---|
-| 3.1 | **迭代五完整测试报告（P0）** | ① `target/site/jacoco/index.html` 存在，核心 Service 覆盖率 ≥ 60%（`plan.md` M12 硬指标）<br>② 报告每个数字后跟一条复现命令<br>③ 遗留 Bug 按 P0/P1/P2 排序，**P0/P1 清零**（M12 硬指标） |
+| 3.1 | **迭代五完整测试报告（P0）** | ① `target/site/jacoco/index.html` 存在，核心 Service 覆盖率 ≥ 60%（`docs/plan/plan.md` M12 硬指标）<br>② 报告每个数字后跟一条复现命令<br>③ 遗留 Bug 按 P0/P1/P2 排序，**P0/P1 清零**（M12 硬指标） |
 | 3.2 | 压测（P0，**JMeter 已就位**） | `JMETER_HOME` 已设 → 50 并发抢单报告：成功数 = 1、失败数 = 49。<br>**收尾判据必须双条件**：`EXIT=0` **且** 产出的 JTL 行数 > 1（只判退出码会被 0 假阳性骗过，见 §二之二） |
 | 3.3 | 解禁截图入库（P0） | `reports/` 迁到 `docs/reports/screenshots/` 并放开 gitignore；`git ls-files docs/reports/screenshots/ \| wc -l` ≥ 10，每张能对上 spec 名 |
 | 3.4 | 三张图（P1） | `docs/diagrams/` 下 3 组 `.md`(mermaid) + 3 个 `.png`；每张 mermaid 源码能渲染成功；原型图用真实页面截图而非手绘 |
@@ -231,7 +231,7 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 
 | ticket | 判定 | 实测 |
 |---|---|---|
-| 3.1 | ✅ | `docs/agents/reports/iteration-5-test-report.md` 已落盘；**592 tests / 0 fail / 0 error / 0 skipped**，每个数字后跟复现命令；P0 = 0、P1 = 0，P2 如实列出（覆盖率空洞 + `internal_message` 污染） |
+| 3.1 | ✅ | `docs/reports/iteration-5-test-report.md` 已落盘；**592 tests / 0 fail / 0 error / 0 skipped**，每个数字后跟复现命令；P0 = 0、P1 = 0，P2 如实列出（覆盖率空洞 + `internal_message` 污染） |
 | 3.2 | ✅ | 50 并发抢单压测报告已出（`reports/integration/2026-09-16/`）；判据用**双条件**（EXIT=0 且 JTL 行数 > 1），未被 0 假阳性骗过 |
 | 3.3 | ✅ | `docs/reports/screenshots/` **15 张已入库**（`git ls-files` 实测，要求 ≥10） |
 | 3.4 | ⚠️→✅ | 3 组 `.md` 齐全（`architecture` / `usecase` / `prototype`）；`prototype.md` 用 **15 张真实页面截图**而非手绘，符合「原型图用真实截图」的要求 —— 但渲染产物 `prototype.png` **曾缺失**，已在本轮 2026-09-29 补齐 |
@@ -262,7 +262,7 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 
 | # | ticket | 收尾标准 |
 |---|---|---|
-| 5.1 | 回填 `plan.md` 78 个 checkbox | `Select-String plan.md '^- \[ \]' \| Measure-Object` → **0** |
+| 5.1 | 回填 `docs/plan/plan.md` 78 个 checkbox | `Select-String docs/plan/plan.md '^- \[ \]' \| Measure-Object` → **0** |
 | 5.2 | 补 `v1.0/v2.0/v3.0` tag + origin 同步 | `git tag -l` 3 个；`origin/main..main` → 0 |
 | 5.3 | **最终总闸门脚本** | `tools/verify_all.ps1` 一条命令串联 lint / test / build / playwright / coverage / 压测，输出 PASS/FAIL 汇总 |
 
@@ -270,7 +270,7 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 
 | ticket | 判定 | 实测 |
 |---|---|---|
-| 5.1 | ✅ | `plan.md` **79 个 checkbox 全勾、0 个未勾**（`db10898` a11y 语义色修复后回填至 79/79） |
+| 5.1 | ✅ | `docs/plan/plan.md` **79 个 checkbox 全勾、0 个未勾**（`db10898` a11y 语义色修复后回填至 79/79） |
 | 5.2 | ✅ | `git tag -l` → `v1.0` `v2.0` `v3.0`；`git rev-list --count origin/main..main` → **0** |
 | 5.3 | ✅ | `tools/verify_all.ps1` 已入库，8 段闸门串联；2026-09-29 收尾验证实跑通过 |
 
@@ -301,7 +301,7 @@ setx JMETER_HOME "F:\software\apache-jmeter-5.6.3"
 | E2E 从未跑过，阶段 1 暴露大量失败 | 全线延期 | 总闸门 1 就是为此设的：红了就停在阶段 1，不带病推进 |
 | 覆盖率 < 60% 导致 M12 硬指标不达标 | 阶段 3 阻塞 | T1.1 先测出真实覆盖率基线，不达标则提前补测而非事后凑 |
 | JMeter 未就位 | T3.2 阻塞 | 二进制已就位（§二之二）；**剩余唯一缺口是 `JMETER_HOME` 环境变量**，需人工 `setx` 一次 |
-| 单人推进导致 `plan.md` 覆盖的「4 人团队」叙事失真 | 评审扣分 | 测试报告如实署名，不虚构分工 |
+| 单人推进导致 `docs/plan/plan.md` 覆盖的「4 人团队」叙事失真 | 评审扣分 | 测试报告如实署名，不虚构分工 |
 
 ---
 

@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 订单状态机单测。
  *
- * <p>对应 plan.md · M4 的验收标准：</p>
+ * <p>对应 docs/plan/plan.md · M4 的验收标准：</p>
  * <ul>
  *   <li>禁止跳级（待接单不能直接到已完成）</li>
  *   <li>禁止回退（已接单不能退回待接单）</li>

@@ -3,8 +3,8 @@
 > **文档版本**:v1.0 · 2026-09-16
 > **受众**:课程评审 + 4 人开发团队对齐
 > **维护节奏**:锁版本对齐 W7 / W12 / W17 三个竞讲节点(详见 ADR-0006)
-> **配套文档**:`plan.md`(工程实施)、`docs/api/`(接口契约)、`docs/agents/designs/Mx-xxx.md`(模块设计评审)、`docs/adr/`(架构决策记录)
-> **分层关系**:本文档是产品视角的"项目蓝图",与 `plan.md` 的工程视角分工详见 ADR-0005
+> **配套文档**:`docs/plan/plan.md`(工程实施)、`docs/api/`(接口契约)、`docs/agents/designs/Mx-xxx.md`(模块设计评审)、`docs/adr/`(架构决策记录)
+> **分层关系**:本文档是产品视角的"项目蓝图",与 `docs/plan/plan.md` 的工程视角分工详见 ADR-0005
 
 ---
 
@@ -12,7 +12,7 @@
 
 本文档是「银龄伴诊」的**产品需求文档**(Product Requirements Document, PRD),回答三个问题:**做什么、为什么做、做成什么样**——对应 4 人 17 周课程设计的目标对齐、老师评审、团队共识。
 
-工程实施细节(怎么拆模块、接口长什么样、状态机怎么实现)不在本文档,见 `plan.md` 与各模块设计评审。
+工程实施细节(怎么拆模块、接口长什么样、状态机怎么实现)不在本文档,见 `docs/plan/plan.md` 与各模块设计评审。
 
 **读者路径**:
 - 老师评审 → 重点读 §1 愿景、§2 产品原则、§9 成功度量
@@ -207,57 +207,57 @@
 
 ## 6. 功能模块详述
 
-> 每个模块仅给出**产品视角的目标与关键能力**;工程实施见 `plan.md §三` 对应小节;接口契约见 `docs/api/0X-xxx.md`;关键模块的设计评审见 `docs/agents/designs/Mx-xxx.md`。
+> 每个模块仅给出**产品视角的目标与关键能力**;工程实施见 `docs/plan/plan.md §三` 对应小节;接口契约见 `docs/api/0X-xxx.md`;关键模块的设计评审见 `docs/agents/designs/Mx-xxx.md`。
 
-### M0 工程骨架 → `plan.md §M0`
+### M0 工程骨架 → `docs/plan/plan.md §M0`
 
 建立前后端工程骨架,前后端两条命令可启动;接口未实现时返回结构化错误(非白页 / 非 500 堆栈);统一响应体 `Result<T>` + 全局异常处理 + Logback 分级;Knife4j `/doc.html` 可访问;ESLint + Prettier + Alibaba Java 规范插件提交前拦截。
 
-### M1 数据库 → `plan.md §M1` · `docs/db/`
+### M1 数据库 → `docs/plan/plan.md §M1` · `docs/db/`
 
 20 张业务表 + 30-200 条种子数据 / 表,覆盖空字段 / 超长文本 / 非常用药 / 跨天用药边界;Flyway 增量迁移(`V1/V2/V3` 已就绪);关键查询(订单按状态 + 时间、用药任务按用户 + 日期、陪诊员按资质筛选)走索引,EXPLAIN 无 ALL。
 
-### M2 认证鉴权 → `plan.md §M2` · `docs/api/01-auth-user.md`
+### M2 认证鉴权 → `docs/plan/plan.md §M2` · `docs/api/01-auth-user.md`
 
 JWT accessToken 120 分钟 / refreshToken 7 天 + Redis 黑名单;BCrypt 密码;图形验证码 5 分钟过期 + 登录失败次数限制;**老人账号写操作 100% 服务端强校验**;手机号 / 身份证号接口脱敏 + 日志脱敏。**4 角色 × 3 类接口 = 12 条越权用例必须通过**。
 
-### M3 用户档案 → `plan.md §M3` · `docs/api/02-elder-family.md`
+### M3 用户档案 → `docs/plan/plan.md §M3` · `docs/api/02-elder-family.md`
 
 老人档案身份证号加密存储 + 接口脱敏;家属通过邀请码 / 手机号验证绑定老人(1 家属可绑多老人);陪诊员入驻提交认证资料 + 资质证件上传 + 接单偏好(区域 / 时段);管理员审核陪诊员资质(通过 / 驳回 + 原因);用户封禁 / 解封。**未审核陪诊员看不到订单大厅、不能接单**(前后端双重拦截)。
 
-### M4 陪诊订单 → `plan.md §M4` · `docs/api/03-order.md` · `docs/agents/designs/M4-order.md`
+### M4 陪诊订单 → `docs/plan/plan.md §M4` · `docs/api/03-order.md` · `docs/agents/designs/M4-order.md`
 
 订单状态机 **5 状态 + 1 终态**:`PENDING → ACCEPTED → IN_SERVICE → COMPLETED → REVIEWED`;取消路径分两条——**家属**仅 `PENDING → CANCELLED`,**管理员强制** `PENDING/ACCEPTED/IN_SERVICE/COMPLETED → CANCELLED`(`REVIEWED` 为终态,无出边)。**禁止跳级、禁止回退**,仅 ADMIN 可强制改终态(走 M9 纠纷处理)。接单走 `@Version` 乐观锁,**JMeter 50 并发抢同一单 → 数据库只有 1 条成功接单记录**,`version` 仅 +1。每次状态变更写 `order_status_log` 时间线。完成时生成费用明细(代垫 / 服务费),**不做在线支付**。
 
-### M5 陪诊执行 → `plan.md §M5` · `docs/api/04-companion-execution.md` · `docs/agents/designs/M5-execution.md`
+### M5 陪诊执行 → `docs/plan/plan.md §M5` · `docs/api/04-companion-execution.md` · `docs/agents/designs/M5-execution.md`
 
 陪诊员 6 节点打卡:**出发 / 到院 / 就诊中 / 取药 / 离院 / 完成**,节点顺序不可逆(可跳过,不可回退);同一订单同一节点只能打一次。打卡落 `order_checkin` 同时写 `companion_track` 轨迹点。**打卡坐标偏离订单地址 > 2000 米视为无效打卡**(详见 §8.3)。WebSocket 推送家属端,3 秒内可达。**断线 30 秒自动重连,重连后补齐未读事件**(详见 ADR-0001)。
 
-### M6 用药管理 → `plan.md §M6` · `docs/api/05-medication.md` · `docs/agents/designs/M6-medication.md`
+### M6 用药管理 → `docs/plan/plan.md §M6` · `docs/api/05-medication.md` · `docs/agents/designs/M6-medication.md`
 
 药品字典**仅通用信息 + 免责声明**——名称 / 规格 / 通用适应症说明 / 注意事项;**禁止任何剂量 / 服用建议**。用药计划 CRUD:药品、剂量(由家属录入,非系统建议)、频次、起止日期、饭前 / 饭后。每日 07:00 定时任务生成当日 `medication_task`,**Redis 分布式锁**保证多实例只执行一次(详见 ADR-0002)。每 30 分钟扫描漏服并推送家属。**全站 grep "建议服用""推荐剂量" 必须为空**。
 
-### M7 评价投诉 → `plan.md §M7` · `docs/api/06-review-complaint.md` · `docs/agents/designs/M7-review.md`
+### M7 评价投诉 → `docs/plan/plan.md §M7` · `docs/api/06-review-complaint.md` · `docs/agents/designs/M7-review.md`
 
 订单完成才出现评价入口(其他状态调评价接口直接拒);1-5 星评分 + 标签(准时 / 耐心 / 专业…) + 文字 + 匿名开关;同一订单评价唯一;陪诊员评分 = 所有有效评价 `AVG`。投诉 3 状态(待处理 → 处理中 → 已结案)全程留痕;敏感词过滤拒绝提交。
 
-### M8 站内信 → `plan.md §M8` · `docs/api/07-message.md` · `docs/agents/designs/M8-message.md`
+### M8 站内信 → `docs/plan/plan.md §M8` · `docs/api/07-message.md` · `docs/agents/designs/M8-message.md`
 
 4 类模板:**订单事件 / 资质审核结果 / 漏服提醒 / 系统公告**。WebSocket 推送未读数变化,顶栏红点提示;已读状态多端一致。
 
-### M9 管理后台 → `plan.md §M9` · `docs/api/08-admin.md` · `docs/agents/designs/M9-admin.md`
+### M9 管理后台 → `docs/plan/plan.md §M9` · `docs/api/08-admin.md` · `docs/agents/designs/M9-admin.md`
 
 陪诊员资质审核 + 用户封禁 / 解封 / 重置密码 + 订单纠纷仲裁(**强制改终态 + 双方通知**)。所有管理动作写 `admin_oper_log`(操作人 / 目标 / 动作 / 时间)。管理端与业务端隔离(ADMIN 角色专属路由 + 接口)。
 
-### M10 统计导出 → `plan.md §M10` · `docs/api/09-statistics-export.md` · `docs/agents/designs/M10-statistics.md`
+### M10 统计导出 → `docs/plan/plan.md §M10` · `docs/api/09-statistics-export.md` · `docs/agents/designs/M10-statistics.md`
 
 订单量 / 订单完成率 / 用户增长(日 / 周 / 月维度) / 陪诊员接单排行 / 漏服率 5 类图表。**统计接口在 1 万条订单下响应 < 2s**(缓存 + 索引双优化,详见 ADR-0003)。EasyExcel 导出按当前筛选条件,列头中文、数据与页面一致。
 
-### M11 适老化 → `plan.md §M11`
+### M11 适老化 → `docs/plan/plan.md §M11`
 
 顶栏开关一键切换老人模式(无需刷新);全局字号 / 对比度 / 触控区同时变化;老人端隐藏次要菜单(`meta.elderlyHidden: true`);**核心流程 ≤ 3 步**(详见 §2.1)。本模块横切整个前端,所有页面必须满足适老化基线。
 
-### M12 测试质量 → `plan.md §M12`
+### M12 测试质量 → `docs/plan/plan.md §M12`
 
 JUnit5 + Mockito Service 单测覆盖率 ≥ 60%(JaCoCo 报告为证);**4 角色 × 3 类接口 = 12 条越权用例 100% 通过**;JMeter 50 并发抢单报告归档;3 份迭代测试报告(迭代二 / 三 / 五)。
 
@@ -373,14 +373,14 @@ JUnit5 + Mockito Service 单测覆盖率 ≥ 60%(JaCoCo 报告为证);**4 角色
 
 | 指标 | 目标 | 出处 |
 |---|---|---|
-| 3 个竞讲交付物 | W7 v1.0 / W12 v2.0 / W17 终交付,均按时交付 | `plan.md §〇` |
-| 越权用例 | 4 角色 × 3 类接口 = 12 条 100% 通过 | `plan.md §M2 / M12 验收` |
-| 乐观锁 | 50 并发抢单 → 1 成功 49 失败 | `plan.md §M4 验收` |
-| Service 单测覆盖率 | ≥ 60%(JaCoCo) | `plan.md §M12 验收` |
-| EXPLAIN | 关键查询 `type` 不为 ALL | `plan.md §M1 验收` |
-| 合规 grep | 全站 grep "建议服用""推荐剂量" 结果为空 | `plan.md §M6 验收` |
-| 种子数据量 | 每张业务表 ≥ 30 条 | `plan.md §M1 验收` |
-| 文档齐全 | PRD / plan.md / 接口 9 份 / 设计评审 7 份 / ADR 6+ 份齐全 | 本文档 + §附录 |
+| 3 个竞讲交付物 | W7 v1.0 / W12 v2.0 / W17 终交付,均按时交付 | `docs/plan/plan.md §〇` |
+| 越权用例 | 4 角色 × 3 类接口 = 12 条 100% 通过 | `docs/plan/plan.md §M2 / M12 验收` |
+| 乐观锁 | 50 并发抢单 → 1 成功 49 失败 | `docs/plan/plan.md §M4 验收` |
+| Service 单测覆盖率 | ≥ 60%(JaCoCo) | `docs/plan/plan.md §M12 验收` |
+| EXPLAIN | 关键查询 `type` 不为 ALL | `docs/plan/plan.md §M1 验收` |
+| 合规 grep | 全站 grep "建议服用""推荐剂量" 结果为空 | `docs/plan/plan.md §M6 验收` |
+| 种子数据量 | 每张业务表 ≥ 30 条 | `docs/plan/plan.md §M1 验收` |
+| 文档齐全 | PRD / docs/plan/plan.md / 接口 9 份 / 设计评审 7 份 / ADR 6+ 份齐全 | 本文档 + §附录 |
 
 ---
 
@@ -400,9 +400,9 @@ JUnit5 + Mockito Service 单测覆盖率 ≥ 60%(JaCoCo 报告为证);**4 角色
 | Node.js | 18+ | Vue 3 + Vite 要求 |
 | Vue | 3.5 | 锁定 |
 | Element Plus | 2.9 | 锁定 |
-| 详细依赖图 | 见 `plan.md §二 依赖拓扑` | — |
+| 详细依赖图 | 见 `docs/plan/plan.md §二 依赖拓扑` | — |
 
-**模块依赖拓扑**:见 `plan.md §二` 依赖拓扑图。**M4(订单)是全局瓶颈**,延期会拖垮 M5 / M7 / M9 / M10。
+**模块依赖拓扑**:见 `docs/plan/plan.md §二` 依赖拓扑图。**M4(订单)是全局瓶颈**,延期会拖垮 M5 / M7 / M9 / M10。
 
 ### 10.2 风险清单
 
@@ -430,11 +430,11 @@ JUnit5 + Mockito Service 单测覆盖率 ≥ 60%(JaCoCo 报告为证);**4 角色
 
 | 文档 | 内容 | 何时更新 |
 |---|---|---|
-| `plan.md` | 工程拆分 + 验收标准 + 阶段范围调整 | 与代码同步 |
+| `docs/plan/plan.md` | 工程拆分 + 验收标准 + 阶段范围调整 | 与代码同步 |
 | `docs/api/README.md` + 9 份模块文档 | 接口契约、错误码 | 后端改接口前先改文档 |
 | `docs/agents/designs/Mx-xxx.md` | 7 个核心模块的设计评审 | 关键模块设计变更时 |
 | `docs/adr/0001-0003` / `0005-0006` | 架构决策记录 | 重大技术取舍时新增 |
-| `docs/adr/0005-prd-planmd-layers.md` | PRD 与 plan.md 分层关系 | 本次新增(由本 PRD 引出) |
+| `docs/adr/0005-prd-planmd-layers.md` | PRD 与 docs/plan/plan.md 分层关系 | 本次新增(由本 PRD 引出) |
 | `docs/adr/0006-prd-version-locking.md` | PRD 版本锁对齐竞讲节点 | 本次新增(由本 PRD 引出) |
 | `docs/db/` | ER 图 / 数据字典 / EXPLAIN / 种子说明 | 表结构变更时 |
 

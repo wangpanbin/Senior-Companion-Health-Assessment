@@ -4,21 +4,24 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Before exploring, read these
 
-- **`CONTEXT.md`** at the repo root — **本仓库术语表的唯一真源**, or
-- **`GLOSSARY.md`** at the repo root — 指向 `CONTEXT.md` 的别名指针(见下「别名与唯一真源」),只读入口,
-- **`CONTEXT-MAP.md`** at the repo root if it exists: it points at one `CONTEXT.md` per context. Read each one relevant to the topic.
+- **`GLOSSARY.md`** at the repo root — **本仓库术语表的唯一真源**（银龄伴诊 · 领域词汇表）
+- **`GLOSSARY-MAP.md`** at the repo root if it exists: it points at one `GLOSSARY.md` per context. Read each one relevant to the topic.
 - **`docs/adr/`**: read ADRs that touch the area you're about to work in. In multi-context repos, also check `src/<context>/docs/adr/` for context-scoped decisions.
 
 If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
 
-## 别名与唯一真源
+## 唯一真源
 
-`CONTEXT.md` 与 `GLOSSARY.md` 指向**同一份**术语表:
+`GLOSSARY.md` 是**唯一**的术语表，**没有别名文件**：
 
-- **`CONTEXT.md` 是正文**,`/domain-modeling`(写入方)就地更新它;
-- **`GLOSSARY.md` 只是指针**,不含任何术语条目,供硬编码 `GLOSSARY.md` 的读取方(`/tdd`、`/diagnosing-bugs`、`/improve-codebase-architecture`、`/wait-what`、`/pr`)找到词汇表。
+- **写入方** `/domain-modeling` 就地更新 `GLOSSARY.md`；
+- **读取方** `/tdd`、`/diagnosing-bugs`、`/improve-codebase-architecture`、`/wait-what`、`/pr`、`/codebase-design` 按硬编码文件名读 `GLOSSARY.md`。
 
-**只改 `CONTEXT.md`。** 不要往 `GLOSSARY.md` 里加术语条目 —— 两份术语表必然漂移;也不要把正文搬进 `GLOSSARY.md`(那会让 `/domain-modeling` 另建一个空 `CONTEXT.md`,术语从此分叉)。
+读写两端指向同一个名字，所以不存在第二份术语表，也就不存在两份漂移。
+
+> ⚠️ **不要**另建 `CONTEXT.md` 之类的别名文件：写入方找不到 `GLOSSARY.md` 会**新建一个空文件**，读取方则静默退回通用词汇（技能提示写的是 "if it exists"，不会报错）——术语从此分叉且无人察觉。
+
+**只改 `GLOSSARY.md`。**
 
 ## File structure
 
@@ -26,32 +29,31 @@ Single-context repo (most repos):
 
 ```
 /
-├── CONTEXT.md                          ← glossary: single source of truth
-├── GLOSSARY.md                         ← alias pointer → CONTEXT.md (no terms of its own)
+├── GLOSSARY.md                          ← glossary: single source of truth
 ├── docs/adr/
 │   ├── 0001-event-sourced-orders.md
 │   └── 0002-postgres-for-write-model.md
 └── src/
 ```
 
-Multi-context repo (presence of `CONTEXT-MAP.md` at the root):
+Multi-context repo (presence of `GLOSSARY-MAP.md` at the root):
 
 ```
 /
-├── CONTEXT-MAP.md
+├── GLOSSARY-MAP.md
 ├── docs/adr/                          ← system-wide decisions
 └── src/
     ├── ordering/
-    │   ├── CONTEXT.md
+    │   ├── GLOSSARY.md
     │   └── docs/adr/                  ← context-specific decisions
     └── billing/
-        ├── CONTEXT.md
+        ├── GLOSSARY.md
         └── docs/adr/
 ```
 
 ## Use the glossary's vocabulary
 
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
+When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms the glossary explicitly avoids.
 
 If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 

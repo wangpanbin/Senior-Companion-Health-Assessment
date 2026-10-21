@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlIconBox · 浅蓝底图标容器（design.md §3.4 + 快捷入口）
+ * NlIconBox · 浅蓝底图标容器（docs/design/design.md §3.4 + 快捷入口）
  *
  * 48×48 圆角 12，浅蓝底，中心放 24×24 SVG 图标
  * tone 用于切换底色（快捷入口常用 primary，但预约/用药/进度 三色不同）

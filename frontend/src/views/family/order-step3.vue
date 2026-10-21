@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 下单 · Step3（M-09 · design.md §4 · PRD §6.3「本服务为线下结算」硬口径）
+ * 下单 · Step3（M-09 · docs/design/design.md §4 · PRD §6.3「本服务为线下结算」硬口径）
  *
  * - 顶部 NlStepHeader 3-2-3
  * - 「本服务为线下结算」顶部提示条（合规）
@@ -113,7 +113,7 @@ function back() {
     <NlStepHeader :model-value="3" />
 
     <section class="block">
-      <!-- 顶部「本服务为线下结算」提示条 (design.md §6.3 硬约束) -->
+      <!-- 顶部「本服务为线下结算」提示条 (docs/design/design.md §6.3 硬约束) -->
       <div class="notice">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="8" cy="8" r="7" />

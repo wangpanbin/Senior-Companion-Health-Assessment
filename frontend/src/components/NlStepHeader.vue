@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlStepHeader · 三步步骤条（design.md §4 · 下单三步）
+ * NlStepHeader · 三步步骤条（docs/design/design.md §4 · 下单三步）
  *
  * 圆形序号 + 连线：已完成实心主色 / 当前描边主色 / 未开始灰
  * 当前 step 通过 modelValue 传入（从 1 开始）

@@ -2,7 +2,7 @@
 
 > **文档版本**：v1.0 · 2026-09-24
 > **上游文档**：`docs/prd/功能拓展规划.md` §四 E4（本 PRD 为其展开）· `docs/prd/PRD.md` v1.0（产品宪法）
-> **下游文档**：`plan.md`（工程排期）· `docs/api/06-review-complaint.md`（接口契约，随本 PRD 同步修订）· `docs/agents/designs/M7-review.md`（设计评审追加）
+> **下游文档**：`docs/plan/plan.md`（工程排期）· `docs/api/06-review-complaint.md`（接口契约，随本 PRD 同步修订）· `docs/agents/designs/M7-review.md`（设计评审追加）
 > **现状基线**：M7 已交付（一单一评、敏感词、评分聚合），`mvn verify` 517 测试全绿
 > **一句话**：把评价从「单向判决」变成「可回应、可申诉、可裁定」，补齐 PRD §3.3 陪诊员痛点中唯一未满足的一条
 

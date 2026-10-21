@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlComplianceBar · 合规底部固定免责声明（design.md §6.1 · PRD §2.2）
+ * NlComplianceBar · 合规底部固定免责声明（docs/design/design.md §6.1 · PRD §2.2）
  *
  * 用药页 / 药品详情页底部固定（M6 必出）：
  * "本页仅提供药品通用信息，不构成任何用药建议，请遵医嘱。"

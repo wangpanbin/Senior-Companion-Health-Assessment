@@ -1,8 +1,8 @@
 # 银龄伴诊 前端 UI 重构 · R4 / R5 / R6 实施计划
 
 > 依据：`C:/Users/wang/AppData/Local/Temp/handoff-nianglin-ui-r4.md`（交接文档）+ 用户四轮拍板
-> 约束：`UI美化.md`（阶段五·分区实施，每轮暂停等确认）、`AGENTS.md`、`design.md` v1.1、`docs/adr/0007`
-> 已提交计划：`plans/ui-rework.md`（本文件即最终版，按 R4 → R5 → R6 顺序执行）
+> 约束：`UI美化.md`（阶段五·分区实施，每轮暂停等确认）、`AGENTS.md`、`docs/design/design.md` v1.1、`docs/adr/0007`
+> 已提交计划：`docs/plan/ui-rework.md`（本文件即最终版，按 R4 → R5 → R6 顺序执行）
 
 ---
 
@@ -50,7 +50,7 @@
 
 **已有范式**：`views/family/order-detail.vue` 的 `loadError` ref + 三段式 template（`NlSkeleton → NlEmpty(network) → 正文`）。
 `components/NlEmpty.vue` 已内置 `type = empty | 403 | 404 | network`（network = 「网络开小差了」）+ `actionText` + `@action`，
-`design.md` §3.6「状态三件套」与 `docs/agents/FRONTEND_CONTRACT.md` §6 本就要求错误态 —— **零新组件，只接线**。
+`docs/design/design.md` §3.6「状态三件套」与 `docs/agents/FRONTEND_CONTRACT.md` §6 本就要求错误态 —— **零新组件，只接线**。
 
 **不在 R4 范围**：登录验证码、提交类 `catch`、未读轮询、`order-detail` 三个次级请求的内联 `.catch(() => [])`
 （该页主请求已有错误态，次级降级是文档里写明的取舍）。
@@ -130,7 +130,7 @@ async function loadToday() {
    `.nl-card--hover`（`NlCard.vue` + `index.scss` + `login/index.vue` 角色 chip）的 hover 提影改为
    `border-color: var(--nl-primary)`（按压态 `translateY(1px)` 保留）。
    - `--plain` 卡片（无边框无底）本来就没投影，不动。
-   - `--nl-shadow-card` 令牌**保留定义**（design.md §2.4 三档仍成立），但在 design.md 标注「卡片不再使用，仅小浮层（头像环等）可用」；
+   - `--nl-shadow-card` 令牌**保留定义**（docs/design/design.md §2.4 三档仍成立），但在 docs/design/design.md 标注「卡片不再使用，仅小浮层（头像环等）可用」；
      家属首页头像环（home.vue:627）本轮一并去投影。
 4. `login/index.vue` 的 hero 阴影（298）删除（渐变底已足够分层）。
 
@@ -182,7 +182,7 @@ async function loadToday() {
 **R6**：`components/NlDesktopShell.vue`、`styles/variables.scss`、`components/NlPageShell.vue`（注释）、
 `docs/adr/0007-desktop-form-factor.md`、`frontend/e2e/specs/10-form-factor.spec.js`、注释涉及的 view
 
-**文档同步**：`design.md`（§3.2 卡片公式去投影、§2.4 阴影档位注记、版本记录 → v1.2）、
+**文档同步**：`docs/design/design.md`（§3.2 卡片公式去投影、§2.4 阴影档位注记、版本记录 → v1.2）、
 `docs/agents/FRONTEND_CONTRACT.md` §6.3（异常条目从「catch 清空列表」改为「清空 + 分区错误态」）
 
 ## Reuse
@@ -211,7 +211,7 @@ async function loadToday() {
 - [x] R5-3 卡片去投影：`NlCard.vue`、`index.scss`、`NlAdminTable.vue`、`NlMobileOnlyNotice.vue`
       及 `family/home` / `admin/dashboard` / `companion/hall|income|reviews` / `login/index` 的散落处；
       hover 提影改 `border-color: var(--nl-primary)`
-- [x] R5-4 `design.md` → v1.2（§3.2 卡片公式、§2.4 注记、版本记录）
+- [x] R5-4 `docs/design/design.md` → v1.2（§3.2 卡片公式、§2.4 注记、版本记录）
 - [x] R5-5 汇报本轮并**暂停等确认**
 
 ### R6

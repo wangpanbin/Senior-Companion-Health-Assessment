@@ -18,7 +18,7 @@ M10 提供管理后台看板的统计接口：
 - **陪诊员接单排行**（`CompanionRankMetric`）
 - **漏服率**（`medication_task` 的 `was_missed`）
 
-验收要求（plan.md M10 §3）：「统计接口在 1 万条订单数据下响应时间 < 2s」。
+验收要求（docs/plan/plan.md M10 §3）：「统计接口在 1 万条订单数据下响应时间 < 2s」。
 
 **复用记忆教训**：在 `cinema-server /api/orders/my` 项目中，加 30s Redis 缓存 + `KEYS`/`SCAN` 写路径失效，
 **P99 从 102ms 涨到 228–373ms**；拆掉缓存后 P99 恢复到 19.8ms（记忆条目 2026-08-31）。

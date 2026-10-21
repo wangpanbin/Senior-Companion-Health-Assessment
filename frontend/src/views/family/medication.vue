@@ -1,8 +1,8 @@
 <script setup>
 /**
- * 用药管理家属版（M-12 + M-13 · design.md §4 · PRD §2.2 §6.1 合规红线）
+ * 用药管理家属版（M-12 + M-13 · docs/design/design.md §4 · PRD §2.2 §6.1 合规红线）
  *
- * 合规口径（design.md §6.1 / 后端 docs/api/05-medication.md）：
+ * 合规口径（docs/design/design.md §6.1 / 后端 docs/api/05-medication.md）：
  *   - 药品卡禁止出现营销/引导性表述（含可能被视为医疗建议的话）
  *   - 剂量输入框 label 固定为「家属录入剂量」
  *   - caption 写明「剂量由家属按医嘱录入，系统不提供建议」

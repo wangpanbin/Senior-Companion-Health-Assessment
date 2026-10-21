@@ -437,10 +437,10 @@ M11（横切全部前端）─────────────────�
 
 #### 验收标准
 - [x] `mvn test` 全绿，无跳过用例。（证据：本轮 `mvn test`：592 tests / 0 fail / 0 skipped）
-- [x] 核心 Service 层单元测试覆盖率 ≥ 60%（JaCoCo 报告为证）。（证据：本轮 jacoco：行覆盖 67.6% ≥ 60%（`docs/agents/reports/iteration-5-test-report.md`））
+- [x] 核心 Service 层单元测试覆盖率 ≥ 60%（JaCoCo 报告为证）。（证据：本轮 jacoco：行覆盖 67.6% ≥ 60%（`docs/reports/iteration-5-test-report.md`））
 - [x] 越权用例：4 角色 × 3 类接口 = 12 条，全部通过。（证据：`UserAccessMatrixTest` 12 条全绿（本轮；探针退场后真实接口承载））
 - [x] JMeter 压测：同一订单 50 并发，成功数 = 1，失败数为 49 且错误信息明确。（证据：`pressure-test-m4-accept.md`：成功=1 失败=49（本轮实测，双条件判据））
-- [x] 每个迭代的测试报告包含：用例数、通过数、失败数、遗留 Bug 及处理结论。（证据：`docs/agents/reports/`：iteration-test-report-1/2/3 + iteration-5-test-report.md）
+- [x] 每个迭代的测试报告包含：用例数、通过数、失败数、遗留 Bug 及处理结论。（证据：`docs/reports/`：iteration-test-report-1/2/3 + iteration-5-test-report.md）
 - [x] 遗留 Bug 清单按严重级别排序，P0/P1 必须清零才能提交竞讲。（证据：iteration-5-test-report.md §3：P0/P1 均为 0）
 
 ---

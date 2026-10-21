@@ -7,7 +7,7 @@
 | 文档性质 | 版本级 PRD（承接 `docs/prd/PRD.md` v1.0 的产品宪法，不改宪法） |
 | 版本 | V3.2 |
 | 日期 | 2026-10-20 |
-| 上游依据 | `docs/spec/V3.x-roadmap-spec.md`（六版总纲）· `docs/spec/V3.2-elder-health-spec.md`（工程契约）· `docs/spec/V3.2-tickets.md`（T0–T9）· 仓库 `plans/迭代计划.md` §22 – §29 |
+| 上游依据 | `docs/spec/V3.x-roadmap-spec.md`（六版总纲）· `docs/spec/V3.2-elder-health-spec.md`（工程契约）· `docs/spec/V3.2-tickets.md`（T0–T9）· 仓库 `docs/plan/iteration-plan.md` §22 – §29 |
 | 为什么不直接改 `PRD.md` | PRD 版本锁在 W7 / W12 / W17 三个竞讲节点（[ADR-0006](../adr/0006-prd-version-locking.md)）。V3.2 不是节点，因此以独立版本 PRD 记录，宪法条款不动 |
 | 关联 ADR | [0014 用药三桶唯一真源](../adr/0014-medication-bucket-single-source.md) · [0015 零迁移聚合](../adr/0015-elder-health-aggregation-no-new-table.md) |
 

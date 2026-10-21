@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlStatusBar · 移动端状态栏占位（design.md §2.6）
+ * NlStatusBar · 移动端状态栏占位（docs/design/design.md §2.6）
  *
  * 高度 62px，时间居左（Inter 15/600），信号/WiFi/电量居右
  * 由于 H5 嵌入在浏览器壳内，真正系统状态信息由宿主提供，这里只做占位 + 模拟

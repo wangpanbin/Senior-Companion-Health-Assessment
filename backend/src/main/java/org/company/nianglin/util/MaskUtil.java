@@ -3,7 +3,7 @@ package org.company.nianglin.util;
 /**
  * 敏感信息脱敏工具。
  *
- * <p><b>合规红线（plan.md / 计划书「合规与隐私说明」）：</b></p>
+ * <p><b>合规红线（docs/plan/plan.md / 计划书「合规与隐私说明」）：</b></p>
  * <ol>
  *   <li>手机号必须脱敏展示（{@code 138****8888}）</li>
  *   <li>身份证号禁止出现在日志中；接口返回时必须脱敏</li>

@@ -18,7 +18,7 @@ import request from '@/utils/request'
  * 自己 new FormData 并 append 'file' 与 'bizType'，请求头显式声明
  * 'Content-Type': 'multipart/form-data'，不要另起一种写法。
  *
- * 注意：单文件大小 / 类型的前端预校验由调用方负责（design.md §2.6：超限不发起请求）。
+ * 注意：单文件大小 / 类型的前端预校验由调用方负责（docs/design/design.md §2.6：超限不发起请求）。
  */
 
 /**

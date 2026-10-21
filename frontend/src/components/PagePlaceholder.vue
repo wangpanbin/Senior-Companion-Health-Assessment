@@ -2,7 +2,7 @@
 /**
  * PagePlaceholder · 未实现页面占位
  *
- * 用在路由已挂载但页面尚未高保真化的场景，与 design.md §1 的页面清单 1:1 对齐
+ * 用在路由已挂载但页面尚未高保真化的场景，与 docs/design/design.md §1 的页面清单 1:1 对齐
  * 显示页面编号 / 标题 / 简介 / 优先级，方便开发对照清单补齐
  */
 import { NlCard, NlStatusChip, NlEmpty } from '@/components'
@@ -44,7 +44,7 @@ defineProps({
     <NlEmpty
       type="empty"
       title="该页面骨架待实现"
-      description="按 design.md 规范与 P0 顺序推进，先完成组件库与基础页面"
+      description="按 docs/design/design.md 规范与 P0 顺序推进，先完成组件库与基础页面"
     />
   </NlCard>
 </template>

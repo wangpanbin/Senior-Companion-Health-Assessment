@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 家属端首页（M-06 · design.md §4）
+ * 家属端首页（M-06 · docs/design/design.md §4）
  *
  * 聚合展示，全由真实接口驱动：
  *   1. `listElder({ page:1, size:100 })`（`@/api/user`）→ 我绑定的老人，横滑卡可切换「当前就诊人」

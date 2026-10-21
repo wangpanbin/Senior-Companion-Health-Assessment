@@ -3,7 +3,7 @@
 > 生成时间：2026-09-15
 > 范围：M4 收尾（M0–M3 已交付，见 git log `6bc37c5 / 0199770 / d17056a / f464fcd / f3b1416`）
 > 计划归宿：本文件 `docs/agents/PLAN_BACKEND.md`（单一真源）
-> 上游约束：`AGENTS.md`（规范红线）、`plan.md`（模块验收标准）、`docs/api/README.md`（接口约定）
+> 上游约束：`AGENTS.md`（规范红线）、`docs/plan/plan.md`（模块验收标准）、`docs/api/README.md`（接口约定）
 > 配套 ADR：`docs/adr/0001-m5-websocket-auth.md` / `0002-m6-redis-lock.md` / `0003-m10-stats-cache.md`
 
 ---
@@ -62,7 +62,7 @@ M8 → M6 → M10(预写骨架)
   原计划里写的 `/api/execution/checkin-missed?since={lastEventId}` **已废弃**：
   `since` 语义要求单调递增的事件 id 序列，而本项目的推送是「状态快照 + 事件类型」，
   硬造 id 会让「补齐」与「快照」两套真相并存。重连风暴已按真实路径压测，
-  见 `docs/agents/reports/pressure-test-m5-m6.md`。
+  见 `docs/reports/pressure-test-m5-m6.md`。
 
 ---
 
@@ -92,7 +92,7 @@ M8 → M6 → M10(预写骨架)
 1. 接口表：列出本模块所有 REST 端点（方法 / 路径 / 角色 / 入参 / 出参）
 2. 数据流：表 → Mapper → Service → Controller 的链路图（mermaid / 文字）
 3. 状态机（如有）：状态 + 合法转移 + 非法转移的错误码
-4. 验收清单：从 plan.md §三 抽出该模块的验收项，逐条勾选
+4. 验收清单：从 docs/plan/plan.md §三 抽出该模块的验收项，逐条勾选
 ```
 
 设计评审产出物存于 `docs/agents/designs/<M-id>-<module>.md`，PR 时附在描述中。

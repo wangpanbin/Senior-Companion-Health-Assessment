@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 下单 · Step1（M-07 · design.md §4）
+ * 下单 · Step1（M-07 · docs/design/design.md §4）
  *
  * - 顶部 NlStepHeader 1-2-3
  * - 选择就诊人卡：单选列表（已绑定的老人）

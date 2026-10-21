@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 统一响应结构契约测试。
  *
- * <p>对应 plan.md · M0 验收标准：任意接口返回体必须符合
+ * <p>对应 docs/plan/plan.md · M0 验收标准：任意接口返回体必须符合
  * {@code { code, message, data }} 结构。</p>
  *
  * @author 银龄伴诊团队

@@ -279,7 +279,7 @@
 
 ### F-5 · 【文档漂移】`tools/e2e/README.md` 仍写着 probe 脚本"缺 BASE 常量"
 
-F-2 已修，README §「单脚本细节」里「`probe_backend_gaps.py` 目前缺 `BASE` 常量（见 `TEST_REPORT.md` §建议 4）」这句已过时。**已在本轮同步订正** —— 改成「F-2 已修（2026-10-21）：`from _probe_http import BASE, read_token, http`」，同时补了 `l0_identity_gate.py` 的索引行、`SPRING_PROFILES_ACTIVE` 的说明，以及「闸门不进 CI」的理由。
+F-2 已修，README §「单脚本细节」里「`probe_backend_gaps.py` 目前缺 `BASE` 常量（见 `docs/reports/TEST_REPORT.md` §建议 4）」这句已过时。**已在本轮同步订正** —— 改成「F-2 已修（2026-10-21）：`from _probe_http import BASE, read_token, http`」，同时补了 `l0_identity_gate.py` 的索引行、`SPRING_PROFILES_ACTIVE` 的说明，以及「闸门不进 CI」的理由。
 
 ### F-6 · 【已核验 · 非缺陷】`GET /api/order/{id}/fulfillment` 的访问口径**契约里早已写明**
 
@@ -361,7 +361,7 @@ F-2 已修，README §「单脚本细节」里「`probe_backend_gaps.py` 目前�
 | 44 | `5343307` | 2026-10-20 | fix(security): 收窄上传守卫范围，避免误伤占位头像 | 基线加固（消息/费用/后台/安全/适配） | `01–13 既有 spec` |
 | 45 | `c25e571` | 2026-10-20 | fix(security): harden production config and gate uploaded certificates | 基线加固（消息/费用/后台/安全/适配） | `01–13 既有 spec` |
 | 46 | `c67fa91` | 2026-10-17 | docs(agent): 新增硬约束——AI 编写代码新增功能必须在独立分支上完成 | 基线加固（消息/费用/后台/安全/适配） | `01–13 既有 spec` |
-| 47 | `7fdb33b` | 2026-10-16 | docs(design): design.md 升 v1.2 + ADR-0007 追加双栏变更 | 基线加固（消息/费用/后台/安全/适配） | `01–13 既有 spec` |
+| 47 | `7fdb33b` | 2026-10-16 | docs(design): docs/design/design.md 升 v1.2 + ADR-0007 追加双栏变更 | 基线加固（消息/费用/后台/安全/适配） | `01–13 既有 spec` |
 | 48 | `1dbe5e8` | 2026-10-16 | refactor(frontend): UI 重构 R1-R6 落地（令牌/语义色/可访问性/错误态/去投影/桌面双栏） | 基线加固（消息/费用/后台/安全/适配） | `01–13 既有 spec` |
 | 49 | `bf62c88` | 2026-10-15 | test(M8): 站内信越权矩阵补 GET /api/message/{id} + 订正两处报告口径 | 基线加固（消息/费用/后台/安全/适配） | `01–13 既有 spec` |
 | 50 | `1436d48` | 2026-10-15 | docs(agents): 文档漂移修正与迭代计划存档标注 | 基线加固（消息/费用/后台/安全/适配） | `01–13 既有 spec` |

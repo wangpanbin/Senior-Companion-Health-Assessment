@@ -138,7 +138,7 @@ python jmeter_fixture.py restore    # 把任务还原回快照，别在种子数
 - **M6**：断言写成 `code ∈ {200, 5003, 409}` —— 换句话说，
   **`Err > 0` 就等于「出现了 500」**，这是并发写入被击穿的信号（正常只会有 1 个 200）。
   「到底成功了几个」不能靠 jtl 数（见坑 11），要 `python jmeter_fixture.py verify` 回库看。
-- 实测数据见 `docs/agents/reports/pressure-test-m5-m6.md`。
+- 实测数据见 `docs/reports/pressure-test-m5-m6.md`。
 
 ### 8. M3–M10 端到端实测
 

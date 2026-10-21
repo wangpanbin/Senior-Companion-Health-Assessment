@@ -1,14 +1,14 @@
 # 收敛迭代收尾（阶段 2 后半 + 阶段 3/4/5）实施计划
 
 > **状态：已执行完毕（存档）** —— 2026-10-15 补记。本文件是 2026-09-28 收敛迭代的**实施计划存档**：
-> 该迭代已于 2026-09-29 收官，执行结果与实测证据见 `docs/agents/reports/CLOSEOUT_2026-09-29.md`，
-> 验收回填见 `plan.md`（79/79）。文件内的 `- [ ]` 保持计划书写时的原始形态，**不再逐条回填** ——
-> 想知道某一步到底跑没跑，以 CLOSEOUT 报告与 `plan.md` 的 checkbox 为准，
+> 该迭代已于 2026-09-29 收官，执行结果与实测证据见 `docs/reports/CLOSEOUT_2026-09-29.md`，
+> 验收回填见 `docs/plan/plan.md`（79/79）。文件内的 `- [ ]` 保持计划书写时的原始形态，**不再逐条回填** ——
+> 想知道某一步到底跑没跑，以 CLOSEOUT 报告与 `docs/plan/plan.md` 的 checkbox 为准，
 > **不要拿本文件的 checkbox 状态当执行记录**。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把交接文档（handoff-nianglin-convergence-2026-09-28.md）里的 T2.3 / T2.5 与阶段 3 / 4 / 5 的 6 组 ticket，落成每步带验证命令与预期输出的小步任务，全部跑完后 `plan.md` 78 个 checkbox 可回填、`tools/verify_all.ps1` 总闸门可用。
+**Goal:** 把交接文档（handoff-nianglin-convergence-2026-09-28.md）里的 T2.3 / T2.5 与阶段 3 / 4 / 5 的 6 组 ticket，落成每步带验证命令与预期输出的小步任务，全部跑完后 `docs/plan/plan.md` 78 个 checkbox 可回填、`tools/verify_all.ps1` 总闸门可用。
 
 **Architecture:** 严格按 A → B → C → D → E → F 顺序推进（前一步红了就停）。A/B/C 在当前分支 `fix/hard-constraint-convergence`（PR-2 范围）；D/E/F 各起新分支，且**上一阶段 PR 合并后才进下一阶段**。所有验证命令都是本机可执行的一行命令，预期输出写实。
 
@@ -17,7 +17,7 @@
 **Spec:**
 - 交接文档：`C:/Users/wang/AppData/Local/Temp/handoff-nianglin-convergence-2026-09-28.md`（本计划的事实来源）
 - 迭代唯一真源：`docs/plan/convergence-2026-09.md`（§五 21 ticket + 收尾标准）
-- 基线报告：`docs/agents/reports/BASELINE_2026-09-28.md`（数字直接引用，不重测）
+- 基线报告：`docs/reports/BASELINE_2026-09-28.md`（数字直接引用，不重测）
 - 设计依据：`docs/adr/0009-order-fee-item-model.md`（B 组照做）· `docs/adr/0010`（状态流转入口，已落地）· `AGENTS.md`
 
 ## Global Constraints（每个任务都隐含遵守）
@@ -51,7 +51,7 @@ git branch --show-current
 git status --porcelain
 ```
 
-Expected: 分支 = `fix/hard-constraint-convergence`；porcelain 恰好 3 行：`M CONTEXT.md`、`M docs/agents/designs/M4-order.md`、`?? docs/adr/0009-order-fee-item-model.md`（这 3 个是 Task C 的内容，**先不要提交**，等 Task B/C 一起）。
+Expected: 分支 = `fix/hard-constraint-convergence`；porcelain 恰好 3 行：`M GLOSSARY.md`、`M docs/agents/designs/M4-order.md`、`?? docs/adr/0009-order-fee-item-model.md`（这 3 个是 Task C 的内容，**先不要提交**，等 Task B/C 一起）。
 
 - [ ] **Step 2: 跑一次后端全量测试确认 585 绿**
 
@@ -520,7 +520,7 @@ import java.time.LocalDateTime;
  * SUM 派生，读取时不一致以明细为准。</p>
  *
  * <p>⚠️ 本类为持久化实体，禁止直接作为接口返回值；对外统一转 VO。
- * 费用明细只记录支出项目与金额，**不含任何医疗诊断信息**（plan.md §一红线）。</p>
+ * 费用明细只记录支出项目与金额，**不含任何医疗诊断信息**（docs/plan/plan.md §一红线）。</p>
  *
  * @since M4（收敛迭代 T2.5）
  */
@@ -1305,7 +1305,7 @@ Expected: `OrderServiceImpl` 行覆盖 ≥ 78.1%（基线数字，BASELINE §5.1
 
 **Files:**
 - Modify: `docs/agents/designs/M4-order.md`（§3 修订块 / §4 验收项 4 / §5 遗留清单 —— 内容已因 T2.1 收口过时）
-- Commit: `CONTEXT.md`、`docs/adr/0009-order-fee-item-model.md`（随 B 一起）
+- Commit: `GLOSSARY.md`、`docs/adr/0009-order-fee-item-model.md`（随 B 一起）
 
 - [ ] **Step 1: 改写 M4-order.md 的三处过时内容**
 
@@ -1325,7 +1325,7 @@ Expected: `OrderServiceImpl` 行覆盖 ≥ 78.1%（基线数字，BASELINE §5.1
 - [ ] **Step 2: 提交（先向用户确认）**
 
 ```powershell
-git add CONTEXT.md docs/adr/0009-order-fee-item-model.md docs/agents/designs/M4-order.md backend/sql/V4__order_fee_item.sql backend/src/main/java/org/company/nianglin/entity/OrderFeeItem.java backend/src/main/java/org/company/nianglin/mapper/OrderFeeItemMapper.java backend/src/main/java/org/company/nianglin/dto/FeeItemCreateDTO.java backend/src/main/java/org/company/nianglin/vo/OrderFeeItemVO.java backend/src/main/java/org/company/nianglin/vo/OrderFeeItemSummaryVO.java backend/src/main/java/org/company/nianglin/service/OrderFeeItemService.java backend/src/main/java/org/company/nianglin/service/impl/OrderFeeItemServiceImpl.java backend/src/main/java/org/company/nianglin/service/impl/OrderServiceImpl.java backend/src/main/java/org/company/nianglin/controller/order/OrderController.java backend/src/test/java/org/company/nianglin/service/OrderFeeItemTest.java docs/api/03-order.md docs/db/
+git add GLOSSARY.md docs/adr/0009-order-fee-item-model.md docs/agents/designs/M4-order.md backend/sql/V4__order_fee_item.sql backend/src/main/java/org/company/nianglin/entity/OrderFeeItem.java backend/src/main/java/org/company/nianglin/mapper/OrderFeeItemMapper.java backend/src/main/java/org/company/nianglin/dto/FeeItemCreateDTO.java backend/src/main/java/org/company/nianglin/vo/OrderFeeItemVO.java backend/src/main/java/org/company/nianglin/vo/OrderFeeItemSummaryVO.java backend/src/main/java/org/company/nianglin/service/OrderFeeItemService.java backend/src/main/java/org/company/nianglin/service/impl/OrderFeeItemServiceImpl.java backend/src/main/java/org/company/nianglin/service/impl/OrderServiceImpl.java backend/src/main/java/org/company/nianglin/controller/order/OrderController.java backend/src/test/java/org/company/nianglin/service/OrderFeeItemTest.java docs/api/03-order.md docs/db/
 git commit -m "feat(M4): 费用明细模型落地（ADR-0009）—— V4 建表 + 明细端点 + 完成同事务写入（T2.5）"
 ```
 
@@ -1346,7 +1346,7 @@ Expected: **空**。到这里 PR-2（阶段 2 全部 ticket）内容齐了，走
 ### Task D1: 迭代五完整测试报告（2 小时）
 
 **Files:**
-- Create: `docs/agents/reports/iteration-5-test-report.md`
+- Create: `docs/reports/iteration-5-test-report.md`
 
 - [ ] **Step 1: 产出最新覆盖率（mvn test 会生成 jacoco）**
 
@@ -1400,13 +1400,13 @@ Expected: 总量 ≥ 60%（M12 硬指标，基线 65.9%）；同时拿到升序�
 
 - [ ] **Step 3: 收尾判据**
 
-`docs/agents/reports/iteration-5-test-report.md` 存在；核心 Service ≥60% 有数字支撑；报告内没有无复现命令的数字。
+`docs/reports/iteration-5-test-report.md` 存在；核心 Service ≥60% 有数字支撑；报告内没有无复现命令的数字。
 
 ### Task D2: JMeter 50 并发抢单压测（2 小时）
 
 **Files:**
 - Modify: `backend/sql/tools/jmeter_m4_accept.jmx`（补业务码断言）
-- Create: `docs/agents/reports/pressure-test-m4-accept.md`
+- Create: `docs/reports/pressure-test-m4-accept.md`
 
 **Interfaces:** Consumes: `bench_tokens.csv`（50 陪诊员令牌，`bench_setup.py` 产出，已存在）· 种子订单 1001（PENDING 靶子）。
 
@@ -1611,7 +1611,7 @@ graph TB
 ```
 ````
 
-`prototype.md`：嵌入 D3 的 ≥6 张关键页面截图（`![](../reports/screenshots/family-home.png)` 形式）并配一句话说明，**用真实页面截图而非手绘**（收尾标准原文）。
+`prototype.md`：嵌入 D3 的 ≥6 张关键页面截图（`![](../../reports/screenshots/family-home.png)` 形式）并配一句话说明，**用真实页面截图而非手绘**（收尾标准原文）。
 
 - [ ] **Step 2: 渲染 PNG 并验证可渲染**
 
@@ -1627,7 +1627,7 @@ Expected: 两个 PNG 生成（≥10KB）。若 npx 拉包被网络挡住：改�
 `ls docs/diagrams` → 3 组齐（2 份 md+png + prototype.md）。确认后提交：
 
 ```powershell
-git add docs/agents/reports/iteration-5-test-report.md docs/agents/reports/pressure-test-m4-accept.md docs/reports/screenshots docs/diagrams backend/sql/tools/jmeter_m4_accept.jmx
+git add docs/reports/iteration-5-test-report.md docs/reports/pressure-test-m4-accept.md docs/reports/screenshots docs/diagrams backend/sql/tools/jmeter_m4_accept.jmx
 git commit -m "docs(M3): 竞讲交付物 —— 测试报告 + 50 并发抢单压测 + 截图入库 + 三张图（T3.1-T3.4）"
 ```
 
@@ -2101,24 +2101,24 @@ git commit -m "feat(M4-M8): 阶段4功能残项 —— 费用明细页面 / 月�
 
 > 前置：PR-4 已合并（若 E 组被砍，PR-4 以空/文档形式收口后照样进 F）。
 
-### Task F1: 回填 `plan.md` 78 个 checkbox（1 小时）
+### Task F1: 回填 `docs/plan/plan.md` 78 个 checkbox（1 小时）
 
 - [ ] **Step 1: 列出全部未勾项**
 
 ```powershell
-Select-String -Path plan.md -Pattern '^- \[ \]' | ForEach-Object { "$($_.LineNumber): $($_.Line)" }
+Select-String -Path docs/plan/plan.md -Pattern '^- \[ \]' | ForEach-Object { "$($_.LineNumber): $($_.Line)" }
 ```
 
 Expected: 输出 78 行（起点）。
 
 - [ ] **Step 2: 逐项找证据再打勾（铁规则：指不出证据就不许勾）**
 
-按模块分批（M0-M3 / M4 / M5 / … / M12）处理，每一项必须能指到证据之一：commit hash、`docs/agents/reports/` 报告小节、`convergence-2026-09.md` 收尾标准实测结果、本计划某任务的验证输出。证据指不出的项**停下来向用户汇报**，不许为了清零而打勾。把勾改成 `- [x]` 并在行尾加 `（证据：<commit/文件>）`。
+按模块分批（M0-M3 / M4 / M5 / … / M12）处理，每一项必须能指到证据之一：commit hash、`docs/reports/` 报告小节、`convergence-2026-09.md` 收尾标准实测结果、本计划某任务的验证输出。证据指不出的项**停下来向用户汇报**，不许为了清零而打勾。把勾改成 `- [x]` 并在行尾加 `（证据：<commit/文件>）`。
 
 - [ ] **Step 3: 收尾判据**
 
 ```powershell
-(Select-String -Path plan.md -Pattern '^- \[ \]').Count
+(Select-String -Path docs/plan/plan.md -Pattern '^- \[ \]').Count
 ```
 
 Expected: `0`（convergence 5.1 原文判据）。
@@ -2127,7 +2127,7 @@ Expected: `0`（convergence 5.1 原文判据）。
 
 - [ ] **Step 1: 确定三个里程碑的锚点 commit**
 
-对照 `plan.md` 的迭代章节（迭代一/二/三对应的里程碑），从 `git log --oneline` 里挑出三个锚点提交，**向用户报出「tag → commit → 理由」清单并确认后再打**（git 动作需授权，且里程碑归属是用户决策）。
+对照 `docs/plan/plan.md` 的迭代章节（迭代一/二/三对应的里程碑），从 `git log --oneline` 里挑出三个锚点提交，**向用户报出「tag → commit → 理由」清单并确认后再打**（git 动作需授权，且里程碑归属是用户决策）。
 
 - [ ] **Step 2: 打 tag 并推送（用户确认后）**
 
@@ -2259,8 +2259,8 @@ Expected: 该段 FAIL、退出码 1。撤销扩散，重跑恢复 PASS。
 - [ ] **Step 4: 提交（先向用户确认）**
 
 ```powershell
-git add tools/verify_all.ps1 plan.md
-git commit -m "chore(M12): verify_all 总闸门脚本 + plan.md 78 项验收回填（T5.1-T5.3）"
+git add tools/verify_all.ps1 docs/plan/plan.md
+git commit -m "chore(M12): verify_all 总闸门脚本 + docs/plan/plan.md 78 项验收回填（T5.1-T5.3）"
 ```
 
 ### Task F4: 最终收尾核对

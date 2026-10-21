@@ -4,7 +4,7 @@
 > 写任何页面之前先读完本文件；本文件与本仓库后端代码冲突时，**以后端代码为准**，并回来修正本文件。
 >
 > 后端已全部交付（M0–M10 已 commit，`mvn verify` 511 测试全绿）。
-> 前端骨架已按 design.md 完成视觉，但**除登录/注册/下单三步/订单列表/订单详情外，其余页面仍是硬编码假数据**。
+> 前端骨架已按 docs/design/design.md 完成视觉，但**除登录/注册/下单三步/订单列表/订单详情外，其余页面仍是硬编码假数据**。
 > 本轮任务就是把这些页面接到真实接口上。
 
 ---
@@ -227,7 +227,7 @@ import { listMyOrders, getOrder } from '@/api/order'
 - 返回 `{ fileId, url, size }`，`url` 形如 `/uploads/202609/xxx.png`（站内相对路径，可直接塞进
   `certificates[].url` / `complaint.evidence[]`；后端 `ValidationPatterns.FILE_URL` 校验该形态）。
 - 允许角色 FAMILY / COMPANION / ADMIN；**ELDER 传 → 403**（`ElderReadOnlyInterceptor` 默认拒写）。
-- 前端预校验（大小/类型）由调用方负责，**超限不要发请求**（`design.md §2.6`）。
+- 前端预校验（大小/类型）由调用方负责，**超限不要发请求**（`docs/design/design.md §2.6`）。
   已在 `companion/entry.vue`（资质）与 `family/order-complaint.vue`（证据，上限 6 张）落地。
 
 ### `@/api/medication`
@@ -424,7 +424,7 @@ onBeforeUnmount(() => polling?.stop())
 6. **样式**：色值/字号一律走 CSS 变量（前缀 `--nl-`），**禁止硬编码色值**。
    `@use '@/styles/variables.scss' as *;` 在每个 `<style scoped>` 顶部。
 7. **不要引入新依赖**，不要用 Element Plus 之外的 UI 库。
-8. **样式不得大改**：本轮是「接数据」，视觉已按 design.md 定稿，只允许为「有/无数据」补状态样式。
+8. **样式不得大改**：本轮是「接数据」，视觉已按 docs/design/design.md 定稿，只允许为「有/无数据」补状态样式。
    现有的 class 名与布局保持，不要把页面重画一遍。
 
 **参考样板：`frontend/src/views/family/order-list.vue`** ——
@@ -769,7 +769,7 @@ ms-playwright 缓存里的 ffmpeg 二进制，缺失时**所有用例在 `newPag
 > 那是真实 JWT —— `reports/` 必须**继续**保持被忽略，不要顺手把它也放进入库清单。
 >
 > 📄 首轮跑测报告（§4 的 F-01…F-06 与 §5 的源头）已入库为
-> `docs/agents/reports/e2e-report.md`，与 `iteration-test-report-*.md` 同级。
+> `docs/reports/e2e-report.md`，与 `iteration-test-report-*.md` 同级。
 
 ### 13.2 结构
 

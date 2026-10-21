@@ -1,6 +1,6 @@
 <script setup>
 /**
- * NlListRow · 列表行（design.md §3.4）
+ * NlListRow · 列表行（docs/design/design.md §3.4）
  *
  * 公式：[图标容器 36×36 圆角 10 + 20px SVG] ← gap 12 → [标题 + 副标题] ← SPACE_BETWEEN → [chevron]
  * 最小高度 56（老人模式 68），分隔线 --nl-divider

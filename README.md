@@ -10,11 +10,24 @@
 
 ```
 Senior Companion Health Assessment/
-├── plan.md                     # 项目开发计划书（15 个模块拆分 + 环境需求 + 验收标准）
-├── 银龄伴诊项目计划书.docx       # 课程原始计划书
+├── README.md                        # 项目基线（本文件 · 对外入口）
+├── AGENTS.md                        # AI 编码工具协作规范（机读版项目宪法）
+├── GLOSSARY.md                      # 领域词汇表（唯一真源）
+├── CHANGELOG.md                     # 版本变更记录
+├── 银龄伴诊项目计划书.docx           # 课程原始计划书
 ├── docs/
-│   └── api/                    # 接口设计文档（全局约定 + 13 个模块）
-├── backend/                    # Spring Boot 3.x 后端工程
+│   ├── api/                         # 接口契约（全局约定 + 13 个模块）
+│   ├── prd/                         # 产品需求（PRD 逐版 + 功能拓展规划）
+│   ├── spec/                        # 工程规格 + 工单 + 指标字典
+│   ├── adr/                         # 架构决策记录（0020 止）
+│   ├── db/                          # ER 图 / 数据字典 / 索引 / 种子说明（脚本生成）
+│   ├── design/                      # 前端设计规范（视觉与交互唯一真源）
+│   ├── plan/                        # 项目计划书 + 迭代计划 + 存档
+│   ├── agents/                      # AI 协作契约（前后端契约 / 领域文档规则）
+│   ├── review/                      # 评审记录
+│   ├── security/                    # 安全评估报告
+│   └── reports/                     # 测试报告 / 验收基线 / 压测记录
+├── backend/                         # Spring Boot 3.x 后端工程
 │   ├── pom.xml
 │   └── src/main/java/org/company/nianglin/
 │       ├── NianglinApplication.java
@@ -31,19 +44,19 @@ Senior Companion Health Assessment/
 │       ├── task/               # 定时任务（M6）
 │       ├── websocket/          # 实时推送（M5 / M8）
 │       └── util/               # 工具类
-├── frontend/                   # Vue 3 + Vite 前端工程
-    ├── package.json
-    ├── vite.config.js
-    └── src/
-        ├── main.js  App.vue
-        ├── api/                # 按模块拆分的接口封装
-        ├── router/             # 路由 + 多角色守卫（AUTH_ENABLED 已置 true）
-        ├── store/              # Pinia：用户登录态、适老化模式
-        ├── utils/              # Axios 封装、token 工具
-        ├── styles/             # 全局样式 + 适老化变量
-        ├── layouts/            # 布局组件
-        └── views/              # 页面（login / elder / family / companion / admin）
-├── ai-service/                 # V3.7 AI 助手服务（独立 Python 进程，8081）
+├── frontend/                        # Vue 3 + Vite 前端工程
+│   ├── package.json
+│   ├── vite.config.js
+│   └── src/
+│       ├── main.js  App.vue
+│       ├── api/                # 按模块拆分的接口封装
+│       ├── router/             # 路由 + 多角色守卫（AUTH_ENABLED 已置 true）
+│       ├── store/              # Pinia：用户登录态、适老化模式
+│       ├── utils/              # Axios 封装、token 工具
+│       ├── styles/             # 全局样式 + 适老化变量
+│       ├── layouts/            # 布局组件
+│       └── views/              # 页面（login / elder / family / companion / admin）
+├── ai-service/                     # V3.7 AI 助手服务（独立 Python 进程，8081）
 │   ├── app/                    # FastAPI 应用（护栏 / 意图 / 检索 / 叙述）
 │   ├── knowledge/faq.json      # FAQ 知识库（每条带文档锚点）
 │   ├── tests/                  # pytest 单测
@@ -243,14 +256,22 @@ V3.7 智能助手涉及的环境变量（**全部可留空**：留空即基础�
 
 ## 文档索引
 
-| 文档 | 视角 | 说明 |
-|---|---|---|
-| [`docs/prd/PRD.md`](docs/prd/PRD.md) | **产品视角（顶层）** | 愿景、用户画像、用户旅程、NFR、业务规则、成功度量、风险与依赖。版本锁对齐 W7/W12/W17 三个竞讲节点（详见 [ADR-0006](docs/adr/0006-prd-version-locking.md)） |
-| [`plan.md`](plan.md) | 工程视角 | 模块拆分、验收标准、范围调整（§〇） |
-| [`docs/api/README.md`](docs/api/README.md) | 接口契约 | 接口全局约定与错误码 |
-| `docs/api/01` ~ `13` | 接口契约 | 各业务模块接口明细（`13` = V3.7 家属智能助手） |
-| `docs/agents/designs/M4` ~ `M10` | 模块设计评审 | 7 个核心模块（M4 订单 / M5 执行 / M6 用药 / M7 评价 / M8 站内信 / M9 管理 / M10 统计） |
-| `docs/adr/0001` ~ `0003` / `0005` ~ `0006` | 架构决策记录 | 5 个 ADR（WebSocket 鉴权 / Redis 锁 / 统计缓存 / **PRD 与 plan.md 分层** / **PRD 版本锁**） |
-| `docs/db/` | 数据视角 | ER 图 / 数据字典 / EXPLAIN / 种子说明 |
+> 三个入口：**本文件**（对外基线）· [`AGENTS.md`](AGENTS.md)（AI 协作规范）· [`GLOSSARY.md`](GLOSSARY.md)（领域词汇表）。
+> 其余文档按用途归入 `docs/` 下的子目录。
 
-> PRD 与 plan.md 的分层关系：PRD 是产品视角的顶层入口，plan.md 是工程实施细节。两文档通过散跳链互引，详见 [ADR-0005](docs/adr/0005-prd-planmd-layers.md)。
+| 目录 | 视角 | 内容 |
+|---|---|---|
+| [`docs/prd/`](docs/prd/PRD.md) | 产品 | PRD 逐版（V3.1 – V3.7 + E4）+ 功能拓展规划。顶层入口 [`PRD.md`](docs/prd/PRD.md) |
+| [`docs/plan/`](docs/plan/plan.md) | 工程 | [`plan.md`](docs/plan/plan.md) 模块拆分与验收标准 · [`iteration-plan.md`](docs/plan/iteration-plan.md) V3.x 迭代规划 · 目录适配 / 收敛迭代存档 |
+| [`docs/api/`](docs/api/README.md) | 接口 | 全局约定 + 错误码 + 13 个模块接口明细（`13` = V3.7 家属智能助手） |
+| [`docs/spec/`](docs/spec/V3.x-roadmap-spec.md) | 契约 | 各版工程规格 + 工单 + [`metric-dictionary.md`](docs/spec/metric-dictionary.md) 指标字典（人读面） |
+| [`docs/adr/`](docs/adr/) | 架构 | 架构决策记录（0020 止），每条含背景 / 决策 / 后果 |
+| [`docs/design/`](docs/design/design.md) | 视觉 | 前端设计规范（设计令牌 / 组件 / 交互，视觉唯一真源） |
+| [`docs/db/`](docs/db/README.md) | 数据 | ER 图 / 数据字典 / 索引与 EXPLAIN / 种子说明（**由 `backend/sql/tools/gen_db_docs.py` 生成**） |
+| [`docs/agents/`](docs/agents/FRONTEND_CONTRACT.md) | 协作 | 前后端联调契约 + AI 领域文档消费规则 + 遗留 Bug 清单 |
+| [`docs/reports/`](docs/reports/) | 验证 | 联调全功能测试报告 · 各迭代测试报告 · 验收基线 / 收尾复核 · 压测记录 |
+| [`docs/review/`](docs/review/) | 评审 | 逐版本评审记录 |
+| [`docs/security/`](docs/security/) | 安全 | 安全评估报告（脱敏 / 越权 / 上传 / 配置） |
+
+> PRD 与 `docs/plan/plan.md` 的分层关系：PRD 是产品视角的顶层入口，`plan.md` 是工程实施细节。
+> 两文档通过散跳链互引，详见 [ADR-0005](docs/adr/0005-prd-planmd-layers.md)。

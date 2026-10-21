@@ -55,7 +55,7 @@ defineProps({
     </div>
 
     <div v-if="acceptance.length" class="mt-16">
-      <div class="nl-placeholder__desc">验收标准（来自 plan.md）</div>
+      <div class="nl-placeholder__desc">验收标准（来自 docs/plan/plan.md）</div>
       <ul class="nl-placeholder__list">
         <li v-for="(a, i) in acceptance" :key="i">{{ a }}</li>
       </ul>

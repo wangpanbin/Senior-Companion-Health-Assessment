@@ -3,7 +3,7 @@
 > 本文件是 E2E 首轮跑测报告的**逐字快照**,原文件由 Playwright 套件生成于
 > `reports/playwright/e2e-report.md` —— 注意 `reports/` 被根 `.gitignore` 忽略
 > （那里还有 `tokens.json` / `storageState` 等**真实 JWT**，属入库红线），
-> 所以干净 clone 上看不到原文件。本副本放在 `docs/agents/reports/` 下，
+> 所以干净 clone 上看不到原文件。本副本放在 `docs/reports/` 下，
 > 与 `iteration-test-report-*.md` 同级，便于 clone 内直接阅读 §4 的 F-01…F-06 条目。
 > 各 spec / 代码注释里的「报告出处：reports/playwright/e2e-report.md §F-xx」指的就是本文件。
 >

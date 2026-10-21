@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 订单执行打卡（M-11 · design.md §4 · PRD §4.1 陪诊员第二段旅程）
+ * 订单执行打卡（M-11 · docs/design/design.md §4 · PRD §4.1 陪诊员第二段旅程）
  *
  * 数据来源（全部在 @/api）：
  *   - getOrder(orderId)            → 订单详情（含医院/科室/老人/地址/服务费）
