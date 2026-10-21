@@ -140,11 +140,27 @@ async function send(text) {
       actions: data?.actions || [],
       degraded: data?.degraded === true
     })
-  } catch {
-    // 拦截器已统一提示，这里只补一条兜底，避免页面看起来「吞了问题」
+  } catch (err) {
+    // ⚠️ 业务错误（限流 10001 / 违规内容 10003 / 越权）后端给了**明确原因**，
+    //    气泡必须显示真实原因。
+    //    统一显示「助手暂时没有响应」会让用户以为服务挂了 ——
+    //    而真实原因（提问过于频繁）就挂在旁边的提示条上，两处自相矛盾。
+    //
+    //    判据：拦截器给**业务错误**挂了数字 `code`（业务码；200 是成功，不会走到这里），
+    //    HTTP 层错误（401/403/500）与网络异常的 `code` 是 axios 的**字符串**
+    //    （'ERR_BAD_REQUEST' / 'ECONNABORTED'），那些场景的 err.message 是英文技术文案，
+    //    仍然走中文兜底。
+    //
+    //    ⚠️ 判据是「数字」而不是「>= 1000」：通用业务码 400（参数错误）也在 1000 以下，
+    //    曾经掉进兜底文案，把后端给的真实原因（例如「问题长度不能超过 500 字」）吞掉了。
+    const code = err && err.code
+    const isBusinessError = typeof code === 'number' && code > 0
     messages.value.push({
       role: 'assistant',
-      content: '助手暂时没有响应，你的问题可以先看看「我的订单」或下方常见问题。'
+      content:
+        isBusinessError && err.message
+          ? err.message
+          : '助手暂时没有响应，你的问题可以先看看「我的订单」或下方常见问题。'
     })
   } finally {
     sending.value = false
@@ -231,7 +247,7 @@ onMounted(loadHistory)
 
             <!-- 降级提示：说明这条是标准答案原文，不是模型生成 -->
             <p v-if="m.degraded" class="asst__degraded">
-              当前为基础模式（未接入大模型），以下为标准答案
+              以下为平台标准答案原文（未经过大模型生成）
             </p>
 
             <!-- 医疗拒答：引导线下就医 -->
@@ -313,7 +329,7 @@ onMounted(loadHistory)
               <p class="asst__text">{{ m.content }}</p>
 
               <p v-if="m.degraded" class="asst__degraded">
-                当前为基础模式（未接入大模型），以下为标准答案
+                以下为平台标准答案原文（未经过大模型生成）
               </p>
 
               <div v-if="m.intent === 'REFUSE_MEDICAL'" class="asst__refuse">
