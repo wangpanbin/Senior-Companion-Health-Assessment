@@ -15,7 +15,7 @@
 |---|---|
 | 适用对象 | 任何在本仓库目录（`F:/test/Senior Companion Health Assessment/` 及子目录）下生成、修改、补全、审查代码的 AI 工具 |
 | 项目性质 | 软件工程课程设计 · 4 人团队 · 17 周 6 迭代 · 老年人就医陪诊与用药协同管理 |
-| 技术栈（不可改） | 前端 Vue 3.5 + Vite 6 + Element Plus 2.9 + Pinia + Vue Router 4 + Axios + Sass；后端 Spring Boot 3.3.5 + JDK 21 + MyBatis-Plus 3.5.7 + Spring Security + JJWT 0.12.6 + MySQL 8.0 + Redis + Flyway + Knife4j + EasyExcel + Hutool + Lombok |
+| 技术栈（不可改） | 前端 Vue 3.5 + Vite 6 + Element Plus 2.9 + Pinia + Vue Router 4 + Axios + Sass；后端 Spring Boot 3.3.5 + JDK 21 + MyBatis-Plus 3.5.7 + Spring Security + JJWT 0.12.6 + MySQL 8.0 + Redis + Flyway + Knife4j + EasyExcel + Hutool + Lombok；AI 助手服务 Python 3.12 + FastAPI + LangChain（独立进程 `ai-service/`，端口 8081） |
 | 包名 / 命名空间 | 后端统一 `org.company.nianglin`；前端模块入口 `@/...`（Vite alias 指向 `frontend/src`） |
 | 前端包管理器 | **pnpm**（lockfile 为 `frontend/pnpm-lock.yaml`；禁止把 `package-lock.json` 重新引入仓库） |
 | 接口前缀 | 所有后端接口统一 `/api` 前缀 |
@@ -38,6 +38,11 @@
 3. **一期不做**：在线支付（改为线上记账 + 线下结算）、地图导航（改为文字地址 + 签到坐标）、IM 聊天（改为站内信）。
    > **二期变更（2026-10-16，ADR-0011）**：IM 聊天已按 **M13 订单聊天** 形态放开——仅限**按陪诊订单**的家属↔陪诊员双向聊天（`/api/chat/**`），ELDER 只读、ADMIN 仲裁只读，**不做**自由加好友式 IM；在线支付与地图导航红线**不变**，涉及仍须主动拒绝或改写。聊天沿用全部合规约束（不做诊断、敏感词拦截、脱敏、免责声明），契约见 `docs/api/11-order-chat.md`。
 
+   > **已记录的例外（V3.7 · 2026-10-21）——第二个技术栈。**
+   > 项目自 V3.7 起含**第二个技术栈**：Python 助手服务（`ai-service/`，Python 3.12 + FastAPI + LangChain，独立进程、端口 8081，只监听 `127.0.0.1`）。
+   > 该栈的依赖清单由**人工逐项批准**并冻结在 `ai-service/requirements.txt`；**越出该清单需重新报批**（连同理由一并说明），不得擅自添加。
+   > 这条豁免**只对已批准的清单生效**，不适用于其它任何新增依赖；决策依据见 [ADR-0020](docs/adr/0020-assistant-boundary-and-recommendation-guardrail.md)。
+
 ### 0.2 AI 工具自我约束
 
 - 任何代码改动落地前，**先说明思路与改动文件清单**，再开始改。
@@ -45,10 +50,11 @@
 - **不要删除** `plan.md`、`README.md`、`docs/api/*`、`.gitignore`、`pom.xml`、`package.json`、根目录 `.workbuddy/`；这些是项目根骨。
 - **不要执行破坏性命令**：`rm -rf`、强制 `git push --force` 到 `main` / `develop`、直接 drop database、`mvn clean install -DskipTests` 之外的危险 Maven 目标。对 `git commit`、`git push`、`git reset`、`git clean`、重启服务、删容器等动作必须**先确认**。
 - **不要在仓库中留下明文密码 / 真实手机号 / 真实身份证号**。所有示例数据用合规占位串（如 `13800000000`、`110101199001010001`）。
-- **不要"自创"技术栈**：不得引入 README / pom.xml / package.json 之外的依赖。需要新增依赖时，在回复中明确说明理由，由人工确认后再写。
-- **提交前跑该跑的检查**。仓库已有 CI（`.github/workflows/ci.yml`，push / PR 到 `main` 时触发），覆盖后端 `mvn verify`、前端 `lint:check` + `vitest` + `build`、密钥体检、指标字典人读面↔机器面一致性五类。**改后端就跑 `mvn -B verify`，改 `frontend/` 就跑 `pnpm run lint:check` 与 `pnpm run test`** —— 与 CI 同命令，自己先红总比推送后红好。新增检查项时同步改 workflow。
+- **不要"自创"技术栈**：不得引入 README / pom.xml / package.json 之外的依赖。需要新增依赖时，在回复中明确说明理由，由人工确认后再写。（V3.7 的 Python 助手服务依赖清单是**已记录的例外**，见 §0.1。）
+- **提交前跑该跑的检查**。仓库已有 CI（`.github/workflows/ci.yml`，push / PR 到 `main` 时触发），覆盖后端 `mvn verify`、前端 `lint:check` + `vitest` + `build`、AI 助手服务 `pytest`、密钥体检、指标字典人读面↔机器面一致性。**改后端就跑 `mvn -B verify`，改 `frontend/` 就跑 `pnpm run lint:check` 与 `pnpm run test`** —— 与 CI 同命令，自己先红总比推送后红好。新增检查项时同步改 workflow。
+- **改 `ai-service/` 就跑 `python -m pytest ai-service/tests -q`；改 FAQ 知识库（`ai-service/knowledge/faq.json`）就跑 `python tools/check_faq_anchors.py`。** 助手核心断言**不依赖 LLM 与网络**（没配模型时也要能跑绿）；CI 的 `ai-service` job 跑的是同一套测试（工作目录 `ai-service/`）。
 - **本地能复跑 CI 的两个静态门禁**（纯 Python 标准库，不需要装任何依赖）：
-  - `python tools/check_secrets.py` —— 密钥体检四条（**CI secrets job 调的就是这一份**，规则本体只有一处）
+  - `python tools/check_secrets.py` —— 密钥体检五条（**CI secrets job 调的就是这一份**，规则本体只有一处）
   - `python tools/check_metric_dict_parity.py` —— 指标字典人读面↔机器面一致性
   改这两处的规则**只改脚本**，CI 与本地共用同一份；**不要在 workflow 里再抄一遍** —— 抄两份必然漂移（2026-10-21 review 实测：抄出来的两份在 Windows 上白名单语义不同，本地绿、CI 也绿，但其中一份其实已经失效）。
 - 不确定就问，不要瞎猜；宁可少写，不要乱写。
@@ -133,6 +139,12 @@ Senior Companion Health Assessment/
         │   ├── elder / family / companion / admin / profile / error
         └── components/
             └── ModulePlaceholder.vue   骨架阶段占位组件
+├── ai-service/                    ← V3.7 AI 助手服务（独立 Python 进程，8081；只监听 127.0.0.1）
+│   ├── requirements.txt           ← 依赖清单（经人工逐项批准并冻结，改动需重新报批）
+│   ├── app/                       ← FastAPI 应用：main / config / schemas / paths / intents / knowledge / guard / llm / prompts / actions / service
+│   ├── knowledge/faq.json         ← FAQ 知识库（30 条，每条带 source + anchor 指向 docs/api 真实锚点）
+│   ├── tests/                     ← pytest 单测（核心断言不依赖 LLM 与网络）
+│   └── .env.example               ← 环境变量样例（只有占位符，.env 不入库）
 └── tools/e2e/                      E2E 夹具 / 服务脚本 / 探针（9 个脚本，随仓库入库；**每个脚本的作用、是否写库、是否要口令见 `tools/e2e/README.md`**，见 FRONTEND_CONTRACT §12–§13）
 ```
 
@@ -248,11 +260,11 @@ public class OrderServiceImpl implements OrderService {
 
 错误码是 `ResultCode` 枚举（`org.company.nianglin.common.ResultCode`）与 `docs/api/README.md` 错误码表的镜像。新增错误码必须：
 
-1. 在 `ResultCode` 枚举里按段位（1xxx–9xxx）添加，注释写清楚业务场景。
+1. 在 `ResultCode` 枚举里按段位（1xxx–10xxx）添加，注释写清楚业务场景。
 2. 同步更新 `docs/api/README.md` 的对应段位表格。
 3. **不要**新增跨段位或杂糅语义的码（如把订单相关错误放到 1xxx）。
 
-段位含义：`2xx/4xx/5xx` 通用；`1xxx` 认证账号；`2xxx` 用户档案；`3xxx` 陪诊订单；`4xxx` 陪诊执行打卡；`5xxx` 用药；`6xxx` 评价投诉；`7xxx` 站内信与订单聊天（M13）；`8xxx` 管理后台；`9xxx` 统计导出。
+段位含义：`2xx/4xx/5xx` 通用；`1xxx` 认证账号；`2xxx` 用户档案；`3xxx` 陪诊订单；`4xxx` 陪诊执行打卡；`5xxx` 用药；`6xxx` 评价投诉；`7xxx` 站内信与订单聊天（M13）；`8xxx` 管理后台；`9xxx` 统计导出；**`10xxx` 智能助手（M14 · V3.7 新开）**。
 
 ### 2.8 鉴权 / Spring Security
 
@@ -285,6 +297,21 @@ public class OrderServiceImpl implements OrderService {
 - 业务配置统一挂在 `nianglin.*` 命名空间下（如 `nianglin.order.auto-cancel-minutes`、`nianglin.security.login-fail-threshold`），**不要**散落到 `spring.*` 之下。
 - CORS：开发期允许 `http://localhost:5141` / `http://127.0.0.1:5141`（前端 dev server 真实端口是 **5141**，由 `vite.config.js` 的 `VITE_PORT` 默认值与 `playwright.config.js` 的 `BASE_URL` 一致确定；`application-dev.yml` 用 `[*]` 通配放行）；生产由 `nianglin.cors.allowed-origins` 收紧为真实域名。
 - ⚠️ **`SecurityConfig` 与 `WebMvcConfig` 两处 `@Value` 兜底默认值必须同步**（2026-09-29 收尾验证发现）：两者读同一个 `nianglin.cors.allowed-origins`，但各有各的兜底串。`application-dev.yml` 配了值所以开发期看不出差异，而 **`application-prod.yml` 根本没有 `nianglin.cors` 段** → 生产会静默走 `@Value` 兜底。当时只修了 `WebMvcConfig`、漏了 `SecurityConfig`，结果是同一进程内 Spring Security 层放行 5173、MVC 层放行 5141。**改端口时两处一起改，并确认目标 profile 是否真的会走到兜底。**
+
+### 2.11 Python 侧（ai-service）编码规范
+
+`ai-service/` 是 V3.7 起引入的**独立 Python 进程**（FastAPI，端口 8081，只监听 `127.0.0.1`）。它不是「后端的一个模块」，而是**第二个技术栈** —— 写它之前先读 §0 的技术栈表与 §0.1 的已记录例外。
+
+- **纯函数优先**：意图分类（`intents.py`）、FAQ 检索（`knowledge.py`）、护栏（`guard.py`）**都是不依赖 LLM 的纯函数** —— 不碰网络、不碰时钟、不依赖全局状态。
+  **判定逻辑一旦依赖模型就没法写单测**，所以「先分类 → 再检索 → 最后叙述」的顺序不能改，LLM 只允许出现在最后一步的**叙述**上。
+- **降级路径与主路径同构**：未配置 `LLM_BASE_URL`、断网、超时、模型报错，**四种情况走同一条降级路径**（直接返回 FAQ 条目原文，`degraded=true`）。不要写成「主路径 + 一个补丁」；也**不要**把「没配模型」当成错误状态。降级出来的文本**同样要过输出护栏**。
+- **护栏写在代码里，不写在 prompt 里**：prompt 是「请求模型遵守」的约定，代码是「模型不遵守也拦得住」的保证。医疗意图的输入侧拦截、禁用词的输出侧替换，都必须在 `guard.py` 里用确定性的字符串匹配实现；prompt 里的对应文字只是第二层。
+- **共享词表读同一份文件**：合规禁用词只存在于 `backend/src/main/resources/compliance/medical-advice-words.txt`，Java 侧 `ComplianceCheckUtil` 与 Python 侧 `app/paths.py` **读同一个文件**（路径可用 `NIANGLIN_COMPLIANCE_WORDS_PATH` 覆盖）。**读不到 / 词数过少 / 缺关键词 → 启动失败**，不许「读空继续跑」——词表读空等于护栏静默失效。**不要在 Python 侧另抄一份词表。**
+- **FAQ 用 JSON，不引 PyYAML**：`knowledge/faq.json` 由 Python 标准库直接读，零依赖。**要改 YAML 必须先报批**（`PyYAML` 不在已批准的依赖清单里）。
+- **依赖清单冻结**：`ai-service/requirements.txt` 是**经人工逐项批准**的清单，**不擅自加一行**；需要新依赖时先说明理由、报批，再改清单。已刻意不引入：向量库 / embedding 模型 / 分词库 / redis-py / PyYAML。
+- **不引入自主 Agent**：决策链写死在代码里（输入护栏 → 意图分类 → FAQ 检索 → 事实装配 → 叙述 → 输出护栏），不用 `AgentExecutor` / `create_react_agent`。
+- **无状态、无鉴权、无数据库连接**：助手服务不查库、不调 Java、不持有任何令牌；对话历史由前端 `sessionStorage` 保管，后端不落库。
+- **测试口径**：核心断言**不依赖 LLM 与网络**；`python -m pytest ai-service/tests -q` 必须在**没有配模型**的环境里全绿。需要真实模型的用例（如 `test_llm_smoke.py`）在缺 `LLM_BASE_URL` 时用 `skipif` 跳过。
 
 ---
 
@@ -613,6 +640,9 @@ AI 在任何"新增 / 修改 / 删除接口"的场景下，必须：
 | 新增 / 修改样式令牌 | `frontend/src/styles/variables.scss`（编译期） + `index.scss` 的 `:root`（运行期） + `elderly.scss`（老人模式覆盖） |
 | 新增 / 修改数据库表 | Flyway 脚本 + `ResultCode`（若有新业务码） + `docs/api/<module>.md` 数据模型小节 |
 | 新增 / 修改合规相关（脱敏、加密、日志） | `MaskUtil` 单测 + `GlobalExceptionHandler` 日志策略 + README 合规约束章节 |
+| 新增 / 修改 `ai-service/`（Python 助手服务） | `ai-service/requirements.txt`（依赖清单需重新报批） + `AGENTS.md` §0 技术栈表与 §2.11 + `docs/api/13-assistant.md` + `docs/spec/V3.7-assistant-spec.md` |
+| 新增 / 修改 FAQ 知识库（`ai-service/knowledge/faq.json`） | 逐条核对 `source` + `anchor` 指向真实锚点 + `python tools/check_faq_anchors.py` 通过 + 答案不含合规禁用词 |
+| 新增 / 修改共享合规词表 | `backend/src/main/resources/compliance/medical-advice-words.txt` + Java `ComplianceCheckUtilTest` + Python `test_guard.py`（**两侧快照必须逐字相同**） |
 
 ---
 

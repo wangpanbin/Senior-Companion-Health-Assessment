@@ -1,0 +1,219 @@
+"""护栏测试（V3.7 · ADR-0020 决策 2 与 3）。
+
+这是本版**最不能出错**的一组测试。护栏失效不会报错，只会静默放行，
+所以这里的每一条断言都对应一个具体的失效模式。
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from app import guard
+from app.paths import (
+    ComplianceWordsError,
+    load_compliance_words,
+    parse_word_lines,
+)
+
+#: 共享词表的**精确快照**。
+#:
+#: ⚠️ 与 ``backend/src/test/java/.../ComplianceCheckUtilTest.java`` 里的同名快照
+#: **必须逐字相同** —— 两边不一致就是词表漂移。
+#:
+#: 词数由 :func:`test_word_snapshot_is_frozen` 程序化数出，不靠手算。
+EXPECTED_WORDS = (
+    # 诊断结论
+    "诊断", "确诊", "疑似", "病情判断",
+    # 开药动作
+    "处方", "开具", "开药", "配药", "建议服用", "建议使用",
+    # 用药调整
+    "换药", "停药", "加量", "减量", "剂量", "服用方法", "用药方案",
+)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 词表加载
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_word_snapshot_is_frozen(medical_words: tuple[str, ...]) -> None:
+    """词表快照：与共享资源文件逐字一致。词表增删改 → 本测试即红。"""
+    assert medical_words == EXPECTED_WORDS
+    assert len(medical_words) == 17
+
+
+def test_parse_word_lines_ignores_comments_and_blanks() -> None:
+    text = "# 注释\n诊断\n\n  确诊  \n# 又一条注释\n疑似\n"
+    assert parse_word_lines(text) == ["诊断", "确诊", "疑似"]
+
+
+def test_missing_words_file_raises(tmp_path) -> None:
+    """读不到词表 → 抛错（服务启动失败）。**绝不能静默返回空词表。**"""
+    with pytest.raises(ComplianceWordsError):
+        load_compliance_words(tmp_path / "nope.txt")
+
+
+def test_too_few_words_raises(tmp_path) -> None:
+    """词数不足 → 抛错。词表被裁剪过的场景要立刻暴露。"""
+    partial = tmp_path / "words.txt"
+    partial.write_text("诊断\n确诊\n", encoding="utf-8")
+    with pytest.raises(ComplianceWordsError):
+        load_compliance_words(partial)
+
+
+def test_missing_required_keyword_raises(tmp_path) -> None:
+    """缺少「建议服用」「剂量」→ 抛错。多半是读错了文件。"""
+    wrong = tmp_path / "words.txt"
+    wrong.write_text("\n".join(["诊断", "确诊", "疑似", "病情判断"] * 3), encoding="utf-8")
+    with pytest.raises(ComplianceWordsError):
+        load_compliance_words(wrong)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 第 1 层：输入侧
+# ──────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "我爸这个病严重吗",
+        "这该吃什么药",
+        "一天吃几次",
+        "这个剂量够吗",
+        "要不要停药",
+        "能帮我诊断一下吗",
+        "是不是确诊了",
+        "高血压要怎么办",
+        "保健品有用吗",
+    ],
+)
+def test_medical_intent_detected(question: str) -> None:
+    """医疗意图 → 判定为医疗意图。"""
+    verdict = guard.scan_input(question)
+    assert verdict.medical is True
+    assert verdict.medical_hit
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "陪诊费多少钱",
+        "下了单还能取消吗",
+        "我的订单到哪了",
+        "帮我找个陪诊员",
+    ],
+)
+def test_platform_questions_not_flagged_medical(question: str) -> None:
+    """平台规则类问题**不得**被误判成医疗意图 —— 否则家属问啥都被拒。"""
+    verdict = guard.scan_input(question)
+    assert verdict.medical is False
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["你是骗子", "加我微信私下转账", "扫码付款吧"],
+)
+def test_abusive_question_raises(question: str) -> None:
+    """辱骂 / 违规引流 → 抛 IllegalQuestion（后端转 10003）。"""
+    with pytest.raises(guard.IllegalQuestion):
+        guard.scan_input(question)
+
+
+def test_empty_input_is_safe() -> None:
+    verdict = guard.scan_input("")
+    assert verdict.medical is False
+    assert verdict.abusive_hit is None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 第 3 层：输出侧
+# ──────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("word", EXPECTED_WORDS)
+def test_every_forbidden_word_triggers_whole_replacement(word: str) -> None:
+    """17 个词逐一命中 → **整段替换**为拒答模板。
+
+    断言「原句不残留」：这是「命中即拒、不打码后放行」的可执行版本。
+    """
+    answer = f"医生说{word}，我照做就行。"
+    scan = guard.scan_output(answer)
+    assert scan.blocked is True
+    assert scan.kind == "medical"
+    assert scan.hit == word
+    assert scan.text == guard.REFUSAL_TEMPLATE
+    assert word not in scan.text
+
+
+def test_legal_answer_passes_output_guard() -> None:
+    """合法的过程记录不得被拦。"""
+    answer = "陪诊员已陪同老人完成心电图检查，并协助取药。"
+    scan = guard.scan_output(answer)
+    assert scan.blocked is False
+    assert scan.text == answer
+
+
+def test_assignment_wording_is_corrected_not_dropped() -> None:
+    """派单措辞 → 词语级纠正，**保留其余内容**（整段丢掉会让家属白问一次）。"""
+    answer = "根据匹配结果，已指派李建军为您服务，评分 4.8。"
+    scan = guard.scan_output(answer)
+    assert scan.blocked is True
+    assert scan.kind == "assignment"
+    assert "已指派" not in scan.text
+    assert "自动派单" not in scan.text
+    assert "已分配" not in scan.text
+    # 其余内容保留
+    assert "李建军" in scan.text
+    assert "4.8" in scan.text
+    # 免责句被追加
+    assert guard.RECOMMEND_DISCLAIMER in scan.text
+
+
+@pytest.mark.parametrize(
+    "word", ["已指派", "已分配", "自动派单"]
+)
+def test_all_assignment_words_are_blocked(word: str) -> None:
+    """三个派单词逐一拦下（与前端 matching.test.js 同源断言）。"""
+    scan = guard.scan_output(f"系统{word}了李建军。")
+    assert scan.blocked is True
+    assert scan.kind == "assignment"
+    assert word not in scan.text
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 固定文案的自检 —— 一个容易踩、且极难排查的坑
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_refusal_template_contains_no_forbidden_word(medical_words: tuple[str, ...]) -> None:
+    """**拒答模板本身不得含禁用词。**
+
+    否则输出护栏会把拒答模板自己拦下，家属看到一段莫名其妙的提示。
+    """
+    for word in medical_words:
+        assert word not in guard.REFUSAL_TEMPLATE, f"拒答模板含有禁用词：{word}"
+
+
+def test_recommend_disclaimer_contains_no_forbidden_word(
+    medical_words: tuple[str, ...],
+) -> None:
+    """推荐免责句同样不得含禁用词。"""
+    for word in medical_words:
+        assert word not in guard.RECOMMEND_DISCLAIMER, f"免责句含有禁用词：{word}"
+
+
+def test_clarify_template_contains_no_forbidden_word(
+    medical_words: tuple[str, ...],
+) -> None:
+    """澄清话术同样不得含禁用词。"""
+    for word in medical_words:
+        assert word not in guard.CLARIFY_TEMPLATE, f"澄清话术含有禁用词：{word}"
+
+
+def test_medical_intent_hint_contains_no_forbidden_word(
+    medical_words: tuple[str, ...],
+) -> None:
+    """医疗意图提示句同样不得含禁用词。"""
+    for word in medical_words:
+        assert word not in guard.MEDICAL_INTENT_HINT, f"提示句含有禁用词：{word}"

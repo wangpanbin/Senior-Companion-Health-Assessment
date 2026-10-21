@@ -8,6 +8,51 @@
 
 ---
 
+## [V3.7] · 2026-10-21 · 家属智能助手
+
+让家属**用自然语言**问到平台规则，并看懂「为什么推荐这位陪诊员」。
+产品与工程契约见 [PRD](docs/prd/PRD-V3.7-家属智能助手.md) /
+[spec](docs/spec/V3.7-assistant-spec.md) /
+[ADR-0020](docs/adr/0020-assistant-boundary-and-recommendation-guardrail.md)。
+
+### Added · 新增
+
+**独立 `ai-service`（Python 3.12 + FastAPI + LangChain）**
+
+- `ai-service/app/` —— FastAPI 应用（`main` / `intents` / `knowledge` / `guard` / `llm` / `prompts` / `actions` / `service`）
+- 端口 **8081**，**只监听 `127.0.0.1`**；浏览器只与 `/api` 说话
+- **不配置 LLM 也能跑**：未配置 `LLM_BASE_URL` 时降级为**基础模式**，回答直接给 FAQ 标准答案原文（`degraded=true`）
+- 决策链**写死在代码里**（输入护栏 → 意图分类 → FAQ 检索 → 事实装配 → 叙述 → 输出护栏），**不使用自主 Agent**
+
+**后端门面**
+
+- `POST /api/assistant/chat` —— **仅 `FAMILY`**（ELDER / COMPANION / ADMIN → 403）
+- 新开 **10xxx** 错误码段：`10001` 提问过于频繁 / `10002` 智能助手暂时不可用 / `10003` 问题内容包含违规表述
+- `config/AssistantProperties` —— 配置化 + **启动期校验**（配错即启动失败）
+
+**共享合规词表抽出**
+
+- `backend/src/main/resources/compliance/medical-advice-words.txt` —— 禁用词从 `ComplianceCheckUtil` 硬编码抽出为**共享资源文件**
+- Java 与 Python **读同一份**，两侧都**启动期 fail-fast**（读不到 / 词数过少 → 启动失败）
+- **命中即拒，不打码后放行**
+
+**FAQ 知识库**
+
+- `ai-service/knowledge/faq.json` —— **30 条**，每条带 `source` + `anchor` 指向 `docs/api` 真实锚点
+- `tools/check_faq_anchors.py` —— 校验条目格式、锚点是否仍存在、答案是否含禁用词（**FAQ 过期会静默失真，这道闸门是硬失败**）
+
+**前端**
+
+- `views/family/assistant.vue` + `api/assistant.js` —— 家属端 `/family/assistant` 页面
+- 路由 `module: M14` / `code: M-33` / `elderlyHidden: true`
+- 助手**只填下单草稿**，**永不自动建单**；推荐叙述**只转述** `reasons` / `mismatches` / `notes` 三段
+
+**CI**
+
+- `.github/workflows/ci.yml` 新增 `ai-service` job（`setup-python` + pip 缓存 + `pytest tests -q`）
+
+---
+
 ## [V3.3 – V3.6 评审收口] · 2026-10-21 · 代码评审发现项修复
 
 对 `c735693..de994b3`（V3.3 – V3.6 四版）做 Standards / Spec 两轴评审后的收口。

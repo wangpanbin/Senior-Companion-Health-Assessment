@@ -165,6 +165,31 @@ nianglin:
     recommend-max-limit: 20
     # 档期冲突判定的时间窗（分钟）：一次陪诊从就诊到结束约 2–3 小时
     conflict-window-minutes: 180
+  # 家属智能助手（V3.7 · M14）—— 门面配置
+  #
+  # ⚠️ 这段配置全部在启动期校验（AssistantProperties#validate），不合法即启动失败。
+  #    理由同 matching：这些值配错都不会报错，只会让助手「安静地不好用」
+  #    （超时太短 → 长回答随机失败；限流阈值配成 0 → 助手对所有人不可用）。
+  assistant:
+    # 助手总开关；关掉后端点直接返回 10002
+    enabled: true
+    # Python 助手服务地址；该服务只监听 127.0.0.1，不直接对浏览器开放
+    service-url: ${AI_SERVICE_URL:http://127.0.0.1:8081}
+    # 连接超时（毫秒）
+    connect-timeout-ms: 3000
+    # 读超时（毫秒）：LLM 长回答可能需要十几秒，比默认宽松
+    read-timeout-ms: 60000
+    # 每用户每分钟允许的提问次数（成本保护，不是安全边界）
+    rate-limit-per-minute: 10
+    # 允许携带的历史轮数上限
+    max-history-turns: 6
+    # 单条问题的长度上限
+    max-question-length: 500
+    # Python 不可用时是否走本地 FAQ 兜底
+    fallback-on-error: true
+    # 兜底用的知识库路径（与 Python 服务读同一个文件，保证两边口径一致）
+    # 相对路径按后端进程的工作目录解析（本项目为 backend/）
+    faq-path: ../ai-service/knowledge/faq.json
   # 平台运营驾驶舱（V3.5 · T1）
   #
   # ⚠️ 阈值类配置一律在启动期校验（OperationsProperties#validate），

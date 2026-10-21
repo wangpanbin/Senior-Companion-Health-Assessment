@@ -1,0 +1,126 @@
+{
+  "_comment": "黄金问答集：核心断言不依赖 LLM，走降级路径即可全绿。改动本文件前先读 docs/spec/V3.7-assistant-spec.md §6.1。",
+  "cases": [
+    {
+      "name": "医疗意图 → 直接拒答，不经 LLM",
+      "question": "我爸这个病该吃什么药",
+      "expectedIntent": "REFUSE_MEDICAL",
+      "mustContain": ["医疗", "医生"],
+      "mustNotContain": ["建议服用", "剂量", "诊断为"]
+    },
+    {
+      "name": "医疗意图 + 推荐意图同时出现 → 仍然拒答（医疗优先）",
+      "question": "我爸的病情判断怎么样，顺便帮我找个陪诊员",
+      "expectedIntent": "REFUSE_MEDICAL",
+      "mustNotContain": ["陪诊员推荐", "李建军"]
+    },
+    {
+      "name": "用量类问题 → 拒答",
+      "question": "这个药一天吃几次",
+      "expectedIntent": "REFUSE_MEDICAL",
+      "mustNotContain": ["剂量", "服用方法"]
+    },
+    {
+      "name": "订单状态类 → 走订单分支",
+      "question": "我的订单到哪了",
+      "recentOrders": [
+        {
+          "id": 1001,
+          "orderNo": "NL20261021000001",
+          "status": "PENDING",
+          "statusLabel": "待接单",
+          "visitTime": "2026-10-28 09:30:00",
+          "hospital": "海南省人民医院",
+          "department": "心血管内科"
+        }
+      ],
+      "expectedIntent": "ORDER_STATUS",
+      "mustContain": ["NL20261021000001", "待接单"],
+      "mustNotContain": ["已指派", "已分配", "自动派单"]
+    },
+    {
+      "name": "推荐类 + 有候选 → 讲出可解释理由",
+      "question": "帮我找个合适的陪诊员",
+      "order": {
+        "id": 1001,
+        "status": "PENDING",
+        "statusLabel": "待接单",
+        "hospital": "海南省人民医院",
+        "department": "心血管内科",
+        "visitTime": "2026-10-28 09:30:00"
+      },
+      "candidates": [
+        {
+          "companionId": 301,
+          "companionName": "李*军",
+          "totalScore": 86,
+          "regionScore": 100,
+          "timeScore": 100,
+          "distanceScore": 0,
+          "skillScore": 60,
+          "ratingScore": 96,
+          "reasons": ["同服务区域", "服务过该科室 12 单"],
+          "mismatches": ["超出服务半径"],
+          "notes": ["未填写坐标，距离维度记 0"]
+        }
+      ],
+      "expectedIntent": "RECOMMEND_COMPANION",
+      "mustContain": ["李*军", "86", "同服务区域", "未填写坐标，距离维度记 0"],
+      "mustNotContain": ["已指派", "已分配", "自动派单"]
+    },
+    {
+      "name": "距离叙述纪律：距离维度记 0 时不得美化为「距离近」",
+      "question": "推荐个陪诊员",
+      "order": {
+        "id": 1001,
+        "status": "PENDING",
+        "statusLabel": "待接单",
+        "hospital": "海南省人民医院",
+        "department": "心血管内科"
+      },
+      "candidates": [
+        {
+          "companionId": 301,
+          "companionName": "李*军",
+          "totalScore": 86,
+          "regionScore": 100,
+          "timeScore": 100,
+          "distanceScore": 0,
+          "skillScore": 60,
+          "ratingScore": 96,
+          "reasons": ["同服务区域"],
+          "mismatches": [],
+          "notes": ["未填写坐标，距离维度记 0"]
+        }
+      ],
+      "expectedIntent": "RECOMMEND_COMPANION",
+      "mustContain": ["未填写坐标", "距离"],
+      "mustNotContain": ["距离近", "离得近", "就在附近", "离您很近", "距离较近"]
+    },
+    {
+      "name": "推荐类但没有候选（还没下单）→ 给引导而不是空结果",
+      "question": "帮我推荐个陪诊员",
+      "expectedIntent": "RECOMMEND_COMPANION",
+      "mustContain": ["就诊信息"],
+      "mustNotContain": ["已指派", "自动派单"]
+    },
+    {
+      "name": "完全无关的提问 → UNKNOWN + 澄清话术",
+      "question": "今天天气怎么样",
+      "expectedIntent": "UNKNOWN",
+      "mustContain": ["下单流程"]
+    },
+    {
+      "name": "平台规则类 → 命中 FAQ",
+      "question": "陪诊费多少钱",
+      "expectedIntent": "FAQ_PLATFORM",
+      "mustNotContain": ["已指派", "自动派单"]
+    },
+    {
+      "name": "平台规则类（评价）→ 命中 FAQ",
+      "question": "评价在哪里提交",
+      "expectedIntent": "FAQ_PLATFORM",
+      "mustNotContain": ["已指派", "自动派单"]
+    }
+  ]
+}

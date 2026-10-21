@@ -97,6 +97,10 @@ classpath 的 `db/migration/`：
 > **已执行的脚本不得再改**：`validate-on-migrate: true` 会校验 checksum，
 > 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5、V6…）。
 
+> **V3.7 家属智能助手（M14）：无数据库迁移 —— 本版未新增任何表或列。**
+> 助手的对话历史**只存浏览器 `sessionStorage`**（后端不落库）；助手计算服务**无状态、无鉴权、无数据库连接**，工具数据由 Java 门面在单次请求内装配。
+> 依据：[ADR-0020](../adr/0020-assistant-boundary-and-recommendation-guardrail.md) 决策 6。
+
 **操作命令**（在 `backend/` 下执行）：
 
 ```bash

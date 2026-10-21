@@ -1,0 +1,26 @@
+# ai-service · 依赖清单（V3.7 家属智能助手）
+#
+# ⚠️ 这份清单是**经用户逐项批准**的（见 ADR-0020 与 plan §四）。
+#    超出本清单的任何新依赖，必须先回报用户并说明理由，不得擅自添加。
+#
+# 刻意**不引入**（理由见 ADR-0020 §八）：
+#   · 向量库（faiss / chroma）—— 领域只有 25–30 条 FAQ，关键词检索足够且可解释
+#   · embedding 模型 —— 会拖慢 CI、且评审机器装不上
+#   · 分词库（jieba）—— 2-gram + 子串包含已够用
+#   · redis-py —— 限流在 Java 侧，Python 不碰 Redis
+#   · PyYAML —— FAQ 用 JSON，标准库直接读
+#   · LangChain 的 AgentExecutor / create_react_agent —— 用确定性路由器，不用自主 Agent
+
+fastapi>=0.110
+uvicorn[standard]>=0.27
+
+# LangChain 只用两件东西：ChatOpenAI（OpenAI 兼容协议：云端 / Ollama / vLLM 共用）
+# 与 prompt 模板。导入是**惰性**的（见 app/llm.py），所以核心测试完全不依赖它。
+langchain>=0.2
+langchain-openai>=0.1
+
+pydantic-settings>=2.2
+httpx>=0.27
+
+pytest>=8.0
+pytest-asyncio>=0.23
