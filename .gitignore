@@ -147,13 +147,16 @@ frontend/coverage/
 .factorypathentry
 
 # ============================ 课程汇报材料（不提交） ============================
-# 6 分钟项目汇报的三件套：口播稿 / 合成音轨 / 网页演示台。
+# 6 分钟项目汇报的四件套：口播稿 / 合成音轨 / 网页演示台 / 成片。
 # 均为**一次性产出**而非本仓库源码 —— presentation/ 内含 node_modules 与 43 张
 # 1920x1080 截图（合计约 220MB），voiceover/ 内含 42 段 TTS 分句与调音探针
-# （约 21MB），入库只会拖慢 clone，且与 backend/ frontend/ 的源码演进无关。
-# 需要的素材随时可用 voiceover/_work/ 下的脚本重新合成（见 _work/validate.py）。
+# （约 21MB），Project Presentation/ 内含成片 MP4（约 11MB）。
+# 入库只会拖慢 clone，且与 backend/ frontend/ 的源码演进无关。
+# 需要的素材随时可用 voiceover/_work/ 下的脚本重新合成（见 _work/validate.py），
+# 成片可用 presentation/scripts/stage/render-video.py 重新渲染。
 # ⚠️ 必须锚定到仓库根：未锚定的目录名会连带忽略任意层级的同名目录
 #    （同类事故见上方 /reports/ 的注释）。
 /script.md
 /voiceover/
 /presentation/
+/Project Presentation/
