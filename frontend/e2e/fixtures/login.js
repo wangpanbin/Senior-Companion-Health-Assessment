@@ -20,7 +20,15 @@ export async function loginViaUI(page, account, password = PASSWORD, role) {
     } catch {
       /* 非 JSON 忽略 */
     }
-    await r.fulfill({ response })
+    // ⚠️ fulfill 偶发 `Route is already handled!`（2026-10-25 验收 1 flaky）：
+    // 拦截器在 fetch/解析期间请求被导航收尾或另一层路由处理抢先落定。
+    // 此时回包已有人送达页面，captchaKey 也已记到，再 fulfill 只会抛错 ——
+    // 所以只容忍这一句，其它错误照常上抛。
+    try {
+      await r.fulfill({ response })
+    } catch (e) {
+      if (!String(e).includes('Route is already handled')) throw e
+    }
   })
 
   try {
