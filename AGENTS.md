@@ -234,6 +234,7 @@ Senior Companion Health Assessment/
 - [ ] 没有把 `.env*` / `application-local.*` / 含真实密码的配置提交。
 - [ ] 没有改 `docs/plan/plan.md` / `README.md` / `.gitignore` / `pom.xml` / `package.json` / `.workbuddy/` 之外的非业务文件（除非用户明确要求）。
 - [ ] 没有出现"建议服用 / 推荐剂量 / 诊断为 / 可能是 XX 病"等违反合规的文案。
+- [ ] 引用仓库规模数字（提交 / 文件 / 测试 / 端点数等）前先跑 `python tools/repo_metrics.py` 现取，注明基线 ref；surefire / `playwright --list` 是实跑口径，`@Test` / `test(` 是静态口径，不要混用或手抄上一份文档。
 
 ---
 
