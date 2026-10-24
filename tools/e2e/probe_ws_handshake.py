@@ -21,6 +21,10 @@
 
 前置：必须先跑过 `pnpm -C frontend exec playwright test --project=setup`
       让 reports/playwright/.auth/*.json 存在 —— 见 tools/e2e/_probe_http.py
+      且后端(8080)与前端(5141)都在线 —— 脚本开跑会先探测端口，
+      不在线时直接指路去起服务，而不是把「进程没起」误归因为「代理没生效」
+      （2026-10-25 验收实测踩过：vite 进程已退出时，3 个代理用例全报
+      WinError 10061 + 「代理没生效」的误导归因）。
 """
 
 import os
@@ -29,6 +33,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _probe_http import read_token  # noqa: E402  共享 storageState 读取
+from _probe_http import TokenExpiredError  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -69,6 +74,15 @@ TARGETS = [
 ]
 
 
+def port_listening(host, port, timeout=2):
+    """端口是否有进程在监听 —— 归因前置检查，防止把「进程没起」误判成「配置没生效」。"""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
 def handshake(host, port, path, origin, timeout=8):
     """发一次原始 WebSocket Upgrade，返回 (状态行, 关键响应头)。"""
     req = (
@@ -100,6 +114,16 @@ def handshake(host, port, path, origin, timeout=8):
 
 
 def main():
+    backend_up = port_listening("127.0.0.1", 8080)
+    frontend_up = port_listening("127.0.0.1", FRONTEND_PORT)
+    if not backend_up:
+        print("[FATAL] 后端未运行（127.0.0.1:8080 无监听）—— 请先启动后端再跑本探针，"
+              "否则 4 组用例只会得到 4 个一样的连接失败，差分归因无从谈起。")
+        return 1
+    if not frontend_up:
+        print("[WARN] 前端未运行（127.0.0.1:%d 无监听）—— vite 代理那组只能验证「连不上」，"
+              "先 `pnpm dev` 起前端再跑，归因才有意义。" % FRONTEND_PORT)
+
     out_lines = []
     bad = 0
     for username, order_id in CASES:
@@ -108,6 +132,10 @@ def main():
         except FileNotFoundError as e:
             print("[FAIL] %s —— %s" % (username, e))
             print("       请先跑 `pnpm -C frontend exec playwright test --project=setup` 让 storageState 落下来")
+            bad += 1
+            continue
+        except TokenExpiredError as e:
+            print("[EXPI] %s —— %s" % (username, e))
             bad += 1
             continue
         except KeyError as e:
@@ -140,6 +168,10 @@ def main():
         elif no_origin and same_origin and not cross_origin:
             conclusion = "→ 根因＝**跨源被拒**（同源可以、跨源不行），同上：服务端未放行前端来源。" \
                          "修法：后端 allowedOriginPatterns 加入前端地址。"
+            bad += 1
+        elif same_origin and not via_proxy and not frontend_up:
+            conclusion = f"→ 后端 OK、但前端端口 {FRONTEND_PORT} **无监听**：vite 进程没在跑，" \
+                         "不是代理没生效。先 `pnpm dev` 起前端，再复跑本探针。"
             bad += 1
         elif same_origin and not via_proxy:
             conclusion = f"→ 后端 OK、代理不通：vite 的 '/ws' 代理没生效（探测端口 {FRONTEND_PORT}）。" \
