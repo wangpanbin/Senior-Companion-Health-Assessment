@@ -187,6 +187,38 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8081
 - 该服务**只监听 `127.0.0.1`**，不直接对浏览器开放；浏览器只与 `/api` 说话。
 - 后端通过 `AI_SERVICE_URL` 找它（默认 `http://127.0.0.1:8081`）。**不启动它时后端会兜底**，本地 FAQ 也读不到才返回 `10002`。
 
+### 本机演示数据与跑测顺序（汇报前必读）
+
+仓库带一个**演示造数脚本** `presentation/scripts/seed-hall-demo.py`（`presentation/` 目录已被
+`.gitignore` 排除，仅存在于本机）：它把 6 条 PENDING 订单的 `visit_time` 移到未来，让陪诊大厅、
+履约风险条有内容可演示。**它只动 `visit_time` 一列**，可原样回滚：
+
+```powershell
+cd presentation
+$env:MYSQL_PASSWORD = '<本机 root 口令>'
+python scripts/seed-hall-demo.py            # 应用演示态
+python scripts/seed-hall-demo.py --rollback # 回滚到种子基线
+```
+
+⚠️ **跑 `mvn -B verify` 前必须先 `--rollback`**：两条真实库测试
+（`OrderAccessMatrixTest.timeShouldUseDocumentedFormat`、
+`OperationsGapRealDbTest.seedDataShouldActuallyContainPendingOrders`）断言的是**种子基线**的
+`visit_time`，演示态会把它们移出断言窗口 → BUILD FAILURE（2 红）。这不是测试不稳，恰恰是测试
+在锁真数据；一句话解释：「演示态与测试态是同一个库的两种合法状态，一条命令来回切」。
+
+**演示前 10 分钟自检顺序**：
+
+1. `python tools/e2e/l0_identity_gate.py` → 必须 **10/10**（确认 5 个进程在线且 8080/8081/5141 上是本项目进程）。
+2. 重新应用 `seed-hall-demo.py`（若此前跑过测试回滚了造数）。
+3. 浏览器预登录 4 个角色（`admin` / `fam001` / `comp009` / `elder001`），确认 `/api/health` 返回 `UP`。
+
+**日志轮转与清理指引**：`logback-spring.xml` 已配置滚动（按天 + 50MB 分卷，全量日志保留 30 天 /
+错误日志 60 天 / 总量上限 2GB），不需要手工轮转。`backend/logs/` 偶发膨胀的主因是 **surefire
+fork 与应用共写相对路径 `./logs`**（测试栈帧混进 `nianglin-error.log`，属已知现象、非产品缺陷）。
+演示前若要展示日志目录，可手动清空 `backend/logs/`（**属删除操作，请自行确认后执行**；
+另外跑测会在 `sys_login_log` / `sys_file` 两张只增审计表留痕，如需绝对干净可用
+`python tools/e2e/restore_clean_baseline.py` 按种子水位复位，同样是删除操作、执行前先看它的输出计划）。
+
 ---
 
 ## 端口规划
