@@ -180,6 +180,7 @@ pnpm exec playwright test         # E2E（前置：MySQL/Redis + 后端 8080 + t
 ```bash
 cd ai-service
 pip install -r requirements.txt
+python -m app.selfcheck      # 演示前自检：合规词表 / FAQ / LLM 配置一键体检（--llm 实测连通）
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8081
 ```
 

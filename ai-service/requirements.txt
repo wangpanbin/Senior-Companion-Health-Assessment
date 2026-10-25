@@ -27,6 +27,10 @@ langchain-core>=0.1
 langchain-openai>=0.1
 
 pydantic-settings>=2.2
+
+# ── 以下是**测试依赖**（pytest / TestClient 走 httpx）──────────────────
+# 刻意不拆 requirements-dev.txt：CI 只 `pip install -r requirements.txt` 一条命令，
+# 拆文件就要改 workflow；运行时多装两个纯测试包没有副作用。
 httpx>=0.27
 
 pytest>=8.0

@@ -1435,5 +1435,205 @@
       "能付钱",
       "在线付"
     ]
+  },
+  {
+    "question": "老人的健康报告在哪看",
+    "expectId": "faq-health-overview-01",
+    "keywords": [
+      "健康报告",
+      "在哪看"
+    ]
+  },
+  {
+    "question": "在哪能看到老人的健康情况",
+    "expectId": "faq-health-overview-01",
+    "keywords": [
+      "健康情况",
+      "在哪能"
+    ]
+  },
+  {
+    "question": "想看看老人的健康情况去哪里",
+    "expectId": "faq-health-overview-01",
+    "keywords": [
+      "健康情况",
+      "去哪里"
+    ]
+  },
+  {
+    "question": "老人最近的身体状况在哪查",
+    "expectId": "faq-health-overview-01",
+    "keywords": [
+      "身体状况",
+      "在哪查"
+    ]
+  },
+  {
+    "question": "家属端能看老人的健康档案吗",
+    "expectId": "faq-health-overview-01",
+    "keywords": [
+      "健康档案",
+      "家属端"
+    ]
+  },
+  {
+    "question": "健康时间线里都有什么",
+    "expectId": "faq-health-timeline-01",
+    "keywords": [
+      "健康时间线",
+      "都有什么"
+    ]
+  },
+  {
+    "question": "时间线上能看到的记录有哪些",
+    "expectId": "faq-health-timeline-01",
+    "keywords": [
+      "时间线",
+      "记录有哪些"
+    ]
+  },
+  {
+    "question": "老人的就诊记录在时间线里吗",
+    "expectId": "faq-health-timeline-01",
+    "keywords": [
+      "就诊记录",
+      "时间线"
+    ]
+  },
+  {
+    "question": "老人的健康动态在哪看",
+    "expectId": "faq-health-timeline-01",
+    "keywords": [
+      "健康动态",
+      "在哪看"
+    ]
+  },
+  {
+    "question": "陪诊打卡记录会在时间线里显示吗",
+    "expectId": "faq-health-timeline-01",
+    "keywords": [
+      "打卡记录",
+      "时间线"
+    ]
+  },
+  {
+    "question": "用药三桶是什么意思",
+    "expectId": "faq-health-medication-bucket-01",
+    "keywords": [
+      "用药三桶",
+      "什么意思"
+    ]
+  },
+  {
+    "question": "已服漏服待服是怎么分的",
+    "expectId": "faq-health-medication-bucket-01",
+    "keywords": [
+      "已服",
+      "待服"
+    ]
+  },
+  {
+    "question": "老人漏吃药了算哪个桶",
+    "expectId": "faq-health-medication-bucket-01",
+    "keywords": [
+      "漏吃药",
+      "哪个桶"
+    ]
+  },
+  {
+    "question": "三桶的统计口径是什么",
+    "expectId": "faq-health-medication-bucket-01",
+    "keywords": [
+      "三桶",
+      "统计口径"
+    ]
+  },
+  {
+    "question": "没吃药的任务会进哪个桶",
+    "expectId": "faq-health-medication-bucket-01",
+    "keywords": [
+      "没吃药",
+      "哪个桶"
+    ]
+  },
+  {
+    "question": "家庭健康首页上显示的是什么",
+    "expectId": "faq-health-summary-01",
+    "keywords": [
+      "家庭健康",
+      "显示的"
+    ]
+  },
+  {
+    "question": "首页摘要里有哪些信息",
+    "expectId": "faq-health-summary-01",
+    "keywords": [
+      "首页摘要",
+      "哪些信息"
+    ]
+  },
+  {
+    "question": "今日用药的数字是在哪里看的",
+    "expectId": "faq-health-summary-01",
+    "keywords": [
+      "今日用药",
+      "在哪里看"
+    ]
+  },
+  {
+    "question": "健康协同首页怎么排序的",
+    "expectId": "faq-health-summary-01",
+    "keywords": [
+      "健康协同",
+      "排序"
+    ]
+  },
+  {
+    "question": "首页上老人的最近就诊怎么看",
+    "expectId": "faq-health-summary-01",
+    "keywords": [
+      "最近就诊",
+      "怎么看"
+    ]
+  },
+  {
+    "question": "老人的健康数据是从哪来的",
+    "expectId": "faq-health-data-source-01",
+    "keywords": [
+      "健康数据",
+      "从哪来"
+    ]
+  },
+  {
+    "question": "平台的健康数据来源是什么",
+    "expectId": "faq-health-data-source-01",
+    "keywords": [
+      "健康数据",
+      "数据来源"
+    ]
+  },
+  {
+    "question": "健康页的数字哪里来的",
+    "expectId": "faq-health-data-source-01",
+    "keywords": [
+      "哪里来的",
+      "健康页"
+    ]
+  },
+  {
+    "question": "这些健康数据是平台自己记的吗",
+    "expectId": "faq-health-data-source-01",
+    "keywords": [
+      "健康数据",
+      "平台自己记"
+    ]
+  },
+  {
+    "question": "用药统计的数据来源是哪里",
+    "expectId": "faq-health-data-source-01",
+    "keywords": [
+      "数据来源",
+      "用药统计"
+    ]
   }
 ]

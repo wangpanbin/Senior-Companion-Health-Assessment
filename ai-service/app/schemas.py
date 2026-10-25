@@ -29,10 +29,15 @@ ActionType = Literal["FILL_ORDER_DRAFT", "NAVIGATE"]
 
 
 class HistoryTurn(BaseModel):
-    """一轮历史对话。"""
+    """一轮历史对话。
 
-    role: str = Field(default="user", description="user / assistant")
-    content: str = Field(default="", description="该轮内容")
+    长度上限与 Java 侧 ``AssistantHistoryTurn``（role ≤20 / content ≤1000）
+    同口径 —— 门面虽已校验，内部端口只监听 127.0.0.1 也挡不住本机其它进程直调，
+    不设上限等于把「撑大 payload 烧模型 token」的口子留在内网侧。
+    """
+
+    role: str = Field(default="user", max_length=20, description="user / assistant")
+    content: str = Field(default="", max_length=1000, description="该轮内容")
 
 
 class ElderBrief(BaseModel):
@@ -96,8 +101,10 @@ class ChatRequest(BaseModel):
     （ADR-0020 决策 6）。
     """
 
-    question: str = Field(description="用户问题")
-    history: list[HistoryTurn] = Field(default_factory=list, description="历史轮次")
+    question: str = Field(min_length=1, max_length=500, description="用户问题（与 Java DTO 同口径）")
+    history: list[HistoryTurn] = Field(
+        default_factory=list, max_length=12, description="历史轮次（≤12 条，与 Java DTO 同口径）"
+    )
     elders: list[ElderBrief] = Field(default_factory=list, description="当前家属绑定的老人（脱敏）")
     order: OrderBrief | None = Field(default=None, description="当前订单上下文")
     candidates: list[Candidate] = Field(default_factory=list, description="候选陪诊员（规则引擎已算好）")
