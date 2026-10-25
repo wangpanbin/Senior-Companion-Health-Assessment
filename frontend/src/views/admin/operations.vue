@@ -1016,11 +1016,22 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <p class="gap__detail nl-caption">
+        <p v-if="gapSelected" class="gap__detail nl-caption">
           <span class="gap__detail-label">明细</span>
-          <span v-if="gapSelected" class="is-num">{{ gapDetail(gapSelected) }}</span>
-          <span v-else>暂无明细</span>
+          <span class="is-num">{{ gapDetail(gapSelected) }}</span>
         </p>
+
+        <!--
+          P2-8：没有可展示的桶时走统一空态组件。
+          原来这里自绘了一个裸 <span>「暂无明细」</span> 冒充空态 ——
+          样式和其余五块的 NlEmpty 完全对不上，视觉上像是「这里漏渲染了」。
+        -->
+        <NlEmpty
+          v-else
+          type="empty"
+          title="暂无明细"
+          description="所选区间内没有可展示的时段明细"
+        />
       </template>
 
       <NlEmpty

@@ -403,9 +403,16 @@ public class AdminServiceImpl implements AdminService {
     public ResetPasswordResultVO resetPassword(Long id, ResetPasswordDTO dto) {
         SysUser user = requireUser(id);
 
+        // 管理员显式指定了新口令就用它，否则回退部署配置的默认口令。
+        // ⚠️ 这个局部变量只用于 encode()，任何一行把它拼进字符串的日志都会把明文口令
+        //    写进磁盘。下面的 log.info 一律不带它，响应体也不带它。
+        String rawPassword = (dto.getNewPassword() != null && !dto.getNewPassword().isBlank())
+                ? dto.getNewPassword()
+                : securityProperties.getDefaultPassword();
+
         sysUserMapper.update(null, Wrappers.<SysUser>lambdaUpdate()
                 .eq(SysUser::getId, id)
-                .set(SysUser::getPassword, passwordEncoder.encode(securityProperties.getDefaultPassword()))
+                .set(SysUser::getPassword, passwordEncoder.encode(rawPassword))
                 .set(SysUser::getNeedChangePassword, 1));
 
         // 重置密码等于「凭据已换人掌握」，旧令牌必须立即失效，
@@ -413,14 +420,28 @@ public class AdminServiceImpl implements AdminService {
         tokenStore.bumpPasswordVersion(id);
 
         Map<String, Object> params = new HashMap<>();
-        params.put("content", "您的登录密码已被管理员重置，请使用默认密码登录并立即修改。");
+        // ⚠️ 站内信正文**不含任何口令**（无论管理员自设还是默认口令）：
+        //    站内信是落库数据，含口令等于把口令长期写进数据库。
+        //    正确做法是管理员线下/电话转交用户 —— 前端会把管理员刚输入的新口令
+        //    回显一次供其抄写。平台**绝不能**声称自己已经把口令送达了。
+        //
+        // ⚠️ 两条文案必须分开：走部署默认口令时，用户手里**没有任何**口令来源，
+        //    说「请使用管理员告知的新密码」等于把用户引到一个不存在的东西上 ——
+        //    那正是本轮要修的「假成功」。这种情况只能让用户联系管理员。
+        boolean adminProvided = dto.getNewPassword() != null && !dto.getNewPassword().isBlank();
+        params.put("content", adminProvided
+                ? "您的登录密码已被管理员重置，请使用管理员告知的新密码登录并立即修改。"
+                : "您的登录密码已被管理员重置为初始密码，请联系管理员获取具体口令，登录后立即修改。");
         messageService.send(id, MessageType.SYSTEM_NOTICE, null, params);
 
         operLogRecorder.record(OperType.RESET_PASSWORD, OperTargetType.USER, id, user.getUsername(),
                 null, null, dto.getRemark().trim());
 
-        log.info("用户密码已重置 | userId={} | adminId={}", id, SecurityUtils.currentUserId());
-        // 只回传「已重置 + 需强制改密」；默认口令由部署配置决定，不回传（见 ResetPasswordResultVO javadoc）
+        log.info("用户密码已重置 | userId={} | adminId={} | 使用管理员自设口令={}",
+                id, SecurityUtils.currentUserId(), adminProvided);
+        // ⚠️ 响应**不含任何口令**：这是仓库的安全验收判据
+        // （docs/security/安全评估报告-2026-10-18.md §8.2 P0-3「接口响应不含口令字段」）。
+        // 管理员要转交口令给用户，由前端用他刚输入的值展示，服务端不回传、不记录。
         return ResetPasswordResultVO.of(id);
     }
 

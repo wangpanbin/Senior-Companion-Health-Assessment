@@ -22,13 +22,18 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { NlPageShell } from '@/components'
 import { getCaptcha, register } from '@/api/auth'
+import { PHONE_RE, PHONE_MSG, PASSWORD_RE, PASSWORD_MSG } from '@/constants/validation'
 
 const router = useRouter()
 
 const role = ref('FAMILY')
-const loading = ref(false)
+/**
+ * 提交中的 in-flight 锁（必须在任何 await 之前同步置位）。
+ */
+const submitting = ref(false)
 const captchaImage = ref('')
 
+const formRef = ref()
 const form = ref({
   username: '',
   nickname: '',
@@ -39,6 +44,60 @@ const form = ref({
   captchaCode: '',
   agreed: false
 })
+
+/** 两次密码是否一致（确认密码是纯前端字段，后端没有它） */
+function validatePassword2(rule, value, callback) {
+  if (!value) {
+    callback(new Error('请再次输入密码'))
+    return
+  }
+  if (value !== form.value.password) {
+    callback(new Error('两次密码不一致'))
+    return
+  }
+  callback()
+}
+
+/** 是否已勾选协议（勾选框的文案在模板里，规则只管「必须勾」） */
+function validateAgreed(rule, value, callback) {
+  if (!value) {
+    callback(new Error('请先阅读并同意《用户服务协议》'))
+    return
+  }
+  callback()
+}
+
+/**
+ * 表单规则。
+ *
+ * <p>⚠️ 每条规则的含义与文案都与后端 {@code RegisterDTO} 的注解一一对应
+ * （见 {@code docs/api/01-auth-user.md} §2），前端不再另写一套预校验。</p>
+ *
+ * <p>此前这里是「一串 if + ElMessage.warning + return」：一次只报一个错，
+ * 改掉一个错要再点一次提交才能看到下一个错，而且提示不落在字段上。</p>
+ */
+const rules = {
+  username: [
+    { required: true, message: '请输入用户名', trigger: 'blur' },
+    // 后端 RegisterDTO#username： ^[A-Za-z0-9_]{4,20}$
+    { pattern: /^[A-Za-z0-9_]{4,20}$/, message: '用户名为 4-20 位字母、数字或下划线', trigger: 'blur' }
+  ],
+  nickname: [
+    { required: true, message: '请输入昵称', trigger: 'blur' },
+    { min: 2, max: 20, message: '昵称为 2-20 个字符', trigger: 'blur' }
+  ],
+  phone: [
+    { required: true, message: '请输入手机号', trigger: 'blur' },
+    { pattern: PHONE_RE, message: PHONE_MSG, trigger: 'blur' }
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { pattern: PASSWORD_RE, message: PASSWORD_MSG, trigger: 'blur' }
+  ],
+  password2: [{ validator: validatePassword2, trigger: 'blur' }],
+  captchaCode: [{ required: true, message: '请输入图形验证码', trigger: 'blur' }],
+  agreed: [{ validator: validateAgreed, trigger: 'change' }]
+}
 
 async function loadCaptcha() {
   try {
@@ -53,41 +112,14 @@ async function loadCaptcha() {
 }
 
 async function next() {
-  const f = form.value
-
-  /* ---------- 前端预校验：与后端注解保持同一套规则，避免无谓的 400 ---------- */
-  if (!/^[A-Za-z0-9_]{4,20}$/.test(f.username)) {
-    ElMessage.warning('用户名为 4-20 位字母、数字或下划线')
-    return
-  }
-  if (f.nickname.length < 2 || f.nickname.length > 20) {
-    ElMessage.warning('昵称为 2-20 个字符')
-    return
-  }
-  if (!/^1[3-9]\d{9}$/.test(f.phone)) {
-    ElMessage.warning('请输入正确的 11 位手机号')
-    return
-  }
-  // 后端 regexp 是 ^(?=.*[A-Za-z])(?=.*\d)\S{6,32}$ —— 必须同时含字母与数字
-  if (!/^(?=.*[A-Za-z])(?=.*\d)\S{6,32}$/.test(f.password)) {
-    ElMessage.warning('密码为 6-32 位，且需同时包含字母与数字')
-    return
-  }
-  if (f.password !== f.password2) {
-    ElMessage.warning('两次密码不一致')
-    return
-  }
-  if (!f.captchaCode) {
-    ElMessage.warning('请输入图形验证码')
-    return
-  }
-  if (!f.agreed) {
-    ElMessage.warning('请先阅读并同意《用户服务协议》')
-    return
-  }
-
-  loading.value = true
+  // ⚠️ in-flight 锁必须在任何 await 之前同步置位
+  if (submitting.value) return
+  submitting.value = true
   try {
+    // 一次性校验全部字段：错误落在各自字段下方，不用一轮轮试
+    const valid = await formRef.value?.validate().catch(() => false)
+    if (!valid) return
+    const f = form.value
     await register({
       username: f.username,
       nickname: f.nickname,
@@ -109,10 +141,10 @@ async function next() {
     // 失败后立刻换一张验证码：后端 `CaptchaServiceImpl#validate` 用的是
     // getAndDelete，无论校验成功还是失败，这个 captchaKey 都已作废。
     // 不刷新的话用户重试必然拿到「验证码错误」，会以为是自己眼花了。
-    f.captchaCode = ''
+    form.value.captchaCode = ''
     await loadCaptcha()
   } finally {
-    loading.value = false
+    submitting.value = false
   }
 }
 
@@ -149,31 +181,40 @@ loadCaptcha()
     </section>
 
     <!-- 表单 -->
-    <div class="form">
-      <div class="form__group">
-        <label class="nl-caption form__label">用户名</label>
+    <el-form
+      ref="formRef"
+      :model="form"
+      :rules="rules"
+      label-position="top"
+      class="form"
+      @submit.prevent="next"
+    >
+      <el-form-item label="用户名" prop="username">
         <el-input v-model="form.username" placeholder="4-20 位字母、数字或下划线" maxlength="20" size="large" />
-      </div>
-      <div class="form__group">
-        <label class="nl-caption form__label">昵称</label>
+      </el-form-item>
+      <el-form-item label="昵称" prop="nickname">
         <el-input v-model="form.nickname" placeholder="2-20 个字符，如「张大爷」" maxlength="20" size="large" />
-      </div>
-      <div class="form__group">
-        <label class="nl-caption form__label">手机号</label>
-        <el-input v-model="form.phone" placeholder="11 位手机号" maxlength="11" size="large" />
-      </div>
-      <div class="form__group">
-        <label class="nl-caption form__label">密码</label>
+      </el-form-item>
+      <el-form-item label="手机号" prop="phone">
+        <el-input
+          v-model="form.phone"
+          type="tel"
+          inputmode="numeric"
+          placeholder="11 位手机号"
+          maxlength="11"
+          size="large"
+        />
+      </el-form-item>
+      <el-form-item label="密码" prop="password">
         <el-input
           v-model="form.password"
           type="password"
-          placeholder="6-32 位，需同时含字母与数字"
+          placeholder="6-32 位，需同时包含字母与数字"
           show-password
           size="large"
         />
-      </div>
-      <div class="form__group">
-        <label class="nl-caption form__label">确认密码</label>
+      </el-form-item>
+      <el-form-item label="确认密码" prop="password2">
         <el-input
           v-model="form.password2"
           type="password"
@@ -181,9 +222,8 @@ loadCaptcha()
           show-password
           size="large"
         />
-      </div>
-      <div class="form__group">
-        <label class="nl-caption form__label">图形验证码</label>
+      </el-form-item>
+      <el-form-item label="图形验证码" prop="captchaCode">
         <div class="sms">
           <el-input v-model="form.captchaCode" placeholder="右侧 4 位" maxlength="4" size="large" />
           <div role="button" tabindex="0" class="sms__img" title="点击更换验证码" @keydown.enter.prevent="loadCaptcha" @keydown.space.prevent="loadCaptcha" @click="loadCaptcha">
@@ -191,19 +231,21 @@ loadCaptcha()
             <span v-else class="nl-caption nl-text-weak">点击刷新</span>
           </div>
         </div>
-      </div>
+      </el-form-item>
 
-      <el-checkbox v-model="form.agreed" class="form__agreed">
-        我已阅读并同意 <el-link type="primary" underline="never">《用户服务协议》</el-link>
-        与 <el-link type="primary" underline="never">《隐私政策》</el-link>
-      </el-checkbox>
+      <el-form-item prop="agreed">
+        <el-checkbox v-model="form.agreed" class="form__agreed">
+          我已阅读并同意 <el-link type="primary" underline="never">《用户服务协议》</el-link>
+          与 <el-link type="primary" underline="never">《隐私政策》</el-link>
+        </el-checkbox>
+      </el-form-item>
 
       <el-button
         type="primary"
         size="large"
         round
         class="form__submit"
-        :loading="loading"
+        :loading="submitting"
         @click="next"
       >
         {{ role === 'COMPANION' ? '注册并提交资质' : '注册' }}
@@ -213,7 +255,7 @@ loadCaptcha()
         已有账号？
         <el-link type="primary" underline="never" @click="router.push('/login')">立即登录</el-link>
       </p>
-    </div>
+    </el-form>
   </NlPageShell>
 </template>
 
@@ -265,14 +307,20 @@ loadCaptcha()
   flex-direction: column;
   gap: var(--nl-space-3);
 
-  &__group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  /* el-form-item 的间距与标签样式：保持与迁移前「label 在上」的观感一致 */
+  :deep(.el-form-item) {
+    margin-bottom: var(--nl-space-3);
   }
 
-  &__label {
+  :deep(.el-form-item__label) {
+    padding-bottom: 4px;
     color: var(--nl-text-2);
+    font-size: var(--nl-font-caption);
+    line-height: 1.4;
+  }
+
+  :deep(.el-form-item__error) {
+    padding-top: 2px;
   }
 
   &__agreed {

@@ -656,7 +656,8 @@ $sql = "SHOW COLUMNS FROM medication_task;"
    —— **有缓存就不补拉**；
 3. 巡检只 `localstorage-set nianglin_access_token`（换 token 不换 userInfo）→
    第 2 个账号开始，守卫一直拿着上一个账号的 `role`；
-4. `router/index.js:83-85` 角色不匹配 → 全部弹回 `ROLE_HOME[上一个角色]` = `/elder/home`；
+4. `router/index.js:83-85` 角色不匹配 → 全部弹回 `ROLE_HOME[上一个角色]` = `/elder/home`
+   （**注**：这是当时的版本。角色不匹配现在改跳 `/error/403`，见同文件守卫的越权分支）；
 5. 而 `elder/home` 文本很长，躲过了「文本过短」判据 → **判绿**。
 
 **两条防线（缺一不可）**：
@@ -774,8 +775,9 @@ ms-playwright 缓存里的 ffmpeg 二进制，缺失时**所有用例在 `newPag
 ### 13.2 结构
 
 - `e2e/fixtures/`：`auth.setup.js`（7 账号真实 UI 登录 → `storageState`）、`login.js`、`captcha.js`（Redis 取验证码明文）。
-- `e2e/helpers/`：`constants.js`（路由 / 种子 id / 阈值）、`api.js`（接口层直连）、`pageAudit.js`（**落地路径**断言 + console/接口收集）。
-- `e2e/specs/`：`01`…`13` 按模块分文件（`12-admin-responsive` / `13-client-mobile` 为响应式与移动形态补充）。
+- `e2e/helpers/`：`constants.js`（路由 / 种子 id / 阈值）、`api.js`（接口层直连）、`pageAudit.js`（**落地路径**断言 + console/接口收集）、`storage.js`（**与存储位置无关**地读登录态 —— 令牌可能在 `localStorage`（勾选「7 天内自动登录」，默认）或 `sessionStorage`（不勾选），只读一个会把「登录成功」误判成「登录失败」）。
+- `e2e/specs/`：`01`…`22` 按模块分文件（`12-admin-responsive` / `13-client-mobile` 为响应式与移动形态补充；`14`–`21` 为聊天 / 履约 / 老人健康 / 陪诊工作台 / 匹配 / 运营 / 数据闭环 / 智能助手；`22-ux-interaction` 为交互流程回归护栏）。
+  - `22-ux-interaction.spec.js` 覆盖：订单详情换单后数据刷新、换单后评价目标、下单换选就诊人、老人端三态、连点防重、越权 403、陪诊员入口、管理端姓名脱敏、重置密码文案与响应面。
 - `tools/e2e/fixture.py`：`snapshot / restore / verify` 三子命令（17 张被写表水位 + 6 张表白名单影子表 + Redis `order:seq`/`pwd:version` + 上传文件）。
 - 产物全落 `reports/playwright/`（`/reports/` 已 gitignore —— `storageState` 含真实 JWT，**严禁入库**）。
 

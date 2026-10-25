@@ -7,14 +7,22 @@ import lombok.experimental.Accessors;
 /**
  * 重置密码结果（{@code docs/api/08-admin.md} §7）。
  *
- * <p><b>刻意不回传默认口令</b>：默认口令由部署配置
- * （{@code nianglin.security.default-password} / 环境变量 {@code DEFAULT_RESET_PASSWORD}）决定，
- * 是「同一套部署内所有被重置账号共用」的固定串。把它放进管理员接口的响应体（以及由此产生的
- * 访问日志 / 前端调试记录）等于把该口令二次扩散；而它本就是固定值，管理员按既定初始口令
- * 告知用户即可，不需要接口回传。</p>
+ * <p><b>本 VO 永远不含任何口令</b>。这是仓库自己的安全验收判据
+ * （{@code docs/security/安全评估报告-2026-10-18.md} §8.2 P0-3：
+ * 「接口响应<b>不含口令字段</b>」；§10.2 F-04 落地明细：
+ * 「{@code ResetPasswordResultVO} 删除 {@code defaultPassword} 字段」）。</p>
  *
- * <p>因此本 VO 只回传「重置成功 + 已被置为需强制改密」这两个事实。
- * <b>绝不返回原密码</b>：库里是 BCrypt 哈希，本就不可逆。</p>
+ * <p>⚠️ 2026-10-25 的交互修复一度想加一个 {@code temporaryPassword} 字段，
+ * 好让管理员把新口令转交给用户 —— 那是<b>把已关闭的 F-04 重新打开</b>，已回退。
+ * 正确的做法是：口令由管理员在请求体里<b>输入</b>（{@code ResetPasswordDTO#newPassword}），
+ * 前端自己记得他刚输入了什么，转交动作完全在浏览器里完成，
+ * 服务端从头到尾不回传、也不记录任何口令。</p>
+ *
+ * <p>默认口令（{@code nianglin.security.default-password}）由部署配置经环境变量注入，
+ * 是「同一套部署内所有被重置账号共用」的固定串；它<b>绝不</b>随响应下发 ——
+ * 放进响应体等于二次扩散。</p>
+ *
+ * <p><b>绝不返回原密码</b>：库里是 BCrypt 哈希，本就不可逆。</p>
  *
  * @author 银龄伴诊团队
  * @since M9

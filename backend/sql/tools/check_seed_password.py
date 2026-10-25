@@ -47,6 +47,16 @@ ALLOWLIST = [
      "实测报告，如实记录当时的命中分布（§6.1）"),
     ("docs/plan/convergence-2026-09.md",
      "迭代计划，收尾标准里引用了检索串本身"),
+    # ---- 2026-10-25 补：安全评估报告与两个配置文件 ----------------------
+    ("backend/src/main/resources/application-dev.yml",
+     "dev profile 的兜底默认值（仅开发生效，prod profile 无此兜底）；"
+     "与同段的 id-card-key dev 兜底同性质，生产由 DEFAULT_RESET_PASSWORD 注入"),
+    ("backend/src/main/resources/application.yml",
+     "此处是**注释**：说明「不再在源码里留硬编码兜底（历史上 Nl@123456 会随代码分发到生产）」——"
+     "这是对历史事实的追述，不是可用的凭据；真正的取值在下一行 ${DEFAULT_RESET_PASSWORD}"),
+    ("docs/security/安全评估报告-2026-10-18.md",
+     "安全评估报告的 finding 正文（F-04 / F-12）必须**引用**当时的硬编码常量才能说明问题，"
+     "删掉引用会让报告失去证据；报告是历史记录，不是凭据载体"),
 ]
 
 # 下列文件即使命中也应忽略（非源码，grep 会误报）

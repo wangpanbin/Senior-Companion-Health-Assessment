@@ -52,16 +52,28 @@ export const useUserStore = defineStore('user', {
   },
 
   actions: {
-    /** 登录 */
+    /**
+     * 登录
+     *
+     * @param {object} payload
+     * @param {string} payload.username
+     * @param {string} payload.password
+     * @param {string} payload.captchaKey
+     * @param {string} payload.captchaCode
+     * @param {boolean} [payload.remember] 「7 天内自动登录」。true → 存 localStorage（跨浏览器重启），
+     *   false → 存 sessionStorage（关掉标签页即失效）。**不传则沿用当前存储位置**。
+     */
     async login(payload) {
-      const data = await loginApi(payload)
+      // remember 是纯前端的存储策略，**不能**发给后端（后端 LoginDTO 没有这个字段）
+      const { remember, ...body } = payload
+      const data = await loginApi(body)
       this.token = data.accessToken
-      setToken(data.accessToken)
+      setToken(data.accessToken, remember)
       if (data.refreshToken) {
-        setRefreshToken(data.refreshToken)
+        setRefreshToken(data.refreshToken, remember)
       }
       this.userInfo = data.userInfo
-      setUserInfo(data.userInfo)
+      setUserInfo(data.userInfo, remember)
       return data
     },
 

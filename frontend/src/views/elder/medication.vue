@@ -28,6 +28,14 @@ const toDateStr = (y, m, d) => `${y}-${pad2(m)}-${pad2(d)}`
 const profile = ref({})
 const elderId = computed(() => profile.value?.elderId ?? null)
 const hasElderId = computed(() => elderId.value != null)
+/**
+ * P1-4：profile 的加载态 / 失败态必须单独成相。
+ * 以前 loadProfile 的 catch 只写「拦截器已弹错」，页面立刻掉进「暂无用药数据」空态 ——
+ * 对老人来说那是**错误结论**（他其实有计划，只是接口还没回来或挂了）；
+ * 接口真挂掉时页面永久卡在空态、没有重试入口，还把老人误导去找家属。
+ */
+const profileLoading = ref(false)
+const profileError = ref(false)
 
 /* ===== Tab ===== */
 const tab = ref('today')
@@ -91,11 +99,16 @@ const plans = ref([])
 
 /* ===== 加载 ===== */
 async function loadProfile() {
+  profileLoading.value = true
   try {
     const data = await getProfile()
     if (data) profile.value = data
+    profileError.value = false
   } catch {
-    // 拦截器已弹错
+    // 拦截器已弹错；这里只落状态，让页面显示「加载失败 + 重试」，而不是伪装成空数据
+    profileError.value = true
+  } finally {
+    profileLoading.value = false
   }
 }
 
@@ -146,11 +159,17 @@ async function loadPlans() {
 
 watch([curYear, curMonth], () => { if (tab.value === 'calendar') loadCalendar() })
 
-onMounted(async () => {
+/**
+ * 整页重取：profile 是 elderId 的来源，profile 失败时后面的用药数据根本取不到，
+ * 所以「重试」要连带重跑，而不是只重试某一个 tab。
+ */
+async function reloadAll() {
   await loadProfile()
   if (!hasElderId.value) return // 确实推不出 elderId，全部降级为入口引导
   await Promise.all([loadToday(), loadCalendar(), loadPlans()])
-})
+}
+
+onMounted(reloadAll)
 
 /** 日历格子圆点配色：漏服 > 待服 > 已服 */
 function dotTone(info) {
@@ -175,9 +194,23 @@ const calSummary = computed(() => calData.value?.summary || null)
       <button :class="['med-tabs__btn', { 'is-active': tab === 'plan' }]" @click="tab = 'plan'">计划</button>
     </section>
 
-    <!-- 入口引导：无 elderId，所有用药数据无法取得 -->
+    <!--
+      入口引导：三态必须分开（P1-4）
+        1) 正在取 profile → 骨架占位，此时**不能**说「暂无数据」；
+        2) 取 profile 失败 → 网络错误态 + 就地重试；
+        3) 取到了但没有 elderId → 才是真的「没有用药数据」（由家属代为维护）。
+    -->
+    <NlSkeleton v-if="profileLoading" :count="3" />
     <NlEmpty
-      v-if="!hasElderId"
+      v-else-if="profileError"
+      type="network"
+      title="用药信息加载失败"
+      description="请检查网络后点击重试"
+      action-text="重试"
+      @action="reloadAll"
+    />
+    <NlEmpty
+      v-else-if="!hasElderId"
       type="empty"
       title="暂无用药数据"
       description="您的用药计划由家属代为维护，暂无可展示的用药信息"

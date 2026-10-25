@@ -193,7 +193,12 @@ function handleLogout(message) {
     type: 'warning',
     confirmButtonText: '去登录',
     callback: () => {
-      window.location.href = '/login'
+      // 带上当前路径：重新登录后能回到原来那一页，而不是一律回角色主页（P2-14）。
+      // 只取 pathname + search（不带 hash、不带任何身份信息），再 URL 编码进 query。
+      const current = `${window.location.pathname}${window.location.search}`
+      window.location.href = current.startsWith('/login')
+        ? '/login'
+        : `/login?redirect=${encodeURIComponent(current)}`
     }
   }).catch(() => {})
 }

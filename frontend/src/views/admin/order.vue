@@ -20,6 +20,7 @@ import {
 import { useResponsive } from '@/composables/useResponsive'
 import { listAllOrders } from '@/api/admin'
 import { formatDateTime, formatMoney } from '@/utils/format'
+import { usePagedList } from '@/composables/usePagedList'
 
 const filter = ref({ status: '', date: null, keyword: '' })
 
@@ -61,6 +62,17 @@ async function loadList() {
 }
 
 const isEmpty = computed(() => !loading.value && list.value.length === 0)
+
+/**
+ * 分页列表的共性逻辑（P1-8）：空态区分「本页已空」与「筛选无结果」、
+ * 写操作后必要时回退一页。7 个后台页共用同一份实现 —— 此前是逐字复制。
+ */
+const { pageDrained, onPrevPage } = usePagedList({
+  page,
+  isEmpty,
+  records: list,
+  reload: loadList
+})
 
 // 任意筛选条件变化都回到第一页重新查，避免停留在旧页码
 function onFilterChange() {
@@ -144,6 +156,15 @@ onMounted(loadList)
       title="订单列表加载失败"
       action-text="重试"
       @action="loadList"
+    />
+
+    <NlEmpty
+      v-else-if="pageDrained"
+      type="empty"
+      title="本页已空，上一页还有"
+      description="当前页码上没有订单，可返回上一页查看"
+      action-text="返回上一页"
+      @action="onPrevPage"
     />
 
     <NlEmpty

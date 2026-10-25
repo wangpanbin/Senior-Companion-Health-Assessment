@@ -15,19 +15,32 @@
  * M5 打卡的距离校验会被静默跳过（详见该常量文件的注释）。
  */
 import { ref, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlPageShell, NlStepHeader } from '@/components'
 import { HOSPITALS, DEPARTMENTS, estimateFee } from '@/constants/hospitals'
 import { useOrderDraftStore } from '@/store/modules/orderDraft'
+import { confirmThen } from '@/utils/confirm'
 
 const route = useRoute()
 const router = useRouter()
 const draft = useOrderDraftStore()
 
-/* ---------- 就诊人：优先用 step1 传的，刷新页面丢了就回 step1 ---------- */
-const elderId = Number(route.query.elderId) || draft.elderId
-if (!elderId) {
+/**
+ * 就诊人：优先用 step1 传来的 id。
+ *
+ * ⚠️ **必须是 computed，不能是 setup 期求值一次的常量**。
+ * 家属在 step1 选老人 A → step2 → 回 step1 改选老人 B → 再下一步：
+ * 组件被复用（keep-alive，key 相同），常量仍停在 A → **订单下给了错误的人**，
+ * 而 step2/step3 都没有就诊人提示，用户完全无从察觉。
+ * 给错误的人下单是不可逆的 —— 这是本项目里后果最重的一类交互缺陷。
+ */
+const elderId = computed(() => Number(route.query.elderId) || draft.elderId || 0)
+
+/** 就诊人姓名（step1 写入草稿时的脱敏名，如「张*海」） */
+const elderName = computed(() => draft.elderName || '')
+
+if (!elderId.value) {
   // 直接访问 /family/order/step2（比如刷新后 query 丢了）时不能瞎猜一个老人，
   // 否则会替用户给错误的人下单 —— 这是不可逆的动作，必须退回去重选
   ElMessage.warning('请先选择就诊人')
@@ -37,8 +50,10 @@ if (!elderId) {
 const hospitals = HOSPITALS
 const departments = DEPARTMENTS
 
-// 默认选中列表第一家医院；若 draft 里已有上次的选择（从 step3 退回）则沿用
-const selectedHospital = ref(draft.hospital?.code || HOSPITALS[0].code)
+// ⚠️ 刷新后**不预选**第一家医院：下单是要花钱的不可逆动作，
+// 静默选中一家医院会让用户以为是自己选的，很可能给错的医院下单。
+// draft 里已有选择（从 step3 退回 / 中途折返）则沿用。
+const selectedHospital = ref(draft.hospital?.code || '')
 const selectedDepartment = ref(draft.department || '')
 const selectedDate = ref(0)
 const selectedSlot = ref(null)
@@ -46,6 +61,7 @@ const selectedSlot = ref(null)
 /* ====== 科室选择 ====== */
 function pickDepartment(d) {
   selectedDepartment.value = d
+  syncDraft()
 }
 
 /* ====== 日期 7 天滚动 ====== */
@@ -105,8 +121,26 @@ const slotDisabled = computed(() => {
   return { map, allOff: slots.every((s) => map[s.idx]) }
 })
 
+/**
+ * 把当前选择同步进下单草稿。
+ *
+ * <p>为什么「选中即写」：家属可能中途回 step1 改选就诊人再回来，
+ * 之前选的医院 / 科室 / 时段不该丢。</p>
+ *
+ * <p>⚠️ 草稿只存内存（防共用手机串号，见 {@code store/modules/orderDraft.js}），
+ * 页面刷新就没了 —— 这是刻意的隐私取舍，不是缺陷。</p>
+ */
+function syncDraft() {
+  const hospital = hospitals.find((h) => h.code === selectedHospital.value)
+  const date = dates.value[selectedDate.value]
+  const slot = slots.find((s) => s.idx === selectedSlot.value)
+  const visitTime = date && slot ? `${date.iso} ${slot.label}:00` : ''
+  draft.setVisit(hospital, selectedDepartment.value, visitTime)
+}
+
 function pickHospital(h) {
   selectedHospital.value = h.code
+  syncDraft()
 }
 
 function pickDate(idx) {
@@ -114,11 +148,13 @@ function pickDate(idx) {
   // 切换日期后原来的时段可能已失效（比如从明天切回今天），清掉避免提交到过去的时间
   const disabled = slotDisabled.value.map?.[selectedSlot.value]
   if (disabled) selectedSlot.value = null
+  syncDraft()
 }
 
 function pickSlot(s) {
   if (slotDisabled.value.map?.[s.idx]) return
   selectedSlot.value = s.idx
+  syncDraft()
 }
 
 /** 当前选择对应的预估服务费（仅展示，提交时不传 fee 让后端算） */
@@ -131,6 +167,11 @@ const previewFee = computed(() => {
   return estimateFee(dt)
 })
 
+/** 回 step1 换就诊人（step2 / step3 都要让用户看得见「这一单是给谁下的」） */
+function changeElder() {
+  router.push('/family/order/step1')
+}
+
 function next() {
   if (!selectedHospital.value) {
     ElMessage.warning('请选择医院')
@@ -140,12 +181,17 @@ function next() {
     ElMessage.warning('请选择就诊科室')
     return
   }
-  if (selectedDate.value == null) {
-    ElMessage.warning('请选择日期')
-    return
-  }
   if (!selectedSlot.value) {
     ElMessage.warning('请选择时段')
+    return
+  }
+
+  // ⚠️ 就诊人与 step1 写入草稿的必须一致。
+  // 不一致说明中途换过人但草稿没同步 —— 宁可退回 step1 让他重选，
+  // 也不能给错误的人下单。
+  if (elderId.value !== draft.elderId) {
+    ElMessage.warning('就诊人已变更，请重新选择就诊人')
+    router.replace('/family/order/step1')
     return
   }
 
@@ -155,16 +201,55 @@ function next() {
   // 后端 visitTime 是 LocalDateTime，Jackson 默认按 "yyyy-MM-dd HH:mm:ss" 反序列化
   const visitTime = `${date.iso} ${slot.label}:00`
 
-  draft.setElder(elderId, draft.elderName)
+  draft.setElder(elderId.value, draft.elderName)
   draft.setVisit(hospital, selectedDepartment.value, visitTime)
 
-  router.push('/family/order/step3')
+  // 把就诊人 id 带到 step3：step3 提交前要拿它与草稿交叉核对
+  router.push({ path: '/family/order/step3', query: { elderId: elderId.value } })
 }
+
+/**
+ * 离开 step2 前的确认。
+ *
+ * <p>草稿不完整就离开 = 用户填的医院 / 科室 / 时段白填了。
+ * 回 step1 换就诊人是正常流程，不拦。</p>
+ */
+onBeforeRouteLeave(async (to) => {
+  if (to.path === '/family/order/step1') return true
+  if (draft.isComplete) return true
+  // confirmThen 把「用户是否点了确认」变成布尔：点「继续填写」返回 false → 留在本页
+  const ok = await confirmThen(() =>
+    ElMessageBox.confirm(
+      '本次填写的就诊信息还不完整，离开将丢失。确定离开吗？',
+      '确认离开',
+      { confirmButtonText: '确定离开', cancelButtonText: '继续填写', type: 'warning' }
+    )
+  )
+  if (!ok) return false
+  // 用户明确要放弃 → 清掉草稿，避免残留的选择漏进下一单
+  draft.reset()
+  return true
+})
 </script>
 
 <template>
   <NlPageShell title="选择医院与时间" has-cta>
     <NlStepHeader :model-value="2" />
+
+    <!--
+      就诊人条：这一单是给谁下的，必须一直看得见。
+      ⚠️ 此前 step2 完全不展示就诊人 —— 用户在这里无从确认「我正在给谁下单」，
+      而「给错误的人下单」是不可逆的。
+    -->
+    <section class="block">
+      <div class="elder-bar">
+        <div class="elder-bar__main">
+          <span class="nl-caption nl-text-muted">就诊人</span>
+          <span class="nl-h3">{{ elderName || '未选择' }}</span>
+        </div>
+        <el-button text type="primary" @click="changeElder">更换</el-button>
+      </div>
+    </section>
 
     <!-- 医院列表 -->
     <section class="block">
@@ -302,6 +387,25 @@ v-for="s in slots" :key="s.idx" role="button" tabindex="0"
 
 .slot-tip {
   margin: -8px 0 var(--nl-space-2);
+}
+
+/* ---------- 就诊人条 ---------- */
+.elder-bar {
+  display: flex;
+  gap: var(--nl-space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--nl-space-3);
+  background: var(--nl-primary-ghost);
+  border: 1px solid var(--nl-primary);
+  border-radius: var(--nl-radius-card);
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
 }
 
 /* ---------- 医院 ---------- */

@@ -50,6 +50,21 @@ const hallError = ref(false)
 
 const filter = ref('all') // all / high
 
+/**
+ * 「高额」阈值（¥150）。
+ * 筛选按钮上的「高额（≥150）」与这里的过滤条件同源，避免两处各写一个数字。
+ */
+const HIGH_FEE = 150
+
+/**
+ * 抢单 in-flight 锁（P1-5）。
+ *
+ * 记的是**正在抢的那一单**（不是布尔开关）：接单走乐观锁，
+ * 并发下只有一次成功，但连点会先发出多个请求，白白多打后端几次。
+ * 值同时用来给对应那颗按钮转圈。
+ */
+const grabbingId = ref(null)
+
 /* ================================================================== *
  * 大厅排序（V3.4 · T9）
  *
@@ -131,8 +146,38 @@ const certText = computed(() => {
 })
 
 const filtered = computed(() => {
-  if (filter.value === 'high') return orders.value.filter((o) => Number(o.fee) >= 150)
+  if (filter.value === 'high') return orders.value.filter((o) => Number(o.fee) >= HIGH_FEE)
   return orders.value
+})
+
+/**
+ * 当前页里的高额单数量（与筛选状态无关）。
+ * 用于页脚把「本页显示了几条 / 其中高额几条」说清楚 ——
+ * 「高额」只作用于当前页，页脚不给这个数，用户会以为全量只有这么多。
+ */
+const highCount = computed(() => orders.value.filter((o) => Number(o.fee) >= HIGH_FEE).length)
+
+/**
+ * 空态文案（P1-10）。
+ *
+ * 旧文案是「附近用户暂时没有陪诊需求，请稍后下拉刷新」，两个问题：
+ *   ① 全站**没有实现下拉刷新**（grep pull-to-refresh 零命中），
+ *      这句话把用户引到一个不存在的交互上；
+ *   ② 「高额」筛选只过滤**当前页**，当前页没有高额单 ≠ 附近没有陪诊需求
+ *      —— 第 2 页可能全是高额单，说「附近没有需求」是误报。
+ * 所以按「这一页到底有没有单」分两种说法，都指向页面上真实存在的「刷新」按钮。
+ */
+const emptyState = computed(() => {
+  if (!orders.value.length) {
+    return {
+      title: '暂无订单',
+      description: '附近用户暂时没有陪诊需求，可以点上方「刷新」再看看'
+    }
+  }
+  return {
+    title: '本页没有高额需求',
+    description: '当前这一页没有高额单，其他页可能有 —— 点「全部」看全部，或点上方「刷新」换一批'
+  }
 })
 
 const isBlocked = computed(() => ready.value && certStatus.value !== 'APPROVED')
@@ -182,17 +227,23 @@ function switchSort(value) {
 }
 
 async function grab(o) {
-  if (certStatus.value !== 'APPROVED') {
-    ElMessage.warning('资质未通过，暂不可接单')
-    return
-  }
+  // ⚠️ in-flight 锁必须在第一个 await 之前**同步**置位：
+  //    置在 await 之后，两次快速点击会一起穿过 await，锁形同虚设。
+  if (grabbingId.value !== null) return
+  grabbingId.value = o.id
   try {
+    if (certStatus.value !== 'APPROVED') {
+      ElMessage.warning('资质未通过，暂不可接单')
+      return
+    }
     await acceptOrder(o.id)
     ElMessage.success('接单成功，前往订单执行')
     router.push(`/companion/execute/${o.id}`)
   } catch {
     // 拦截器已弹错（乐观锁 3003 / 资质 2003 等）；刷新列表即可
     loadHall()
+  } finally {
+    grabbingId.value = null
   }
 }
 
@@ -306,6 +357,13 @@ onMounted(async () => {
         </button>
       </div>
 
+      <!-- 列表工具条：总数口径 + 真的刷新按钮
+           （全站没有实现下拉刷新，所以空态文案不再把用户引去「下拉刷新」） -->
+      <div class="list-tools">
+        <span class="nl-caption nl-text-muted">共 {{ total }} 单待接</span>
+        <el-button text size="small" :loading="loading" @click="loadHall">刷新</el-button>
+      </div>
+
       <NlSkeleton v-if="loading" :count="3" class="list-pad" />
 
       <NlEmpty
@@ -319,8 +377,8 @@ onMounted(async () => {
       <NlEmpty
         v-else-if="!filtered.length"
         type="empty"
-        title="暂无订单"
-        description="附近用户暂时没有陪诊需求，请稍后下拉刷新"
+        :title="emptyState.title"
+        :description="emptyState.description"
       />
 
       <ul v-else class="orders">
@@ -354,14 +412,22 @@ onMounted(async () => {
               <span class="order__addr">{{ o.address }}</span>
             </li>
           </ul>
-          <el-button type="primary" round size="large" class="order__grab" @click="grab(o)">
+          <el-button
+            type="primary"
+            round
+            size="large"
+            class="order__grab"
+            :loading="grabbingId === o.id"
+            :disabled="grabbingId !== null && grabbingId !== o.id"
+            @click="grab(o)"
+          >
             抢 单
           </el-button>
         </li>
       </ul>
 
       <p v-if="!loading && filtered.length" class="nl-caption nl-text-weak list-foot">
-        共 {{ total }} 单待接
+        已显示 {{ filtered.length }} 条，其中高额 {{ highCount }} 条
       </p>
     </template>
 
@@ -427,12 +493,16 @@ onMounted(async () => {
             <span class="nl-caption nl-text-muted">共 {{ total }} 单</span>
           </div>
         </template>
+        <!-- 真的刷新按钮：全站没有实现下拉刷新，空态文案不再指向那个不存在的交互 -->
+        <template #extra>
+          <el-button text size="small" :loading="loading" @click="loadHall">刷新</el-button>
+        </template>
 
         <div class="filters filters--desktop">
           <button
             v-for="f in [
               { key: 'all', label: '全部' },
-              { key: 'high', label: '高额（≥150）' }
+              { key: 'high', label: `高额（≥${HIGH_FEE}）` }
             ]"
             :key="f.key"
             :class="['filters__btn', { 'is-active': filter === f.key }]"
@@ -469,8 +539,8 @@ onMounted(async () => {
         <NlEmpty
           v-else-if="!filtered.length"
           type="empty"
-          title="暂无订单"
-          description="附近用户暂时没有陪诊需求，请稍后刷新"
+          :title="emptyState.title"
+          :description="emptyState.description"
         />
 
         <ul v-else class="desktop-orders">
@@ -487,9 +557,21 @@ onMounted(async () => {
               </div>
             </div>
             <span class="is-num desktop-orders__fee">{{ formatMoney(o.fee) }}</span>
-            <el-button type="primary" round @click="grab(o)">抢单</el-button>
+            <el-button
+              type="primary"
+              round
+              :loading="grabbingId === o.id"
+              :disabled="grabbingId !== null && grabbingId !== o.id"
+              @click="grab(o)"
+            >
+              抢单
+            </el-button>
           </li>
         </ul>
+
+        <p v-if="!loading && filtered.length" class="nl-caption nl-text-weak list-foot">
+          已显示 {{ filtered.length }} 条，其中高额 {{ highCount }} 条
+        </p>
       </NlCard>
     </template>
   </NlDesktopShell>
@@ -500,6 +582,16 @@ onMounted(async () => {
 
 .list-pad {
   padding: 0 var(--nl-gutter);
+}
+
+/* 列表工具条：总数 + 刷新按钮 */
+.list-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nl-space-2);
+  padding: 0 var(--nl-gutter);
+  margin-bottom: var(--nl-space-3);
 }
 
 .cert-bar {

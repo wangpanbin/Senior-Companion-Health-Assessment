@@ -23,6 +23,16 @@ const loading = ref(false)
 const loadError = ref(false)
 const total = ref(0)
 
+/**
+ * 分页（P1-9）。
+ *
+ * 此前固定取 size=50，页面却没有分页控件 —— 订单超 50 的用户永远看不到第 51 条以后，
+ * 页脚却写着「共 N 单」，那是个骗人的总数。现在把分页接上。
+ */
+const page = ref(1)
+const size = 50
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size)))
+
 /** tab key 即后端 OrderStatus 枚举名（'all' 除外） */
 const tabs = [
   { key: 'all', label: '全部' },
@@ -35,7 +45,7 @@ const tabs = [
 async function loadOrders() {
   loading.value = true
   try {
-    const params = { page: 1, size: 50 }
+    const params = { page: page.value, size }
     if (tab.value !== 'all') params.status = tab.value
     const data = await listMyOrders(params)
     orders.value = data?.records || []
@@ -50,7 +60,17 @@ async function loadOrders() {
   }
 }
 
-watch(tab, loadOrders)
+/** 切 tab 必须回到第 1 页：原页码在新 tab 下可能已经越界 */
+watch(tab, () => {
+  page.value = 1
+  loadOrders()
+})
+
+/** 分页翻页 */
+function onPageChange(p) {
+  page.value = p
+  loadOrders()
+}
 
 function view(o) {
   if (o.status === 'PENDING') {
@@ -112,8 +132,19 @@ onMounted(loadOrders)
       </li>
     </ul>
 
+    <!-- 分页：接在列表之后，第 51 单往后不再不可达 -->
+    <el-pagination
+      v-if="total > size"
+      class="order-pager"
+      layout="prev, pager, next"
+      :total="total"
+      :page-size="size"
+      :current-page="page"
+      @current-change="onPageChange"
+    />
+
     <p v-if="!loading && orders.length" class="nl-caption nl-text-weak list-foot">
-      共 {{ total }} 单
+      共 {{ total }} 单<template v-if="total > size"> · 第 {{ page }} / {{ totalPages }} 页</template>
     </p>
 
     <template #tabbar>
@@ -202,5 +233,11 @@ onMounted(loadOrders)
 .list-foot {
   margin: var(--nl-space-4) 0 0;
   text-align: center;
+}
+
+/* 分页控件居中 */
+.order-pager {
+  justify-content: center;
+  margin-top: var(--nl-space-3);
 }
 </style>

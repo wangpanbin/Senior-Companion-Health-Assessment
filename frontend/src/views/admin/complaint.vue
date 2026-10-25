@@ -16,6 +16,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
 import { listComplaints, handleComplaint } from '@/api/admin'
 import { formatDateTime, labelOf, COMPLAINT_STATUS_TEXT } from '@/utils/format'
+import { confirmThen } from '@/utils/confirm'
+import { usePagedList } from '@/composables/usePagedList'
 
 const filter = ref({ status: '' })
 
@@ -47,6 +49,17 @@ async function loadList() {
 
 const isEmpty = computed(() => !loading.value && list.value.length === 0)
 
+/**
+ * 分页列表的共性逻辑（P1-8）：空态区分「本页已空」与「筛选无结果」、
+ * 写操作后必要时回退一页。7 个后台页共用同一份实现 —— 此前是逐字复制。
+ */
+const { pageDrained, onPrevPage, reloadAfterMutate } = usePagedList({
+  page,
+  isEmpty,
+  records: list,
+  reload: loadList
+})
+
 function onFilterChange() {
   page.value = 1
   loadList()
@@ -67,6 +80,14 @@ const handleItem = ref(null)
 const handleStatus = ref('PROCESSING')
 const handleResult = ref('')
 const penaltyToTarget = ref(false)
+/**
+ * 确认处理的 in-flight 锁（P1-5）。
+ *
+ * <p>连点「确认处理」会提交两次：第一次还在途时，第二次请求已经打出去，
+ * 后端对同一投诉二次处理返回业务错误，拦截器把它弹成错误 toast ——
+ * 用户看到「成功 + 报错」双提示，以为系统出了问题。</p>
+ */
+const handleSubmitting = ref(false)
 
 function openHandle(c) {
   handleItem.value = c
@@ -88,19 +109,36 @@ async function submitHandle() {
     ElMessage.warning('请填写处理结果说明（至少 10 字）')
     return
   }
-  await ElMessageBox.confirm(
-    `确认将投诉「${handleItem.value.orderNo}」处理为「${statusText(handleStatus.value)}」？`,
-    '确认处理',
-    { confirmButtonText: '确认', type: 'warning' }
-  )
-  await handleComplaint(handleItem.value.id, {
-    status: handleStatus.value,
-    handleResult: result,
-    penaltyToTarget: penaltyToTarget.value
-  })
-  ElMessage.success('已更新投诉处理状态')
-  handleVisible.value = false
-  loadList()
+  if (!handleItem.value) return
+  // ⚠️ in-flight 锁必须在第一个 await 之前同步置位（P1-5）：
+  //    置位晚于 await 的话，两次连点会一起穿过 await，锁形同虚设。
+  if (handleSubmitting.value) return
+  handleSubmitting.value = true
+  try {
+    // confirmThen 把「用户是否点了确认」变成布尔：取消时静默返回 false，不发请求（P1-12）
+    const confirmed = await confirmThen(() =>
+      ElMessageBox.confirm(
+        `确认将投诉「${handleItem.value.orderNo}」处理为「${statusText(handleStatus.value)}」？`,
+        '确认处理',
+        { confirmButtonText: '确认', type: 'warning' }
+      )
+    )
+    if (!confirmed) return
+
+    const complaintId = handleItem.value.id
+    await handleComplaint(complaintId, {
+      status: handleStatus.value,
+      handleResult: result,
+      penaltyToTarget: penaltyToTarget.value
+    })
+    ElMessage.success('已更新投诉处理状态')
+    handleVisible.value = false
+    await reloadAfterMutate()
+  } catch {
+    // 后端报错由 request.js 拦截器统一弹提示，这里不重复弹
+  } finally {
+    handleSubmitting.value = false
+  }
 }
 
 /** 列定义（desktop 9 列；mobile 关键 4 字段：编号 / 家属 / 状态 / 操作） */
@@ -145,6 +183,15 @@ onMounted(loadList)
       title="投诉记录加载失败"
       action-text="重试"
       @action="loadList"
+    />
+
+    <NlEmpty
+      v-else-if="pageDrained"
+      type="empty"
+      title="本页已空，上一页还有"
+      description="刚处理掉的记录已不在本页，可返回上一页继续处理"
+      action-text="返回上一页"
+      @action="onPrevPage"
     />
 
     <NlEmpty
@@ -234,7 +281,7 @@ onMounted(loadList)
 
     <template #footer>
       <el-button @click="handleVisible = false">取消</el-button>
-      <el-button type="primary" @click="submitHandle">确认处理</el-button>
+      <el-button type="primary" :loading="handleSubmitting" @click="submitHandle">确认处理</el-button>
     </template>
   </el-dialog>
 </template>

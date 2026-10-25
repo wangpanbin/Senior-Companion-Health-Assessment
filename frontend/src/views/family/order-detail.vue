@@ -29,7 +29,7 @@
  *
  * - 形态自适应：正文只写一份，由 NlPageShell 决定套 Mobile 还是 Desktop 壳（ADR-0007）
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlPageShell, NlCard, NlStatusChip, NlTimeline, NlAvatar, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
@@ -44,11 +44,18 @@ import {
   waitMinutesText,
   canUrgeOrder
 } from '@/utils/fulfillment'
+import { promptThen } from '@/utils/confirm'
 
 const route = useRoute()
 const router = useRouter()
 
-const orderId = route.params.id
+/**
+ * 订单 id 必须是**响应式**的：Vue Router 4 在「同一条路由记录只换 params」时会
+ * 复用组件实例（onMounted 不再触发）。快照成常量就会出现「URL 是 B、页面还显示 A」，
+ * 家属据此点的「去评价 / 取消」会作用到错误的订单上。
+ * 范式参考 views/family/elder-health.vue 与 composables/useOrderInfo.js。
+ */
+const orderId = computed(() => route.params.id)
 const order = ref(null)
 const statusLogs = ref([])
 const checkins = ref([])
@@ -98,7 +105,7 @@ async function loadCandidates() {
   recommendLoading.value = true
   recommendError.value = false
   try {
-    const data = await recommendCompanions(orderId, { limit: 10 })
+    const data = await recommendCompanions(orderId.value, { limit: 10 })
     candidates.value = data?.candidates || []
     recommendTotal.value = data?.total ?? candidates.value.length
   } catch {
@@ -113,23 +120,28 @@ async function loadCandidates() {
 let socket = null
 
 async function loadAll() {
+  // 记下本次请求针对的订单：请求在途时 URL 可能又换了订单，回来时要能判断响应是否过期
+  const target = orderId.value
   try {
     // 四个请求互不依赖，并发拉取，减少首屏等待
     const [detail, logs, checks, rev] = await Promise.all([
-      getOrder(orderId),
-      getOrderTimeline(orderId).catch(() => []),
-      listCheckins(orderId).catch(() => []),
-      getReviewByOrder(orderId).catch(() => null)
+      getOrder(target),
+      getOrderTimeline(target).catch(() => []),
+      listCheckins(target).catch(() => []),
+      getReviewByOrder(target).catch(() => null)
     ])
+    // 过期响应直接丢弃：否则会把上一单的数据挂在当前 URL 下（用户以为在看 B，其实在看 A）
+    if (String(target) !== String(orderId.value)) return
     order.value = detail
     statusLogs.value = logs || []
     checkins.value = checks || []
     review.value = rev || null
     loadError.value = false
   } catch {
+    if (String(target) !== String(orderId.value)) return
     loadError.value = true
   } finally {
-    loading.value = false
+    if (String(target) === String(orderId.value)) loading.value = false
   }
   // 候选推荐依赖详情里的订单状态（只有「待接单」才需要），
   // 故放在详情之后单独拉；它失败只降级候选区，不牵连页面其余部分。
@@ -160,7 +172,7 @@ const fulfillment = computed(() => {
 async function doUrge() {
   urging.value = true
   try {
-    await urgeOrder(orderId, {})
+    await urgeOrder(orderId.value, {})
     ElMessage.success('已催促，陪诊员会尽快接单')
     await loadAll()
   } catch {
@@ -286,7 +298,7 @@ const canComplaint = computed(() =>
 function openSocket() {
   if (!isLive.value) return
   try {
-    socket = connectProgressSocket(orderId, {
+    socket = connectProgressSocket(orderId.value, {
       onStatus: (s) => {
         liveConnected.value = s === 'open'
       },
@@ -304,12 +316,38 @@ function openSocket() {
   }
 }
 
+/** 断开推送订阅（换订单 / 组件卸载都要走这里） */
+function closeSocket() {
+  socket?.close()
+  socket = null
+  liveConnected.value = false
+}
+
+/**
+ * URL 里的订单 id 与页面正在展示的订单 id 是否一致。
+ *
+ * 路由复用组件实例时存在一个竞态窗口：URL 已经换成 B，详情还没回来，
+ * 页面显示的仍是 A。此时若执行写操作（取消订单），作用对象就会跑偏。
+ * 一致性以「页面展示的那个订单」为准 —— 用户看到什么，他就以为在操作什么。
+ */
+function isDisplayedOrderCurrent() {
+  const shown = order.value?.id
+  // 详情里没有 id 时没有可比对的基准，不做拦截（避免把用户锁死在页面上）
+  if (shown == null) return true
+  return String(shown) === String(orderId.value)
+}
+
 /* ==================== 操作 ==================== */
 
 async function doCancel() {
-  let reason
-  try {
-    const { value } = await ElMessageBox.prompt(
+  // 二次校验：页面显示的订单必须就是 URL 指向的订单，否则拒绝提交
+  if (!isDisplayedOrderCurrent()) {
+    ElMessage.warning('页面已切换到其它订单，请刷新后重试')
+    return
+  }
+  // promptThen 返回用户输入的文本；用户点「再想想」时返回 null（不发请求）
+  const reason = await promptThen(() =>
+    ElMessageBox.prompt(
       '取消原因会同时展示给陪诊员，请简单说明（如：老人临时身体不适）。',
       '取消订单',
       {
@@ -320,14 +358,11 @@ async function doCancel() {
         type: 'warning'
       }
     )
-    reason = value.trim()
-  } catch {
-    // 用户点了「再想想」
-    return
-  }
+  )
+  if (reason == null) return
 
   try {
-    await cancelOrder(orderId, { reason })
+    await cancelOrder(orderId.value, { reason: reason.trim() })
     ElMessage.success('订单已取消')
     await loadAll()
   } catch {
@@ -336,22 +371,33 @@ async function doCancel() {
 }
 
 function goReview() {
-  router.push(`/family/order/${orderId}/review`)
+  router.push(`/family/order/${orderId.value}/review`)
 }
 function goComplaint() {
-  router.push(`/family/order/${orderId}/complaint`)
+  router.push(`/family/order/${orderId.value}/complaint`)
 }
 
-onMounted(async () => {
+/**
+ * 加载 + 重连推送。切换订单时必须先断开旧订阅再按新订单重连，
+ * 否则会出现「推送的是 A、页面看的是 B」。
+ */
+async function loadAndConnect() {
+  closeSocket()
+  // 换订单时重新点亮骨架：旧订单的内容不能继续挂在新的 URL 下
+  loading.value = true
   await loadAll()
   openSocket()
-})
+}
+
+onMounted(loadAndConnect)
+
+// 同一条路由记录只换 params 时组件实例会被复用，onMounted 不再触发 —— 这里补上重拉
+watch(orderId, loadAndConnect)
 
 onBeforeUnmount(() => {
   // 必须主动关闭：不关的话离开页面后 WebSocket 还挂着，
   // 用户来回进出几次就会堆出好几条订阅，服务端侧每个会话都占资源
-  socket?.close()
-  socket = null
+  closeSocket()
 })
 </script>
 
@@ -371,7 +417,7 @@ onBeforeUnmount(() => {
     <template v-else>
       <NlNoticeBar :tone="liveConnected ? 'primary' : 'warning'">
         <template v-if="liveConnected">进度实时推送中 · 陪诊员每完成一个节点会即时通知</template>
-        <template v-else-if="isLive">实时推送未连接 · 下拉可刷新最新进度</template>
+        <template v-else-if="isLive">实时推送未连接 · 进度更新可能有延迟，请稍后重新进入页面查看</template>
         <template v-else>本服务为线下结算，平台不代收费用</template>
       </NlNoticeBar>
 
@@ -584,10 +630,14 @@ onBeforeUnmount(() => {
         </ul>
       </NlCard>
 
-      <!-- 操作栏 -->
+      <!-- 操作栏
+           视觉层级（P2-6）：「取消订单」是破坏性动作 → danger；
+           「我要投诉」是次要入口 → plain（弱边框白底）；
+           「去评价」是本页唯一主 CTA → primary 实心。
+           三个按钮原先视觉权重完全一样，用户分不清该点哪个。 -->
       <section class="actions">
-        <el-button v-if="canCancel" round @click="doCancel">取消订单</el-button>
-        <el-button v-if="canComplaint" round @click="goComplaint">我要投诉</el-button>
+        <el-button v-if="canCancel" type="danger" round @click="doCancel">取消订单</el-button>
+        <el-button v-if="canComplaint" plain round @click="goComplaint">我要投诉</el-button>
         <el-button v-if="canReview" type="primary" round @click="goReview">去评价</el-button>
       </section>
     </template>

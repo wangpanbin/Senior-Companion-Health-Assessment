@@ -55,8 +55,17 @@ export function enableUser(userId, data = {}) {
 /**
  * 重置密码。
  *
- * 后端契约（{@code docs/api/08-admin.md} §7）：{@code remark} 必填，
- * 且是审计字段（谁、为什么重置）—— 调用方必须经表单/prompt 收集原因再传入。
+ * 后端契约（{@code docs/api/08-admin.md} §7）：
+ * - {@code remark} 必填，且是审计字段（谁、为什么重置）—— 调用方必须经表单收集原因再传入。
+ * - {@code newPassword} 可选：管理员指定的新口令（6-32 位且需同时包含字母与数字）。
+ *   传了则用户用该口令登录，由管理员线下/电话转交（平台没有短信通道）；
+ *   不传则沿用部署配置的默认口令。
+ *
+ * ⚠️ **响应体不含任何口令字段**（安全验收判据，见
+ * {@code docs/security/安全评估报告-2026-10-18.md} §8.2 P0-3）。
+ * 管理员要转交的那份口令由**前端**用他刚输入的值展示，服务端不回传、不记录。
+ *
+ * ⚠️ 平台没有短信通道，调用方**不得**声称口令已送达用户。
  */
 export function resetUserPassword(userId, data) {
   return request({ url: `/admin/user/${userId}/reset-password`, method: 'post', data })

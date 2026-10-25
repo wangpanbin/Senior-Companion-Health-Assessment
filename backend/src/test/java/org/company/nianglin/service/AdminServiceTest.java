@@ -30,6 +30,7 @@ import org.company.nianglin.service.support.OperLogRecorderImpl;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.vo.AuditDecisionResultVO;
+import org.company.nianglin.vo.ResetPasswordResultVO;
 import org.company.nianglin.vo.UserStatusResultVO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,8 +44,12 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -365,6 +370,78 @@ class AdminServiceTest {
         // 凭据换人了，旧令牌必须立即失效
         verify(tokenStore).bumpPasswordVersion(TARGET_USER_ID);
         verify(operLogMapper).insert(any(AdminOperLog.class));
+    }
+
+    @Test
+    @DisplayName("重置密码 · 走默认口令：响应与站内信都不含口令，也不承诺「默认密码」")
+    void resetPasswordShouldNotLeakDefaultPassword() {
+        given(sysUserMapper.selectById(TARGET_USER_ID))
+                .willReturn(user(TARGET_USER_ID, RoleConstants.FAMILY, "NORMAL"));
+        given(securityProperties.getDefaultPassword()).willReturn("Nl@123456");
+        given(passwordEncoder.encode(anyString())).willReturn("$2a$10$0123456789abcdefghijklmnopqrstuv");
+
+        ResetPasswordResultVO vo = service.resetPassword(TARGET_USER_ID, resetDto("家属电话申请"));
+
+        // ⚠️ 响应体**不含任何口令字段** —— 这是仓库的安全验收判据
+        // （docs/security/安全评估报告-2026-10-18.md §8.2 P0-3、§10.2 F-04）。
+        // 管理员要转交口令给用户，由前端用他刚输入的值展示，服务端不回传。
+        assertFalse(vo.toString().contains("Nl@123456"),
+                "响应体不得含口令明文：" + vo);
+        assertFalse(hasFieldNamed(vo, "password"), "响应体不得含任何口令字段：" + vo);
+        assertFalse(hasFieldNamed(vo, "temporaryPassword"), "响应体不得含任何口令字段：" + vo);
+
+        // 站内信是落库数据，正文含口令等于把口令长期写进数据库
+        ArgumentCaptor<Map<String, Object>> paramsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(messageService).send(any(), any(), any(), paramsCaptor.capture());
+        String content = String.valueOf(paramsCaptor.getValue().get("content"));
+        assertTrue(content.contains("请联系管理员"),
+                "走默认口令时用户手里没有任何口令来源，站内信必须让用户联系管理员：" + content);
+        assertFalse(content.contains("管理员告知的新密码"),
+                "走默认口令时不存在「管理员告知的新密码」这回事，不能这样写：" + content);
+        assertFalse(content.contains("Nl@123456"),
+                "站内信正文绝不能出现口令明文：" + content);
+    }
+
+    @Test
+    @DisplayName("重置密码 · 管理员自设口令：用它落库，但响应不回显")
+    void resetPasswordShouldApplyAdminProvidedPasswordWithoutEchoingIt() {
+        given(sysUserMapper.selectById(TARGET_USER_ID))
+                .willReturn(user(TARGET_USER_ID, RoleConstants.FAMILY, "NORMAL"));
+        given(passwordEncoder.encode(anyString())).willReturn("$2a$10$0123456789abcdefghijklmnopqrstuv");
+
+        ResetPasswordDTO dto = resetDto("家属电话申请");
+        dto.setNewPassword("Abc12345");
+
+        ResetPasswordResultVO vo = service.resetPassword(TARGET_USER_ID, dto);
+
+        // 落库用的是管理员指定的那个口令
+        verify(passwordEncoder).encode("Abc12345");
+
+        // 站内信指向真实来源：管理员自设口令 → 用户找管理员拿
+        ArgumentCaptor<Map<String, Object>> paramsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(messageService).send(any(), any(), any(), paramsCaptor.capture());
+        String content = String.valueOf(paramsCaptor.getValue().get("content"));
+        assertTrue(content.contains("管理员告知的新密码"),
+                "管理员自设口令时，站内信应指向「管理员告知的新密码」：" + content);
+        assertFalse(content.contains("Abc12345"), "站内信正文绝不能出现口令明文：" + content);
+
+        // 但响应**不回显**：口令的转交动作在浏览器里完成，服务端不留痕
+        assertFalse(hasFieldNamed(vo, "temporaryPassword"), "响应体不得含任何口令字段：" + vo);
+        assertFalse(vo.toString().contains("Abc12345"), "响应体不得含口令明文：" + vo);
+        assertEquals(Boolean.TRUE, vo.getNeedChangePassword());
+
+        // 落库的仍是 BCrypt 密文，不是明文
+        LambdaUpdateWrapper<SysUser> update = captureUserUpdate();
+        assertFalse(update.getSqlSet().contains("Abc12345"),
+                "落库不得出现明文口令：" + update.getSqlSet());
+    }
+
+    /** 该 VO 上是否声明了某个字段 —— 用于断言「响应体不含口令字段」 */
+    private boolean hasFieldNamed(Object bean, String fieldName) {
+        for (var field : bean.getClass().getDeclaredFields()) {
+            if (field.getName().equals(fieldName)) return true;
+        }
+        return false;
     }
 
     /* ================================================================== */

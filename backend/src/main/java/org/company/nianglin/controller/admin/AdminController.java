@@ -139,15 +139,18 @@ public class AdminController {
     }
 
     @Operation(summary = "重置密码",
-            description = "重置为默认密码并置「需强制改密」，同时使旧令牌立即失效。"
-                    + "响应只回传「重置成功 + 需首次改密」，不回传默认口令"
-                    + "（默认口令由部署配置 DEFAULT_RESET_PASSWORD 决定，不随响应下发）；"
-                    + "绝不返回原密码（库里是 BCrypt，本就不可逆）")
+            description = "重置密码并置「需强制改密」，同时使旧令牌立即失效。"
+                    + "可选地由管理员指定新密码（newPassword）：指定后用户用该口令登录，"
+                    + "由管理员线下/电话转交（平台没有短信通道）；不指定则沿用部署配置的默认口令 "
+                    + "DEFAULT_RESET_PASSWORD。"
+                    + "**响应体不含任何口令字段**（安全验收判据，见 "
+                    + "docs/security/安全评估报告-2026-10-18.md §8.2 P0-3）；"
+                    + "站内信正文也不含口令；绝不返回原密码（库里是 BCrypt，本就不可逆）")
     @PostMapping("/user/{id}/reset-password")
     public Result<ResetPasswordResultVO> resetPassword(
             @Parameter(description = "用户 ID", example = "10099") @PathVariable("id") Long id,
             @Valid @RequestBody ResetPasswordDTO dto) {
-        return Result.success("密码已重置为默认密码，请提醒用户首次登录后修改",
+        return Result.success("密码已重置，请提醒用户使用新密码登录并在首次登录后修改",
                 adminService.resetPassword(id, dto));
     }
 

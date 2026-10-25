@@ -7,6 +7,10 @@
  *   - meta.roles          允许访问的角色数组；不写表示所有已登录角色可访问
  *   - meta.public         true 表示无需登录
  *   - meta.elderlyHidden  老人模式下从菜单中隐藏（菜单精简，M11）
+ *                         ⚠️ **仅后台侧栏消费这个 meta**（layouts/AdminLayout.vue）。
+ *                            移动端底部 TabBar 是硬编码的（components/NlAppTabBar.vue），
+ *                            **不读它** —— 新增带 elderlyHidden 的移动端路由不会自动隐藏，
+ *                            需要自己在 TabBar 里排除。
  *   - meta.module         该页面归属的模块编号
  *   - meta.code           页面编号，如 M-04（与 docs/design/design.md §1.2/1.3 对齐）
  *   - meta.mobileOnly     true 表示仅适配手机形态；桌面形态下由 NlDesktopShell

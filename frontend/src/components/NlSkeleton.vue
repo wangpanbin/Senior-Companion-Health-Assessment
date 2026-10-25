@@ -4,6 +4,9 @@
  *
  * 卡片轮廓 + 灰色渐变扫光，禁用整页转圈
  */
+import { useAttrs } from 'vue'
+import { guardComponentApi } from '@/utils/componentGuard'
+
 defineProps({
   count: { type: Number, default: 1 },
   /** 行高 */
@@ -11,6 +14,14 @@ defineProps({
   /** 是否显示圆角卡片 */
   card: { type: Boolean, default: true }
 })
+
+/**
+ * 开发期 prop 自检 —— 详见 {@code utils/componentGuard.js} 的说明。
+ *
+ * <p>本组件真实踩过的坑：{@code :rows="3"} 不是声明过的 prop（只有 {@code count}），
+ * 于是骨架条仍按默认的 1 条渲染，页面看起来「骨架只显示一行」。</p>
+ */
+guardComponentApi('NlSkeleton', { props: ['count', 'height', 'card'] }, useAttrs())
 </script>
 
 <template>

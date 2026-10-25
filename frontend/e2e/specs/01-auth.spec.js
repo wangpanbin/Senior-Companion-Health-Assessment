@@ -8,6 +8,8 @@ import { ACCOUNTS, ROLE_HOME, PASSWORD } from '../helpers/accounts'
 import { authFile } from '../helpers/paths'
 import { apiAs, apiLogin, API } from '../helpers/api'
 import { loginViaUI } from '../fixtures/login'
+import { readCaptcha } from '../fixtures/captcha'
+import { READ_TOKEN, READ_USER_INFO } from '../helpers/storage'
 import { ROUTES } from '../helpers/constants'
 
 // ============================================================
@@ -39,8 +41,160 @@ test.describe('登录页', () => {
     await page.locator('button.login__submit').click()
     await expect(page.locator('.el-message')).toBeVisible()
     await expect(page).toHaveURL((u) => u.pathname === ROUTES.login)
-    const token = await page.evaluate(() => localStorage.getItem('nianglin_access_token'))
+    const token = await page.evaluate(READ_TOKEN)
     expect(token).toBeFalsy()
+  })
+
+  /**
+   * 按回车登录只发一次请求。
+   *
+   * <p>⚠️ 这条用例是为一个**已经存在过的严重缺陷**补的护栏：
+   * 登录页同时在 {@code el-form} 上挂了 {@code @submit.prevent}、
+   * 又在密码框/验证码框上挂了 {@code @keyup.enter}。浏览器在文本框里按回车会
+   * 触发表单隐式提交，{@code keyup} 又再触发一次 → {@code handleSubmit} 执行两次
+   * → 发两次登录请求。而验证码是**一次性**的（后端 {@code CaptchaServiceImpl}
+   * 用 Redis {@code getAndDelete} 取出即删）→ 第二次必然报「验证码错误」，
+   * 而密码其实是对的。</p>
+   *
+   * <p>为什么之前没被发现：整个 e2e 套件登录一律用
+   * {@code page.locator('button.login__submit').click()}，
+   * **没有任何一个用例按回车** —— 覆盖缺口正好等于 bug 的形状。</p>
+   */
+  test('按回车登录只发一次请求（回车曾触发隐式提交 + keyup 双发）', async ({ page }) => {
+    let captchaKey = null
+    const captchaRoute = '**/api/auth/captcha'
+    await page.route(captchaRoute, async (r) => {
+      const response = await r.fetch()
+      try {
+        captchaKey = (await response.json())?.data?.captchaKey ?? captchaKey
+      } catch {
+        /* 非 JSON 忽略 */
+      }
+      try {
+        await r.fulfill({ response })
+      } catch (e) {
+        // fulfill 偶发 `Route is already handled!`（路由收尾时），只容忍这一句
+        if (!String(e).includes('Route is already handled')) throw e
+      }
+    })
+
+    let loginCalls = 0
+    await page.route('**/api/auth/login', async (r) => {
+      loginCalls += 1
+      await r.continue()
+    })
+
+    await page.goto(ROUTES.login)
+    await expect.poll(() => captchaKey, { timeout: 15000 }).not.toBeNull()
+    const code = await readCaptcha(captchaKey)
+
+    await page.getByPlaceholder('请输入手机号或用户名').fill('fam001')
+    await page.getByPlaceholder('请输入密码').fill(PASSWORD)
+    await page.getByPlaceholder('请输入右侧 4 位验证码').fill(code)
+    // ⚠️ 按回车，不是点按钮 —— 这正是原缺陷的触发方式
+    await page.getByPlaceholder('请输入密码').press('Enter')
+
+    await expect(page).toHaveURL((u) => u.pathname === ROLE_HOME.FAMILY, { timeout: 20000 })
+    // 等一拍，确认没有迟到的第二次请求
+    await page.waitForTimeout(1500)
+    expect(
+      loginCalls,
+      '按回车只能触发一次登录请求：验证码是一次性的（后端 getAndDelete），第二次必然报「验证码错误」'
+    ).toBe(1)
+  })
+
+  test('验证码错误后不残留登录态，且换一张验证码可重试成功', async ({ page }) => {
+    const keys = []
+    const captchaRoute = '**/api/auth/captcha'
+    await page.route(captchaRoute, async (r) => {
+      const response = await r.fetch()
+      try {
+        const key = (await response.json())?.data?.captchaKey
+        if (key) keys.push(key)
+      } catch {
+        /* 非 JSON 忽略 */
+      }
+      try {
+        await r.fulfill({ response })
+      } catch (e) {
+        if (!String(e).includes('Route is already handled')) throw e
+      }
+    })
+
+    await page.goto(ROUTES.login)
+    await expect.poll(() => keys.length, { timeout: 15000 }).toBeGreaterThan(0)
+
+    // 第一次：错验证码
+    await page.getByPlaceholder('请输入手机号或用户名').fill('fam001')
+    await page.getByPlaceholder('请输入密码').fill(PASSWORD)
+    await page.getByPlaceholder('请输入右侧 4 位验证码').fill('ZZZZ')
+    await page.locator('button.login__submit').click()
+
+    // 失败后必须仍停在登录页，且不落登录态
+    await expect(page.locator('.el-message')).toBeVisible()
+    await expect(page).toHaveURL((u) => u.pathname === ROUTES.login)
+    const token = await page.evaluate(READ_TOKEN)
+    expect(token).toBeFalsy()
+
+    // 失败后页面应自动换一张验证码（后端 getAndDelete 会作废旧的那张），
+    // 换新码重试必须能成功 —— 不能让用户卡在「怎么都登不上」
+    await expect.poll(() => keys.length, { timeout: 15000 }).toBeGreaterThan(1)
+    const freshCode = await readCaptcha(keys[keys.length - 1])
+    await page.getByPlaceholder('请输入右侧 4 位验证码').fill(freshCode)
+    await page.locator('button.login__submit').click()
+    await expect(page).toHaveURL((u) => u.pathname === ROLE_HOME.FAMILY, { timeout: 20000 })
+  })
+
+  /**
+   * 填表并做一次真实 UI 登录（图形验证码从 Redis 旁路取明文）。
+   * @param {boolean|null} remember 是否勾选「7 天内自动登录」；null = 保持默认
+   */
+  async function uiLogin(page, remember = null) {
+    let captchaKey = null
+    const captchaRoute = '**/api/auth/captcha'
+    await page.route(captchaRoute, async (r) => {
+      const response = await r.fetch()
+      try {
+        captchaKey = (await response.json())?.data?.captchaKey ?? captchaKey
+      } catch {
+        /* 非 JSON 忽略 */
+      }
+      try {
+        await r.fulfill({ response })
+      } catch (e) {
+        if (!String(e).includes('Route is already handled')) throw e
+      }
+    })
+
+    await page.goto(ROUTES.login)
+    await expect.poll(() => captchaKey, { timeout: 15000 }).not.toBeNull()
+    const code = await readCaptcha(captchaKey)
+
+    await page.getByPlaceholder('请输入手机号或用户名').fill('fam001')
+    await page.getByPlaceholder('请输入密码').fill(PASSWORD)
+    await page.getByPlaceholder('请输入右侧 4 位验证码').fill(code)
+    if (remember === false) {
+      // 默认是勾上的，要取消。
+      // ⚠️ 不能用 getByRole('checkbox') —— Element Plus 的原生 input 是隐藏的
+      //    （.el-checkbox__original），Playwright 点不到；要点可见的那层。
+      await page.locator('.login__row .el-checkbox').click()
+    }
+    await page.locator('button.login__submit').click()
+    await expect(page).toHaveURL((u) => u.pathname === ROLE_HOME.FAMILY, { timeout: 20000 })
+  }
+
+  test('「7 天内自动登录」勾选 → 令牌落 localStorage（跨浏览器重启仍在）', async ({ page }) => {
+    await uiLogin(page)
+    const token = await page.evaluate(() => localStorage.getItem('nianglin_access_token'))
+    expect(token, '勾选后令牌必须在 localStorage —— 这正是「7 天内自动登录」的落点').toBeTruthy()
+  })
+
+  test('「7 天内自动登录」不勾选 → 令牌落 sessionStorage（关掉标签页即失效）', async ({ page }) => {
+    await uiLogin(page, false)
+    const session = await page.evaluate(() => sessionStorage.getItem('nianglin_access_token'))
+    const local = await page.evaluate(() => localStorage.getItem('nianglin_access_token'))
+    expect(session, '不勾选时令牌必须在 sessionStorage').toBeTruthy()
+    expect(local, '不勾选时 localStorage 不应留下令牌').toBeFalsy()
   })
 
   test('注册页与找回页可渲染', async ({ page }) => {
@@ -70,13 +224,7 @@ for (const acc of ACCOUNTS) {
       await page.goto('/')
       const home = ROLE_HOME[acc.role]
       await expect(page).toHaveURL((u) => u.pathname === home)
-      const role = await page.evaluate(() => {
-        try {
-          return JSON.parse(localStorage.getItem('nianglin_user_info') || '{}').role
-        } catch {
-          return null
-        }
-      })
+      const role = await page.evaluate(READ_USER_INFO).then((info) => info.role)
       expect(role).toBe(acc.role)
     })
   })
@@ -127,7 +275,7 @@ test.describe('注销', () => {
   // 资料页是纯手机形态（≥768 会渲染 NlMobileOnlyNotice），故用手机视口
   test.use({ storageState: { cookies: [], origins: [] }, viewport: { width: 390, height: 844 } })
 
-  test('退出登录后清空 localStorage 并跳 /login', async ({ page }) => {
+  test('退出登录后清空登录态并跳 /login', async ({ page }) => {
     await loginViaUI(page, 'comp025', undefined, 'COMPANION')
 
     await page.goto(ROUTES.profile)
@@ -137,7 +285,7 @@ test.describe('注销', () => {
     const confirm = page.locator('.el-message-box__btns button').last()
     if (await confirm.isVisible().catch(() => false)) await confirm.click()
     await expect(page).toHaveURL((u) => u.pathname === ROUTES.login, { timeout: 15000 })
-    const token = await page.evaluate(() => localStorage.getItem('nianglin_access_token'))
+    const token = await page.evaluate(READ_TOKEN)
     expect(token).toBeFalsy()
   })
 })

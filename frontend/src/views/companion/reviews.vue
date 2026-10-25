@@ -95,9 +95,14 @@ onMounted(load)
 </script>
 
 <template>
-  <NlPageShell title="收到的评价" module="M7" :show-back="true">
+  <!--
+    back：NlPageShell 的返回箭头 prop 叫 `back`（默认 true）。
+    原先写的 `:show-back` 不是本组件的 prop，只是一个落到 DOM 上的普通属性，
+    返回箭头是「碰巧」由默认值渲染出来的 —— 这里改成真 prop，别让下一个人再猜。
+  -->
+  <NlPageShell title="收到的评价" module="M7" :back="true">
     <template v-if="loading">
-      <NlSkeleton :rows="3" />
+      <NlSkeleton :count="3" />
     </template>
     <template v-else-if="loadError">
       <NlEmpty
@@ -108,7 +113,8 @@ onMounted(load)
       />
     </template>
     <template v-else-if="isEmpty">
-      <NlEmpty text="暂无评价" />
+      <!-- NlEmpty 没有 text 这个 prop，只有 title / description —— 写 text 会静默退化成「暂无数据」 -->
+      <NlEmpty title="暂无评价" />
     </template>
     <template v-else>
       <div v-for="r in reviews" :key="r.id" class="rev-card">

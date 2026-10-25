@@ -21,6 +21,7 @@
  * 本页不涉及任何医疗建议，不出现诊断类表述。
  */
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
@@ -35,6 +36,32 @@ import {
 import { formatMoney } from '@/utils/format'
 
 echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
+
+/* ============ 快捷入口（P1-7） ============ */
+/**
+ * 「站内信」与「收到的评价」此前**全仓没有任何一处 router.push 指向它们** ——
+ * 路由和页面都写好了，入口没接上：陪诊员收不到系统站内信、看不到收到的评价，
+ * 连会话列表 /chat 都进不去（只能从某个订单页单点进某个会话）。
+ *
+ * 入口放在工作台：工作台本就是聚合页，且设计稿只给了陪诊员 4 个底部 Tab，
+ * 不往 Tab 里硬塞第 5 个。
+ */
+const router = useRouter()
+
+const SHORTCUTS = [
+  {
+    key: 'message',
+    label: '消息中心',
+    desc: '系统通知、审核结果与漏服提醒',
+    to: '/companion/message'
+  },
+  {
+    key: 'reviews',
+    label: '收到的评价',
+    desc: '家属评价，以及我的回复',
+    to: '/companion/reviews'
+  }
+]
 
 /* ============ 趋势维度 / 粒度（切换后重新向后端要数，不在本地切分） ============ */
 const DIMENSIONS = [
@@ -349,6 +376,27 @@ onBeforeUnmount(() => {
       统计口径由后端统一计算，页面只做展示；统计区间默认最近 30 天。
     </NlNoticeBar>
 
+    <!-- ============ 快捷入口（P1-7） ============
+         放在工作台顶部：即使下面四块都还没数据（新陪诊员零订单），
+         入口也照样在，不会被空态吞掉。 -->
+    <NlCard title="快捷入口" class="block">
+      <div class="entries">
+        <button
+          v-for="e in SHORTCUTS"
+          :key="e.key"
+          type="button"
+          class="entry"
+          @click="router.push(e.to)"
+        >
+          <span class="entry__body">
+            <span class="entry__title">{{ e.label }}</span>
+            <span class="nl-caption nl-text-muted">{{ e.desc }}</span>
+          </span>
+          <span class="entry__chev" aria-hidden="true">›</span>
+        </button>
+      </div>
+    </NlCard>
+
     <NlSkeleton v-if="loading" :count="4" class="pad" />
 
     <NlEmpty
@@ -394,7 +442,12 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <p v-else class="nl-caption nl-text-weak">暂无经营数据</p>
+        <NlEmpty
+          v-else
+          type="empty"
+          title="暂无经营数据"
+          description="完成订单后，这里会显示你的经营数据"
+        />
       </NlCard>
 
       <!-- ============ 趋势 ============ -->
@@ -449,7 +502,12 @@ onBeforeUnmount(() => {
           </ul>
         </template>
 
-        <p v-else class="nl-caption nl-text-weak">暂无趋势数据</p>
+        <NlEmpty
+          v-else
+          type="empty"
+          title="暂无趋势数据"
+          description="有订单之后，这里会显示每日趋势"
+        />
       </NlCard>
 
       <!-- ============ 服务画像（累计口径） ============ -->
@@ -482,11 +540,21 @@ onBeforeUnmount(() => {
                 <span class="tag__count is-num">{{ e.orderCount }}</span>
               </span>
             </div>
-            <p v-else class="nl-caption nl-text-weak">暂无擅长服务标签</p>
+            <NlEmpty
+              v-else
+              type="empty"
+              title="暂无擅长服务标签"
+              description="接单之后，这里会自动统计你服务最多的科室"
+            />
           </div>
         </template>
 
-        <p v-else class="nl-caption nl-text-weak">暂无画像数据</p>
+        <NlEmpty
+          v-else
+          type="empty"
+          title="暂无画像数据"
+          description="完成订单后，这里会显示服务画像"
+        />
       </NlCard>
 
       <!-- ============ 收入摘要（区间口径） ============ -->
@@ -520,7 +588,12 @@ onBeforeUnmount(() => {
           </p>
         </template>
 
-        <p v-else class="nl-caption nl-text-weak">暂无收入数据</p>
+        <NlEmpty
+          v-else
+          type="empty"
+          title="暂无收入数据"
+          description="完成订单后，这里会显示收入构成"
+        />
       </NlCard>
     </template>
 
@@ -539,6 +612,54 @@ onBeforeUnmount(() => {
 
 .block {
   margin-bottom: var(--nl-gap-section);
+}
+
+/* ============ 快捷入口 ============ */
+/* 沿用本页 .kpi 的卡片质感（白底 + 1px 边框 + 圆角），只是改成可点的整行 */
+.entries {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--nl-space-3);
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: var(--nl-space-2);
+  padding: var(--nl-space-3);
+  text-align: left;
+  color: var(--nl-text-1);
+  background: var(--nl-bg-card);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-card);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--nl-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--nl-primary);
+    outline-offset: 2px;
+  }
+
+  &__body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__title {
+    font-size: var(--nl-font-h3);
+    font-weight: 600;
+  }
+
+  &__chev {
+    flex-shrink: 0;
+    font-size: var(--nl-font-h2);
+    color: var(--nl-text-2);
+  }
 }
 
 /* ============ KPI 卡 ============ */

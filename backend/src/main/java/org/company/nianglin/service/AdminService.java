@@ -103,7 +103,11 @@ public interface AdminService {
     UserStatusResultVO enableUser(Long id, UserEnableDTO dto);
 
     /**
-     * 重置密码为默认密码，并置 {@code need_change_password = 1}、使旧令牌立即失效。
+     * 重置密码（{@code ResetPasswordDTO#newPassword} 指定新口令，不传则用部署配置的
+     * 默认口令），并置 {@code need_change_password = 1}、使旧令牌立即失效。
+     *
+     * <p>⚠️ 返回体<b>不含任何口令字段</b>（安全验收判据，见
+     * {@code docs/security/安全评估报告-2026-10-18.md} §8.2 P0-3）。</p>
      *
      * @throws org.company.nianglin.exception.BusinessException 2004 用户不存在
      */

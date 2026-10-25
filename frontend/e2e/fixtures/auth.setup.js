@@ -13,10 +13,15 @@ for (const acc of ACCOUNTS) {
   setup(`登录并保存登录态：${acc.account} (${acc.role})`, async ({ page, context }) => {
     await loginViaUI(page, acc.account, undefined, acc.role)
 
-    // 防假绿：不仅看 URL，还看 localStorage 里的角色是否与账号一致
+    // 防假绿：不仅看 URL，还看**实际存放登录态的那个存储**里的角色是否与账号一致
+    // ⚠️ 令牌可能在 localStorage（「7 天内自动登录」勾选，默认）或 sessionStorage（不勾选），
+    //    两个都要读 —— 只读 localStorage 会在「不勾选」时读到 undefined，误判成登录失败。
     const role = await page.evaluate(() => {
       try {
-        return JSON.parse(localStorage.getItem('nianglin_user_info') || '{}').role
+        const raw =
+          localStorage.getItem('nianglin_user_info') ||
+          sessionStorage.getItem('nianglin_user_info')
+        return JSON.parse(raw || '{}').role
       } catch {
         return null
       }

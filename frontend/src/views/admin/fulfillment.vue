@@ -18,7 +18,7 @@
  *   4. 列表里姓名与订单号是**脱敏**的；要看全名请点「查看详情」——
  *      详情接口返回全名，那是相关方豁免，只对已通过归属校验的详情生效。
  */
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { NlCard, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
 import { ElMessage } from 'element-plus'
 import {
@@ -35,6 +35,7 @@ import {
 import { getOrder } from '@/api/order'
 import { formatDateTime } from '@/utils/format'
 import { fulfillmentTone } from '@/utils/fulfillment'
+import { usePagedList } from '@/composables/usePagedList'
 
 /** 四档卡片定义：顺序即展示顺序（从最坏到最好，管理员先看到需要动手的） */
 const CARDS = [
@@ -93,6 +94,26 @@ async function loadList() {
   }
 }
 
+/**
+ * 空态判据：本页没有记录且不在加载中。
+ *
+ * ⚠️ 此前模板里写了 `v-else-if="isEmpty"`，但脚本里**根本没定义这个变量** ——
+ *    Vue 模板解析到未定义标识符会告警并把它当 undefined（恒假），
+ *    于是「这一页真的没有记录」的空态分支**永远不渲染**，只剩一个白板表格。
+ */
+const isEmpty = computed(() => !listLoading.value && list.value.length === 0)
+
+/**
+ * 分页列表的共性逻辑（P1-8）：空态区分「本页已空」与「筛选无结果」、
+ * 写操作后必要时回退一页。7 个后台页共用同一份实现 —— 此前是逐字复制。
+ */
+const { pageDrained, onPrevPage, reloadAfterMutate } = usePagedList({
+  page,
+  isEmpty,
+  records: list,
+  reload: loadList
+})
+
 // 切换筛选回到第一页：停留在旧页码会让人以为「这个等级一单都没有」
 function onRiskChange() {
   page.value = 1
@@ -128,21 +149,41 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detailError = ref(false)
 const detail = ref(null)
+/** 当前详情对应的订单 id：详情加载失败后点「重试」要拿它重新拉一次 */
+const detailOrderId = ref(null)
 
-async function openDetail(row) {
-  detailVisible.value = true
+/** 拉订单详情（首次打开与「重试」共用同一段逻辑） */
+async function loadDetail(orderId) {
   detailLoading.value = true
   detailError.value = false
-  detail.value = null
   try {
     // 走既有订单详情接口：管理员属于相关方（requireInvolved 放行 ADMIN），
     // 与订单管理页看到的是同一份详情口径
-    detail.value = await getOrder(row.orderId)
+    detail.value = await getOrder(orderId)
   } catch {
     detailError.value = true
   } finally {
     detailLoading.value = false
   }
+}
+
+async function openDetail(row) {
+  detailVisible.value = true
+  detail.value = null
+  detailOrderId.value = row.orderId
+  await loadDetail(row.orderId)
+}
+
+/**
+ * 详情加载失败后的「重试」（P1-13）。
+ *
+ * <p>为什么必须有这个按钮：{@code NlEmpty} 的 network 类型默认副标题是
+ * 「请检查网络后点击重试」，而这个空态原来没给 action-text ——
+ * 文案在承诺一个根本不存在的按钮，用户只能关掉弹窗重来。</p>
+ */
+function reloadDetail() {
+  if (!detailOrderId.value) return
+  loadDetail(detailOrderId.value)
 }
 
 /* ==================== 行内「改派」 ==================== */
@@ -182,6 +223,10 @@ function openReassign(row) {
 }
 
 async function submitReassign() {
+  // ⚠️ in-flight 锁必须在**任何 await 之前**同步置位（规格机制约束①）：
+  //    否则同 tick 连点会发出两个改派请求，第二个报「订单已被改派」，
+  //    用户看到「成功 + 报错」双提示。
+  if (reassignSubmitting.value) return
   if (!reassignTarget.value) {
     ElMessage.warning('请选择目标陪诊员')
     return
@@ -191,9 +236,12 @@ async function submitReassign() {
     ElMessage.warning('改派理由至少 10 字（会写入审计与三方通知）')
     return
   }
+  // ⚠️ 置位必须在**任何 await 之前**（上面两个守卫都是同步的，不算）——
+  //    否则锁恒为 false，守卫形同虚设，连点仍会发两次请求。
   reassignSubmitting.value = true
   try {
-    await reassignOrder(reassignRow.value.orderId, {
+    const orderId = reassignRow.value.orderId
+    await reassignOrder(orderId, {
       companionId: reassignTarget.value,
       reason
     })
@@ -201,7 +249,8 @@ async function submitReassign() {
     reassignVisible.value = false
     // 计数与列表都要刷：改派不改状态，但风险等级与「已协调」标记会变
     loadSummary()
-    loadList()
+    // 改派后这一单会被接走、离开「待接单」风险列表；必要时回退一页（P1-8）
+    await reloadAfterMutate()
   } catch {
     // 错误提示已由请求拦截器统一处理（6003 合规词表 / 3010 不可改派 / 2003 资质 / 2007 不存在）
   } finally {
@@ -262,6 +311,22 @@ onMounted(() => {
       @action="loadList"
     />
 
+    <NlEmpty
+      v-else-if="pageDrained"
+      type="empty"
+      title="本页已空，上一页还有"
+      description="刚改派掉的订单已不在本页，可返回上一页继续处理"
+      action-text="返回上一页"
+      @action="onPrevPage"
+    />
+
+    <NlEmpty
+      v-else-if="isEmpty"
+      type="empty"
+      title="暂无风险订单"
+      description="当前筛选条件下没有风险订单"
+    />
+
     <NlAdminTable
       v-else
       :data="list"
@@ -306,7 +371,13 @@ onMounted(() => {
   <el-dialog v-model="detailVisible" title="订单详情" width="560px">
     <NlSkeleton v-if="detailLoading" :count="3" />
 
-    <NlEmpty v-else-if="detailError" type="network" title="订单详情加载失败" />
+    <NlEmpty
+      v-else-if="detailError"
+      type="network"
+      title="订单详情加载失败"
+      action-text="重试"
+      @action="reloadDetail"
+    />
 
     <ul v-else-if="detail" class="detail">
       <li><span>订单号</span><span class="is-num">{{ detail.orderNo }}</span></li>

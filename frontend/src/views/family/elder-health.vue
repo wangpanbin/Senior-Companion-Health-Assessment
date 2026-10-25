@@ -89,6 +89,14 @@ function go(linkUrl) {
   }
 }
 
+/**
+ * 空态也要给出路（P2-18）：「这段时间还没有记录」之后无路可走，
+ * 家属多半是看完了这位老人要接着看下一位 —— 回到老人列表。
+ */
+function goElderList() {
+  router.push('/family/elder')
+}
+
 onMounted(() => {
   loadOverview()
   loadTimeline()
@@ -190,6 +198,8 @@ watch(elderId, () => {
           <NlEmpty
             v-else-if="isEmptyTimeline"
             title="这段时间还没有记录"
+            action-text="返回老人列表"
+            @action="goElderList"
           />
 
           <ul v-else role="list" class="events">

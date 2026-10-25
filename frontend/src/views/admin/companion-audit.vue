@@ -17,6 +17,8 @@ import { useResponsive } from '@/composables/useResponsive'
 import { listAuditApplications, getAuditDetail, auditCompanion } from '@/api/admin'
 import { fetchCertObjectUrl } from '@/api/file'
 import { formatDateTime } from '@/utils/format'
+import { confirmThen } from '@/utils/confirm'
+import { usePagedList } from '@/composables/usePagedList'
 
 const tab = ref('PENDING')
 const list = ref([])
@@ -51,6 +53,17 @@ async function loadList() {
 
 const isEmpty = computed(() => !loading.value && list.value.length === 0)
 
+/**
+ * 分页列表的共性逻辑（P1-8）：空态区分「本页已空」与「筛选无结果」、
+ * 写操作后必要时回退一页。7 个后台页共用同一份实现 —— 此前是逐字复制。
+ */
+const { pageDrained, onPrevPage, reloadAfterMutate } = usePagedList({
+  page,
+  isEmpty,
+  records: list,
+  reload: loadList
+})
+
 // 切 tab 回到第一页重新拉数，避免停留在上一页的页码上看到旧数据
 watch(tab, () => {
   page.value = 1
@@ -66,6 +79,16 @@ const reviewVisible = ref(false)
 const reviewItem = ref(null)
 const reviewFiles = ref([])
 const rejectReason = ref('')
+/**
+ * 审核动作的 in-flight 锁（P1-5）。
+ *
+ * <p>「通过」和「驳回」共用一把锁：连点会提交两次，第一次还在途时第二次已经出去，
+ * 后端对同一申请二次审核返回业务错误，拦截器弹成错误 toast ——
+ * 用户看到「成功 + 报错」双提示，以为系统出了问题。</p>
+ */
+const auditSubmitting = ref(false)
+/** 当前正在提交的动作（'approve' / 'reject'），用来只给被点的那个按钮转圈 */
+const auditAction = ref('')
 /** 证件预览用的 blob URL 集合，关闭弹窗 / 卸载时统一回收，避免内存泄漏 */
 const certObjectUrls = []
 
@@ -105,16 +128,34 @@ async function openReview(item) {
 }
 
 async function approve() {
-  await ElMessageBox.confirm(
-    `确认通过「${reviewItem.value.realName}」的资质审核？通过后陪诊员可开始接单。`,
-    '审核通过',
-    { confirmButtonText: '通过审核' }
-  )
-  // 通过时不传 rejectReason，避免后端日志里出现一条假原因
-  await auditCompanion(reviewItem.value.id, { approved: true })
-  ElMessage.success('已通过审核')
-  reviewVisible.value = false
-  loadList()
+  if (!reviewItem.value) return
+  // ⚠️ in-flight 锁必须在第一个 await 之前同步置位（P1-5）
+  if (auditSubmitting.value) return
+  auditSubmitting.value = true
+  auditAction.value = 'approve'
+  try {
+    // confirmThen 把「用户是否点了确认」变成布尔：取消时静默返回 false，不发请求（P1-12）
+    const confirmed = await confirmThen(() =>
+      ElMessageBox.confirm(
+        `确认通过「${reviewItem.value.realName}」的资质审核？通过后陪诊员可开始接单。`,
+        '审核通过',
+        { confirmButtonText: '通过审核' }
+      )
+    )
+    if (!confirmed) return
+
+    const applicationId = reviewItem.value.id
+    // 通过时不传 rejectReason，避免后端日志里出现一条假原因
+    await auditCompanion(applicationId, { approved: true })
+    ElMessage.success('已通过审核')
+    reviewVisible.value = false
+    await reloadAfterMutate()
+  } catch {
+    // 后端报错由 request.js 拦截器统一弹提示，这里不重复弹
+  } finally {
+    auditSubmitting.value = false
+    auditAction.value = ''
+  }
 }
 
 async function reject() {
@@ -127,15 +168,33 @@ async function reject() {
     ElMessage.warning('驳回原因至少 5 个字')
     return
   }
-  await ElMessageBox.confirm(
-    `确认驳回「${reviewItem.value.realName}」的资质申请？驳回后将通知陪诊员。`,
-    '审核驳回',
-    { confirmButtonText: '确认驳回', type: 'warning' }
-  )
-  await auditCompanion(reviewItem.value.id, { approved: false, rejectReason: reason })
-  ElMessage.success('已驳回')
-  reviewVisible.value = false
-  loadList()
+  if (!reviewItem.value) return
+  // ⚠️ in-flight 锁必须在第一个 await 之前同步置位（P1-5）
+  if (auditSubmitting.value) return
+  auditSubmitting.value = true
+  auditAction.value = 'reject'
+  try {
+    // confirmThen 把「用户是否点了确认」变成布尔：取消时静默返回 false，不发请求（P1-12）
+    const confirmed = await confirmThen(() =>
+      ElMessageBox.confirm(
+        `确认驳回「${reviewItem.value.realName}」的资质申请？驳回后将通知陪诊员。`,
+        '审核驳回',
+        { confirmButtonText: '确认驳回', type: 'warning' }
+      )
+    )
+    if (!confirmed) return
+
+    const applicationId = reviewItem.value.id
+    await auditCompanion(applicationId, { approved: false, rejectReason: reason })
+    ElMessage.success('已驳回')
+    reviewVisible.value = false
+    await reloadAfterMutate()
+  } catch {
+    // 后端报错由 request.js 拦截器统一弹提示，这里不重复弹
+  } finally {
+    auditSubmitting.value = false
+    auditAction.value = ''
+  }
 }
 
 /** 列定义（desktop 9 列；mobile 关键 4 字段：账号 / 姓名 / 状态 / 操作） */
@@ -150,8 +209,24 @@ const columns = [
   { key: 'auditStatus', label: '状态',    width: 120 }
 ]
 const mobileFields = ['username', 'realName', 'auditStatus']
-const emptyText = computed(() =>
+/**
+ * 空态标题（表格 fallback 与 NlEmpty 共用同一口径，别写两份三元）。
+ */
+const emptyTitle = computed(() =>
   tab.value === 'PENDING' ? '暂无待审申请' : tab.value === 'APPROVED' ? '尚无通过记录' : '尚无驳回记录'
+)
+/**
+ * 空态说明句。
+ *
+ * <p>统一落在「当前筛选条件下没有 X 记录」这个口径上 ——
+ * 空态要能回答「为什么空」，而不是只说「这里是空的」。</p>
+ */
+const emptyDesc = computed(() =>
+  tab.value === 'PENDING'
+    ? '当前筛选条件下没有待审申请'
+    : tab.value === 'APPROVED'
+      ? '当前筛选条件下没有通过记录'
+      : '当前筛选条件下没有驳回记录'
 )
 
 /** 详情弹窗 < 768 fullscreen（admin 平板 fallback，与 T-02 admin/order 同款；用 isXs(≤767)替代 !isMd 修复大屏 PC bug） */
@@ -180,9 +255,19 @@ onBeforeUnmount(revokeCertUrls)
     />
 
     <NlEmpty
+      v-else-if="pageDrained"
+      type="empty"
+      title="本页已空，上一页还有"
+      description="刚审核掉的申请已不在本页，可返回上一页继续审核"
+      action-text="返回上一页"
+      @action="onPrevPage"
+    />
+
+    <NlEmpty
       v-else-if="isEmpty"
       type="empty"
-      :title="tab === 'PENDING' ? '暂无待审申请' : tab === 'APPROVED' ? '尚无通过记录' : '尚无驳回记录'"
+      :title="emptyTitle"
+      :description="emptyDesc"
     />
 
     <NlAdminTable
@@ -190,7 +275,7 @@ onBeforeUnmount(revokeCertUrls)
       :data="list"
       :columns="columns"
       :mobile-fields="mobileFields"
-      :empty-text="emptyText"
+      :empty-text="emptyTitle"
     >
       <template #cell-certCount="{ row }">
         <el-tag size="small" type="info">{{ (row.certificates || []).length }}</el-tag>
@@ -290,8 +375,22 @@ onBeforeUnmount(revokeCertUrls)
     <template #footer>
       <span v-if="reviewItem?.auditStatus === 'PENDING'" class="audit-actions">
         <el-button @click="reviewVisible = false">取消</el-button>
-        <el-button type="danger" @click="reject">驳 回</el-button>
-        <el-button type="primary" @click="approve">通 过</el-button>
+        <el-button
+          type="danger"
+          :loading="auditSubmitting && auditAction === 'reject'"
+          :disabled="auditSubmitting"
+          @click="reject"
+        >
+          驳 回
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="auditSubmitting && auditAction === 'approve'"
+          :disabled="auditSubmitting"
+          @click="approve"
+        >
+          通 过
+        </el-button>
       </span>
       <el-button v-else @click="reviewVisible = false">关闭</el-button>
     </template>

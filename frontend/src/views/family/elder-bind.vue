@@ -31,9 +31,12 @@ import { ElMessage } from 'element-plus'
 import { NlPageShell, NlCard, NlNoticeBar } from '@/components'
 import { bindElder, createElder } from '@/api/user'
 import { today } from '@/utils/format'
-
-const PHONE_RE = /^1[3-9]\d{9}$/
-const ID_CARD_RE = /^[1-9]\d{5}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]$/
+/**
+ * P2-4：手机号 / 身份证正则不再各写各的，统一从 `@/constants/validation` 取。
+ * 那份常量与后端 `ValidationPatterns` 同源；改动时前后端一起改，
+ * 避免出现「前端比后端松 → 前端放行、后端 400」的割裂。
+ */
+import { PHONE_RE, PHONE_MSG, ID_CARD_RE, ID_CARD_MSG, NAME_MSG, NAME_MIN, NAME_MAX } from '@/constants/validation'
 
 const router = useRouter()
 const tab = ref('create')
@@ -49,7 +52,7 @@ const bindForm = ref({
 const bindRules = {
   phone: [
     { required: true, message: '请输入老人手机号', trigger: 'blur' },
-    { pattern: PHONE_RE, message: '手机号格式不正确', trigger: 'blur' }
+    { pattern: PHONE_RE, message: PHONE_MSG, trigger: 'blur' }
   ],
   relation: [{ required: true, message: '请选择与老人的关系', trigger: 'change' }]
 }
@@ -74,7 +77,7 @@ const createForm = ref({
 const createRules = {
   name: [
     { required: true, message: '请输入姓名', trigger: 'blur' },
-    { min: 2, max: 20, message: '姓名长度需在 2-20 个字符之间', trigger: 'blur' }
+    { min: NAME_MIN, max: NAME_MAX, message: NAME_MSG, trigger: 'blur' }
   ],
   gender: [{ required: true, message: '请选择性别', trigger: 'change' }],
   birthDate: [
@@ -87,8 +90,8 @@ const createRules = {
       trigger: 'change'
     }
   ],
-  idCard: [{ pattern: ID_CARD_RE, message: '身份证号格式不正确', trigger: 'blur' }],
-  phone: [{ pattern: PHONE_RE, message: '手机号格式不正确', trigger: 'blur' }],
+  idCard: [{ pattern: ID_CARD_RE, message: ID_CARD_MSG, trigger: 'blur' }],
+  phone: [{ pattern: PHONE_RE, message: PHONE_MSG, trigger: 'blur' }],
   emergencyPhone: [{ pattern: PHONE_RE, message: '紧急联系人手机号格式不正确', trigger: 'blur' }],
   mobilityLevel: [
     { pattern: /^(SELF|ASSIST|WHEELCHAIR)$/, message: '请选择有效的行动能力', trigger: 'change' }
@@ -187,7 +190,8 @@ function submit() {
       <!-- ============ 绑定已有老人 ============ -->
       <el-form v-if="tab === 'bind'" ref="bindFormRef" :model="bindForm" :rules="bindRules" size="large" label-position="top">
         <el-form-item label="老人手机号" prop="phone" required>
-          <el-input v-model="bindForm.phone" placeholder="请输入老人注册时的手机号" maxlength="11" />
+          <!-- P2-3：type="tel" + inputmode="numeric" → 手机上直接弹出数字键盘 -->
+          <el-input v-model="bindForm.phone" type="tel" inputmode="numeric" placeholder="请输入老人注册时的手机号" maxlength="11" />
         </el-form-item>
         <el-form-item label="与老人关系" prop="relation" required>
           <el-select v-model="bindForm.relation" placeholder="请选择您与老人的关系" style="width: 100%">
@@ -220,10 +224,15 @@ function submit() {
           />
         </el-form-item>
         <el-form-item label="身份证号（选填）" prop="idCard">
-          <el-input v-model="createForm.idCard" placeholder="18 位身份证号，加密存储" maxlength="18" />
+          <!--
+            P2-3：身份证末位可能是 X，所以**不能**加 inputmode="numeric" ——
+            数字键盘没有字母键，末位 X 打不出来（18 位身份证里约 1/16 以 X 结尾）。
+            保持默认文本键盘，type="text" 也不触发数字键盘。
+          -->
+          <el-input v-model="createForm.idCard" type="text" placeholder="18 位身份证号，加密存储" maxlength="18" />
         </el-form-item>
         <el-form-item label="老人联系电话（选填）" prop="phone">
-          <el-input v-model="createForm.phone" placeholder="11 位手机号" maxlength="11" />
+          <el-input v-model="createForm.phone" type="tel" inputmode="numeric" placeholder="11 位手机号" maxlength="11" />
         </el-form-item>
         <el-form-item label="常用地址（选填）" prop="address">
           <el-input v-model="createForm.address" placeholder="文字地址，一期不做地图导航" maxlength="200" />
@@ -232,7 +241,7 @@ function submit() {
           <el-input v-model="createForm.emergencyContact" placeholder="紧急联系人姓名" maxlength="20" />
         </el-form-item>
         <el-form-item label="紧急联系人电话（选填）" prop="emergencyPhone">
-          <el-input v-model="createForm.emergencyPhone" placeholder="11 位手机号" maxlength="11" />
+          <el-input v-model="createForm.emergencyPhone" type="tel" inputmode="numeric" placeholder="11 位手机号" maxlength="11" />
         </el-form-item>
         <el-form-item label="行动能力（选填）" prop="mobilityLevel">
           <el-select v-model="createForm.mobilityLevel" placeholder="用于匹配陪诊员" clearable style="width: 100%">

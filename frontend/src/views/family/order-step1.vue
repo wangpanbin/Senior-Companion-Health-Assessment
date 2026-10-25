@@ -35,9 +35,11 @@ async function loadElders() {
     // size 上限 100（后端 PageQuery 的 @Max 约束），一次拉全，老人数量不会多到需要翻页
     const data = await listElder({ page: 1, size: 100 })
     elders.value = data?.records || []
-    // 默认选中第一位：家属进页面多半就是给常用老人下单，少点一次是一次
+    // 默认选中：优先草稿里已选的老人（从 step2 折返时别静默换成列表第一位），
+    // 草稿为空才选第一位 —— 家属进页面多半就是给常用老人下单，少点一次是一次
     if (elders.value.length && !selectedId.value) {
-      selectedId.value = elders.value[0].id
+      const inDraft = elders.value.find((e) => e.id === draft.elderId)
+      selectedId.value = inDraft ? inDraft.id : elders.value[0].id
     }
     loadError.value = false
   } catch {

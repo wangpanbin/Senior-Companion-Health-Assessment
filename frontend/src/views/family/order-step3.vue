@@ -21,30 +21,56 @@
  *      一旦两边口径漂移，传自家算的值就会把错误金额写进库。
  */
 import { computed, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlPageShell, NlStepHeader, NlCard } from '@/components'
 import { estimateFee } from '@/constants/hospitals'
 import { useOrderDraftStore } from '@/store/modules/orderDraft'
 import { createOrder } from '@/api/order'
 import { formatDateTime } from '@/utils/format'
+import { confirmThen } from '@/utils/confirm'
 
+const route = useRoute()
 const router = useRouter()
 const draft = useOrderDraftStore()
+
+/**
+ * step2 带过来的就诊人 id —— 用来与草稿**交叉核对**。
+ *
+ * ⚠️ 这是「给错误的人下单」的最后一道闸门：
+ * 家属在 step1 选 A → step2 → 回 step1 改选 B → 再下一步，
+ * 若中途任何一环没同步，草稿里的就诊人就会和用户以为的不一致。
+ * 下单不可逆，所以宁可退回重选，也不能猜。
+ */
+const queryElderId = computed(() => Number(route.query.elderId) || 0)
 
 const form = reactive({
   remark: '',
   submitting: false
 })
 
-/* ---------- 闸门：draft 不完整就退回 step1 ---------- */
+/* ---------- 闸门：draft 不完整或就诊人对不上，就退回 step1 ---------- */
 onMounted(() => {
   if (!draft.isComplete) {
-    ElMessage.warning('下单信息不完整，请重新填写')
+    // ⚠️ 草稿只存内存（防共用手机串号），页面刷新就没了 ——
+    // 所以「不完整」最常见的原因就是刷新。原来的提示
+    // 「下单信息不完整，请重新填写」没说清原因，用户会以为是自己哪里填错了，
+    // 反复点、反复被弹回。
+    ElMessage.warning('页面刷新后下单信息已清空，请重新选择')
     // 用 replace 而不是 push：避免用户在浏览器里「后退」又回到这个空页面
+    router.replace('/family/order/step1')
+    return
+  }
+  if (queryElderId.value && queryElderId.value !== draft.elderId) {
+    ElMessage.warning('就诊人已变更，请重新选择就诊人')
     router.replace('/family/order/step1')
   }
 })
+
+/** 回 step2 换就诊人 / 改医院时间 */
+function changeElder() {
+  router.push('/family/order/step1')
+}
 
 /** 就诊时间字符串 → Date，用于算预估费用 */
 const visitDate = computed(() => {
@@ -60,20 +86,39 @@ const visitDate = computed(() => {
 const previewFee = computed(() => (visitDate.value ? estimateFee(visitDate.value) : null))
 
 async function submit() {
-  if (!draft.isComplete || form.submitting) return
+  // ⚠️ in-flight 锁必须在**任何 await 之前**同步置位（连下面那个确认框的 await 都在其后）：
+  //    否则两次调用会一起穿过 await，锁形同虚设。
+  if (form.submitting) return
+  form.submitting = true
+  if (!draft.isComplete) {
+    form.submitting = false
+    ElMessage.warning('页面刷新后下单信息已清空，请重新选择')
+    router.replace('/family/order/step1')
+    return
+  }
+  // ⚠️ 提交前再核对一次就诊人：URL 里的 id 与草稿必须一致
+  if (queryElderId.value && queryElderId.value !== draft.elderId) {
+    form.submitting = false
+    ElMessage.warning('就诊人已变更，请重新选择就诊人')
+    router.replace('/family/order/step1')
+    return
+  }
 
-  try {
-    await ElMessageBox.confirm(
+  // confirmThen 把「用户是否点了确认」变成布尔：点「再看看」返回 false
+  const ok = await confirmThen(() =>
+    ElMessageBox.confirm(
       `提交后订单将进入接单大厅，陪诊员接单后会推送通知。`
         + `服务费约 ¥${previewFee.value} 为线上记账，最终由线下结算。`,
       '确认提交',
       { confirmButtonText: '提交订单', cancelButtonText: '再看看' }
     )
-  } catch {
+  )
+  if (!ok) {
+    // 用户点「再看看」→ 解除 in-flight 锁，允许他改完再提交
+    form.submitting = false
     return
   }
 
-  form.submitting = true
   try {
     const result = await createOrder({
       elderId: draft.elderId,
@@ -129,6 +174,10 @@ function back() {
           <span class="row__key">就诊人</span>
           <span class="row__val">
             <span class="nl-h3">{{ draft.elderName || '—' }}</span>
+            <!-- ⚠️ 提交前最后一眼：这一单是给谁下的，必须能当场改 -->
+            <el-link type="primary" underline="never" class="row__change" @click="changeElder">
+              更换
+            </el-link>
           </span>
         </li>
         <li class="row">
@@ -263,6 +312,12 @@ function back() {
     display: flex;
     flex-direction: column;
     gap: 2px;
+  }
+
+  /* 「更换」入口：与姓名同列，点它回到 step1 换人 */
+  &__change {
+    align-self: flex-start;
+    font-size: var(--nl-font-caption);
   }
 }
 
