@@ -61,7 +61,7 @@
 | 可点击元素最小高度 | ≥ 48px（`$elderly-touch-min`，按下 `--nl-touch-min` 切换） |
 | 文字对比度 | ≥ 4.5:1（WCAG AA，`$elderly-contrast-ratio`） |
 | 老人模式触发方式 | `<html>` 上加 class `elderly-mode`（由 `appStore.applyElderlyClass()` 维护，**不要**靠刷新页面） |
-| 老人模式菜单 | 路由 `meta.elderlyHidden: true` 的项在老人模式下隐藏（`BasicLayout.vue` 已实现过滤） |
+| 老人模式菜单 | 路由 `meta.elderlyHidden: true` 的项在老人模式下隐藏 —— **仅后台侧栏实现了过滤**（`layouts/AdminLayout.vue`）。⚠️ 移动端底部 TabBar 是硬编码的（`components/NlAppTabBar.vue`），**不消费这个 meta**：新增带 `elderlyHidden` 的移动端路由不会自动隐藏，需要自己在 TabBar 里排除 |
 | 核心流程点击次数 | ≤ 3 次 |
 | 老人模式生效范围 | **仅 Mobile 形态（视口 < 768px）**；Desktop 形态下开关禁用并隐藏 —— 见下方「桌面端豁免」与 `docs/adr/0007` |
 

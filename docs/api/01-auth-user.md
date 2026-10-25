@@ -89,7 +89,7 @@
 |---|---|---|---|---|
 | `username` | String | ✓ | 4–20 位，字母数字下划线 | 用户名 |
 | `phone` | String | ✓ | 11 位手机号 | 手机号，唯一 |
-| `password` | String | ✓ | 6–32 位，需含字母与数字 | 密码，**BCrypt 加密后入库** |
+| `password` | String | ✓ | 6–32 位，需同时包含字母与数字 | 密码，**BCrypt 加密后入库** |
 | `nickname` | String | ✓ | 2–20 字符 | 昵称（建议用「张大爷」「李阿姨」这类称呼） |
 | `role` | String | ✓ | `ELDER` / `FAMILY` / `COMPANION` | 注册角色，**不允许注册为 ADMIN** |
 | `captchaKey` | String | ✓ | — | 验证码标识 |
