@@ -86,6 +86,14 @@ function go(linkUrl) {
   }
 }
 
+/**
+ * 空态也要给出路（P2-18）：「还没有记录」之后如果无路可走，老人就只能干等。
+ * 导向用药页 —— 那是老人端信息密度最高、也确实可能已有内容的地方。
+ */
+function goMedication() {
+  router.push('/elder/medication')
+}
+
 onMounted(() => {
   loadOverview()
   loadTimeline()
@@ -166,6 +174,8 @@ onMounted(() => {
           <NlEmpty
             v-else-if="isEmptyTimeline"
             title="还没有记录"
+            action-text="查看用药"
+            @action="goMedication"
           />
 
           <ul v-else role="list" class="events">

@@ -57,14 +57,22 @@ const avatarFallback = computed(() => displayName.value.slice(0, 1))
 // 老人自己的档案 id：直接来自 /user/profile 下发的 elderId（仅 ELDER 有值，否则为 null）
 const elderId = computed(() => profile.value?.elderId ?? null)
 const hasElderId = computed(() => elderId.value != null)
+/**
+ * P1-4：profile 的加载态 / 失败态单独成相。
+ * 以前 loadProfile 的 catch 把错误吞掉，页面立刻显示「暂无用药提醒」——
+ * 把「没取到数据」说成「没有提醒」，对老人是错误结论，且接口真挂了时没有重试入口。
+ */
+const profileLoading = ref(false)
+const profileError = ref(false)
 
 /* ===== 今日服药提醒（需 elderId，无则降级为入口引导） ===== */
 const medLoading = ref(false)
 /** R4：加载失败与「无法取得 elderId / 今日无安排」两种空态区分开 */
 const medError = ref(false)
 const todayMeds = ref([])
-const medEmpty = computed(() => !medLoading.value && !hasElderId.value)
-const medNoData = computed(() => !medLoading.value && hasElderId.value && todayMeds.value.length === 0)
+/** 空态判断先排除 loading / error：没取到 ≠ 没有（P1-4） */
+const medEmpty = computed(() => !medLoading.value && !medError.value && !profileLoading.value && !profileError.value && !hasElderId.value)
+const medNoData = computed(() => !medLoading.value && !medError.value && !profileLoading.value && !profileError.value && hasElderId.value && todayMeds.value.length === 0)
 
 /* ===== 最近订单（只读） ===== */
 const orderLoading = ref(false)
@@ -72,11 +80,16 @@ const ordersError = ref(false)
 const recentOrders = ref([])
 
 async function loadProfile() {
+  profileLoading.value = true
   try {
     const data = await getProfile()
     if (data) profile.value = data
+    profileError.value = false
   } catch {
-    // 拦截器已弹错，这里不再重复弹
+    // 拦截器已弹错，这里不再重复弹；只落状态，让页面显示「加载失败 + 重试」
+    profileError.value = true
+  } finally {
+    profileLoading.value = false
   }
 }
 
@@ -92,6 +105,15 @@ async function loadTodayMeds() {
   } finally {
     medLoading.value = false
   }
+}
+
+/**
+ * 用药提醒依赖 profile 下发的 elderId：profile 失败时提醒根本无从取起，
+ * 所以「重试」要连带重跑 profile，而不是只重试提醒接口。
+ */
+async function reloadMeds() {
+  await loadProfile()
+  await loadTodayMeds()
 }
 
 async function loadRecentOrders() {
@@ -197,7 +219,17 @@ function goMedication() {
         您正在使用「老人模式」只读视图，服药确认请由您的家属操作。
       </p>
 
-      <NlSkeleton v-if="medLoading" :count="3" />
+      <!-- profile 还没回来时不能断言「无提醒」：先占位，别把失败说成没有（P1-4） -->
+      <NlSkeleton v-if="profileLoading || medLoading" :count="3" />
+
+      <NlEmpty
+        v-else-if="profileError"
+        type="network"
+        title="用药信息加载失败"
+        description="请检查网络后点击重试"
+        action-text="重试"
+        @action="reloadMeds"
+      />
 
       <NlEmpty
         v-else-if="medError"
@@ -320,7 +352,17 @@ function goMedication() {
         </div>
       </template>
 
-      <NlSkeleton v-if="medLoading" :count="3" />
+      <!-- profile 还没回来时不能断言「无提醒」：先占位，别把失败说成没有（P1-4） -->
+      <NlSkeleton v-if="profileLoading || medLoading" :count="3" />
+
+      <NlEmpty
+        v-else-if="profileError"
+        type="network"
+        title="用药信息加载失败"
+        description="请检查网络后点击重试"
+        action-text="重试"
+        @action="reloadMeds"
+      />
 
       <NlEmpty
         v-else-if="medError"
