@@ -15,7 +15,7 @@ Jaccard 最大 1.0 → 最多 2.0 分，**恰好等于阈值** ——
 
 ## 问法池是什么、不是什么
 
-问法池由**大模型批量生成**（30 条 FAQ × 6 条 = 180 条），
+问法池由**大模型批量生成**（生成期 30 条 FAQ × 6 条 = 180 条，剔除医疗问法后 179 条），
 是**高仿真的模拟问法**，**不是真实用户数据**。
 后来新增 elder-health 5 条时**手写补了 25 条**（每条 5 条，见池文件末尾段）——
 新增问法一律走「确定性检索验收」这条同一标准，来源不重要，命中与不抢占才重要。
@@ -51,7 +51,8 @@ KNOWLEDGE_DIR = Path(__file__).resolve().parent.parent / "knowledge"
 FAQ_PATH = KNOWLEDGE_DIR / "faq.json"
 POOL_PATH = KNOWLEDGE_DIR / "faq-question-pool.json"
 
-#: 召回率下限（180 条里至少 171 条）。
+#: 召回率下限。池现由生成段 179 条 + 手写段 25 条构成（204 条），
+#: 阈值按比例计算 —— 生成段的历史基线是 171/180。
 MIN_RECALL = 0.95
 
 #: 每条目关键词数上限（与 tools/gen_faq_questions.py 保持同口径）。

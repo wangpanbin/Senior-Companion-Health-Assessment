@@ -4,7 +4,7 @@
 > 负责人：B（后端主力）+ A（前端主力）
 > 归属迭代：V3.7（2026-10-21 开工）
 > 前置依赖：M4 陪诊订单与状态机（候选推荐）　M3 用户与档案（老人绑定）　全局约定见 [README.md](./README.md)
-> 状态：**后端 + Python 服务 + 前端页面已实现**（Java 单测 50 条 · Python 196 条（pytest 实跑口径）· 前端 16 条）
+> 状态：**后端 + Python 服务 + 前端页面已实现**（Java 单测 50 条 · Python 196 条（pytest 实跑口径）· 前端 19 条（assistant 两个测试文件静态 it 口径））
 > 决策依据：[ADR-0020](../adr/0020-assistant-boundary-and-recommendation-guardrail.md) · 工程契约：[V3.7-assistant-spec.md](../spec/V3.7-assistant-spec.md)
 
 > ⚠️ **本模块是项目里第一个也是唯一一个 AI 能力模块**。
