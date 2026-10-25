@@ -13,11 +13,12 @@ import java.time.LocalDateTime;
 /**
  * 用户管理列表项（{@code docs/api/08-admin.md} §一 {@code AdminUserVO} / §4）。
  *
- * <h3>手机号必须脱敏（验收项）</h3>
+ * <h3>手机号与姓名都必须脱敏（验收项）</h3>
  *
  * <p>管理端列表一屏能看到几十个用户，而管理员真正需要的只是「认出是哪个人」。
  * 完整手机号在这里没有任何增量价值 —— 需要联系用户时，
- * 他看的应该是详情的联系方式，那是一个单独的动作，也更值得被记录。</p>
+ * 他看的应该是详情的联系方式，那是一个单独的动作，也更值得被记录。
+ * 姓名同理：{@code /api/admin/**} 属于「一律脱敏」的适用范围（AGENTS.md §0.1）。</p>
  *
  * <h3>密码字段永不出现</h3>
  *
@@ -43,7 +44,20 @@ public class AdminUserVO {
     @Schema(description = "昵称", example = "李阿姨")
     private String nickname;
 
-    @Schema(description = "真实姓名", example = "李四")
+    /**
+     * 真实姓名（脱敏）。
+     *
+     * <p>⚠️ <b>这里必须脱敏</b>：管理端用户列表一次能看几十个用户，
+     * 姓名与手机号同属「按场景脱敏」的适用范围（AGENTS.md §0.1 明确
+     * 「{@code /api/admin/**} 一律脱敏」）。此前本字段直接透传
+     * {@code user.getRealName()}，而紧邻的手机号却是脱敏的 ——
+     * 同屏两列口径不一致，属于漏改而非既定决策。</p>
+     *
+     * <p>已记录的例外（<b>不要跟着一起改</b>）：
+     * {@code AuditApplicationVO.realName} 保持明文 —— 资质审核要核对证件原件，
+     * 那是 {@code docs/api/08-admin.md} 明写的场景。</p>
+     */
+    @Schema(description = "真实姓名（脱敏）", example = "李*")
     private String realName;
 
     @Schema(description = "手机号（脱敏）", example = "139****6677")
@@ -85,7 +99,7 @@ public class AdminUserVO {
                 .setId(user.getId())
                 .setUsername(user.getUsername())
                 .setNickname(user.getNickname())
-                .setRealName(user.getRealName())
+                .setRealName(MaskUtil.name(user.getRealName()))
                 .setPhone(MaskUtil.phone(user.getPhone()))
                 .setRole(user.getRole())
                 .setRoleLabel(RoleConstants.Role.labelOf(user.getRole()))
