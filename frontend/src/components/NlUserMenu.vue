@@ -29,6 +29,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, SwitchButton } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
+import { confirmThen } from '@/utils/confirm'
 
 const props = defineProps({
   size: { type: String, default: 'md' },
@@ -50,8 +51,9 @@ const isSm = computed(() => props.size === 'sm')
 
 /* ---------------- 退出登录 ---------------- */
 async function handleLogout() {
-  try {
-    await ElMessageBox.confirm(
+  // confirmThen 把「用户是否点了确认」变成布尔：点「取消 / 关闭」返回 false → 不执行登出
+  const ok = await confirmThen(() =>
+    ElMessageBox.confirm(
       '退出后将无法接收订单通知，是否继续？',
       '退出登录',
       {
@@ -61,10 +63,8 @@ async function handleLogout() {
         closeOnClickModal: false
       }
     )
-  } catch {
-    // 用户点了「取消 / 关闭」→ 不执行登出
-    return
-  }
+  )
+  if (!ok) return
   await userStore.logout()
   ElMessage.success('已退出登录')
   router.push('/login')

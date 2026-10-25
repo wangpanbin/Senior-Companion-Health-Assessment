@@ -9,14 +9,16 @@
  *
  * desktop-adapt-v2（T-03）：侧栏模式从硬编码 expanded → auto + 手动 + 持久化
  */
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
 import { useResponsive } from '@/composables/useResponsive'
 import { resolveSidebarMode, toggleSidebarMode as computeNextMode } from '@/utils/sidebar'
+import { confirmThen } from '@/utils/confirm'
 import { routes } from '@/router/routes'
+import { listAllOrders, listAuditApplications, listComplaints } from '@/api/admin'
 
 const route = useRoute()
 const router = useRouter()
@@ -48,17 +50,58 @@ const menus = computed(() => {
       if (!allow || allow.length === 0) return true
       return !userStore.isLogin || allow.includes(userStore.role)
     })
-    .map((item) => ({
-      path: `/admin/${item.path}`,
-      title: item.meta?.title || item.name,
-      icon: item.meta?.icon || 'Menu'
-    }))
+    .map((item) => {
+      const path = `/admin/${item.path}`
+      const field = TODO_BADGE_FIELD[path]
+      return {
+        path,
+        title: item.meta?.title || item.name,
+        icon: item.meta?.icon || 'Menu',
+        badge: field ? todoCount[field] : 0
+      }
+    })
 })
 
 const activeMenu = computed(() => route.path)
 
 const pageTitle = computed(() => route.meta?.title || '')
 const pageModule = computed(() => route.meta?.module || '')
+
+/* ==================== 侧栏待办角标（P2-7） ==================== */
+
+/**
+ * 待办量。口径全部取自后端已有的列表接口，前端不另算一套：
+ *   - 待审资质：/admin/companion/audit 的 counts.PENDING（整表口径，不受分页影响）
+ *   - 投诉管理：/admin/complaint?status=PENDING 的 total（待处理投诉）
+ *   - 订单纠纷：/admin/order?hasComplaint=true 的 total（有纠纷待仲裁的订单）
+ *
+ * ⚠️ 这三个接口都是 ADMIN 专用，失败时不抛错：保持上一次的值即可，
+ *    错误提示由 request.js 的统一拦截器负责（不在这里重复弹）。
+ */
+const todoCount = reactive({ audit: 0, complaint: 0, dispute: 0 })
+
+/** 侧栏路径 → 角标字段 */
+const TODO_BADGE_FIELD = {
+  '/admin/companion-audit': 'audit',
+  '/admin/complaint': 'complaint',
+  '/admin/order-dispute': 'dispute'
+}
+
+let todoTimer = null
+
+async function loadTodoCounts() {
+  const [audit, complaint, dispute] = await Promise.allSettled([
+    listAuditApplications({ page: 1, size: 1, auditStatus: 'PENDING' }),
+    listComplaints({ page: 1, size: 1, status: 'PENDING' }),
+    listAllOrders({ page: 1, size: 1, hasComplaint: true })
+  ])
+  todoCount.audit =
+    audit.status === 'fulfilled'
+      ? Number(audit.value?.counts?.PENDING ?? audit.value?.total ?? 0)
+      : 0
+  todoCount.complaint = complaint.status === 'fulfilled' ? Number(complaint.value?.total ?? 0) : 0
+  todoCount.dispute = dispute.status === 'fulfilled' ? Number(dispute.value?.total ?? 0) : 0
+}
 
 /** 用户点 header 的 toggle 按钮：auto ↔ 手动态（语义见 utils/sidebar.js） */
 function handleToggleSidebar() {
@@ -67,11 +110,9 @@ function handleToggleSidebar() {
 }
 
 async function handleLogout() {
-  try {
-    await ElMessageBox.confirm('确定要退出登录吗？', '提示', { type: 'warning' })
-  } catch {
-    return
-  }
+  // confirmThen 把「用户是否点了确认」变成布尔：取消时静默返回 false，不执行登出
+  const ok = await confirmThen(() => ElMessageBox.confirm('确定要退出登录吗？', '提示', { type: 'warning' }))
+  if (!ok) return
   await userStore.logout()
   ElMessage.success('已退出登录')
   router.push('/login')
@@ -80,6 +121,22 @@ async function handleLogout() {
 function handleCommand(cmd) {
   if (cmd === 'logout') handleLogout()
 }
+
+onMounted(() => {
+  loadTodoCounts()
+  todoTimer = setInterval(() => {
+    // 后台标签页不轮询：省一次请求，也避免后端不可用时反复弹错误提示
+    if (document.visibilityState === 'visible') loadTodoCounts()
+  }, 60000)
+})
+
+// 处理完待办再回到后台其它页面时，角标要跟着变（不刷新整个页面）
+watch(() => route.path, loadTodoCounts)
+
+onBeforeUnmount(() => {
+  if (todoTimer) clearInterval(todoTimer)
+  todoTimer = null
+})
 </script>
 
 <template>
@@ -100,7 +157,16 @@ function handleCommand(cmd) {
       >
         <el-menu-item v-for="m in menus" :key="m.path" :index="m.path">
           <el-icon><component :is="m.icon" /></el-icon>
-          <template #title>{{ m.title }}</template>
+          <template #title>
+            <el-badge
+              :value="m.badge"
+              :hidden="!m.badge"
+              :max="99"
+              class="admin__menu-badge"
+            >
+              <span class="admin__menu-title">{{ m.title }}</span>
+            </el-badge>
+          </template>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -229,6 +295,11 @@ function handleCommand(cmd) {
       background: var(--nl-primary-light);
       border-left: 3px solid var(--nl-primary);
     }
+  }
+
+  /* 待办角标贴在标题右上角（el-badge 默认绝对定位），右侧留一点空隙 */
+  &__menu-badge {
+    margin-right: 12px;
   }
 
   &__header {
