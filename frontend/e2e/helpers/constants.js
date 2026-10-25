@@ -80,6 +80,8 @@ export const ROUTES = {
   /** V3.4 智能调度：家属订单详情（待接单订单 1001，页面会展示候选陪诊员推荐） */
   familyOrderDetailPending: () => `/family/order/${SEED.orderPending}`,
   companionMessage: '/companion/message',
+  /** 陪诊员「收到的评价」（M-26） */
+  companionReviews: '/companion/reviews',
   companionExecute: (id) => `/companion/execute/${id}`,
   familyOrderDetail: (id) => `/family/order/${id}`,
   orderReview: (id) => `/family/order/${id}/review`,

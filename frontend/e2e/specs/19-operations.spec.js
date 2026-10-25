@@ -21,7 +21,6 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../helpers/paths'
 import { ROUTES } from '../helpers/constants'
-import { ROLE_HOME } from '../helpers/accounts'
 import { sweep } from '../helpers/pageAudit'
 import { apiAsAccount, API } from '../helpers/api'
 
@@ -173,8 +172,9 @@ test.describe('V3.5 · 运营驾驶舱越权', () => {
     await page.waitForTimeout(1500)
     const landed = await page.evaluate(() => location.pathname)
     expect(landed, '非管理员不得进入驾驶舱').not.toBe(ROUTES.adminOperations)
-    // 路由守卫把越权访问重定向回本人角色主页（或 403 页），两者都不是驾驶舱
-    expect([ROLE_HOME.FAMILY, '/error/403']).toContain(landed)
+    // 路由守卫把越权访问改跳 403 页（P1-6：原先静默弹回角色主页，用户分不清
+    // 是自己点错还是系统故障）。**精确断言**——二选一的 toContain 等于没有判别力。
+    expect(landed, '越权应落到 403 页').toBe(ROUTES.error403)
     const text = await page.locator('body').innerText()
     expect(text, '越权时不得看到驾驶舱内容').not.toContain('平台健康度')
   })
