@@ -14,6 +14,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlCard, NlNoticeBar } from '@/components'
 import { exportOrders, exportUsers } from '@/api/statistics'
 import { today } from '@/utils/format'
+import { confirmThen } from '@/utils/confirm'
 
 const form = ref({
   // 时间区间用 value-format 直接拿 "yyyy-MM-dd" 字符串，贴合后端 startDate/endDate
@@ -56,16 +57,15 @@ function triggerDownload(blob, filename) {
 
 async function exportFile() {
   if (exporting.value) return
-  try {
-    await ElMessageBox.confirm(
+  // confirmThen 把「用户是否点了确认」变成布尔：用户取消时静默返回 false，不发请求
+  const ok = await confirmThen(() =>
+    ElMessageBox.confirm(
       '导出数据将按当前筛选条件实时查询；敏感字段由后端脱敏，不会泄露明文。',
       '确认导出',
       { confirmButtonText: '导出 Excel' }
     )
-  } catch {
-    // 用户取消，直接返回
-    return
-  }
+  )
+  if (!ok) return
 
   exporting.value = true
   try {

@@ -13,6 +13,7 @@ import { ref, computed, onMounted } from 'vue'
 import { NlCard, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
 import { listOperLogs } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
+import { usePagedList } from '@/composables/usePagedList'
 
 const list = ref([])
 const loading = ref(false)
@@ -39,6 +40,17 @@ async function loadList() {
 }
 
 const isEmpty = computed(() => !loading.value && list.value.length === 0)
+
+/**
+ * 分页列表的共性逻辑（P1-8）：空态区分「本页已空」与「筛选无结果」、
+ * 写操作后必要时回退一页。7 个后台页共用同一份实现 —— 此前是逐字复制。
+ */
+const { pageDrained, onPrevPage } = usePagedList({
+  page,
+  isEmpty,
+  records: list,
+  reload: loadList
+})
 
 function onPageChange(p) {
   page.value = p
@@ -72,6 +84,15 @@ onMounted(loadList)
       title="操作日志加载失败"
       action-text="重试"
       @action="loadList"
+    />
+
+    <NlEmpty
+      v-else-if="pageDrained"
+      type="empty"
+      title="本页已空，上一页还有"
+      description="当前页码上没有操作日志，可返回上一页查看"
+      action-text="返回上一页"
+      @action="onPrevPage"
     />
 
     <NlEmpty

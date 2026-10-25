@@ -75,7 +75,60 @@ const missedChartRef = ref(null)
 const growthChartRef = ref(null)
 let orderChart, completionChart, missedChart, growthChart
 
-const ORDER_TREND_COLORS = ['#1D6FF2', '#17B26A', '#F79009']
+/* ============ 图表调色板（色值真源 = 设计令牌） ============ */
+
+/**
+ * 从 :root 读设计令牌的实际色值。
+ *
+ * <p>为什么不能直接写 'var(--nl-primary)'：ECharts 画在 canvas 上，
+ * canvas 的 fillStyle 不解析 CSS 变量，塞进去只会画成黑色或透明。
+ * 令牌的真值仍然只在 variables.scss 一处，这里只是运行期取一次。</p>
+ */
+function token(name) {
+  return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
+/** 令牌色值 → rgba(...)：渐变的半透明停靠点用得上 */
+function withAlpha(color, alpha) {
+  const hex = color.replace('#', '').trim()
+  const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex
+  if (full.length !== 6) return color
+  const r = parseInt(full.slice(0, 2), 16)
+  const g = parseInt(full.slice(2, 4), 16)
+  const b = parseInt(full.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+/** 字号令牌 → 数字（ECharts 的 fontSize 只吃 number） */
+function tokenPx(name, fallback) {
+  const parsed = parseInt(token(name), 10)
+  return Number.isNaN(parsed) ? fallback : parsed
+}
+
+/**
+ * 图表统一调色板。
+ *
+ * <p>趋势三条序列固定用「主色 / 成功色 / 警告色」，与列表页的状态色语义一致；
+ * 坐标轴与分割线走中性色，避免图表比正文更抢眼。</p>
+ */
+function chartPalette() {
+  return {
+    primary: token('--nl-primary'),
+    success: token('--nl-success'),
+    warning: token('--nl-warning'),
+    purple: token('--nl-purple'),
+    border: token('--nl-border'),
+    divider: token('--nl-divider'),
+    text3: token('--nl-text-3'),
+    card: token('--nl-bg-card')
+  }
+}
+
+/** 订单趋势最多三条序列：新增 / 完成 / 取消，配色固定取三枚语义色 */
+function trendColors() {
+  const p = chartPalette()
+  return [p.primary, p.success, p.warning]
+}
 
 /* ============ 渲染：订单趋势 ============ */
 function renderOrderChart() {
@@ -85,9 +138,11 @@ function renderOrderChart() {
   const trend = orderTrend.value
   const categories = (trend && trend.categories) || []
   const seriesRaw = (trend && trend.series) || []
+  const palette = chartPalette()
+  const colors = trendColors()
   // 后端保证 categories 与各 series.data 长度一致且缺口补 0，前端直接照画即可
   const series = seriesRaw.map((s, idx) => {
-    const color = ORDER_TREND_COLORS[idx % ORDER_TREND_COLORS.length]
+    const color = colors[idx % colors.length]
     return {
       name: s.name,
       type: 'line',
@@ -101,8 +156,8 @@ function renderOrderChart() {
       areaStyle: idx === 0
         ? {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(29,111,242,0.25)' },
-              { offset: 1, color: 'rgba(29,111,242,0)' }
+              { offset: 0, color: withAlpha(palette.primary, 0.25) },
+              { offset: 1, color: withAlpha(palette.primary, 0) }
             ])
           }
         : undefined
@@ -117,14 +172,14 @@ function renderOrderChart() {
       type: 'category',
       data: categories,
       boundaryGap: false,
-      axisLine: { lineStyle: { color: '#E7EDF5' } },
-      axisLabel: { color: '#93A1B5', fontSize: 11 }
+      axisLine: { lineStyle: { color: palette.border } },
+      axisLabel: { color: palette.text3, fontSize: tokenPx('--nl-font-caption', 11) }
     },
     yAxis: {
       type: 'value',
       axisLine: { show: false },
-      axisLabel: { color: '#93A1B5', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#EFF3F8' } }
+      axisLabel: { color: palette.text3, fontSize: tokenPx('--nl-font-caption', 11) },
+      splitLine: { lineStyle: { color: palette.divider } }
     },
     series
   }, true)
@@ -136,6 +191,7 @@ function renderCompletionChart() {
   completionChart = completionChart?.dispose() || echarts.init(completionChartRef.value)
 
   const rate = kpi.value.completionRate
+  const palette = chartPalette()
   completionChart.setOption({
     series: [
       {
@@ -143,12 +199,12 @@ function renderCompletionChart() {
         radius: ['70%', '88%'],
         avoidLabelOverlap: false,
         startAngle: 90,
-        itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+        itemStyle: { borderRadius: 6, borderColor: palette.card, borderWidth: 2 },
         label: { show: false },
         labelLine: { show: false },
         data: [
-          { value: rate, name: '已完成', itemStyle: { color: '#17B26A' } },
-          { value: Math.max(100 - rate, 0), name: '未完成', itemStyle: { color: '#E7EDF5' } }
+          { value: rate, name: '已完成', itemStyle: { color: palette.success } },
+          { value: Math.max(100 - rate, 0), name: '未完成', itemStyle: { color: palette.border } }
         ]
       }
     ]
@@ -173,20 +229,22 @@ function renderMissedChart() {
     return t > 0 ? Number(((m / t) * 100).toFixed(2)) : 0
   })
 
+  const palette = chartPalette()
+
   missedChart.setOption({
     grid: { top: 16, left: 36, right: 12, bottom: 22 },
     tooltip: { trigger: 'axis', valueFormatter: (v) => `${v}%` },
     xAxis: {
       type: 'category',
       data: categories,
-      axisLine: { lineStyle: { color: '#E7EDF5' } },
-      axisLabel: { color: '#93A1B5', fontSize: 10 }
+      axisLine: { lineStyle: { color: palette.border } },
+      axisLabel: { color: palette.text3, fontSize: tokenPx('--nl-font-micro', 10) }
     },
     yAxis: {
       type: 'value',
       axisLine: { show: false },
-      axisLabel: { color: '#93A1B5', fontSize: 10, formatter: '{value}%' },
-      splitLine: { lineStyle: { color: '#EFF3F8' } }
+      axisLabel: { color: palette.text3, fontSize: tokenPx('--nl-font-micro', 10), formatter: '{value}%' },
+      splitLine: { lineStyle: { color: palette.divider } }
     },
     series: [
       {
@@ -196,12 +254,12 @@ function renderMissedChart() {
         smooth: true,
         symbol: 'circle',
         symbolSize: 5,
-        itemStyle: { color: '#F79009' },
-        lineStyle: { width: 2, color: '#F79009' },
+        itemStyle: { color: palette.warning },
+        lineStyle: { width: 2, color: palette.warning },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(247,144,9,0.25)' },
-            { offset: 1, color: 'rgba(247,144,9,0)' }
+            { offset: 0, color: withAlpha(palette.warning, 0.25) },
+            { offset: 1, color: withAlpha(palette.warning, 0) }
           ])
         }
       }
@@ -218,6 +276,7 @@ function renderGrowthChart() {
   const u = (overview.value && overview.value.user) || {}
   const cats = ['老人', '家属', '陪诊员', '管理员']
   const data = [u.elderCount || 0, u.familyCount || 0, u.companionCount || 0, u.adminCount || 0]
+  const palette = chartPalette()
 
   growthChart.setOption({
     grid: { top: 20, left: 36, right: 12, bottom: 24 },
@@ -225,14 +284,14 @@ function renderGrowthChart() {
     xAxis: {
       type: 'category',
       data: cats,
-      axisLine: { lineStyle: { color: '#E7EDF5' } },
-      axisLabel: { color: '#93A1B5', fontSize: 11 }
+      axisLine: { lineStyle: { color: palette.border } },
+      axisLabel: { color: palette.text3, fontSize: tokenPx('--nl-font-caption', 11) }
     },
     yAxis: {
       type: 'value',
       axisLine: { show: false },
-      axisLabel: { color: '#93A1B5', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#EFF3F8' } }
+      axisLabel: { color: palette.text3, fontSize: tokenPx('--nl-font-caption', 11) },
+      splitLine: { lineStyle: { color: palette.divider } }
     },
     series: [
       {
@@ -241,9 +300,10 @@ function renderGrowthChart() {
         barWidth: '46%',
         itemStyle: {
           borderRadius: [6, 6, 0, 0],
+          // 渐变两端同源：深色用 --nl-purple，浅色是它叠在白底上的淡紫
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#7A5AF8' },
-            { offset: 1, color: '#A18BFF' }
+            { offset: 0, color: palette.purple },
+            { offset: 1, color: withAlpha(palette.purple, 0.65) }
           ])
         }
       }
@@ -344,6 +404,8 @@ watch(range, loadDashboard)
       type="empty"
       title="暂无数据"
       description="当前时间范围内还没有可统计的数据"
+      action-text="刷新"
+      @action="loadDashboard"
     />
 
     <template v-else>
@@ -453,8 +515,8 @@ watch(range, loadDashboard)
   }
 
   &__val {
-    margin-top: 6px;
-    font-size: 28px;
+    margin-top: $nl-space-2;
+    font-size: var(--nl-font-display);
     font-weight: 700;
     color: var(--nl-text-1);
 
@@ -467,7 +529,7 @@ watch(range, loadDashboard)
      包括「本周期全部订单」「全量累计」这种纯中性描述 —— 既语义误用，
      #17B26A 在白底也只有 2.76:1。说明文字一律走中性灰。 */
   &__trend {
-    margin-top: 6px;
+    margin-top: $nl-space-2;
     font-size: var(--nl-font-caption);
     color: var(--nl-text-2);
   }
@@ -513,7 +575,7 @@ watch(range, loadDashboard)
   }
 
   &__val {
-    font-size: 36px;
+    font-size: var(--nl-font-display);
     font-weight: 700;
     color: var(--nl-success-text);
   }

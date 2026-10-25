@@ -17,6 +17,8 @@ import { NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlAdminTable } from '@/compo
 import { useResponsive } from '@/composables/useResponsive'
 import { listAllOrders, arbitrateOrder } from '@/api/admin'
 import { formatDateTime, formatMoney } from '@/utils/format'
+import { confirmThen } from '@/utils/confirm'
+import { usePagedList } from '@/composables/usePagedList'
 
 const list = ref([])
 const loading = ref(false)
@@ -44,6 +46,17 @@ async function loadList() {
 
 const isEmpty = computed(() => !loading.value && list.value.length === 0)
 
+/**
+ * 分页列表的共性逻辑（P1-8）：空态区分「本页已空」与「筛选无结果」、
+ * 写操作后必要时回退一页。7 个后台页共用同一份实现 —— 此前是逐字复制。
+ */
+const { pageDrained, onPrevPage, reloadAfterMutate } = usePagedList({
+  page,
+  isEmpty,
+  records: list,
+  reload: loadList
+})
+
 function onPageChange(p) {
   page.value = p
   loadList()
@@ -55,6 +68,13 @@ const decision = ref('COMPLETED')
 const decisionNote = ref('')
 const refundToFamily = ref(false)
 const penaltyToCompanion = ref(false)
+/**
+ * 执行仲裁的 in-flight 锁（P1-5）。
+ *
+ * <p>连点会打两次仲裁请求：第一次还在途时第二次已经出去，后端对同一订单二次
+ * 仲裁返回业务错误，拦截器弹成错误 toast —— 用户看到「成功 + 报错」双提示。</p>
+ */
+const arbitrating = ref(false)
 
 function open(o) {
   detail.value = o
@@ -76,20 +96,36 @@ async function forceTerminate() {
     ElMessage.warning('请填写处理结果说明（至少 10 字，将通知双方）')
     return
   }
-  await ElMessageBox.confirm(
-    `执行「${decision.value === 'CANCELLED' ? '强制取消' : '强制完成'}」仲裁决定？该操作将同时通知家属与陪诊员。`,
-    '确认仲裁',
-    { confirmButtonText: '执行并通知双方', type: 'warning' }
-  )
-  await arbitrateOrder(detail.value.id, {
-    targetStatus: decision.value,
-    result: note,
-    refundToFamily: refundToFamily.value,
-    penaltyToCompanion: penaltyToCompanion.value
-  })
-  ElMessage.success('已执行仲裁，将自动通知家属与陪诊员（站内信）')
-  dialogVisible.value = false
-  loadList()
+  if (!detail.value) return
+  // ⚠️ in-flight 锁必须在第一个 await 之前同步置位（P1-5）
+  if (arbitrating.value) return
+  arbitrating.value = true
+  try {
+    // confirmThen 把「用户是否点了确认」变成布尔：取消时静默返回 false，不发请求（P1-12）
+    const confirmed = await confirmThen(() =>
+      ElMessageBox.confirm(
+        `执行「${decision.value === 'CANCELLED' ? '强制取消' : '强制完成'}」仲裁决定？该操作将同时通知家属与陪诊员。`,
+        '确认仲裁',
+        { confirmButtonText: '执行并通知双方', type: 'warning' }
+      )
+    )
+    if (!confirmed) return
+
+    const orderId = detail.value.id
+    await arbitrateOrder(orderId, {
+      targetStatus: decision.value,
+      result: note,
+      refundToFamily: refundToFamily.value,
+      penaltyToCompanion: penaltyToCompanion.value
+    })
+    ElMessage.success('已执行仲裁，将自动通知家属与陪诊员（站内信）')
+    dialogVisible.value = false
+    await reloadAfterMutate()
+  } catch {
+    // 后端报错由 request.js 拦截器统一弹提示，这里不重复弹
+  } finally {
+    arbitrating.value = false
+  }
 }
 
 /** 列定义（desktop 8 列；mobile 关键 4 字段：订单号 / 就诊人 / 状态 / 操作） */
@@ -123,10 +159,19 @@ onMounted(loadList)
     />
 
     <NlEmpty
+      v-else-if="pageDrained"
+      type="empty"
+      title="本页已空，上一页还有"
+      description="刚仲裁完的订单已不在本页，可返回上一页继续处理"
+      action-text="返回上一页"
+      @action="onPrevPage"
+    />
+
+    <NlEmpty
       v-else-if="isEmpty"
       type="empty"
       title="暂无订单"
-      description="当前没有可仲裁的订单"
+      description="当前筛选条件下没有可仲裁的订单"
     />
 
     <NlAdminTable
@@ -209,7 +254,9 @@ onMounted(loadList)
 
     <template #footer>
       <el-button @click="dialogVisible = false">关闭</el-button>
-      <el-button type="danger" @click="forceTerminate">执行仲裁 + 通知双方</el-button>
+      <el-button type="danger" :loading="arbitrating" @click="forceTerminate">
+        执行仲裁 + 通知双方
+      </el-button>
     </template>
   </el-dialog>
 </template>
