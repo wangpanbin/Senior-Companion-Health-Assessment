@@ -84,6 +84,27 @@ class AssistantService:
 
         # ① 输入侧护栏：医疗意图 → 直接拒答（**不经 LLM**）
         verdict = guard.scan_input(question)
+
+        # ①·补 **历史里的 user 轮同样过输入护栏**。
+        #    scan_input 只看当前问句的话，医疗内容可以放进上一轮、
+        #    当前问句只写「继续」—— 历史会被渲染进事实包交给大模型，
+        #    而输出护栏只拦共享词表的 17 个词，「建议饭后服用」这类
+        #    表述不在其中，恰好从这条缝漏出去。
+        #    只扫 user 轮：assistant 轮是本服务自己的输出，已经过了输出护栏；
+        #    空白轮不扫（与 _build_facts 的丢弃口径一致）。
+        #    命中辱骂/引流词时 scan_input 直接抛 IllegalQuestion（→ 10003），
+        #    与「在当前问句里命中」的行为一致。
+        if not verdict.medical:
+            for turn in request.history or []:
+                if (turn.role or "") != "user":
+                    continue
+                content = (turn.content or "").strip()
+                if not content:
+                    continue
+                verdict = guard.scan_input(content)
+                if verdict.medical:
+                    break
+
         if verdict.medical:
             return ChatResponse(
                 answer=guard.REFUSAL_TEMPLATE,

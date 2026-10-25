@@ -74,6 +74,25 @@ def test_medical_question_is_refused_without_llm(client: TestClient) -> None:
     assert "医疗" in body["answer"]
 
 
+def test_medical_history_is_refused(client: TestClient) -> None:
+    """医疗内容挪进 history 也逃不掉输入护栏（收口加固回归）。
+
+    问句只写「继续」，医疗内容在上一轮 —— 历史会进事实包交给大模型，
+    输入护栏必须把 user 轮一起扫掉。
+    """
+    response = client.post(
+        "/internal/assistant/chat",
+        json={
+            "question": "继续",
+            "history": [{"role": "user", "content": "术后该吃什么药调理"}],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "REFUSE_MEDICAL"
+    assert "医疗" in body["answer"]
+
+
 def test_abusive_question_returns_400(client: TestClient) -> None:
     """辱骂 / 引流 → 400 + ILLEGAL_QUESTION（Java 门面转 10003）。"""
     response = client.post(

@@ -136,6 +136,62 @@ def test_refuse_medical_never_uses_the_llm(faq_index) -> None:
     assert response.degraded is False
 
 
+# ---------------------------------------------------------------------------
+# 历史轮次同样过输入护栏（V3.7 收口加固）
+# ---------------------------------------------------------------------------
+#
+# 背景：scan_input 原本只看当前问句，医疗内容放进上一轮、当前问句只写
+# 「继续」，历史会被渲染进事实包交给大模型 —— 输出护栏只拦共享词表的
+# 17 个词，「建议饭后服用」这类表述恰好漏出去。
+# 输入拒答必须覆盖 history 的 user 轮，不能给「挪进历史就能绕过」留门。
+
+
+def test_medical_content_in_history_is_refused(faq_index) -> None:
+    """医疗内容放进 history、问句只写「继续」→ 仍然整体拒答，不经模型。"""
+    service = AssistantService(faq_index, provider=_ChattyProvider())
+    response = service.chat(
+        ChatRequest(
+            question="继续",
+            history=[
+                HistoryTurn(role="user", content="我爸术后该吃什么药调理"),
+                HistoryTurn(role="assistant", content="好的"),
+            ],
+        )
+    )
+
+    assert response.intent == "REFUSE_MEDICAL"
+    assert response.answer == guard.REFUSAL_TEMPLATE
+    assert response.degraded is False
+
+
+def test_abusive_content_in_history_raises(service: AssistantService) -> None:
+    """辱骂 / 引流词放进 history → 同样抛 IllegalQuestion（Java 门面转 10003）。"""
+    with pytest.raises(guard.IllegalQuestion):
+        service.chat(
+            ChatRequest(
+                question="继续",
+                history=[HistoryTurn(role="user", content="你们就是骗子")],
+            )
+        )
+
+
+def test_normal_history_still_answers(faq_index) -> None:
+    """正常历史不受影响 —— 问句自己能命中的照旧命中。"""
+    service = AssistantService(faq_index)
+    response = service.chat(
+        ChatRequest(
+            question="服务费多少钱",
+            history=[
+                HistoryTurn(role="user", content="怎么下单"),
+                HistoryTurn(role="assistant", content="在工作台点击下单。"),
+            ],
+        )
+    )
+
+    assert response.intent == "FAQ_PLATFORM"
+    assert response.answer != guard.CLARIFY_TEMPLATE
+
+
 def test_recommend_without_candidates_never_uses_the_llm(faq_index) -> None:
     """没有候选陪诊员 → **不调模型**，走确定性引导（V3.7 联调回归）。
 
