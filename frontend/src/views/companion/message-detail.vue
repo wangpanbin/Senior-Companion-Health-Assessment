@@ -8,7 +8,7 @@
  * 接口按收件人归属校验（7002）且已删除的消息查不到（7001），
  * 失败时只提示消息不可查看，不展示任何其他用户的信息。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NlCard, NlEmpty, NlIconBox, NlPageShell, NlSkeleton } from '@/components'
 import { getMessage } from '@/api/message'
@@ -66,17 +66,29 @@ const relatedTarget = computed(() => {
 /** R4：传输层失败（可重试）与「消息确实不可用」（7001/7002）必须分开 */
 const loadError = ref(false)
 
+/**
+ * 消息 id 必须是**响应式**的：Vue Router 4 在「同一条路由记录只换 params」时会
+ * 复用组件实例（onMounted 不再触发）。快照成常量会让「URL 是 B、页面还显示 A」。
+ */
+const messageId = computed(() => route.params.id)
+
 async function loadMessage() {
+  // 记下本次请求针对的消息：请求在途时 URL 可能又换了消息，回来时要能判断响应是否过期
+  const target = messageId.value
   try {
-    message.value = await getMessage(route.params.id)
+    const data = await getMessage(target)
+    // 过期响应直接丢弃：否则会把上一条消息挂在当前 URL 下
+    if (String(target) !== String(messageId.value)) return
+    message.value = data
     loadError.value = false
   } catch (e) {
+    if (String(target) !== String(messageId.value)) return
     // 业务码（7001 / 7002）= 消息确实不可用 → 落「消息已不可查看」空态（重试也没用）；
     // 无业务码 = 网络/超时失败 → 落可重试的错误态。拦截器已提示，这里不重复弹。
     message.value = null
     loadError.value = !e?.code
   } finally {
-    loading.value = false
+    if (String(target) === String(messageId.value)) loading.value = false
   }
 }
 
@@ -90,7 +102,10 @@ function openRelated() {
   if (relatedTarget.value) router.push(relatedTarget.value)
 }
 
-onMounted(loadMessage)
+onMounted(reloadMessage)
+
+// 同一条路由记录只换 params 时组件实例会被复用，onMounted 不再触发 —— 这里补上重拉
+watch(messageId, reloadMessage)
 </script>
 
 <template>

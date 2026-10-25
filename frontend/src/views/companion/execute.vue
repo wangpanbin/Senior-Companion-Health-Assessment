@@ -16,11 +16,11 @@
  *   - 订阅前必须先 getProgress 铺底；onBeforeUnmount 必须 socket.close()。
  *   - 打卡节点：DEPART/ARRIVE/IN_CONSULT/TAKE_MEDICINE/LEAVE/FINISH。
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElNotification } from 'element-plus'
 import {
-  NlPhoneShell, NlMobileOnlyPage, NlTimeline, NlCard, NlStatusChip, NlSkeleton, NlEmpty
+  NlPhoneShell, NlMobileOnlyPage, NlTimeline, NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlNoticeBar
 } from '@/components'
 import { getOrder, startService, completeService } from '@/api/order'
 import {
@@ -29,7 +29,12 @@ import {
 import { formatVisitTime, formatMoney, formatTime, formatDateTime } from '@/utils/format'
 
 const route = useRoute()
-const orderId = route.params.id
+/**
+ * 订单 id 必须是**响应式**的：Vue Router 4 在「同一条路由记录只换 params」时会
+ * 复用组件实例（onMounted 不再触发）。快照成常量会让「URL 是 B、页面还显示 A」，
+ * 陪诊员据此点的「打卡」会记到上一单头上。
+ */
+const orderId = computed(() => route.params.id)
 
 const NODE_KEYS = ['DEPART', 'ARRIVE', 'IN_CONSULT', 'TAKE_MEDICINE', 'LEAVE', 'FINISH']
 const NODE_LABELS = {
@@ -51,6 +56,8 @@ const loadError = ref(false)
 const connected = ref(false)
 const checking = ref(false)
 const completing = ref(false)
+/** V3.x：「开始服务」的 in-flight 态，避免连点重复提交 */
+const starting = ref(false)
 const summary = ref('')
 
 /** 现场照 / 取药凭证 URL（来自 uploadExecutionPhoto） */
@@ -102,31 +109,38 @@ const steps = computed(() => {
 /* ===================== 数据加载 ===================== */
 
 async function loadAll() {
+  // 记下本次请求针对的订单：请求在途时 URL 可能又换了订单，回来时要能判断响应是否过期
+  const target = orderId.value
   loading.value = true
   try {
     const [o, p, c] = await Promise.all([
-      getOrder(orderId),
-      getProgress(orderId),
-      listCheckins(orderId)
+      getOrder(target),
+      getProgress(target),
+      listCheckins(target)
     ])
+    // 过期响应直接丢弃：否则会把上一单的数据显示在当前 URL 下
+    if (String(target) !== String(orderId.value)) return
     order.value = o ?? null
     progress.value = p ?? null
     checkins.value = c || []
     loadError.value = false
   } catch {
+    if (String(target) !== String(orderId.value)) return
     order.value = null
     progress.value = null
     checkins.value = []
     loadError.value = true
   } finally {
-    loading.value = false
+    if (String(target) === String(orderId.value)) loading.value = false
   }
 }
 
 /** 收到推送 / 操作后只重拉进度 + 打卡记录（轻量） */
 async function reloadProgress() {
+  const target = orderId.value
   try {
-    const [p, c] = await Promise.all([getProgress(orderId), listCheckins(orderId)])
+    const [p, c] = await Promise.all([getProgress(target), listCheckins(target)])
+    if (String(target) !== String(orderId.value)) return
     progress.value = p ?? null
     checkins.value = c || []
   } catch {
@@ -170,9 +184,28 @@ async function refreshLocation() {
 
 /* ===================== 操作 ===================== */
 
+/**
+ * URL 里的订单 id 与页面正在展示的订单 id 是否一致。
+ *
+ * 路由复用组件实例时存在一个竞态窗口：URL 已经换成 B，详情还没回来，
+ * 页面显示的仍是 A。此时打卡 / 开始服务会作用到 B 这一单 —— 用户看到的是 A，
+ * 记的却是 B 的账。
+ */
+function isDisplayedOrderCurrent() {
+  const shown = order.value?.id ?? progress.value?.orderId
+  // 详情里没有 id 时没有可比对的基准，不做拦截（避免把用户锁死在页面上）
+  if (shown == null) return true
+  return String(shown) === String(orderId.value)
+}
+
 async function doCheckin() {
   const node = progress.value?.nextNode
   if (!node) return
+  // 二次校验：页面展示的订单必须就是 URL 指向的订单，否则拒绝提交、不发请求
+  if (!isDisplayedOrderCurrent()) {
+    ElMessage.warning('页面已切换到其它订单，请刷新后重试')
+    return
+  }
   const loc = location.value
   if (!loc.lng || !loc.lat) {
     ElMessage.warning('尚未获取到定位，请先点击「刷新定位」')
@@ -180,7 +213,7 @@ async function doCheckin() {
   }
   checking.value = true
   try {
-    await checkin(orderId, {
+    await checkin(orderId.value, {
       node,
       longitude: loc.lng,
       latitude: loc.lat,
@@ -205,19 +238,36 @@ async function doCheckin() {
 }
 
 async function doStart() {
+  // in-flight 锁必须在第一行**同步**置位：放到 await 之后的话，
+  // 两次连点会一起穿过 await，锁形同虚设（重复调 start 接口）
+  if (starting.value) return
+  starting.value = true
+  // 二次校验：页面展示的订单必须就是 URL 指向的订单
+  if (!isDisplayedOrderCurrent()) {
+    ElMessage.warning('页面已切换到其它订单，请刷新后重试')
+    starting.value = false
+    return
+  }
   try {
-    await startService(orderId)
+    await startService(orderId.value)
     ElMessage.success('已开始服务')
     await reloadProgress()
   } catch {
     await reloadProgress()
+  } finally {
+    starting.value = false
   }
 }
 
 async function doComplete() {
+  // 二次校验：页面展示的订单必须就是 URL 指向的订单
+  if (!isDisplayedOrderCurrent()) {
+    ElMessage.warning('页面已切换到其它订单，请刷新后重试')
+    return
+  }
   completing.value = true
   try {
-    await completeService(orderId, {
+    await completeService(orderId.value, {
       summary: summary.value ? summary.value.trim() : undefined,
       photos: photoUrls.value.length ? [...photoUrls.value] : undefined
     })
@@ -241,11 +291,17 @@ async function onPhotoChange(e) {
     e.target.value = ''
     return
   }
+  // 前端预校验大小（≤10MB）：文案承诺了上限，就不能让它只是说说
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.warning('单张照片超过 10MB，无法上传')
+    e.target.value = ''
+    return
+  }
   uploading.value = true
   try {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await uploadExecutionPhoto(orderId, fd)
+    const res = await uploadExecutionPhoto(orderId.value, fd)
     if (res?.url) {
       photoUrls.value.push(res.url)
       ElMessage.success('照片已上传')
@@ -267,8 +323,8 @@ function removePhoto(i) {
 let socket = null
 
 function setupSocket() {
-  if (!subable.value) return
-  socket = connectProgressSocket(orderId, {
+  if (!subable.value || socket) return
+  socket = connectProgressSocket(orderId.value, {
     onEvent: (msg) => {
       if (msg && msg.type === 'ORDER_PROGRESS') reloadProgress()
     },
@@ -278,11 +334,18 @@ function setupSocket() {
   })
 }
 
-function maybeCloseSocket() {
-  if (!subable.value && socket) {
+/** 断开推送订阅（换订单 / 组件卸载都要走这里） */
+function closeSocket() {
+  if (socket) {
     socket.close()
     socket = null
-    connected.value = false
+  }
+  connected.value = false
+}
+
+function maybeCloseSocket() {
+  if (!subable.value && socket) {
+    closeSocket()
   }
 }
 
@@ -292,11 +355,16 @@ onMounted(async () => {
   refreshLocation()
 })
 
+// 同一条路由记录只换 params 时组件实例会被复用，onMounted 不再触发 —— 这里补上重拉。
+// 换订单必须先断开旧订阅再按新订单重连，否则会出现「推送的是 A、页面看的是 B」。
+watch(orderId, async () => {
+  closeSocket()
+  await loadAll()
+  if (subable.value) setupSocket()
+})
+
 onBeforeUnmount(() => {
-  if (socket) {
-    socket.close()
-    socket = null
-  }
+  closeSocket()
 })
 </script>
 
@@ -435,6 +503,7 @@ onBeforeUnmount(() => {
           round
           size="large"
           class="act-btn"
+          :loading="starting"
           @click="doStart"
         >
           开始服务
@@ -458,7 +527,12 @@ onBeforeUnmount(() => {
             完成服务
           </el-button>
         </template>
-        <p v-if="connected" class="nl-caption nl-text-muted live">● 实时进度已连接</p>
+        <!--
+          推送断开时必须显式提示：原来 v-if="connected" 让这行直接不渲染，
+          用户不知道自己看的是过期进度（范式同 family/order-detail.vue）。
+        -->
+        <NlNoticeBar v-if="!connected" tone="warning">实时推送未连接 · 进度可能有延迟，请重新进入页面查看</NlNoticeBar>
+        <p v-else class="nl-caption nl-text-muted live">● 实时进度已连接</p>
       </NlCard>
     </template>
   </NlPhoneShell>

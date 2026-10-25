@@ -35,6 +35,7 @@ import {
   startUnreadPolling
 } from '@/api/message'
 import { formatDateTime } from '@/utils/format'
+import { confirmThen } from '@/utils/confirm'
 import { useUserStore } from '@/store/modules/user'
 import { useChatUnread } from '@/composables/useChatUnread'
 
@@ -52,6 +53,17 @@ const { total: chatUnread, error: chatUnreadError, handleMessage: onChatMessage 
  * 判据必须落在**当前路由实例**上，否则会误伤 /family/message 与 /companion/message。
  */
 const mobileOnlyHere = computed(() => route.name === 'ElderMessage')
+
+/**
+ * 是否显示返回箭头（P1-7）。
+ *
+ * 站内信对三个角色的地位不同：
+ *   - ELDER / FAMILY：消息是各自底部 Tab 的一级页 → 页面即 Tab，不需要返回箭头；
+ *   - COMPANION：陪诊员的 Tab 是「大厅 / 订单 / 收入 / 我的」，**没有消息**。
+ *     此前本页写死 back=false，陪诊员从工作台点「消息中心」进来后就没有任何返回入口，
+ *     只能靠底部 Tab 跳走、回不到工作台。
+ */
+const showBack = computed(() => route.name === 'CompanionMessage')
 
 const messages = ref([])
 const loading = ref(true)
@@ -111,15 +123,15 @@ async function doMarkAll() {
 }
 
 async function removeItem(item) {
-  try {
-    await ElMessageBox.confirm('删除后消息无法恢复，是否继续？', '确认删除', {
+  // confirmThen 把「用户是否点了确认」变成布尔：用户取消时静默返回 false，不发请求
+  const ok = await confirmThen(() =>
+    ElMessageBox.confirm('删除后消息无法恢复，是否继续？', '确认删除', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning'
     })
-  } catch {
-    return
-  }
+  )
+  if (!ok) return
 
   try {
     await removeMessage(item.id)
@@ -147,7 +159,7 @@ onBeforeUnmount(() => {
 <template>
   <!-- mobile-only 守卫只对 /elder/message 生效（见脚本里 mobileOnlyHere 的注释） -->
   <NlMobileOnlyPage :enabled="mobileOnlyHere">
-    <NlPageShell :title="`消息（${unreadCount} 条未读）`" :has-tabs="true" :back="false">
+    <NlPageShell :title="`消息（${unreadCount} 条未读）`" :has-tabs="true" :back="showBack">
       <!--
         M13 订单沟通入口。站内信是「系统→用户」单向通知，订单聊天才是
         「家属↔陪诊员」双向对话，两者语义不同，故独立成卡放在列表上方。

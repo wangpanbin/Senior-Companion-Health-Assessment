@@ -19,6 +19,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlPhoneShell, NlMobileOnlyPage, NlCard, NlStatusChip, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
 import { getMyCompanionApplication, applyCompanion } from '@/api/user'
 import { uploadFile } from '@/api/file'
+import { confirmThen } from '@/utils/confirm'
+import { ID_CARD_RE, NAME_MIN, NAME_MAX, ID_CARD_MSG, NAME_MSG } from '@/constants/validation'
 
 const router = useRouter()
 
@@ -28,6 +30,14 @@ const loading = ref(true)
 /** R4：资质状态加载失败（不能静默回落成「未提交过」表单，否则用户会重复提交） */
 const loadError = ref(false)
 
+/**
+ * 提交 in-flight 锁（P1-5）。
+ *
+ * ⚠️ 必须在 submit() 的**第一行同步置位**：置在第一个 await 之后，
+ *    两次快速点击会一起穿过 validate / confirm，造成重复提交资质申请。
+ */
+const submitting = ref(false)
+
 const form = ref({
   realName: '',
   idCard: '',
@@ -36,6 +46,44 @@ const form = ref({
   certificates: [{ name: '健康证', url: '' }],
   remark: ''
 })
+
+/**
+ * 校验规则（P2-1 / P2-4）。
+ *
+ * 旧写法是「一次性 toast」：`if (!x) { ElMessage.warning('...'); return }` ——
+ * 一次只报一个错、错在哪个字段不定位，用户得自己猜该改哪一栏。
+ * 现在改成 el-form + rules：一次把错全标出来，错误落在对应字段下方。
+ *
+ * 规则与文案沿用原有口径（必填 / 18 位身份证 / 区域 / 时段 / 至少 1 项证件），
+ * 其中身份证与姓名长度改用 @/constants/validation 的共享口径 ——
+ * 旧正则 `^\d{17}[\dXx]$` 比后端松，非法身份证会一路走到后端才被拒，
+ * 用户只看到泛化的「请求参数有误」。
+ */
+const formRef = ref(null)
+const rules = {
+  realName: [
+    { required: true, message: '请填写真实姓名', trigger: 'blur' },
+    { min: NAME_MIN, max: NAME_MAX, message: NAME_MSG, trigger: 'blur' }
+  ],
+  idCard: [
+    { required: true, message: '请输入 18 位身份证号', trigger: 'blur' },
+    { pattern: ID_CARD_RE, message: ID_CARD_MSG, trigger: 'blur' }
+  ],
+  serviceArea: [{ required: true, message: '请选择服务区域', trigger: 'change' }],
+  periods: [{ required: true, message: '请至少选择 1 个接单时段', trigger: 'change' }],
+  certificates: [
+    {
+      required: true,
+      trigger: 'blur',
+      validator: (_rule, value, cb) => {
+        // 后端要求「至少 1 项**完整**证件」：名称与链接都要有（见 CompanionApplyDTO）
+        const list = (value || []).filter((c) => c.name && c.url)
+        if (list.length) cb()
+        else cb(new Error('请至少填写 1 项证件（名称 + 链接）'))
+      }
+    }
+  ]
+}
 
 const areas = ['朝阳区', '海淀区', '丰台区', '西城区', '东城区']
 const periodOptions = [
@@ -76,6 +124,25 @@ function addCert() {
 }
 function removeCert(i) {
   form.value.certificates.splice(i, 1)
+  revalidateCerts()
+}
+
+/**
+ * 证件是自绘列表（名称 + 上传链接），不是 el-form 控件，
+ * change 触发器不会自动跑 —— 上传成功 / 删除后手动校一次，
+ * 让「至少 1 项证件」的错误实时跟着内容走。
+ */
+function revalidateCerts() {
+  void formRef.value?.validateField('certificates', () => {})
+}
+
+/**
+ * 选服务区域：区域是自绘药丸，也不是 el-form 控件，
+ * 选完手动校一次，让「请选择服务区域」的错误立刻消失。
+ */
+function pickArea(a) {
+  form.value.serviceArea = a
+  void formRef.value?.validateField('serviceArea', () => {})
 }
 
 /**
@@ -99,6 +166,7 @@ function onCertFileChange(i, e) {
       if (res?.url) {
         cert.url = res.url // 成功才写入，失败保留原值
         ElMessage.success('证件已上传')
+        revalidateCerts()
       }
     })
     .catch(() => {
@@ -111,63 +179,58 @@ function onCertFileChange(i, e) {
 }
 
 async function submit() {
-  const f = form.value
-  if (!f.realName) {
-    ElMessage.warning('请填写真实姓名')
-    return
-  }
-  if (!/^\d{17}[\dXx]$/.test(f.idCard)) {
-    ElMessage.warning('请输入 18 位身份证号')
-    return
-  }
-  if (!f.serviceArea) {
-    ElMessage.warning('请选择服务区域')
-    return
-  }
-  if (!f.periods.length) {
-    ElMessage.warning('请至少选择 1 个接单时段')
-    return
-  }
-  const certs = f.certificates
-    .filter((c) => c.name && c.url)
-    .map((c) => ({ name: c.name.trim(), url: c.url.trim() }))
-  if (!certs.length) {
-    ElMessage.warning('请至少填写 1 项证件（名称 + 链接）')
-    return
-  }
-
+  // ⚠️ in-flight 锁必须在第一个 await 之前**同步**置位：
+  //    置在 await 之后，两次快速点击会一起穿过 validate / confirm，造成重复提交。
+  if (submitting.value) return
+  if (!formRef.value) return
+  submitting.value = true
   try {
-    await ElMessageBox.confirm(
-      '提交后将进入审核（一般 1-3 个工作日）。审核通过前不可接单。',
-      '确认提交资质',
-      { confirmButtonText: '提交审核' }
+    // 字段级校验交给 el-form + rules：错误落在对应字段下方，一次全标出
+    const valid = await formRef.value.validate().then(() => true, () => false)
+    if (!valid) return
+
+    const f = form.value
+    const certs = f.certificates
+      .filter((c) => c.name && c.url)
+      .map((c) => ({ name: c.name.trim(), url: c.url.trim() }))
+    if (!certs.length) {
+      ElMessage.warning('请至少填写 1 项证件（名称 + 链接）')
+      return
+    }
+
+    const ok = await confirmThen(() =>
+      ElMessageBox.confirm(
+        '提交后将进入审核（一般 1-3 个工作日）。审核通过前不可接单。',
+        '确认提交资质',
+        { confirmButtonText: '提交审核' }
+      )
     )
-  } catch {
-    return
-  }
+    if (!ok) return
 
-  const payload = {
-    realName: f.realName.trim(),
-    idCard: f.idCard.trim(),
-    serviceArea: f.serviceArea,
-    availableTime: f.periods
-      .map((k) => periodOptions.find((p) => p.key === k)?.label || k)
-      .join('；'),
-    certificates: certs,
-    remark: f.remark ? f.remark.trim() : undefined
-  }
+    const payload = {
+      realName: f.realName.trim(),
+      idCard: f.idCard.trim(),
+      serviceArea: f.serviceArea,
+      availableTime: f.periods
+        .map((k) => periodOptions.find((p) => p.key === k)?.label || k)
+        .join('；'),
+      certificates: certs,
+      remark: f.remark ? f.remark.trim() : undefined
+    }
 
-  try {
     await applyCompanion(payload)
     ElMessage.success('已提交，请耐心等待审核')
     await loadApplication()
   } catch {
     // 拦截器已弹错（校验失败 / 已有待审申请等）
+  } finally {
+    submitting.value = false
   }
 }
 
 /** 驳回后重新提交：退回表单 */
 function reApply() {
+  if (submitting.value) return
   app.value = null
 }
 
@@ -213,7 +276,14 @@ onMounted(loadApplication)
       </NlCard>
 
       <div v-if="app.auditStatus === 'REJECTED'" class="submit-bar">
-        <el-button type="primary" size="large" round class="submit-bar__btn" @click="reApply">
+        <el-button
+          type="primary"
+          size="large"
+          round
+          class="submit-bar__btn"
+          :disabled="submitting"
+          @click="reApply"
+        >
           重新提交资质
         </el-button>
       </div>
@@ -226,88 +296,106 @@ onMounted(loadApplication)
 
     <!-- 未提交：填写表单 -->
     <template v-else>
-      <!-- 实名信息 -->
-      <NlCard title="实名信息">
-        <el-form size="large" label-position="top">
-          <el-form-item label="真实姓名" required>
+      <!--
+        一个 el-form 罩住三张卡片：字段级错误统一落在对应字段下方（P2-1）。
+        .apply-form 补上原来由 NlPhoneShell 的 gap 提供的卡片间距。
+      -->
+      <el-form
+        ref="formRef"
+        class="apply-form"
+        :model="form"
+        :rules="rules"
+        size="large"
+        label-position="top"
+      >
+        <!-- 实名信息 -->
+        <NlCard title="实名信息">
+          <el-form-item label="真实姓名" prop="realName" required>
             <el-input v-model="form.realName" placeholder="请输入身份证上的姓名" maxlength="20" />
           </el-form-item>
-          <el-form-item label="身份证号" required>
+          <el-form-item label="身份证号" prop="idCard" required>
             <el-input v-model="form.idCard" placeholder="18 位身份证号" maxlength="18" />
           </el-form-item>
-        </el-form>
-      </NlCard>
+        </NlCard>
 
-      <!-- 接单偏好 -->
-      <NlCard title="接单偏好">
-        <p class="nl-caption nl-text-muted">选择常驻区域与可接单时段（可多选）</p>
-        <div class="pref-area">
-          <span class="pref-label">区域</span>
-          <div class="chips">
-            <button
-              v-for="a in areas"
-              :key="a"
-              :class="['chips__item', { 'is-active': form.serviceArea === a }]"
-              @click="form.serviceArea = a"
-            >
-              {{ a }}
-            </button>
-          </div>
-        </div>
-        <div class="pref-area">
-          <span class="pref-label">时段</span>
-          <el-checkbox-group v-model="form.periods" class="periods">
-            <el-checkbox v-for="p in periodOptions" :key="p.key" :label="p.key">
-              {{ p.label }}
-            </el-checkbox>
-          </el-checkbox-group>
-        </div>
-      </NlCard>
-
-      <!-- 证件（真实上传：COMPANION_CERT） -->
-      <NlCard title="资质证件" plain>
-        <p class="nl-caption nl-text-weak cert-tip">
-          支持 jpg / png / webp / pdf，单文件 ≤ 10MB。
-        </p>
-        <ul class="files">
-          <li v-for="(c, i) in form.certificates" :key="i" class="file">
-            <div class="file__row">
-              <el-input v-model="c.name" placeholder="证件名称，如：健康证" maxlength="50" />
-              <label class="cert-upload" :class="{ 'is-loading': uploadingCertIndex === i }">
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  :disabled="uploadingCertIndex === i"
-                  @change="onCertFileChange(i, $event)"
-                />
-                <span v-if="uploadingCertIndex === i">上传中…</span>
-                <span v-else-if="c.url">重新上传</span>
-                <span v-else>选择文件</span>
-              </label>
-              <el-button
-                v-if="form.certificates.length > 1"
-                text size="small" type="danger" @click="removeCert(i)"
-              >删除</el-button>
+        <!-- 接单偏好 -->
+        <NlCard title="接单偏好">
+          <p class="nl-caption nl-text-muted">选择常驻区域与可接单时段（可多选）</p>
+          <el-form-item label="服务区域" prop="serviceArea" required>
+            <div class="chips">
+              <button
+                v-for="a in areas"
+                :key="a"
+                :class="['chips__item', { 'is-active': form.serviceArea === a }]"
+                @click="pickArea(a)"
+              >
+                {{ a }}
+              </button>
             </div>
-            <p v-if="c.url" class="nl-caption nl-text-weak cert-url">{{ c.url }}</p>
-          </li>
-        </ul>
-        <el-button text type="primary" size="small" @click="addCert">+ 添加证件</el-button>
-      </NlCard>
+          </el-form-item>
+          <el-form-item label="可接单时段" prop="periods" required>
+            <el-checkbox-group v-model="form.periods" class="periods">
+              <el-checkbox v-for="p in periodOptions" :key="p.key" :label="p.key">
+                {{ p.label }}
+              </el-checkbox>
+            </el-checkbox-group>
+          </el-form-item>
+        </NlCard>
 
-      <!-- 补充说明 -->
-      <NlCard title="补充说明（选填）">
-        <el-input
-          v-model="form.remark"
-          type="textarea"
-          :rows="3"
-          maxlength="200"
-          placeholder="如：3 年陪诊经验，熟悉省医院各科室"
-        />
-      </NlCard>
+        <!-- 证件（真实上传：COMPANION_CERT） -->
+        <NlCard title="资质证件" plain>
+          <p class="nl-caption nl-text-weak cert-tip">
+            支持 jpg / png / webp / pdf，单文件 ≤ 10MB。
+          </p>
+          <el-form-item label="证件材料" prop="certificates" required>
+            <ul class="files">
+              <li v-for="(c, i) in form.certificates" :key="i" class="file">
+                <div class="file__row">
+                  <el-input v-model="c.name" placeholder="证件名称，如：健康证" maxlength="50" />
+                  <label class="cert-upload" :class="{ 'is-loading': uploadingCertIndex === i }">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                      :disabled="uploadingCertIndex === i"
+                      @change="onCertFileChange(i, $event)"
+                    />
+                    <span v-if="uploadingCertIndex === i">上传中…</span>
+                    <span v-else-if="c.url">重新上传</span>
+                    <span v-else>选择文件</span>
+                  </label>
+                  <el-button
+                    v-if="form.certificates.length > 1"
+                    text size="small" type="danger" @click="removeCert(i)"
+                  >删除</el-button>
+                </div>
+                <p v-if="c.url" class="nl-caption nl-text-weak cert-url">{{ c.url }}</p>
+              </li>
+            </ul>
+            <el-button text type="primary" size="small" @click="addCert">+ 添加证件</el-button>
+          </el-form-item>
+        </NlCard>
+
+        <!-- 补充说明 -->
+        <NlCard title="补充说明（选填）">
+          <el-input
+            v-model="form.remark"
+            type="textarea"
+            :rows="3"
+            maxlength="200"
+            placeholder="如：3 年陪诊经验，熟悉省医院各科室"
+          />
+        </NlCard>
+      </el-form>
 
       <div class="submit-bar">
-        <el-button type="primary" size="large" round class="submit-bar__btn" @click="submit">
+        <el-button
+          type="primary"
+          size="large"
+          round
+          class="submit-bar__btn"
+          :loading="submitting"
+          @click="submit"
+        >
           提交审核
         </el-button>
       </div>
@@ -321,6 +409,16 @@ onMounted(loadApplication)
 
 .pad {
   padding: 0 var(--nl-gutter);
+}
+
+/*
+ * el-form 罩住三张卡片后，卡片之间的间距不再由 NlPhoneShell 的 gap 提供
+ * （el-form 成了 main 的唯一 flex 子项），这里补回同一档间距。
+ */
+.apply-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nl-gap-section);
 }
 
 .status {
@@ -383,21 +481,6 @@ onMounted(loadApplication)
 .cert-url {
   margin: 6px 0 0;
   word-break: break-all;
-}
-
-.pref-area {
-  margin-top: var(--nl-space-3);
-
-  &:first-of-type {
-    margin-top: 0;
-  }
-}
-
-.pref-label {
-  display: block;
-  margin-bottom: var(--nl-space-2);
-  font-size: var(--nl-font-caption);
-  color: var(--nl-text-2);
 }
 
 .chips {
