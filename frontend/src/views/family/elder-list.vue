@@ -25,6 +25,8 @@ import {
 } from '@/components'
 import { useResponsive } from '@/composables/useResponsive'
 import { listElder, getElder, removeElder, unbindElder } from '@/api/user'
+import { confirmThen } from '@/utils/confirm'
+import { shouldRollbackPage } from '@/utils/pagination'
 import { formatDate } from '@/utils/format'
 
 const router = useRouter()
@@ -32,8 +34,18 @@ const router = useRouter()
 const elders = ref([])
 const loading = ref(false)
 const total = ref(0)
+/** P1-9：page 以前是死变量（列表恒取第 1 页），现在接上真正的分页 */
 const page = ref(1)
 const pageSize = 50
+
+/**
+ * P1-5：解绑 / 删除的 in-flight 锁。
+ * 这两个按钮原先没有 loading 态，连点会重复提交（后端是 DELETE，重复执行只会报错）。
+ * 锁在函数**第一行同步置位** —— 确认框弹出期间同样算「在飞」，
+ * 否则用户在弹窗里再点一次照样会重复提交；finally 里复位。
+ */
+const unbindingId = ref(null)
+const removingId = ref(null)
 
 /* -------- 详情弹窗 -------- */
 const detailVisible = ref(false)
@@ -51,7 +63,15 @@ const loadError = ref(false)
 async function loadElders() {
   loading.value = true
   try {
-    const data = await listElder({ page: page.value, size: pageSize })
+    let data = await listElder({ page: page.value, size: pageSize })
+    // 删掉最后一页的最后一条后，当前页会越界变成空页 —— 自动回退一页再取，
+    // 否则列表会停在「共 N 位老人」但下面一片空白。
+    // 判据与后台列表统一（frontend/src/utils/pagination.js）：
+    // 「本页被掏空」才回退，不是「刚删的那条不在本页」。
+    if (shouldRollbackPage(page.value, data?.records)) {
+      page.value -= 1
+      data = await listElder({ page: page.value, size: pageSize })
+    }
     elders.value = data?.records || []
     total.value = data?.total || 0
     loadError.value = false
@@ -62,6 +82,12 @@ async function loadElders() {
   } finally {
     loading.value = false
   }
+}
+
+/** 翻页 */
+function onPageChange(p) {
+  page.value = p
+  loadElders()
 }
 
 /** 当前打开的档案 id：错误态重试时要用（不从 DOM 反推） */
@@ -85,40 +111,42 @@ async function openDetail(id) {
 }
 
 async function unbind(e) {
+  if (unbindingId.value != null) return // 已有解绑在飞，忽略连点
+  unbindingId.value = e.id
   try {
-    await ElMessageBox.confirm(
+    const ok = await confirmThen(() => ElMessageBox.confirm(
       `确定解除与「${e.name}」的绑定关系吗？解绑后您将无法直接代其预约陪诊或管理用药。`,
       '解绑确认',
       { type: 'warning', confirmButtonText: '确定解绑', cancelButtonText: '取消' }
-    )
-  } catch {
-    return // 用户取消
-  }
-  try {
+    ))
+    if (!ok) return // 用户取消
     await unbindElder(e.id)
     ElMessage.success('已解绑')
     loadElders()
   } catch {
     // 业务错误（如存在进行中订单）已由拦截器弹出
+  } finally {
+    unbindingId.value = null
   }
 }
 
 async function remove(e) {
+  if (removingId.value != null) return // 已有删除在飞，忽略连点
+  removingId.value = e.id
   try {
-    await ElMessageBox.confirm(
+    const ok = await confirmThen(() => ElMessageBox.confirm(
       `确定删除「${e.name}」的档案吗？该操作不可恢复，但其历史订单与用药记录仍会保留。`,
       '删除确认',
       { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消' }
-    )
-  } catch {
-    return
-  }
-  try {
+    ))
+    if (!ok) return // 用户取消
     await removeElder(e.id)
     ElMessage.success('已删除档案')
     loadElders()
   } catch {
     // 业务错误（如存在进行中订单返回 409）已由拦截器弹出
+  } finally {
+    removingId.value = null
   }
 }
 
@@ -175,8 +203,24 @@ v-for="e in elders" :key="e.id" role="button" tabindex="0"
           <div v-if="e.favoriteHospital" class="nl-caption nl-text-weak">{{ e.favoriteHospital }}</div>
         </div>
         <div class="elder__ops" @click.stop>
-          <el-button type="primary" plain round size="small" @click="unbind(e)">解绑</el-button>
-          <el-button type="danger" plain round size="small" @click="remove(e)">删除</el-button>
+          <el-button
+            type="primary"
+            plain
+            round
+            size="small"
+            :loading="unbindingId === e.id"
+            :disabled="unbindingId != null"
+            @click="unbind(e)"
+          >解绑</el-button>
+          <el-button
+            type="danger"
+            plain
+            round
+            size="small"
+            :loading="removingId === e.id"
+            :disabled="removingId != null"
+            @click="remove(e)"
+          >删除</el-button>
         </div>
       </li>
     </ul>
@@ -184,6 +228,17 @@ v-for="e in elders" :key="e.id" role="button" tabindex="0"
     <div v-if="!loading && elders.length" class="nl-caption nl-text-weak list-foot">
       共 {{ total }} 位老人
     </div>
+
+    <!-- P1-9：真正接上分页（以前 page 是死变量，列表恒取第 1 页，多于 50 位老人就看不见了） -->
+    <el-pagination
+      v-if="!loading && !loadError && total > pageSize"
+      class="elder-pager"
+      layout="prev, pager, next"
+      :total="total"
+      :page-size="pageSize"
+      :current-page="page"
+      @current-change="onPageChange"
+    />
 
     <div class="bind-bar">
       <el-button type="primary" size="large" round class="bind-bar__btn" @click="bind">
@@ -244,6 +299,11 @@ v-for="e in elders" :key="e.id" role="button" tabindex="0"
   margin: var(--nl-space-3) 0 0;
   padding: 0 var(--nl-gutter);
   text-align: center;
+}
+
+.elder-pager {
+  margin-top: var(--nl-space-3);
+  padding: 0 var(--nl-gutter);
 }
 
 .elders {

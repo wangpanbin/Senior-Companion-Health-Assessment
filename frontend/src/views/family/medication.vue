@@ -23,7 +23,7 @@
  *   - 计划「结束日期」为空表示长期；frequency 为整数，timePoints 为 HH:mm 字符串数组
  *   - 日历响应为「区间元信息 + summary + days[]」，不是扁平数组；days 只含有任务的日期
  */
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   NlPageShell, NlAppTabBar, NlCard, NlStatusChip, NlComplianceBar, NlNoticeBar, NlEmpty, NlSkeleton
@@ -37,6 +37,7 @@ import {
   confirmMedication, listMedicineDict
 } from '@/api/medication'
 import { today, formatDate, formatTime, MEAL_RELATION_TEXT, labelOf } from '@/utils/format'
+import { confirmThen } from '@/utils/confirm'
 
 /* ====== 当前老人（多老人切换，默认第一个） ====== */
 const elders = ref([])
@@ -144,6 +145,54 @@ const planForm = ref({
   remark: ''
 })
 
+/**
+ * P2-1：用药计划表单改用 el-form + rules，错误落在字段下方。
+ * 以前是「一次性 toast」式校验：一条条 if + ElMessage.warning，
+ * 家属只能反复点保存、并靠记忆记住是哪一条不对；改成字段级报错后错在哪一眼可见。
+ *
+ * ⚠ 合规：剂量只校验**长度**，不判断是否合理 —— 系统不生成也不校验医嘱（见抽屉顶部提示）。
+ * ⚠ 规则与文案与改造前逐条对齐，未增删：
+ *    选药 / 单次用量非空 / 剂量 ≤50 字 / 每日 1–4 次 / 饭点关系 / 开始日期 /
+ *    结束日期 ≥ 开始日期 / 备注 ≤200 字。
+ */
+const planFormRef = ref(null)
+const planRules = {
+  medicineId: [{ required: true, message: '请选择药品', trigger: 'change' }],
+  dosage: [
+    // 空串与纯空格都算「没录入」：与改造前 `!f.dosage.trim()` 的判断口径一致
+    {
+      validator: (_rule, value, cb) => {
+        if (!value || !String(value).trim()) cb(new Error('请录入单次用量（按医嘱）'))
+        else cb()
+      },
+      trigger: 'blur'
+    },
+    { max: 50, message: '单次用量不能超过 50 个字符', trigger: 'blur' }
+  ],
+  timePoints: [
+    {
+      validator: (_rule, value, cb) => {
+        if (!Array.isArray(value) || value.length < 1 || value.length > 4) cb(new Error('每日次数须为 1–4 次'))
+        else cb()
+      },
+      trigger: 'change'
+    }
+  ],
+  mealRelation: [{ required: true, message: '请选择与饭点关系', trigger: 'change' }],
+  startDate: [{ required: true, message: '请选择开始日期', trigger: 'change' }],
+  endDate: [
+    {
+      validator: (_rule, value, cb) => {
+        // 两个日期都是 YYYY-MM-DD，字典序比较即可
+        if (value && value < planForm.value.startDate) cb(new Error('结束日期不能早于开始日期'))
+        else cb()
+      },
+      trigger: 'change'
+    }
+  ],
+  remark: [{ max: 200, message: '备注不能超过 200 个字符', trigger: 'blur' }]
+}
+
 /* ====== 加载逻辑 ====== */
 async function loadElders() {
   elderLoading.value = true
@@ -243,15 +292,15 @@ watch([curYear, curMonth], () => {
 const confirmingId = ref(null)
 
 async function confirmTaken(m) {
-  try {
-    await ElMessageBox.confirm(
+  // confirmThen 把「用户是否点了确认」变成布尔：取消时静默返回 false，不发请求
+  const ok = await confirmThen(() =>
+    ElMessageBox.confirm(
       `确认「${m.medicineName}」已服用？记录后将推送给所有绑定家属。`,
       '确认服药',
       { confirmButtonText: '确认已服', type: 'warning' }
     )
-  } catch {
-    return
-  }
+  )
+  if (!ok) return
   confirmingId.value = m.id
   try {
     await confirmMedication(m.id, {})
@@ -266,15 +315,15 @@ async function confirmTaken(m) {
 
 /* ====== 计划：停用（保留历史服药记录） ====== */
 async function disablePlan(p) {
-  try {
-    await ElMessageBox.confirm(
+  // confirmThen 把「用户是否点了确认」变成布尔：取消时静默返回 false，不发请求
+  const ok = await confirmThen(() =>
+    ElMessageBox.confirm(
       `确认停用「${p.medicineName}」用药计划？停用后不再生成新的服药任务，但历史服药记录会完整保留。`,
       '停用计划',
       { confirmButtonText: '确认停用', type: 'warning' }
     )
-  } catch {
-    return
-  }
+  )
+  if (!ok) return
   try {
     await disableMedicationPlan(p.id)
     ElMessage.success('已停用，历史服药记录保留')
@@ -285,6 +334,15 @@ async function disablePlan(p) {
 }
 
 /* ====== 计划：新建 / 编辑 ====== */
+/**
+ * 抽屉复用同一个 el-form：重新打开时清掉上一轮残留的字段报错（P2-1），
+ * 否则上一次没填完的红色提示会挂在新建/编辑的表单上。
+ */
+async function resetPlanValidation() {
+  await nextTick()
+  planFormRef.value?.clearValidate()
+}
+
 async function openCreatePlan() {
   planMode.value = 'create'
   editingPlanId.value = null
@@ -299,6 +357,7 @@ async function openCreatePlan() {
   }
   selectedDisclaimer.value = ''
   planDialog.value = true
+  await resetPlanValidation()
   await loadMedicineOptions()
 }
 
@@ -316,6 +375,7 @@ function openEditPlan(p) {
   }
   selectedDisclaimer.value = ''
   planDialog.value = true
+  resetPlanValidation()
   loadMedicineOptions(p.medicineId)
 }
 
@@ -365,45 +425,18 @@ function buildPlanPayload() {
   return payload
 }
 
-function validatePlan() {
-  const f = planForm.value
-  if (f.medicineId == null) {
-    ElMessage.warning('请选择药品')
-    return false
-  }
-  if (!f.dosage.trim()) {
-    ElMessage.warning('请录入单次用量（按医嘱）')
-    return false
-  }
-  if (f.dosage.trim().length > 50) {
-    ElMessage.warning('单次用量不能超过 50 个字符')
-    return false
-  }
-  if (f.timePoints.length < 1 || f.timePoints.length > 4) {
-    ElMessage.warning('每日次数须为 1–4 次')
-    return false
-  }
-  if (!f.mealRelation) {
-    ElMessage.warning('请选择与饭点关系')
-    return false
-  }
-  if (!f.startDate) {
-    ElMessage.warning('请选择开始日期')
-    return false
-  }
-  if (f.endDate && f.endDate < f.startDate) {
-    ElMessage.warning('结束日期不能早于开始日期')
-    return false
-  }
-  if (f.remark && f.remark.length > 200) {
-    ElMessage.warning('备注不能超过 200 个字符')
-    return false
-  }
-  return true
-}
-
+/**
+ * P2-1：校验交给 el-form —— 错误落在字段下方。
+ * 原来的 validatePlan()（一次性 toast）已删除：它一次只报一条错，
+ * 家属得反复点保存才能试出全部问题。
+ */
 async function submitPlan() {
-  if (!validatePlan()) return
+  if (!planFormRef.value) return
+  try {
+    await planFormRef.value.validate()
+  } catch {
+    return // 有字段没过：报错已显示在对应输入框下方
+  }
   planSaving.value = true
   try {
     const payload = buildPlanPayload()
@@ -642,8 +675,8 @@ onMounted(loadElders)
       <NlNoticeBar tone="warning" icon>
         剂量由家属按医嘱录入，系统不生成也不校验剂量是否合理。
       </NlNoticeBar>
-      <el-form label-position="top" class="plan-form">
-        <el-form-item v-if="medicineError" label="药品">
+      <el-form ref="planFormRef" :model="planForm" :rules="planRules" label-position="top" class="plan-form">
+        <el-form-item v-if="medicineError" label="药品" prop="medicineId">
           <!-- 药品字典拉取失败：下拉会静默变空，这里显式给错误态 + 就地重试 -->
           <NlEmpty
             type="network"
@@ -652,7 +685,7 @@ onMounted(loadElders)
             @action="loadMedicineOptions"
           />
         </el-form-item>
-        <el-form-item v-else label="药品">
+        <el-form-item v-else label="药品" prop="medicineId">
           <el-select
             v-model="planForm.medicineId"
             placeholder="选择药品（通用信息）"
@@ -672,10 +705,10 @@ onMounted(loadElders)
         <NlNoticeBar v-if="selectedDisclaimer" tone="info" icon>
           {{ selectedDisclaimer }}
         </NlNoticeBar>
-        <el-form-item label="家属录入剂量">
+        <el-form-item label="家属录入剂量" prop="dosage">
           <el-input v-model="planForm.dosage" placeholder="如「1 片」「5mg」，按医嘱填写" maxlength="50" />
         </el-form-item>
-        <el-form-item label="每日次数与时间点">
+        <el-form-item label="每日次数与时间点" prop="timePoints">
           <div class="time-points">
             <el-time-picker
               v-for="(tp, i) in planForm.timePoints"
@@ -701,18 +734,18 @@ onMounted(loadElders)
             >删除最后一个</el-button>
           </div>
         </el-form-item>
-        <el-form-item label="与饭点关系">
+        <el-form-item label="与饭点关系" prop="mealRelation">
           <el-select v-model="planForm.mealRelation" style="width: 100%">
             <el-option v-for="o in MEAL_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="开始日期">
+        <el-form-item label="开始日期" prop="startDate">
           <el-date-picker v-model="planForm.startDate" value-format="YYYY-MM-DD" type="date" placeholder="开始日期" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="结束日期（留空表示长期）">
+        <el-form-item label="结束日期（留空表示长期）" prop="endDate">
           <el-date-picker v-model="planForm.endDate" value-format="YYYY-MM-DD" type="date" placeholder="留空 = 长期用药" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item label="备注" prop="remark">
           <el-input v-model="planForm.remark" type="textarea" :rows="2" placeholder="如「医生让每天早饭吃一片」" maxlength="200" show-word-limit />
         </el-form-item>
       </el-form>

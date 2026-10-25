@@ -34,6 +34,15 @@ const loading = ref(false)
 /** R4：加载失败 ≠ 没有订单 */
 const loadError = ref(false)
 const total = ref(0)
+/**
+ * 分页（P1-9）。
+ *
+ * 早先固定 `size: 50` 且页面没有任何翻页控件 —— 第 51 条以后的订单用户永远看不到，
+ * 而底部又写着「共 N 单」，两处口径自相矛盾。
+ * 现在按后端分页口径（page / size，size 上限 100）取 10 条一页，配 el-pagination。
+ */
+const page = ref(1)
+const size = ref(10)
 
 /** tab key 直接就是后端 OrderStatus 枚举名（'all' 除外），避免再维护一张映射表 */
 const tabs = [
@@ -48,7 +57,7 @@ const tabs = [
 async function loadOrders() {
   loading.value = true
   try {
-    const params = { page: 1, size: 50 }
+    const params = { page: page.value, size: size.value }
     if (tab.value !== 'all') {
       params.status = tab.value
     }
@@ -67,7 +76,17 @@ async function loadOrders() {
 
 // 切换 tab 直接查后端，不在前端做本地过滤：
 // 本地过滤只能筛出「已加载的那一页」，用户会以为只有这几条待接单
-watch(tab, loadOrders)
+watch(tab, () => {
+  // 换筛选条件必须回到第一页，否则会停在上一页的页码上看到空列表
+  page.value = 1
+  loadOrders()
+})
+
+/** 翻页：重新向后端要对应页的数据（不在前端切数组） */
+function onPageChange(p) {
+  page.value = p
+  loadOrders()
+}
 
 function view(o) {
   router.push(`/family/order/${o.id}`)
@@ -137,7 +156,10 @@ onMounted(loadOrders)
         </div>
         <div class="order__foot">
           <span v-if="o.companionName" class="nl-caption nl-text-muted">陪诊员：{{ o.companionName }}</span>
-          <span v-else class="nl-caption nl-text-weak">尚无陪诊员</span>
+          <!-- 空态统一走 NlEmpty（P2-8）；卡片内嵌，故压缩成单行 -->
+          <div v-else class="order__foot-empty">
+            <NlEmpty type="empty" title="尚无陪诊员" />
+          </div>
           <span class="order__id is-num">{{ o.orderNo }}</span>
         </div>
         <!--
@@ -158,6 +180,17 @@ onMounted(loadOrders)
         </el-button>
       </li>
     </ul>
+
+    <!-- 翻页控件：没有它，第 51 条以后的订单不可达（P1-9） -->
+    <el-pagination
+      v-if="!loading && total > size"
+      class="list-pager"
+      layout="prev, pager, next"
+      :total="total"
+      :page-size="size"
+      :current-page="page"
+      @current-change="onPageChange"
+    />
 
     <p v-if="!loading && orders.length" class="nl-caption nl-text-weak list-foot">
       共 {{ total }} 单
@@ -218,6 +251,11 @@ onMounted(loadOrders)
 .list-foot {
   margin: var(--nl-space-4) 0 0;
   text-align: center;
+}
+
+.list-pager {
+  justify-content: center;
+  margin-top: var(--nl-space-4);
 }
 
 .order {
@@ -307,6 +345,31 @@ onMounted(loadOrders)
     margin-top: var(--nl-space-3);
     padding-top: var(--nl-space-2);
     border-top: 1px dashed var(--nl-divider);
+  }
+
+  /* 卡片内的空态：NlEmpty 默认是 80px 插画的大块，卡片里放不下，
+     这里压成「小图标 + 一句话」的单行形态（文案与图标仍由 NlEmpty 统一出） */
+  &__foot-empty {
+    :deep(.nl-empty) {
+      flex-direction: row;
+      gap: 6px;
+      padding: 0;
+    }
+
+    :deep(.nl-empty__svg) {
+      width: 18px;
+      height: 18px;
+    }
+
+    :deep(.nl-empty__desc) {
+      display: none;
+    }
+
+    :deep(.nl-empty__title) {
+      font-size: var(--nl-font-caption);
+      font-weight: 400;
+      color: var(--nl-text-2);
+    }
   }
 
   &__id {

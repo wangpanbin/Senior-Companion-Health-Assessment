@@ -16,7 +16,7 @@
  *   - 投诉状态：PENDING 待处理 / PROCESSING 处理中 / RESOLVED 已结案 / REJECTED 已驳回
  *     （注意是 RESOLVED 不是 CLOSED），用 NlStatusChip scope="complaint"
  */
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { NlPageShell, NlCard, NlStatusChip, NlNoticeBar, NlEmpty, NlSkeleton } from '@/components'
@@ -27,7 +27,12 @@ import { formatVisitTime, formatMoney, formatDateTime } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
-const orderId = route.params.id
+/**
+ * 订单 id 必须是**响应式**的：Vue Router 4 在「同一条路由记录只换 params」时会
+ * 复用组件实例（onMounted 不再触发）。快照成常量会让「URL 是 B、页面还显示 A」，
+ * 家属点「提交投诉」就把投诉写给了上一单。
+ */
+const orderId = computed(() => route.params.id)
 
 const order = ref(null)
 const orderLoading = ref(false)
@@ -50,6 +55,42 @@ const form = ref({
   evidence: []
 })
 
+/* ==================== 表单校验（落到字段，而不是一次性 toast） ==================== */
+
+/*
+ * 校验规则与文案语义与改造前完全一致，只是把「一次性 toast」换成字段级错误：
+ *   - 投诉类型必填
+ *   - 投诉描述必填，10–1000 字（原文先 trim 再判长度）
+ *
+ * ⚠️ 描述用自定义 validator 而不是 min/max，是为了保留原先「先 trim 再判长度」的口径：
+ *    纯空格在改造前会被算成「不足 10 个字」，用 min/max 反而会因原始长度不足而放过。
+ */
+const formRef = ref(null)
+
+const rules = {
+  type: [
+    { required: true, message: '请选择投诉类型', trigger: 'change' }
+  ],
+  content: [
+    {
+      required: true,
+      validator: (_rule, value, cb) => {
+        const text = (value || '').trim()
+        if (text.length < 10) {
+          cb(new Error('投诉描述至少 10 个字'))
+          return
+        }
+        if (text.length > 1000) {
+          cb(new Error('投诉描述不能超过 1000 个字'))
+          return
+        }
+        cb()
+      },
+      trigger: 'blur'
+    }
+  ]
+}
+
 const submitting = ref(false)
 
 /** 证据上传中（串行，避免并发冲掉同一个 input） */
@@ -62,16 +103,21 @@ const historyError = ref(false)
 const historyTotal = ref(0)
 
 async function loadOrder() {
+  // 记下本次请求针对的订单：请求在途时 URL 可能又换了订单，回来时要能判断响应是否过期
+  const target = orderId.value
   orderLoading.value = true
   try {
-    const data = await getOrder(orderId)
+    const data = await getOrder(target)
+    // 过期响应直接丢弃：否则会把上一单的数据显示在当前 URL 下
+    if (String(target) !== String(orderId.value)) return
     order.value = data || null
     orderError.value = false
   } catch {
+    if (String(target) !== String(orderId.value)) return
     order.value = null
     orderError.value = true
   } finally {
-    orderLoading.value = false
+    if (String(target) === String(orderId.value)) orderLoading.value = false
   }
 }
 
@@ -128,43 +174,71 @@ function removeEvidence(i) {
   form.value.evidence.splice(i, 1)
 }
 
-function submit() {
-  if (!form.value.type) {
-    ElMessage.warning('请选择投诉类型')
-    return
-  }
-  const content = form.value.content.trim()
-  if (content.length < 10) {
-    ElMessage.warning('投诉描述至少 10 个字')
-    return
-  }
-  if (content.length > 1000) {
-    ElMessage.warning('投诉描述不能超过 1000 个字')
-    return
-  }
+/** 选择投诉类型：类型是自绘的按钮列表，没有原生 change 事件，选完要主动清掉错误 */
+function selectType(value) {
+  form.value.type = value
+  formRef.value?.clearValidate('type')
+}
+
+/**
+ * URL 里的订单 id 与页面正在展示的订单 id 是否一致。
+ *
+ * 路由复用组件实例时存在一个竞态窗口：URL 已经换成 B，详情还没回来，
+ * 页面显示的仍是 A。此时提交投诉就会把投诉写给上一单。
+ */
+function isDisplayedOrderCurrent() {
+  const shown = order.value?.id
+  // 详情里没有 id 时没有可比对的基准，不做拦截（避免把用户锁死在页面上）
+  if (shown == null) return true
+  return String(shown) === String(orderId.value)
+}
+
+async function submit() {
+  // ⚠️ in-flight 锁必须在**任何 await 之前**同步置位（含下面的表单校验）：
+  //    若等校验通过后才置位，两次调用会一起穿过 await，锁形同虚设。
+  if (submitting.value) return
   submitting.value = true
-  createComplaint({
-    orderId,
-    type: form.value.type,
-    content,
-    evidence: form.value.evidence.length ? [...form.value.evidence] : undefined
-  })
-    .then(() => {
-      ElMessage.success('已提交投诉，将由平台介入处理')
-      form.value = { type: '', content: '', evidence: [] }
-      router.back()
+  try {
+    // 二次校验：页面展示的订单必须就是 URL 指向的订单，否则拒绝提交、不发请求
+    if (!isDisplayedOrderCurrent()) {
+      ElMessage.warning('页面已切换到其它订单，请刷新后重试')
+      return
+    }
+    // 字段级校验：一次跑完，错误直接落在对应字段下方（不再逐条弹 toast）
+    try {
+      await formRef.value?.validate()
+    } catch {
+      return
+    }
+    const content = form.value.content.trim()
+    await createComplaint({
+      orderId: orderId.value,
+      type: form.value.type,
+      content,
+      evidence: form.value.evidence.length ? [...form.value.evidence] : undefined
     })
-    .catch(() => {
-      // 拦截器已弹错误提示（如非相关订单 3004 / 存在未结案投诉 409 / 敏感词 6003），不再重复弹
-    })
-    .finally(() => {
-      submitting.value = false
-    })
+    ElMessage.success('已提交投诉，将由平台介入处理')
+    form.value = { type: '', content: '', evidence: [] }
+    formRef.value?.clearValidate()
+    router.back()
+  } catch {
+    // 拦截器已弹错误提示（如非相关订单 3004 / 存在未结案投诉 409 / 敏感词 6003），不再重复弹
+  } finally {
+    submitting.value = false
+  }
 }
 
 onMounted(() => {
   loadOrder()
   loadHistory()
+})
+
+// 同一条路由记录只换 params 时组件实例会被复用，onMounted 不再触发 —— 这里补上重拉
+watch(orderId, () => {
+  // 换订单：投诉草稿是针对具体订单的，不能带到下一单去
+  form.value = { type: '', content: '', evidence: [] }
+  formRef.value?.clearValidate()
+  loadOrder()
 })
 </script>
 
@@ -204,32 +278,42 @@ onMounted(() => {
         </div>
       </NlCard>
 
-      <!-- 类型选择 -->
-      <NlCard title="投诉类型">
-        <ul role="list" class="types">
-          <li
+      <!--
+        字段级校验：错误落在对应字段下方，而不是「一次性 toast」——
+        原来一次只报一个错、错在哪个字段不定位、toast 3 秒后就消失。
+      -->
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
+        <!-- 类型选择 -->
+        <NlCard title="投诉类型">
+          <el-form-item prop="type">
+            <ul role="list" class="types">
+              <li
 v-for="t in COMPLAINT_TYPES" :key="t.value" role="button" tabindex="0"
-            :class="['types__item', { 'is-active': form.type === t.value }]"
-            @keydown.enter.prevent="form.type = t.value"
-            @keydown.space.prevent="form.type = t.value"
-            @click="form.type = t.value"
-          >
-            {{ t.label }}
-          </li>
-        </ul>
-      </NlCard>
+                :class="['types__item', { 'is-active': form.type === t.value }]"
+                @keydown.enter.prevent="selectType(t.value)"
+                @keydown.space.prevent="selectType(t.value)"
+                @click="selectType(t.value)"
+              >
+                {{ t.label }}
+              </li>
+            </ul>
+          </el-form-item>
+        </NlCard>
 
-      <!-- 描述 -->
-      <NlCard title="投诉描述">
-        <el-input
-          v-model="form.content"
-          type="textarea"
-          :rows="6"
-          placeholder="请详细描述事件经过、影响、期望处理结果（10–1000 字）"
-          maxlength="1000"
-          show-word-limit
-        />
-      </NlCard>
+        <!-- 描述 -->
+        <NlCard title="投诉描述">
+          <el-form-item prop="content">
+            <el-input
+              v-model="form.content"
+              type="textarea"
+              :rows="6"
+              placeholder="请详细描述事件经过、影响、期望处理结果（10–1000 字）"
+              maxlength="1000"
+              show-word-limit
+            />
+          </el-form-item>
+        </NlCard>
+      </el-form>
 
       <!-- 证据材料 -->
       <NlCard title="证据材料（选填）">
@@ -270,7 +354,12 @@ v-for="t in COMPLAINT_TYPES" :key="t.value" role="button" tabindex="0"
           action-text="重试"
           @action="loadHistory"
         />
-        <p v-else-if="!history.length" class="nl-caption nl-text-muted">暂无历史投诉</p>
+        <NlEmpty
+          v-else-if="!history.length"
+          type="empty"
+          title="暂无历史投诉"
+          description="该订单还没有其它投诉记录"
+        />
         <ul v-else class="hist">
           <li v-for="h in history" :key="h.id" class="hist__item">
             <div class="hist__head">

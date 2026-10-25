@@ -379,17 +379,25 @@ v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
                 <NlAvatar :fallback="o.companionName.slice(0, 1)" :size="24" tone="warning" />
                 <span class="nl-caption">{{ o.companionName }}</span>
               </div>
-              <span v-else class="nl-caption nl-text-muted">尚无陪诊员接单</span>
+              <!-- 空态统一走 NlEmpty（P2-8）；卡片内嵌，故压缩成单行 -->
+              <div v-else class="order-card__foot-empty">
+                <NlEmpty type="empty" title="尚无陪诊员接单" />
+              </div>
               <span class="order-card__chev">›</span>
             </div>
           </div>
         </li>
       </ul>
 
-      <div v-else class="fam-home__empty">
-        <NlStatusChip tone="neutral" text="暂无订单" />
-        <el-button type="primary" round size="small" class="mt-3" @click="createOrder">去下单</el-button>
-      </div>
+      <!-- 空态统一走 NlEmpty（P2-8）：不要再用 NlStatusChip 冒充空态 -->
+      <NlEmpty
+        v-else
+        type="empty"
+        title="暂无订单"
+        description="为家人预约陪诊服务，下单 3 步完成"
+        action-text="去下单"
+        @action="createOrder"
+      />
     </NlCard>
 
     <template #tabbar>
@@ -585,10 +593,15 @@ v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
         </li>
       </ul>
 
-      <div v-else class="fam-home__empty">
-        <NlStatusChip tone="neutral" text="暂无订单" />
-        <el-button type="primary" round size="small" class="mt-3" @click="createOrder">去下单</el-button>
-      </div>
+      <!-- 空态统一走 NlEmpty（P2-8）：不要再用 NlStatusChip 冒充空态 -->
+      <NlEmpty
+        v-else
+        type="empty"
+        title="暂无订单"
+        description="为家人预约陪诊服务，下单 3 步完成"
+        action-text="去下单"
+        @action="createOrder"
+      />
     </NlCard>
 
     <!-- 合规与说明 -->
@@ -834,6 +847,31 @@ v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
     margin-top: var(--nl-space-2);
   }
 
+  /* 卡片内的空态：NlEmpty 默认是 80px 插画的大块，卡片里放不下，
+     这里压成「小图标 + 一句话」的单行形态（文案与图标仍由 NlEmpty 统一出） */
+  &__foot-empty {
+    :deep(.nl-empty) {
+      flex-direction: row;
+      gap: 6px;
+      padding: 0;
+    }
+
+    :deep(.nl-empty__svg) {
+      width: 18px;
+      height: 18px;
+    }
+
+    :deep(.nl-empty__desc) {
+      display: none;
+    }
+
+    :deep(.nl-empty__title) {
+      font-size: var(--nl-font-caption);
+      font-weight: 400;
+      color: var(--nl-text-2);
+    }
+  }
+
   &__comp {
     display: flex;
     gap: 6px;
@@ -845,10 +883,6 @@ v-for="(e, i) in elders" :key="e.id" role="button" tabindex="0"
     font-size: var(--nl-font-h2);
     color: var(--nl-text-3);
   }
-}
-
-.mt-3 {
-  margin-top: 12px;
 }
 
 /* ==========================================================================
