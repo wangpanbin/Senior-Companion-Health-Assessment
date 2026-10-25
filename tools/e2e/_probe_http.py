@@ -35,9 +35,11 @@
     python tools/e2e/probe_api.py
 """
 
+import base64
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -59,6 +61,22 @@ def _storage_state_path(account):
     return os.path.join(AUTH_DIR, "%s.json" % account)
 
 
+class TokenExpiredError(Exception):
+    """storageState 里的 access token 已过 JWT exp —— 探针会全部 401，先拦下来指路。"""
+
+
+def _jwt_exp(token):
+    """解析 JWT payload 的 exp（Unix 秒）；格式解析不出时返回 None（不误杀非标准令牌）。"""
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        exp = payload.get("exp")
+        return float(exp) if exp is not None else None
+    except Exception:
+        return None
+
+
 def read_token(account):
     """
     从 Playwright storageState 文件读 accessToken。
@@ -66,6 +84,10 @@ def read_token(account):
     Raises:
         FileNotFoundError: 没有对应账号的 .auth/<account>.json(通常意味着 setup 项目没跑过)
         KeyError: 文件存在但 localStorage 里没有 nianglin_access_token 键(setup 流程异常)
+        TokenExpiredError: 令牌已过 JWT exp —— access token TTL 只有 120 分钟，
+            落盘隔天/隔几小时后再跑，32 项探针会全部 401，报错文案却只说
+            「未登录或登录已失效」，排查方向会被带偏（2026-10-25 验收实测踩过）。
+            这里提前识别并直接指路去重跑 setup。
     """
     path = _storage_state_path(account)
     if not os.path.exists(path):
@@ -83,6 +105,14 @@ def read_token(account):
             if entry.get("name") == _ACCESS_TOKEN_KEY:
                 value = entry.get("value")
                 if value:
+                    exp = _jwt_exp(value)
+                    if exp is not None and exp < time.time():
+                        raise TokenExpiredError(
+                            "storageState %s 里的 access token 已过期"
+                            "(exp=%d, now=%d, 落盘已超过 TTL 120 分钟)。\n"
+                            "  请先重跑 `pnpm -C frontend exec playwright test --project=setup` 刷新令牌再跑探针。"
+                            % (path, int(exp), int(time.time()))
+                        )
                     return value
     raise KeyError(
         "storageState %s 里没有 localStorage[%s] —— setup 流程异常"
@@ -126,12 +156,21 @@ if __name__ == "__main__":
     for acc in target_accounts:
         try:
             tok = read_token(acc)
+            exp = _jwt_exp(tok)
+            if exp is not None:
+                remain = int((exp - time.time()) / 60)
+                ttl = "剩余约 %d 分钟" % remain if remain > 0 else "已过期"
+            else:
+                ttl = "无 exp 字段"
             # token 头部(alg.payload. 前的部分)足够辨认,不打印完整 token 避免日志泄露
             head = tok.split(".", 1)[0] if tok else ""
-            print("[ OK ] %-10s token 前缀=%s (len=%d)" % (acc, head, len(tok)))
+            print("[ OK ] %-10s token 前缀=%s (len=%d, %s)" % (acc, head, len(tok), ttl))
             ok += 1
         except FileNotFoundError as e:
             print("[MISS] %-10s %s" % (acc, e))
+            bad += 1
+        except TokenExpiredError as e:
+            print("[EXPI] %-10s %s" % (acc, e))
             bad += 1
         except KeyError as e:
             print("[FAIL] %-10s %s" % (acc, e))

@@ -1,7 +1,7 @@
 # tools/e2e · 脚本索引
 
-> 10 个脚本，没有统一的 README 之前，「哪个能跑、哪个会写库、哪个要口令」全靠逐个打开看。
-> 这张表是那张索引。**动脚本前先看本表**，加脚本时同步补一行。
+> 脚本清单见下表，没有统一的 README 之前，「哪个能跑、哪个会写库、哪个要口令」全靠逐个打开看。
+> 这张表是那张索引。**动脚本前先看本表**，加脚本时同步补一行（行数本身就是事实，别在这里写计数词）。
 
 ## 三条红线（先读这张表再看下面）
 
@@ -22,8 +22,9 @@
 | `fixture.py` | 写路径 E2E 夹具：`snapshot` / `restore` / `verify`，让库回到跑之前 | ✅ | ✅ | — |
 | `restore_clean_baseline.py` | 把库与 Redis 恢复到种子基线（删写路径新增行） | ✅ | ✅ | — |
 | `probe_api.py` | 接口冒烟探测（与 Playwright 独立） | — | ✅ | — |
+| `probe_access_matrix.py` | **A-1 越权矩阵**（25 端点 × 4 角色 = 100 次真实 HTTP，0 违规判据，见 TEST_REPORT §6.1） | — | ✅ | — |
 | `probe_backend_gaps.py` | 后端功能缺口探测 | — | ✅ | — |
-| `probe_ws_handshake.py` | WebSocket 握手探测 | — | — | — |
+| `probe_ws_handshake.py` | WebSocket 握手探测（开跑先探测 8080/5141 是否有监听，进程没起会直接指路而非误归因） | — | — | — |
 | `l0_identity_gate.py` | **端口与服务身份闸门**（跑任何 E2E 前必须先过） | — | — | — |
 | `_probe_http.py` | 轻量 HTTP 客户端，复用 `probe_api` 的 http / login / BASE 逻辑 | — | ✅ | — |
 
@@ -33,7 +34,7 @@
 
 只有 `check_api_imports.py` 满足，其余全部排除，原因各不相同：
 
-- **需要 MySQL / Redis / 后端进程** —— `fixture.py`、`restore_clean_baseline.py`、四个 `probe_*`、
+- **需要 MySQL / Redis / 后端进程** —— `fixture.py`、`restore_clean_baseline.py`、五个 `probe_*`、
   `l0_identity_gate.py`、两个 `*.ps1` 都是本机联调脚本，CI 环境没有这些常驻服务，跑必失败
 - **写库** —— `fixture.py` 与 `restore_clean_baseline.py` 会 `DELETE` / `REPLACE INTO`，
   CI 上跑等于破坏共享环境
@@ -94,19 +95,39 @@ python tools/e2e/fixture.py verify      # 校验还原结果
 
 水位写在 `reports/e2e/fixture/state.json`（gitignore 内），restore 后改名 `state.done.json`。
 
-### `probe_api.py` / `probe_backend_gaps.py` / `probe_ws_handshake.py`
+### `probe_api.py` / `probe_access_matrix.py` / `probe_backend_gaps.py` / `probe_ws_handshake.py`
 
-三个探针，跑之前**必须先 `start-services.ps1`**。Windows 下需先设 UTF-8：
+四个探针，跑之前**必须先 `start-services.ps1`**，且**必须先跑过 Playwright 的 setup 项目**
+（`pnpm -C frontend exec playwright test --project=setup`）—— 探针的令牌来自 setup 落下的
+`reports/playwright/.auth/<account>.json`，**没有它探针一步都跑不了**。
+
+⚠️ **令牌 TTL 只有 120 分钟**（`application.yml` 的 access token 有效期）。setup 落盘隔天或
+隔几小时后再跑，100 次请求会全部 401、报错文案只说「未登录或登录已失效」，极易误判成
+「鉴权回归」（2026-10-25 验收实测踩过）。现在 `_probe_http.read_token` 会解析 JWT `exp`
+**提前识别过期**并报 `[EXPI]` 指路重跑 setup；拿不准就先单独自检一次：
+
+```powershell
+python tools/e2e/_probe_http.py    # 逐账号 [ OK ]/[EXPI]/[MISS]，并显示剩余有效期
+```
+
+Windows 下需先设 UTF-8：
 
 ```powershell
 $env:PYTHONUTF8=1; $env:PYTHONIOENCODING="utf-8"
 python tools/e2e/probe_backend_gaps.py
 ```
 
+`probe_access_matrix.py` 复现 `docs/reports/TEST_REPORT.md §6.1` 的 A-1：25 个 V3.1–V3.7 新增
+端点 × 4 角色（admin / fam001 / elder001 / **comp007**，comp007 是订单 1007 的接单陪诊员）=
+100 次真实 HTTP。判据分两种、不能混用：有 `@PreAuthorize` 的「role 型」端点，非授权角色必须
+HTTP 403；只做资源归属的 `/order/1007/fulfillment`，无关方是业务码 **3004** 而非 403。全绿
+退出码 0，任一违规退出码 1，令牌缺失/后端不在线退出码 2。
+
 `probe_backend_gaps.py` 之前缺 `BASE` 常量（上传 / CHECKIN / 魔数等写路径探针全被 `NameError` 卡住）——
 **F-2 已修（2026-10-21）**：`from _probe_http import BASE, read_token, http`。
 `probe_ws_handshake.py` 之前写死旧前端端口 5410（项目早已改到 5141）——**F-3 已修（2026-10-21）**：
-改读 `VITE_PORT`（缺省 5141），标签与归因文案一并参数化。
+改读 `VITE_PORT`（缺省 5141），标签与归因文案一并参数化；**2026-10-25 再补**：归因前先探测
+8080 / 5141 是否有监听 —— vite 进程没起时不再输出「代理没生效」的误导归因，而是直接指路 `pnpm dev`。
 
 ### `l0_identity_gate.py`（跑任何 E2E 之前**必须**先过）
 
