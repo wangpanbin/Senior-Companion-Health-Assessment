@@ -235,6 +235,32 @@ describe('智能助手 · 提问链路', () => {
     // 断言「未接入大模型」会把「服务故障」说成「平台没接模型」。
     expect(wrapper.text()).toContain('以下为平台标准答案原文')
   })
+
+  it('移动端同样渲染引导问题按钮，点击即作为问题发送', async () => {
+    // 默认夹具就是手机形态。此前 presets 只在 Desktop 形态有 ——
+    // 老人家属最常用的手机端反而没有可点的入口。
+    chatAssistantMock.mockResolvedValue({
+      answer: '好的',
+      intent: 'FAQ_PLATFORM',
+      actions: [],
+      sources: [],
+      degraded: true
+    })
+    const wrapper = mountAssistant()
+    const presets = ['陪诊费怎么算？', '下了单还能取消吗？', '我的订单到哪了？', '帮我找个合适的陪诊员']
+    for (const p of presets) {
+      expect(wrapper.text()).toContain(p)
+    }
+
+    const presetBtn = wrapper
+      .findAll('button.el-button-stub')
+      .find((b) => b.text() === presets[0])
+    await presetBtn.trigger('click')
+    await flushPromises()
+
+    expect(chatAssistantMock).toHaveBeenCalledTimes(1)
+    expect(chatAssistantMock.mock.calls[0][0].question).toBe(presets[0])
+  })
 })
 
 describe('智能助手 · 失败提示', () => {

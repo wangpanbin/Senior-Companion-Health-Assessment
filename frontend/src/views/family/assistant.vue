@@ -299,6 +299,20 @@ onMounted(loadHistory)
         />
         <el-button type="primary" round :loading="sending" @click="send()">发送</el-button>
       </div>
+
+      <!-- 引导问题（与 Desktop 形态同一组）—— 老人家属在手机上更需要可点的入口 -->
+      <div class="asst__presets">
+        <el-button
+          v-for="p in presets"
+          :key="p"
+          size="small"
+          round
+          plain
+          @click="send(p)"
+        >
+          {{ p }}
+        </el-button>
+      </div>
     </div>
   </NlPhoneShell>
 

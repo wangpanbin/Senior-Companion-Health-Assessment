@@ -451,6 +451,50 @@ def test_no_history_section_when_history_is_empty(faq_index) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 追问句必须答得上来（V3.7 收口加固）
+# ---------------------------------------------------------------------------
+#
+# 背景：费用条目的关键词原本不含「周末 / 夜间 / 节假日 / 晚上」，
+# 「服务费多少钱？」之后追问「那周末呢？」必掉进 UNKNOWN ——
+# 演示现场连问三句得到的都是「我暂时没听懂」。
+#
+# ⚠️ 为什么靠补关键词而不是「UNKNOWN 时带上下文重试检索」：
+# keyword 命中权重（3.0）恒大于阈值（2.0），问句含关键词就必然直接命中，
+# 重试路径在数学上不可达（推演见 app/service.py::_classify 的 docstring）。
+# 关键词是唯一有效杠杆，以下用例锁死这批追问词。
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["那周末呢", "那夜间呢", "那节假日呢", "那晚上呢"],
+)
+def test_fee_followup_questions_are_answerable(faq_index, question: str) -> None:
+    """问过费用后追问时段价差 → 命中同一条费用条目，不是澄清话术。"""
+    service = AssistantService(faq_index)
+    response = service.chat(ChatRequest(question=question))
+
+    assert response.intent == "FAQ_PLATFORM", (
+        f"「{question}」应命中费用条目，实际 {response.intent}"
+    )
+    assert response.answer != guard.CLARIFY_TEMPLATE
+    assert response.sources, "追问命中的回答同样要带依据引用"
+
+
+def test_offtopic_followup_stays_unknown(faq_index) -> None:
+    """追问换话题 → 保持 UNKNOWN，绝不复读上一轮的答案。"""
+    service = AssistantService(faq_index)
+    response = service.chat(
+        ChatRequest(
+            question="今天天气怎么样",
+            history=[HistoryTurn(role="user", content="下了单还能取消吗")],
+        )
+    )
+
+    assert response.intent == "UNKNOWN"
+    assert response.answer == guard.CLARIFY_TEMPLATE
+
+
+# ---------------------------------------------------------------------------
 # 前端预设问题不许掉进 UNKNOWN（V3.7 联调回归）
 # ---------------------------------------------------------------------------
 #
