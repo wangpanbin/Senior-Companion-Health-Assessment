@@ -8,18 +8,28 @@
  * - 底部：忘记密码 + 注册 + 免责文案
  * - 演示账号：仅 DEV 环境可见，避免生产包体里带默认口令
  */
-import { reactive, ref, computed, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore, ROLE_LABELS } from '@/store/modules/user'
 import { getCaptcha } from '@/api/auth'
+import { resolveRedirect } from '@/router/index'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
 const formRef = ref()
-const loading = ref(false)
+/**
+ * 提交中的 in-flight 锁。
+ *
+ * ⚠️ 必须**同步**置位（在任何 await 之前）：若等表单校验通过后才置位，
+ * 两次调用会一起穿过 await，锁就形同虚设。而登录接口的验证码是**一次性**的
+ * （后端 CaptchaServiceImpl 用 Redis getAndDelete 取出即删），
+ * 第二次请求必然失败 —— 用户看到的是「验证码错误或已过期」，
+ * 而密码其实是对的。
+ */
+const submitting = ref(false)
 const captchaImage = ref('')
 
 const form = reactive({
@@ -27,7 +37,17 @@ const form = reactive({
   password: '',
   captchaKey: '',
   captchaCode: '',
-  remember: false
+  /**
+   * 「7 天内自动登录」默认勾选。
+   *
+   * <p>勾选 → 令牌存 localStorage（配合 7 天有效的 refreshToken，关掉浏览器再打开仍在）；
+   * 不勾选 → 存 sessionStorage（关掉标签页即失效，更适合共用设备）。</p>
+   *
+   * <p>⚠️ 默认值必须是 <b>true</b>：这是本系统改动前的既有行为（令牌一律在 localStorage），
+   * 默认关掉会让「换个标签页 / 从桌面图标重开」都要重新登录 —— 对要反复用的陪诊 App 是倒退。
+   * 想更安全可以主动取消勾选。</p>
+   */
+  remember: true
 })
 
 const rules = {
@@ -43,6 +63,10 @@ const rules = {
  * 角色快速选择 —— 仅用于本地演示：选中后把对应种子账号填进表单，
  * 提交仍然走真实的 POST /api/auth/login（含图形验证码），不存在任何绕过登录的通道。
  * 预填只在 DEV 生效，生产构建不会带上种子账号。
+ *
+ * ⚠️ 卡片**不参与鉴权**：最终角色由后端按账号查库决定
+ * （后端 LoginDTO 根本没有 role 字段，此前前端传的那个 role 会被 Jackson 静默丢弃）。
+ * 所以卡片的作用只有一个 —— 省掉演示时手打账号。
  */
 const ROLE_CARDS = [
   { role: 'ELDER',     label: '老年患者', hint: '只读视图 · 字号最大', tone: 'success', account: 'elder001' },
@@ -52,7 +76,6 @@ const ROLE_CARDS = [
 ]
 
 const activeRole = ref('FAMILY')
-const redirect = computed(() => route.query.redirect || '/')
 
 /**
  * 把角色对应的演示账号填进表单（仅 DEV）。
@@ -89,28 +112,38 @@ async function loadCaptcha() {
   } catch {
     captchaImage.value = ''
     form.captchaKey = ''
+    // ⚠️ 不能只把图置空就完事：用户只会看到一个「点击刷新」的灰框，
+    // 完全不知道是验证码服务挂了还是自己手滑。给一句能行动的话。
+    ElMessage.error('验证码加载失败，请点击图片重试')
   }
 }
 
 async function handleSubmit() {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
-
-  loading.value = true
+  // ⚠️ in-flight 锁必须在任何 await 之前同步置位（见 submitting 的注释）
+  if (submitting.value) return
+  submitting.value = true
   try {
+    const valid = await formRef.value?.validate().catch(() => false)
+    if (!valid) return
     await userStore.login({
       username: form.username,
       password: form.password,
       captchaKey: form.captchaKey,
       captchaCode: form.captchaCode,
-      role: activeRole.value // 仅前端 demo 透传给后端做角色 hint
+      // 「7 天内自动登录」：true → localStorage（配合 7 天有效的 refreshToken），
+      // false → sessionStorage（关掉标签页即失效）。
+      // 此前 form.remember 从未被读取，这个复选框点了没反应。
+      remember: form.remember
     })
     ElMessage.success('登录成功')
-    router.push(redirect.value)
+    // ⚠️ redirect 必须过白名单（resolveRedirect）：它来自 URL query，
+    // 可能指向站外地址、不存在的路径，或当前角色无权访问的页（如 FAMILY 指向后台）。
+    // 不校验的话，登录后会被弹到一个无关页面或 404，用户以为登录出了问题。
+    router.push(resolveRedirect(route.query.redirect, userStore.role))
   } catch {
     // 错误提示已在 axios 拦截器统一处理
   } finally {
-    loading.value = false
+    submitting.value = false
     form.captchaCode = ''
     await loadCaptcha()
   }
@@ -200,7 +233,7 @@ applyDemoAccount(activeRole.value)
             placeholder="请输入密码"
             show-password
             autocomplete="current-password"
-            @keyup.enter="handleSubmit"
+            @keydown.enter.prevent="handleSubmit"
           >
             <template #prefix>
               <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -217,7 +250,7 @@ applyDemoAccount(activeRole.value)
               v-model="form.captchaCode"
               placeholder="请输入右侧 4 位验证码"
               maxlength="4"
-              @keyup.enter="handleSubmit"
+              @keydown.enter.prevent="handleSubmit"
             >
               <template #prefix>
                 <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -235,16 +268,32 @@ applyDemoAccount(activeRole.value)
         </el-form-item>
 
         <div class="login__row">
-          <el-checkbox v-model="form.remember" size="default">7 天内自动登录</el-checkbox>
+          <!--
+            「记住我」不是死控件：勾选 → 令牌存 localStorage（配合 7 天有效的 refreshToken，
+            关掉浏览器再打开仍在）；不勾选 → 存 sessionStorage（关掉标签页即失效）。
+            实现见 frontend/src/utils/auth.js 的 targetStore()。
+          -->
+          <el-checkbox
+            v-model="form.remember"
+            size="default"
+            title="勾选后 7 天内免登录（令牌保存在本机浏览器）"
+          >
+            7 天内自动登录
+          </el-checkbox>
           <el-link type="primary" underline="never" @click="goForget">忘记密码？</el-link>
         </div>
 
+        <!--
+          提交按钮绑 :loading —— Element Plus 在 loading 时会自动禁用按钮。
+          ⚠️ 但真正防住「重复提交」的是 handleSubmit 里的 submitting 锁：
+          它在第一次 await 之前同步置位，两次调用只会有一次真正发出请求。
+        -->
         <el-button
           type="primary"
           size="large"
           round
           class="login__submit"
-          :loading="loading"
+          :loading="submitting"
           @click="handleSubmit"
         >
           登 录

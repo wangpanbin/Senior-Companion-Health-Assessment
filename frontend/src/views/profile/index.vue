@@ -27,6 +27,8 @@ import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
 import { getProfile } from '@/api/user'
 import { changePassword } from '@/api/auth'
+import { confirmThen } from '@/utils/confirm'
+import { PASSWORD_RE, PASSWORD_MSG } from '@/constants/validation'
 
 const router = useRouter()
 const appStore = useAppStore()
@@ -54,14 +56,14 @@ function toggleElderly() {
 
 /* ===== 退出登录 ===== */
 async function logout() {
-  try {
-    await ElMessageBox.confirm('退出后将无法接收订单通知，是否继续？', '退出登录', {
+  // confirmThen 把「用户是否点了确认」变成布尔：取消时静默返回 false，不执行登出
+  const ok = await confirmThen(() =>
+    ElMessageBox.confirm('退出后将无法接收订单通知，是否继续？', '退出登录', {
       confirmButtonText: '退出',
       type: 'warning'
     })
-  } catch {
-    return
-  }
+  )
+  if (!ok) return
   await userStore.logout()
   ElMessage.success('已退出登录')
   router.push('/login')
@@ -71,34 +73,75 @@ async function logout() {
 const pwdVisible = ref(false)
 const pwdLoading = ref(false)
 const pwdForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const pwdFormRef = ref()
+
+/**
+ * 后端「指明字段」的错误码 → 表单字段（P2-2）。
+ *
+ * request.js 对业务错误统一弹一个**顶部** toast，而改密弹窗在屏幕下方，
+ * 用户视线在输入框上 —— 错误弹在顶上基本看不到。这里把能定位到字段的码
+ * 落到对应输入框下方（setFieldError），定位不到字段的仍走全局兜底 toast。
+ *
+ * ⚠️ 码值与后端 ResultCode 一致（backend/.../common/ResultCode.java）：
+ *   1006 OLD_PASSWORD_ERROR 原密码不正确
+ *   1007 PHONE_ALREADY_EXISTS 该手机号已被注册 —— **本页没有手机号字段**，
+ *        不会命中，因此**不在**下面这张映射表里（不是漏写）。
+ */
+const PWD_ERROR_FIELD = {
+  1006: 'oldPassword'
+}
+
+/** 两次新密码是否一致（确认密码是纯前端字段，后端没有它） */
+function validateConfirmPassword(rule, value, callback) {
+  if (value !== pwdForm.newPassword) {
+    callback(new Error('两次输入的新密码不一致'))
+    return
+  }
+  callback()
+}
+
+/**
+ * 表单规则 —— 错误直接落在对应输入框下方。
+ *
+ * ⚠️ 此前这些校验是「一次性 toast」：填完一屏弹一句、不知道该改哪个字段，
+ * toast 3 秒后消失。现在全部下沉到字段上。
+ */
+const pwdRules = {
+  oldPassword: [{ required: true, message: '请输入当前密码', trigger: ['blur', 'change'] }],
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: ['blur', 'change'] },
+    { pattern: PASSWORD_RE, message: PASSWORD_MSG, trigger: ['blur', 'change'] }
+  ],
+  confirmPassword: [
+    { required: true, message: '请再次输入新密码', trigger: ['blur', 'change'] },
+    { validator: validateConfirmPassword, trigger: ['blur', 'change'] }
+  ]
+}
 
 /** < 768 让修改密码弹窗 fullscreen，避免小屏字段被压扁（T-08；用 isXs(≤767)替代 !isMd 修复大屏 PC bug） */
 const { isXs } = useResponsive()
-
-const pwdValid = computed(() => /^(?=.*[A-Za-z])(?=.*\d)\S{6,32}$/.test(pwdForm.newPassword))
 
 function openChangePwd() {
   pwdForm.oldPassword = ''
   pwdForm.newPassword = ''
   pwdForm.confirmPassword = ''
   pwdVisible.value = true
+  // 上一次残留的字段级错误不要带进新一轮
+  pwdFormRef.value?.clearValidate()
 }
 
 async function submitChangePwd() {
-  if (!pwdForm.oldPassword || !pwdForm.newPassword || !pwdForm.confirmPassword) {
-    ElMessage.warning('请填写完整的密码信息')
-    return
-  }
-  if (pwdForm.newPassword !== pwdForm.confirmPassword) {
-    ElMessage.warning('两次输入的新密码不一致')
-    return
-  }
-  if (!pwdValid.value) {
-    ElMessage.warning('新密码为 6-32 位，且需同时包含字母与数字')
-    return
-  }
+  // ⚠️ in-flight 锁必须在**任何 await 之前**同步置位（含下面那次表单校验）：
+  //    否则同 tick 连点会发出两次 PUT /api/auth/password，第二次必然报
+  //    1006「原密码不正确」—— 用户看到的是「成功 + 报错」双提示。
+  if (pwdLoading.value) return
   pwdLoading.value = true
   try {
+    // 重新提交前清掉上一次的字段级错误
+    pwdFormRef.value?.clearValidate()
+    // ⚠️ 一次性校验全部字段：错误落在对应输入框下方，不用一轮轮试
+    const valid = await pwdFormRef.value?.validate().catch(() => false)
+    if (!valid) return
     await changePassword({
       oldPassword: pwdForm.oldPassword,
       newPassword: pwdForm.newPassword,
@@ -109,8 +152,16 @@ async function submitChangePwd() {
     // 改密后所有已签发令牌失效，主动登出并跳登录页
     await userStore.logout()
     router.push('/login')
-  } catch {
-    // 拦截器已弹错
+  } catch (err) {
+    const field = PWD_ERROR_FIELD[err?.code]
+    if (field) {
+      // 字段级错误已经承接了这条信息：撤掉 request.js 的全局兜底 toast，
+      // 否则同一条错误会在屏幕顶部和输入框下方各弹一次。
+      ElMessage.closeAll()
+      pwdFormRef.value?.setFieldError(field, err.message || '操作失败')
+      return
+    }
+    // 定位不到字段的错误：保留全局兜底 toast（拦截器已弹，这里不重复）
   } finally {
     pwdLoading.value = false
   }
@@ -380,8 +431,14 @@ async function submitChangePwd() {
 
       <!-- 修改密码弹窗 -->
       <el-dialog v-model="pwdVisible" title="修改密码" width="90%" :fullscreen="isXs" align-center>
-        <el-form label-position="top">
-          <el-form-item label="原密码">
+        <el-form
+          ref="pwdFormRef"
+          :model="pwdForm"
+          :rules="pwdRules"
+          label-position="top"
+          @submit.prevent
+        >
+          <el-form-item label="原密码" prop="oldPassword">
             <el-input
               v-model="pwdForm.oldPassword"
               type="password"
@@ -390,7 +447,7 @@ async function submitChangePwd() {
               maxlength="32"
             />
           </el-form-item>
-          <el-form-item label="新密码">
+          <el-form-item label="新密码" prop="newPassword">
             <el-input
               v-model="pwdForm.newPassword"
               type="password"
@@ -399,7 +456,7 @@ async function submitChangePwd() {
               maxlength="32"
             />
           </el-form-item>
-          <el-form-item label="确认新密码">
+          <el-form-item label="确认新密码" prop="confirmPassword">
             <el-input
               v-model="pwdForm.confirmPassword"
               type="password"
