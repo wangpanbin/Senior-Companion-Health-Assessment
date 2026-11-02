@@ -37,6 +37,9 @@ import OrderFeeItems from '@/components/OrderFeeItems.vue'
 import { getOrder, getOrderTimeline, cancelOrder, urgeOrder, recommendCompanions } from '@/api/order'
 import { listCheckins, connectProgressSocket } from '@/api/execution'
 import { getReviewByOrder } from '@/api/review'
+import { buildDraftFromOrder } from '@/api/medication'
+import { getUserInfo } from '@/utils/auth'
+import { saveMedicationDraft } from '@/utils/medicationDraft'
 import { formatDateTime, CHECKIN_NODE_ORDER } from '@/utils/format'
 import {
   showFulfillmentBar,
@@ -48,6 +51,8 @@ import { promptThen } from '@/utils/confirm'
 
 const route = useRoute()
 const router = useRouter()
+/** 当前登录用户（localStorage / sessionStorage 里的非敏感快照，与 user store 同源） */
+const currentUser = getUserInfo()
 
 /**
  * 订单 id 必须是**响应式**的：Vue Router 4 在「同一条路由记录只换 params」时会
@@ -293,6 +298,17 @@ const canComplaint = computed(() =>
   order.value && ['COMPLETED', 'REVIEWED'].includes(order.value.status)
 )
 
+/**
+ * V4 · P1-2：只有「下单家属本人 + 订单 COMPLETED + 服务小结非空」才出现「转入用药计划」。
+ * 后端还会再校验一遍（非本人 3004、状态/小结 409），前端隐藏只是减少无效点击。
+ */
+const canBuildMedicationDraft = computed(() =>
+  order.value?.status === 'COMPLETED' &&
+  !!String(order.value?.serviceSummary || '').trim() &&
+  currentUser?.role === 'FAMILY' &&
+  String(currentUser?.id) === String(order.value?.familyId)
+)
+
 /* ==================== 实时推送 ==================== */
 
 function openSocket() {
@@ -375,6 +391,84 @@ function goReview() {
 }
 function goComplaint() {
   router.push(`/family/order/${orderId.value}/complaint`)
+}
+
+/* ==================== 转入用药计划（V4 · P1-2） ==================== */
+
+/*
+ * 合规口径：弹窗内**没有任何剂量输入框**。
+ * 家属只填写药名 / 每日次数 / 时间点，后端只做药品字典匹配并回显草稿；
+ * 用量必须在用药计划页按医嘱自行补齐 —— 系统不生成、不推断、不建议。
+ */
+const draftDialog = ref(false)
+const draftSaving = ref(false)
+const draftRows = ref([])
+
+const DRAFT_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
+
+function openDraftDialog() {
+  if (!isDisplayedOrderCurrent()) {
+    ElMessage.warning('页面已切换到其它订单，请刷新后重试')
+    return
+  }
+  draftRows.value = [{ drugName: '', frequency: 1, timePoint: '08:00' }]
+  draftDialog.value = true
+}
+
+function addDraftRow() {
+  if (draftRows.value.length >= 10) {
+    ElMessage.warning('最多添加 10 项草稿')
+    return
+  }
+  draftRows.value.push({ drugName: '', frequency: 1, timePoint: '08:00' })
+}
+
+function removeDraftRow(index) {
+  if (draftRows.value.length > 1) draftRows.value.splice(index, 1)
+}
+
+async function submitDraft() {
+  const rows = draftRows.value
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i]
+    if (!String(row.drugName || '').trim()) {
+      ElMessage.warning(`第 ${i + 1} 项：请填写药品名`)
+      return
+    }
+    if (!Number.isInteger(row.frequency) || row.frequency < 1 || row.frequency > 4) {
+      ElMessage.warning(`第 ${i + 1} 项：每日次数须为 1–4 次`)
+      return
+    }
+    if (!DRAFT_TIME_PATTERN.test(String(row.timePoint || ''))) {
+      ElMessage.warning(`第 ${i + 1} 项：时间点格式应为 HH:mm`)
+      return
+    }
+  }
+
+  draftSaving.value = true
+  try {
+    const data = await buildDraftFromOrder(orderId.value, {
+      elderId: order.value.elderId,
+      items: rows.map((row) => ({
+        drugName: row.drugName.trim(),
+        frequency: Number(row.frequency),
+        timePoint: row.timePoint
+      }))
+    })
+    saveMedicationDraft({
+      orderId: data?.orderId ?? Number(orderId.value),
+      elderId: order.value.elderId,
+      items: data?.items || [],
+      ttlMinutes: data?.draftTtlMinutes
+    })
+    draftDialog.value = false
+    ElMessage.success('草稿已生成，请在用药计划页补齐用量')
+    router.push('/family/medication')
+  } catch {
+    // 拦截器已弹错误提示（如 3004 / 409 / 3007）
+  } finally {
+    draftSaving.value = false
+  }
 }
 
 /**
@@ -638,8 +732,69 @@ onBeforeUnmount(() => {
       <section class="actions">
         <el-button v-if="canCancel" type="danger" round @click="doCancel">取消订单</el-button>
         <el-button v-if="canComplaint" plain round @click="goComplaint">我要投诉</el-button>
+        <el-button v-if="canBuildMedicationDraft" plain round @click="openDraftDialog">转入用药计划</el-button>
         <el-button v-if="canReview" type="primary" round @click="goReview">去评价</el-button>
       </section>
+
+      <!-- 转入用药计划（V4 · P1-2）：只填药名 / 次数 / 时间点，弹窗内刻意没有剂量输入框 -->
+      <el-dialog
+        v-model="draftDialog"
+        title="转入用药计划"
+        width="92%"
+        top="5vh"
+        append-to-body
+      >
+        <NlNoticeBar tone="info" icon>
+          请自行填写药品名、每日次数与时间点；用量请按医嘱在用药计划页自行填写，系统不生成也不提供剂量建议。
+        </NlNoticeBar>
+
+        <div class="draft-summary">
+          <p class="draft-summary__label">服务小结（只读）</p>
+          <p class="draft-summary__text">{{ order?.serviceSummary }}</p>
+        </div>
+
+        <div
+          v-for="(row, i) in draftRows"
+          :key="i"
+          class="draft-row"
+        >
+          <el-input
+            v-model="row.drugName"
+            placeholder="药品名，如「苯磺酸氨氯地平片」"
+            maxlength="100"
+          />
+          <el-select v-model="row.frequency" style="width: 110px">
+            <el-option v-for="n in 4" :key="n" :label="`每日 ${n} 次`" :value="n" />
+          </el-select>
+          <el-time-picker
+            v-model="row.timePoint"
+            value-format="HH:mm"
+            format="HH:mm"
+            placeholder="HH:mm"
+            style="width: 130px"
+          />
+          <el-button
+            text
+            type="danger"
+            size="small"
+            :disabled="draftRows.length === 1"
+            @click="removeDraftRow(i)"
+          >
+            删除
+          </el-button>
+        </div>
+
+        <el-button text type="primary" size="small" @click="addDraftRow">
+          + 添加一项（最多 10 项）
+        </el-button>
+
+        <template #footer>
+          <el-button @click="draftDialog = false">取消</el-button>
+          <el-button type="primary" :loading="draftSaving" @click="submitDraft">
+            生成草稿并继续
+          </el-button>
+        </template>
+      </el-dialog>
     </template>
   </NlPageShell>
 </template>
@@ -649,6 +804,35 @@ onBeforeUnmount(() => {
 
 .pad {
   padding: 0 var(--nl-gutter);
+}
+
+/* V4 · P1-2 转为药计划弹窗：只读小结 + 家属填写行 */
+.draft-summary {
+  margin: var(--nl-space-3) 0;
+  padding: var(--nl-space-3);
+  background: var(--nl-bg-sunken);
+  border-radius: var(--nl-radius-card);
+
+  &__label {
+    margin: 0 0 4px;
+    font-size: var(--nl-font-caption);
+    color: var(--nl-text-2);
+  }
+
+  &__text {
+    margin: 0;
+    font-size: var(--nl-font-body);
+    color: var(--nl-text-1);
+    white-space: pre-wrap;
+  }
+}
+
+.draft-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nl-space-2);
+  margin-bottom: var(--nl-space-2);
 }
 
 /* 履约状态条：颜色只走 --tone（色条与图标），正文色固定走 --nl-text-1，

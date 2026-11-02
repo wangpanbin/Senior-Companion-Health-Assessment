@@ -30,6 +30,7 @@ import {
 } from '@/components'
 import { useResponsive } from '@/composables/useResponsive'
 import { useMonthCalendar } from '@/composables/useMonthCalendar'
+import { readMedicationDraft, saveMedicationDraft, clearMedicationDraft } from '@/utils/medicationDraft'
 import { listElder } from '@/api/user'
 import {
   getTodayTasks, getMedicationCalendar, listMedicationPlans,
@@ -115,6 +116,20 @@ const plans = ref([])
 const plansLoading = ref(false)
 const plansError = ref(false)
 const planTotal = ref(0)
+
+/* ====== 订单转入的草稿（V4 · P1-2）：只含药名 / 次数 / 时间点，永不含剂量 ====== */
+const pendingDraft = ref(readMedicationDraft())
+/** 当前正在「填入」的草稿下标；保存成功后从草稿中移除 */
+const activeDraftIndex = ref(-1)
+
+function persistDraft() {
+  if (!pendingDraft.value || !pendingDraft.value.items.length) {
+    clearMedicationDraft()
+    pendingDraft.value = null
+    return
+  }
+  saveMedicationDraft(pendingDraft.value)
+}
 
 /* ====== 新建 / 编辑计划抽屉 ====== */
 const planDialog = ref(false)
@@ -343,13 +358,20 @@ async function resetPlanValidation() {
   planFormRef.value?.clearValidate()
 }
 
-async function openCreatePlan() {
+/**
+ * 打开新建抽屉。
+ *
+ * @param {object|null} draftItem 来自订单草稿的一项：只预填药名匹配结果 / 次数 / 时间点，
+ *   **剂量保持空白且必填** —— 系统不生成、不推断任何用量。
+ */
+async function openCreatePlan(draftItem = null, draftIndex = -1) {
   planMode.value = 'create'
   editingPlanId.value = null
+  activeDraftIndex.value = draftItem ? draftIndex : -1
   planForm.value = {
-    medicineId: null,
+    medicineId: draftItem?.medicineId ?? null,
     dosage: '',
-    timePoints: ['08:00'],
+    timePoints: draftItem?.timePoint ? [draftItem.timePoint] : ['08:00'],
     startDate: '',
     endDate: '',
     mealRelation: 'AFTER_MEAL',
@@ -358,12 +380,42 @@ async function openCreatePlan() {
   selectedDisclaimer.value = ''
   planDialog.value = true
   await resetPlanValidation()
-  await loadMedicineOptions()
+  await loadMedicineOptions(draftItem?.medicineId ?? null)
+  if (draftItem && draftItem.matched === false) {
+    ElMessage.info('未匹配到药品字典，请手动选择药品')
+  }
+  if (draftItem && draftItem.frequency > 1) {
+    ElMessage.info(`该草稿记录每日 ${draftItem.frequency} 次，请补充其余时间点`)
+  }
+}
+
+/**
+ * 进入页面时应用「订单转入草稿」：切到计划 tab、切到订单老人、
+ * 预填第一项并打开抽屉，其余项在计划 tab 顶部逐项「填入」。
+ */
+async function applyDraftFromOrder() {
+  const draft = pendingDraft.value
+  if (!draft || !draft.items.length) return
+  const target = elders.value.find((e) => String(e.id) === String(draft.elderId))
+  if (!target) {
+    ElMessage.warning('订单就诊老人不在当前绑定列表，草稿暂未应用')
+    return
+  }
+  currentElderId.value = target.id
+  tab.value = 'plan'
+  await openCreatePlan(draft.items[0], 0)
+}
+
+function discardDraft() {
+  clearMedicationDraft()
+  pendingDraft.value = null
+  activeDraftIndex.value = -1
 }
 
 function openEditPlan(p) {
   planMode.value = 'edit'
   editingPlanId.value = p.id
+  activeDraftIndex.value = -1
   planForm.value = {
     medicineId: p.medicineId ?? null,
     dosage: p.dosage || '',
@@ -443,6 +495,11 @@ async function submitPlan() {
     if (planMode.value === 'create') {
       await createMedicationPlan(payload)
       ElMessage.success('计划已添加')
+      if (activeDraftIndex.value >= 0 && pendingDraft.value) {
+        pendingDraft.value.items.splice(activeDraftIndex.value, 1)
+        persistDraft()
+      }
+      activeDraftIndex.value = -1
     } else {
       await updateMedicationPlan(editingPlanId.value, payload)
       ElMessage.success('已保存')
@@ -456,7 +513,10 @@ async function submitPlan() {
   }
 }
 
-onMounted(loadElders)
+onMounted(async () => {
+  await loadElders()
+  await applyDraftFromOrder()
+})
 </script>
 
 <template>
@@ -619,6 +679,33 @@ onMounted(loadElders)
         提醒方式：漏服后系统将通过站内信通知所有绑定家属；若老人当天有进行中的陪诊订单，会同步提醒该单陪诊员。
       </p>
 
+      <!-- V4 · P1-2：从订单转入的草稿。只带药名 / 次数 / 时间点，剂量必须家属自行录入 -->
+      <NlNoticeBar v-if="pendingDraft" tone="info" icon>
+        已从订单 ID {{ pendingDraft.orderId }} 转入 {{ pendingDraft.items.length }} 项草稿。
+        用量请按医嘱在下方表单自行填写，系统不生成也不提供剂量建议。
+      </NlNoticeBar>
+      <ul v-if="pendingDraft" class="draft-list">
+        <li v-for="(it, i) in pendingDraft.items" :key="i" class="draft-item">
+          <div class="draft-item__body">
+            <div class="nl-h3">
+              {{ it.medicineName }}
+              <span v-if="it.matched === false" class="draft-item__unmatched">（未匹配到药品字典）</span>
+            </div>
+            <div class="nl-caption nl-text-muted">每日 {{ it.frequency }} 次 · {{ it.timePoint }}</div>
+          </div>
+          <el-button text type="primary" size="small" @click="openCreatePlan(it, i)">填入</el-button>
+        </li>
+      </ul>
+      <el-button
+        v-if="pendingDraft"
+        text
+        size="small"
+        class="draft-discard"
+        @click="discardDraft"
+      >
+        放弃剩余草稿
+      </el-button>
+
       <NlSkeleton v-if="plansLoading" :count="3" />
       <NlEmpty
         v-else-if="plansError"
@@ -659,7 +746,7 @@ onMounted(loadElders)
           </div>
         </li>
       </ul>
-      <el-button type="primary" plain round size="large" class="plan-add" @click="openCreatePlan">
+      <el-button type="primary" plain round size="large" class="plan-add" @click="openCreatePlan()">
         + 新建用药计划
       </el-button>
     </NlCard>
@@ -1047,5 +1134,39 @@ onMounted(loadElders)
 .plan-add {
   width: 100%;
   margin-top: var(--nl-space-3);
+}
+
+/* V4 · P1-2 订单转入草稿：条目列表 + 逐项填入 */
+.draft-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nl-space-2);
+  margin: var(--nl-space-2) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.draft-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nl-space-2);
+  padding: var(--nl-space-2) var(--nl-space-3);
+  background: var(--nl-bg-sunken);
+  border-radius: var(--nl-radius-card);
+
+  &__body {
+    min-width: 0;
+  }
+
+  &__unmatched {
+    font-size: var(--nl-font-caption);
+    font-weight: 400;
+    color: var(--nl-warning-text);
+  }
+}
+
+.draft-discard {
+  margin-bottom: var(--nl-space-3);
 }
 </style>

@@ -84,6 +84,10 @@ class MedicationAccessMatrixTest {
     /** 老人 401 的「待服」任务（早于今天，但状态仍是 PENDING） */
     private static final long PENDING_TASK_OF_401 = 20002L;
 
+    /** 已完成订单 1025：下单家属 125、就诊老人 425、服务小结已填写 */
+    private static final long COMPLETED_ORDER_OF_125 = 1025L;
+    private static final long ELDER_OF_125 = 425L;
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -271,6 +275,33 @@ class MedicationAccessMatrixTest {
     }
 
     /* ================================================================== */
+    /* 3b · 订单转用药计划草稿（V4 · P1-2）：只有下单家属本人，且 FAMILY 角色     */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("转草稿 · 非本单家属 → 3004（角色正确但订单不是他的）")
+    void otherFamilyShouldNotBuildDraftFromOrder() throws Exception {
+        mockMvc.perform(post("/api/medication/plan/from-order/{orderId}", COMPLETED_ORDER_OF_125)
+                        .header(AUTH_HEADER, family(FAMILY_OTHER))
+                        .contentType(JSON)
+                        .content(draftBody(ELDER_OF_125)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.ORDER_NO_PERMISSION.getCode()));
+    }
+
+    @ParameterizedTest(name = "转草稿 · {0} 调用 → 403")
+    @ValueSource(strings = {RoleConstants.COMPANION, RoleConstants.ELDER, RoleConstants.ADMIN})
+    @DisplayName("转草稿 · 陪诊员 / 老人 / 管理员调用 → 403（转计划是下单家属的权利）")
+    void nonFamilyRolesShouldNotBuildDraftFromOrder(String role) throws Exception {
+        mockMvc.perform(post("/api/medication/plan/from-order/{orderId}", COMPLETED_ORDER_OF_125)
+                        .header(AUTH_HEADER, bearer(userIdOf(role), role))
+                        .contentType(JSON)
+                        .content(draftBody(ELDER_OF_125)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    /* ================================================================== */
     /* 4 · 确认服药（写）：家属与陪诊员可代确认，老人本人不行                  */
     /* ================================================================== */
 
@@ -329,6 +360,12 @@ class MedicationAccessMatrixTest {
     }
 
     /* ================================================================== */
+
+    /** 一份格式合法的转草稿请求体（越权用例中它永远到不了业务层） */
+    private static String draftBody(long elderId) {
+        return "{\"elderId\":" + elderId + ",\"items\":[{\"drugName\":\"苯磺酸氨氯地平片\","
+                + "\"frequency\":1,\"timePoint\":\"08:00\"}]}";
+    }
 
     /** 一份格式合法的用药计划请求体（越权用例中它永远到不了业务层） */
     private static String createPlanBody() {

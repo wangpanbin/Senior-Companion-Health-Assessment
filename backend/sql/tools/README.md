@@ -17,6 +17,7 @@
 | `e2e_auth.py` | **M2 端到端实测**：真实 HTTP 打 8080，40 项断言（错误码 / 越权 / 验证码防重放 / 登出黑名单 / 改密失效 / 锁定），自带测试数据清理 | 控制台 PASS/FAIL 汇总 |
 | `e2e_user_profile.py` … `e2e_statistics.py` | M3–M10 各模块端到端实测（共 9 个，命名对应模块） | 控制台 PASS/FAIL 汇总 |
 | `e2e_user_deactivate.py` | **V4 P0-1 账号注销 + 数据导出实测**：20 项断言（导出契约与四角色权限 / 注销四道闸门 / 11001 进行中订单拦截 / 注销后旧令牌 401、去标识化落库），注销全链路只在当轮注册的临时账号上跑 | 控制台 PASS/FAIL 汇总 |
+| `e2e_order_medication_draft.py` | **V4 P1-2 订单转用药计划草稿实测**：成功转草稿且响应无 dosage / 未匹配药名 / 非本单家属 3004 / 未完成 409 / 重复 409 / 非 FAMILY 403 / elderId 不符 400，自带订单与 Redis 键清理 | 控制台 PASS/FAIL 汇总 |
 | `cleanup_util.py` | **e2e 公共清理助手**（BUG_LIST L1）：`max_id` 记基线 / `delete_since` 按基线删行（基线≤0 拒绝执行）/ `flush_unread_cache` 清 `message:unread:*` | 被 9 个 e2e 脚本 import |
 | `bench_setup.py` / `bench_seed_orders.py` / `bench_teardown.py` | JMeter 压测的数据准备 / 造 50 单 / 清理 | `bench_tokens.csv`、`bench_meta.json` |
 | `jmeter_m4_accept.jmx` | M4 50 并发抢单（`@Version` 乐观锁防超卖） | `m4_*.jtl/csv` |
@@ -158,6 +159,10 @@ python e2e_review.py          # M7 评价与投诉
 python e2e_message.py         # M8 站内信与 SSE
 python e2e_admin.py           # M9 审核 / 封禁 / 纠纷
 python e2e_statistics.py      # M10 统计与导出（含导出上限的特殊跑法）
+
+# V4 P1-2：订单 → 用药计划草稿（需要后端显式 dev profile，否则 application.yml 无默认 profile 会静默退出）
+$env:SPRING_PROFILES_ACTIVE="dev"
+python e2e_order_medication_draft.py
 ```
 
 ## 环境要求

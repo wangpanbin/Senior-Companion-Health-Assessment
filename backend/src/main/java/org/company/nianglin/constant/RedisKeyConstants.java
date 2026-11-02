@@ -49,6 +49,13 @@ public final class RedisKeyConstants {
      */
     public static final String ASSISTANT_RATE_LIMIT_PREFIX = "assistant:rl:";
 
+    /**
+     * 订单转用药计划草稿的判重标记：{@code medication:draft:from-order:{orderId}} → 1，TTL 30 分钟。
+     *
+     * <p>V4 · P1-2「一单一转」：同一订单在窗口内只允许生成一次草稿。</p>
+     */
+    public static final String MEDICATION_DRAFT_FROM_ORDER_PREFIX = "medication:draft:from-order:";
+
     public static String captcha(String captchaKey) {
         return CAPTCHA_PREFIX + captchaKey;
     }
@@ -98,5 +105,10 @@ public final class RedisKeyConstants {
      */
     public static String assistantRateLimit(Long userId, String minuteBucket) {
         return ASSISTANT_RATE_LIMIT_PREFIX + userId + ":" + minuteBucket;
+    }
+
+    /** 某订单的用药计划草稿判重标记 */
+    public static String medicationDraftFromOrder(Long orderId) {
+        return MEDICATION_DRAFT_FROM_ORDER_PREFIX + orderId;
     }
 }

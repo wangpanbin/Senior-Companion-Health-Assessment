@@ -126,6 +126,12 @@ class MedicationServiceTest {
     @Mock
     private MessageService messageService;
 
+    @Mock
+    private OrderService orderService;
+
+    @Mock
+    private org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+
     private MedicationServiceImpl service;
 
     @BeforeEach
@@ -137,7 +143,7 @@ class MedicationServiceTest {
                 new InternalMessageReminderDispatcher(messageService, elderMapper, relationMapper, orderMapper);
         service = new MedicationServiceImpl(medicineMapper, planMapper, taskMapper, elderMapper,
                 orderMapper, sysUserMapper, elderService, reminderDispatcher,
-                new ObjectMapper());
+                new ObjectMapper(), orderService, stringRedisTemplate);
         // @Value 字段在纯单测里不会被注入，不手动设就是 0：
         // 日历上限 0 会让「查一天」都被拒，阈值 0 会让所有 PENDING 任务都被判漏服
         ReflectionTestUtils.setField(service, "missThresholdMinutes", 60);

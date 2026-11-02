@@ -3,12 +3,14 @@ package org.company.nianglin.service;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.dto.MedicationCalendarQuery;
 import org.company.nianglin.dto.MedicationPlanCreateDTO;
+import org.company.nianglin.dto.MedicationPlanDraftFromOrderDTO;
 import org.company.nianglin.dto.MedicationPlanQuery;
 import org.company.nianglin.dto.MedicationPlanUpdateDTO;
 import org.company.nianglin.dto.MedicationTaskConfirmDTO;
 import org.company.nianglin.dto.MedicineQuery;
 import org.company.nianglin.vo.MedicationCalendarVO;
 import org.company.nianglin.vo.MedicationConfirmVO;
+import org.company.nianglin.vo.MedicationPlanDraftVO;
 import org.company.nianglin.vo.MedicationPlanVO;
 import org.company.nianglin.vo.MedicationTaskVO;
 import org.company.nianglin.vo.MedicineVO;
@@ -65,6 +67,19 @@ public interface MedicationService {
 
     /** 停用用药计划（不物理删除，服药历史保留） */
     void disablePlan(Long planId);
+
+    /**
+     * 从已完成订单的服务小结转入用药计划草稿（V4 · P1-2，{@code docs/api/05-medication.md} §10）。
+     *
+     * <p><b>只解析家属填写的药名 / 次数 / 时间点，不落库、不生成剂量。</b>
+     * 服务小结仅作为「已完成服务」的前置条件与合规兜底复查对象，
+     * 系统<b>不</b>从中解析药名或医嘱。</p>
+     *
+     * @param orderId 订单 ID
+     * @param dto     家属填写的草稿条目
+     * @return 草稿；30 分钟内重复调用同一订单返回 {@code 409}
+     */
+    MedicationPlanDraftVO buildDraftFromOrder(Long orderId, MedicationPlanDraftFromOrderDTO dto);
 
     /* ==================== 服药任务 ==================== */
 

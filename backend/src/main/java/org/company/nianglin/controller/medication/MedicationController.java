@@ -11,6 +11,7 @@ import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.dto.MedicationCalendarQuery;
 import org.company.nianglin.dto.MedicationPlanCreateDTO;
+import org.company.nianglin.dto.MedicationPlanDraftFromOrderDTO;
 import org.company.nianglin.dto.MedicationPlanQuery;
 import org.company.nianglin.dto.MedicationPlanUpdateDTO;
 import org.company.nianglin.dto.MedicationTaskConfirmDTO;
@@ -18,6 +19,7 @@ import org.company.nianglin.dto.MedicineQuery;
 import org.company.nianglin.service.MedicationService;
 import org.company.nianglin.vo.MedicationCalendarVO;
 import org.company.nianglin.vo.MedicationConfirmVO;
+import org.company.nianglin.vo.MedicationPlanDraftVO;
 import org.company.nianglin.vo.MedicationPlanIdVO;
 import org.company.nianglin.vo.MedicationPlanVO;
 import org.company.nianglin.vo.MedicationTaskVO;
@@ -104,6 +106,19 @@ public class MedicationController {
     public Result<MedicationPlanIdVO> createPlan(@Valid @RequestBody MedicationPlanCreateDTO dto) {
         Long planId = medicationService.createPlan(dto);
         return Result.success("添加成功", new MedicationPlanIdVO(planId));
+    }
+
+    @Operation(summary = "从订单转入用药计划草稿（V4）",
+            description = "仅下单家属本人、且订单为 COMPLETED 且有服务小结时可调用。"
+                    + "只把家属填写的药名 / 次数 / 时间点解析成草稿并匹配药品字典，"
+                    + "**不落库、不含任何剂量字段、不提供用药建议**；服务小结命中合规词返回 3007")
+    @PreAuthorize("hasRole('FAMILY')")
+    @PostMapping("/plan/from-order/{orderId}")
+    public Result<MedicationPlanDraftVO> buildDraftFromOrder(
+            @Parameter(description = "订单 ID", example = "1025")
+            @PathVariable("orderId") Long orderId,
+            @Valid @RequestBody MedicationPlanDraftFromOrderDTO dto) {
+        return Result.success(medicationService.buildDraftFromOrder(orderId, dto));
     }
 
     @Operation(summary = "修改用药计划",

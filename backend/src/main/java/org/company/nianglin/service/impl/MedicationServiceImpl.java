@@ -13,9 +13,12 @@ import org.company.nianglin.constant.DosageForm;
 import org.company.nianglin.constant.MealRelation;
 import org.company.nianglin.constant.MedicationPlanStatus;
 import org.company.nianglin.constant.MedicationTaskStatus;
+import org.company.nianglin.constant.OrderStatus;
+import org.company.nianglin.constant.RedisKeyConstants;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.MedicationCalendarQuery;
 import org.company.nianglin.dto.MedicationPlanCreateDTO;
+import org.company.nianglin.dto.MedicationPlanDraftFromOrderDTO;
 import org.company.nianglin.dto.MedicationPlanQuery;
 import org.company.nianglin.dto.MedicationPlanUpdateDTO;
 import org.company.nianglin.dto.MedicationTaskConfirmDTO;
@@ -37,19 +40,24 @@ import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.ElderService;
 import org.company.nianglin.service.MedicationService;
+import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.support.medication.ReminderDispatcher;
+import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MessageTemplateUtil;
 import org.company.nianglin.vo.MedicationCalendarVO;
 import org.company.nianglin.vo.MedicationConfirmVO;
+import org.company.nianglin.vo.MedicationPlanDraftVO;
 import org.company.nianglin.vo.MedicationPlanVO;
 import org.company.nianglin.vo.MedicationTaskVO;
 import org.company.nianglin.vo.MedicineVO;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -83,6 +91,9 @@ public class MedicationServiceImpl implements MedicationService {
     private static final TypeReference<List<String>> TIME_POINTS_TYPE = new TypeReference<>() {
     };
 
+    /** 订单转草稿的判重窗口（分钟）：窗口内同一订单只允许生成一次草稿 */
+    private static final int DRAFT_TTL_MINUTES = 30;
+
     private final MedicineDictMapper medicineMapper;
     private final MedicationPlanMapper planMapper;
     private final MedicationTaskMapper taskMapper;
@@ -100,6 +111,18 @@ public class MedicationServiceImpl implements MedicationService {
     private final ReminderDispatcher reminderDispatcher;
 
     private final ObjectMapper objectMapper;
+
+    /**
+     * 订单归属校验复用 M4 的 {@code requireInvolved}，绝不另写一套。
+     *
+     * <p>依赖方向是 {@code MedicationServiceImpl → OrderService}；
+     * {@code OrderServiceImpl} 不依赖本类（其依赖图只到 MessageService / 履约 / 匹配），
+     * 因此不会构成构造器循环依赖。</p>
+     */
+    private final OrderService orderService;
+
+    /** 订单转草稿的「一单一转」判重标记 */
+    private final StringRedisTemplate stringRedisTemplate;
 
     /** 超过计划时间多少分钟仍未确认即判定漏服 */
     @Value("${nianglin.medication.missed-threshold-minutes:60}")
@@ -329,6 +352,107 @@ public class MedicationServiceImpl implements MedicationService {
                 .gt(MedicationTask::getPlanTime, LocalDateTime.now()));
 
         log.info("用药计划已停用 | planId={} | 清理未到期任务={} 条 | operator={}", planId, removed, me.userId());
+    }
+
+    @Override
+    public MedicationPlanDraftVO buildDraftFromOrder(Long orderId, MedicationPlanDraftFromOrderDTO dto) {
+        LoginUser me = SecurityUtils.currentUser();
+
+        // 1) 先走 M4 的参与方判定（非相关方 3004），再收紧到「下单家属本人」
+        CompanionOrder order = orderService.requireInvolved(orderId);
+        if (!me.userId().equals(order.getFamilyId())) {
+            throw new BusinessException(ResultCode.ORDER_NO_PERMISSION,
+                    "只有下单家属本人可以转入用药计划");
+        }
+
+        // 2) 只有已完成且填写了服务小结的订单才可转入
+        if (!OrderStatus.COMPLETED.name().equals(order.getStatus())) {
+            throw new BusinessException(ResultCode.CONFLICT, "订单完成后才能转入用药计划");
+        }
+        if (!StringUtils.hasText(order.getServiceSummary())) {
+            throw new BusinessException(ResultCode.CONFLICT, "服务小结尚未填写");
+        }
+
+        // 3) 防御性复查：完成时虽已校验过，但小结可能被其它路径改写；命中即拒
+        String hit = ComplianceCheckUtil.firstHit(order.getServiceSummary());
+        if (hit != null) {
+            throw new BusinessException(ResultCode.ORDER_SUMMARY_ILLEGAL,
+                    "服务小结不能包含「" + hit + "」这类诊断或用药建议");
+        }
+
+        // 4) 防止跨老人串档：草稿必须落在订单就诊老人名下
+        if (!order.getElderId().equals(dto.getElderId())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "老人档案与订单不一致");
+        }
+
+        // 5) 只对家属填写的药名做字典比对，不解析服务小结、不生成任何剂量
+        List<MedicineDict> dictionary = medicineMapper.selectList(Wrappers.<MedicineDict>lambdaQuery()
+                .orderByAsc(MedicineDict::getId));
+        List<MedicationPlanDraftVO.Item> items = new ArrayList<>(dto.getItems().size());
+        for (MedicationPlanDraftFromOrderDTO.Item input : dto.getItems()) {
+            String rawName = input.getDrugName().trim();
+            MedicineDict matched = matchMedicine(dictionary, rawName);
+            items.add(new MedicationPlanDraftVO.Item(
+                    matched == null ? null : matched.getId(),
+                    matched == null ? rawName : matched.getName(),
+                    matched != null,
+                    input.getFrequency(),
+                    input.getTimePoint()));
+        }
+
+        // 6) 一单一转：SET NX + TTL，缓存故障时放行（草稿不是核心写路径）
+        String key = RedisKeyConstants.medicationDraftFromOrder(orderId);
+        try {
+            Boolean first = stringRedisTemplate.opsForValue()
+                    .setIfAbsent(key, "1", Duration.ofMinutes(DRAFT_TTL_MINUTES));
+            if (Boolean.FALSE.equals(first)) {
+                throw new BusinessException(ResultCode.CONFLICT, "该订单已生成过用药计划草稿，请稍后再试");
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            log.warn("用药计划草稿判重缓存不可用，本次放行 | orderId={} | error={}", orderId, ex.getMessage());
+        }
+
+        log.info("从订单生成用药计划草稿 | orderId={} | operator={} | items={}",
+                orderId, me.userId(), items.size());
+        return new MedicationPlanDraftVO(orderId, items, DRAFT_TTL_MINUTES);
+    }
+
+    /**
+     * 药名匹配：去空白后精确 → 忽略大小写精确 → 包含匹配（按 ID 取第一条）。
+     *
+     * <p>只比对药品字典的通用名 / 商品名，<b>不做任何适应症推断</b>；
+     * 匹配不到返回 {@code null}，由家属自行核对，不报错。</p>
+     */
+    private MedicineDict matchMedicine(List<MedicineDict> dictionary, String drugName) {
+        String target = compact(drugName);
+        if (target.isEmpty()) {
+            return null;
+        }
+        for (MedicineDict medicine : dictionary) {
+            if (target.equals(compact(medicine.getName())) || target.equals(compact(medicine.getTradeName()))) {
+                return medicine;
+            }
+        }
+        for (MedicineDict medicine : dictionary) {
+            if (target.equalsIgnoreCase(compact(medicine.getName()))
+                    || target.equalsIgnoreCase(compact(medicine.getTradeName()))) {
+                return medicine;
+            }
+        }
+        for (MedicineDict medicine : dictionary) {
+            String name = compact(medicine.getName());
+            if (!name.isEmpty() && (name.contains(target) || target.contains(name))) {
+                return medicine;
+            }
+        }
+        return null;
+    }
+
+    /** 去掉全部空白字符，避免「苯磺酸 氨氯地平片」这类输入匹配不到 */
+    private static String compact(String text) {
+        return text == null ? "" : text.replaceAll("\\s+", "");
     }
 
     /* ================================================================== */

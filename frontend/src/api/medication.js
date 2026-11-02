@@ -38,6 +38,19 @@ export function disableMedicationPlan(planId) {
   return request({ url: `/medication/plan/${planId}`, method: 'delete' })
 }
 
+/**
+ * 从已完成订单的服务小结转入用药计划草稿（V4 · P1-2）
+ *
+ * 只把家属填写的药名 / 次数 / 时间点做药品字典匹配并回显草稿，
+ * **不落库、不含剂量**；用量必须由家属在用药计划页按医嘱自行填写。
+ *
+ * @param {number|string} orderId
+ * @param {object} data { elderId, items: [{ drugName, frequency, timePoint }] }
+ */
+export function buildDraftFromOrder(orderId, data) {
+  return request({ url: `/medication/plan/from-order/${orderId}`, method: 'post', data })
+}
+
 /* ---------------- 服药任务 ---------------- */
 
 /**

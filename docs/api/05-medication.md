@@ -117,6 +117,7 @@ key   : nianglin:lock:medication:daily
 | 7 | GET | `/api/medication/task/calendar` | 相关方 | 服药日历 |
 | 8 | GET | `/api/medication/task/today` | 相关方 | 今日待服任务 |
 | 9 | POST | `/api/medication/task/{id}/confirm` | FAMILY / COMPANION | 确认服药 |
+| 10 | POST | `/api/medication/plan/from-order/{orderId}` | FAMILY（下单家属本人） | 从已完成订单的服务小结转入用药计划草稿（不落库、不含剂量） |
 
 ---
 
@@ -509,6 +510,103 @@ key   : nianglin:lock:medication:daily
 
 ---
 
+## 10. 从订单转入用药计划草稿（V4 · P1-2）
+
+`POST /api/medication/plan/from-order/{orderId}`　权限：FAMILY，且须为本单下单家属本人
+
+陪诊员完成订单并提交服务小结后，家属可在订单详情页点「转入用药计划」，
+由**家属自己**填写药品名 / 每日次数 / 时间点；本接口只把这些输入解析成**草稿**返回，
+**不落库**。家属在用药计划页补齐用量后，再走既有的 [`POST /api/medication/plan`](#4-新增用药计划)。
+
+### 请求参数
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+|---|---|---|---|---|
+| `orderId` | Path | Long | ✓ | 订单 ID，须为当前家属本人下单 |
+| `elderId` | Body | Long | ✓ | 老人 ID，必须与该订单的 `elderId` 一致 |
+| `items` | Body | Array | ✓ | 1–10 项，每项含 `drugName` / `frequency` / `timePoint` |
+| `items[].drugName` | Body | String | ✓ | 药品名，≤ 100 字符；由家属自行填写 |
+| `items[].frequency` | Body | Integer | ✓ | 每日次数，1–4 |
+| `items[].timePoint` | Body | String | ✓ | 时间点，`HH:mm`（00:00–23:59） |
+
+> **硬红线**：请求体与响应体**一律不含** `dosage` / 剂量 / 用量字段。
+> 本接口**不**从服务小结中解析药名或医嘱，**不**自动填充任何剂量，也**不**提供用药建议。
+> 用量必须由家属在用药计划页按医嘱自行填写。
+
+### 请求示例
+
+```json
+{
+  "elderId": 425,
+  "items": [
+    { "drugName": "苯磺酸氨氯地平片", "frequency": 1, "timePoint": "08:00" },
+    { "drugName": "阿司匹林肠溶片", "frequency": 2, "timePoint": "12:00" }
+  ]
+}
+```
+
+### 响应
+
+```json
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "orderId": 1025,
+    "items": [
+      {
+        "medicineId": 801,
+        "medicineName": "苯磺酸氨氯地平片",
+        "matched": true,
+        "frequency": 1,
+        "timePoint": "08:00"
+      },
+      {
+        "medicineId": null,
+        "medicineName": "阿司匹林肠溶片",
+        "matched": false,
+        "frequency": 2,
+        "timePoint": "12:00"
+      }
+    ],
+    "draftTtlMinutes": 30
+  }
+}
+```
+
+- `matched=false` **不是错误**：药名未匹配到药品字典时原样返回，由家属在用药计划页核对并选择药品；
+  前端应提示「未匹配到药品字典」。
+- 响应**不含** `dosage`，前端预填时用量字段必须保持空白且必填。
+
+### 错误场景
+
+| code | 场景 |
+|---|---|
+| 3001 | 订单不存在 |
+| 3004 | 当前家属不是该订单的下单家属本人 |
+| 3007 | 服务小结命中诊断 / 用药建议词（防御性复查） |
+| 409 | 订单状态不是 `COMPLETED` |
+| 409 | 服务小结尚未填写（提示「服务小结尚未填写」） |
+| 409 | 该订单 30 分钟内已生成过草稿（一单一转） |
+| 400 | `elderId` 与订单不一致 / `items` 为空或超过 10 项 / `frequency` 越界 / `timePoint` 格式非法 |
+| 403 | 非 FAMILY 角色调用（COMPANION / ELDER / ADMIN） |
+
+### 实现要点
+
+- **访问权**：先走 `OrderService#requireInvolved`（非相关方 `3004`），再显式校验
+  `order.familyId == 当前登录用户`——只有下单家属本人可转，其它相关方也一律 `3004`。
+- **状态**：订单必须为 `COMPLETED`；本接口**不触发任何订单状态流转**。
+- **小结兜底**：`serviceSummary` 为空返回 `409`；即便完成时已查过，仍再用
+  `ComplianceCheckUtil#firstHit` 复查一次，命中返回 `3007`。
+- **药名解析**：对 `medicine_dict` 依次做「去空白后精确匹配 → 忽略大小写精确匹配 → 包含匹配（取第一条）」，
+  匹配到即回填 `medicineId` / `medicineName` 且 `matched=true`；匹配不到保留原文、`medicineId=null`、`matched=false`。
+  该过程**只做字典比对，不解析服务小结、不推断适应症**。
+- **一单一转**：Redis `SET NX` 键 `medication:draft:from-order:{orderId}`，TTL 30 分钟；
+  已存在返回 `409`。Redis 故障时**放行**并 `log.warn`——草稿不是核心写路径，缓存故障不应挡住家属。
+- **不落库**：全流程不写任何数据表；草稿只存在于响应与前端表单中。
+
+---
+
 ## 四、验收标准（M6）
 
 - [ ] 手动触发定时任务两次，`medication_task` **不出现重复行**（唯一索引 + 分布式锁双重保障）
@@ -521,3 +619,4 @@ key   : nianglin:lock:medication:daily
 - [ ] 停用计划后不再生成新任务，历史记录完整保留
 - [ ] ELDER 角色调用新增计划 / 确认服药 → `403`
 - [ ] 陪诊员读「无 ACTIVE 订单」的老人计划 → `2006`（不限 COMPLETED / REVIEWED / CANCELLED 状态）
+- [ ] V4 · P1-2：下单家属对 `COMPLETED` 且有服务小结的订单转草稿成功，响应**不含** `dosage`；非本人 / 未完成 / 重复转入 / 命中合规词的拒绝码符合 §10
