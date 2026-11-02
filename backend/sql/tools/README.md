@@ -16,6 +16,7 @@
 | `explain_index.sql` | 7 条高频查询的 `EXPLAIN`，验证索引命中 | 查询结果 |
 | `e2e_auth.py` | **M2 端到端实测**：真实 HTTP 打 8080，40 项断言（错误码 / 越权 / 验证码防重放 / 登出黑名单 / 改密失效 / 锁定），自带测试数据清理 | 控制台 PASS/FAIL 汇总 |
 | `e2e_user_profile.py` … `e2e_statistics.py` | M3–M10 各模块端到端实测（共 9 个，命名对应模块） | 控制台 PASS/FAIL 汇总 |
+| `cleanup_util.py` | **e2e 公共清理助手**（BUG_LIST L1）：`max_id` 记基线 / `delete_since` 按基线删行（基线≤0 拒绝执行）/ `flush_unread_cache` 清 `message:unread:*` | 被 9 个 e2e 脚本 import |
 | `bench_setup.py` / `bench_seed_orders.py` / `bench_teardown.py` | JMeter 压测的数据准备 / 造 50 单 / 清理 | `bench_tokens.csv`、`bench_meta.json` |
 | `jmeter_m4_accept.jmx` | M4 50 并发抢单（`@Version` 乐观锁防超卖） | `m4_*.jtl/csv` |
 | `jmeter_m5_reconnect.jmx` | **M5 重连补齐风暴**：50 客户端并发拉 `/progress` + `/checkins` | `m5.jtl` |
@@ -110,7 +111,9 @@ python e2e_auth.py
 
 覆盖：验证码防重放、`1001~1007` 全部错误码、4 角色 × 3 类接口越权、
 老人只读拦截、登出黑名单即时生效、改密后旧令牌失效、连续失败锁定、
-密码 BCrypt 落库、登录日志不含密码串。共 40 项断言，跑完自动清理测试账号与 Redis 键。
+密码 BCrypt 落库、登录日志不含密码串。共 40 项断言；清理在 `__main__` 的
+`finally` 里统一执行（main 开头记基线、退出前删自己造的行与 Redis 键），
+断言失败 / 中途异常同样会清理，不会污染下一轮。
 
 > ⚠️ 脚本会写 `sys_user` / `sys_login_log` 并读 Redis，**只在开发库跑**。
 
@@ -143,7 +146,9 @@ python jmeter_fixture.py restore    # 把任务还原回快照，别在种子数
 ### 8. M3–M10 端到端实测
 
 ```bash
-# 与 e2e_auth.py 同一套路：真实 HTTP 打 8080，跑完各自清理
+# 与 e2e_auth.py 同一套路：真实 HTTP 打 8080，清理统一走「基线 + finally」模式
+# （见 cleanup_util.py）：main 开头记各表 max_id 基线，__main__ 的 finally 里
+# 调 cleanup() 删掉 id>基线 的行与 message:unread:* 缓存 —— 失败中断也不留残留。
 python e2e_user_profile.py    # M3 档案与老人只读矩阵
 python e2e_order.py           # M4 状态机全流转 + 越权
 python e2e_execution.py       # M5 打卡 / 距离 / 节点去重
@@ -176,6 +181,9 @@ python e2e_statistics.py      # M10 统计与导出（含导出上限的特殊�
 | 11 | 想在 jtl 里 `grep '"code":200'` 数「成功了几条」，结果永远是 0 | `jmeter -l x.jtl` 生成的 jtl 由全局 `jmeter.save.saveservice.*` 决定列，**计划里监听器的 saveConfig 不生效**；实测（5.6.3）**连计划内监听器按自己 `filename` 写出的那个文件也不含响应体列**，且 `-Jjmeter.save.saveservice.response_data=true` 同样无效。业务 code 要靠回库核对或改用断言表达 |
 | 12 | `SELECT remark FROM medication_task` 报 `Unknown column` | 该表的备注列叫 **`confirm_remark`**（药名 / 剂量另有 `dosage`）。写 SQL 前先 `SHOW COLUMNS`，别按实体字段名猜 |
 | 13 | 跑完 JMeter，仓库根目录多出 `jmeter_m5_results.jtl` / `jmeter_m6_aggregate.csv` | 计划里监听器的 `filename` 是**相对启动时 cwd** 的；用 `-l` 只是另加一个收集器，不会关掉计划内的监听器。要么在计划里写绝对路径，要么把这些产物加进 `.gitignore`（已加） |
+| 14 | e2e 跑一轮后 `internal_message` 多出几百行，越跑越脏（BUG_LIST L1） | 造单 / 接单会触发 ORDER_CREATED 等站内信，而旧清理**不碰** `internal_message` 且不在 `finally` 里（断言失败就跳过清理）。统一改为：`main()` 开头 `cleanup_util.max_id(...)` 记基线，`__main__` 的 `finally` 里 `cleanup()` 按基线删行 + `flush_unread_cache()` |
+| 15 | cleanup() 一跑就把整张种子表删光 | `DELETE ... WHERE id > 0` 等价于清空。`cleanup_util.delete_since` 在**基线 ≤ 0 时拒绝执行**——宁可漏清一轮测试垃圾，也不许在基线缺失时动手 |
+| 16 | e2e_medication 阶段二报 `NameError: b5_order_id` | cleanup() 引用的变量只在 main() 局部赋值，阶段二（`--scan-phase` 新进程）根本读不到。**cleanup() 要读的每个变量都必须是模块级全局**（applicant_id / new_elder_user_id / b5_order_id 同理） |
 
 ## 生成物与手工物的边界
 

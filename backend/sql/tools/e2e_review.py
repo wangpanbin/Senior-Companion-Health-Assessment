@@ -26,6 +26,7 @@ DB = "nianglin"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+import cleanup_util  # noqa: E402  统一收尾：基线删除 + 未读缓存清理
 PASSWORD = SEED_PASSWORD
 
 SEED_ORDER_MAX_ID = 1064
@@ -50,6 +51,7 @@ snapshot = {}
 message_id_start = 0
 review_id_start = 0
 complaint_id_start = 0
+log_id_start = 0
 
 
 def check(name, ok, detail=""):
@@ -186,16 +188,20 @@ def cleanup():
               % (COMPANION_ID, snapshot["score"], snapshot["review_count"]))
     redis_del("companion:score:%d" % COMPANION_ID)
     print("[清理] 已删除陪诊员 %d 的 Redis 评分缓存" % COMPANION_ID)
+    cleanup_util.delete_since("sys_login_log", log_id_start, "sys_login_log")
+    cleanup_util.flush_unread_cache()
     left = mysql_value("SELECT COUNT(*) FROM `companion_order` WHERE `id`>%d;" % SEED_ORDER_MAX_ID)
     print("[清理] 订单残留：%s 条" % left)
 
 
 def main():
-    global message_id_start, review_id_start, complaint_id_start
+    global message_id_start, review_id_start, complaint_id_start, log_id_start
 
     print("=" * 78)
     print("银龄伴诊 M7 评价与投诉 端到端实测   (base=%s)" % BASE)
     print("=" * 78)
+
+    log_id_start = cleanup_util.max_id("sys_login_log")
 
     # 跑前清扫：上一次中断留下的订单
     stale = mysql_value("SELECT GROUP_CONCAT(`id`) FROM `companion_order` WHERE `id`>%d;"
@@ -566,7 +572,6 @@ def main():
         check("E22 反向投诉的双方身份正确（陪诊员 301 → 家属 101）",
               row == "301|101", "row=%s" % row)
 
-    cleanup()
 
 
 if __name__ == "__main__":
@@ -577,6 +582,12 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         ok = False
+    finally:
+        try:
+            cleanup()
+        except Exception:
+            import traceback
+            traceback.print_exc()
     passed = sum(1 for _, r, _ in results if r)
     total = len(results)
     print("\n" + "=" * 78)

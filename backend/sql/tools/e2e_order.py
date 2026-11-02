@@ -34,6 +34,7 @@ DB = "nianglin"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+import cleanup_util  # noqa: E402  统一收尾：基线删除 + 未读缓存清理
 PASSWORD = SEED_PASSWORD
 
 ACC_FAMILY = "fam001"        # 家属 101，绑定老人 401
@@ -59,6 +60,7 @@ STAMP = str(int(time.time()))
 results = []
 created_order_ids = []
 log_id_start = 0
+message_id_start = 0
 
 
 def check(name, ok, detail=""):
@@ -175,14 +177,37 @@ def create_order(token, elder_id=ELDER_OWN, visit=None, hospital="海南省人�
     return status, body
 
 
+def cleanup():
+    if created_order_ids:
+        ids = ",".join(str(i) for i in created_order_ids)
+        mysql_value("DELETE FROM `order_status_log` WHERE `order_id` IN (%s);" % ids)
+        mysql_value("DELETE FROM `order_reject_log` WHERE `order_id` IN (%s);" % ids)
+        mysql_value("DELETE FROM `companion_order` WHERE `id` IN (%s);" % ids)
+    # 刻意【不删】order:seq:{今天}。
+    # 订单号由「Redis 当日序列 INCR」发放，清掉计数器会让同一天的下一条订单
+    # 又从 0001 开始；只要当天还有任何本脚本没删掉的订单（界面上手工下的单、
+    # 另一个脚本造的单），就会撞 uk_order_no，下单接口返回 409「该记录已存在」。
+    # 后端 nextOrderNo() 现已补上「撞号就把计数器抬到库内当天最大值」的兜底，
+    # 但测试也不该主动制造这种冲突。
+    cleanup_util.delete_since("sys_login_log", log_id_start, "sys_login_log")
+    cleanup_util.delete_since("internal_message", message_id_start, "internal_message")
+    cleanup_util.flush_unread_cache()
+
+    left = mysql_value("SELECT COUNT(*) FROM `companion_order` WHERE `id` IN (%s);"
+                       % (",".join(str(i) for i in created_order_ids) or "0"))
+    print("\n[清理] 已删除 %d 条测试订单（含状态日志与拒单记录），残留 %s 条"
+          % (len(created_order_ids), left))
+
+
 def main():
-    global log_id_start
+    global log_id_start, message_id_start
 
     print("=" * 78)
     print("银龄伴诊 M4 端到端实测   (base=%s)" % BASE)
     print("=" * 78)
 
     log_id_start = int(mysql_value("SELECT COALESCE(MAX(`id`),0) FROM `sys_login_log`;") or 0)
+    message_id_start = cleanup_util.max_id("internal_message")
 
     fam_token = login_ok(ACC_FAMILY)["accessToken"]
     fam2_token = login_ok(ACC_FAMILY_OTHER)["accessToken"]
@@ -555,26 +580,6 @@ def main():
         check(name, body.get("code") == 400, "code=%s message=%s"
               % (body.get("code"), body.get("message")))
 
-    # ================= 清理测试产物 =================
-    if created_order_ids:
-        ids = ",".join(str(i) for i in created_order_ids)
-        mysql_value("DELETE FROM `order_status_log` WHERE `order_id` IN (%s);" % ids)
-        mysql_value("DELETE FROM `order_reject_log` WHERE `order_id` IN (%s);" % ids)
-        mysql_value("DELETE FROM `companion_order` WHERE `id` IN (%s);" % ids)
-    # 刻意【不删】order:seq:{今天}。
-    # 订单号由「Redis 当日序列 INCR」发放，清掉计数器会让同一天的下一条订单
-    # 又从 0001 开始；只要当天还有任何本脚本没删掉的订单（界面上手工下的单、
-    # 另一个脚本造的单），就会撞 uk_order_no，下单接口返回 409「该记录已存在」。
-    # 后端 nextOrderNo() 现已补上「撞号就把计数器抬到库内当天最大值」的兜底，
-    # 但测试也不该主动制造这种冲突。
-    if log_id_start:
-        mysql_value("DELETE FROM `sys_login_log` WHERE `id` > %d;" % log_id_start)
-
-    left = mysql_value("SELECT COUNT(*) FROM `companion_order` WHERE `id` IN (%s);"
-                       % (",".join(str(i) for i in created_order_ids) or "0"))
-    print("\n[清理] 已删除 %d 条测试订单（含状态日志与拒单记录），残留 %s 条"
-          % (len(created_order_ids), left))
-
     total, passed = len(results), sum(1 for _, ok, _ in results if ok)
     print("=" * 78)
     print("结果：%d/%d 通过" % (passed, total))
@@ -588,4 +593,17 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    code = 1
+    try:
+        code = main()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        code = 1
+    finally:
+        try:
+            cleanup()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+    sys.exit(code)

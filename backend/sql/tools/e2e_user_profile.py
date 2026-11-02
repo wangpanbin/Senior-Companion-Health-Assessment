@@ -32,6 +32,7 @@ DB = "nianglin"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+import cleanup_util  # noqa: E402  统一收尾：基线删除 + 未读缓存清理
 PASSWORD = SEED_PASSWORD
 
 # 种子账号
@@ -56,6 +57,11 @@ PLAIN_ID_CARD = "460101194803120011"
 PLAIN_ID_CARD_APPLY = "460101199001010011"
 
 results = []
+log_id_start = 0
+# 这两个 id 在 main() 里赋值、在 cleanup() 里读取 —— 必须是模块级全局，
+# 否则 __main__ finally 里的 cleanup() 拿不到（局部变量出不了 main 的作用域）。
+applicant_id = None
+new_elder_user_id = None
 
 
 def check(name, ok, detail=""):
@@ -150,10 +156,35 @@ def register(username, phone, nickname, role):
     })
 
 
+def cleanup():
+    print("\n" + "-" * 78)
+    mysql_value("DELETE FROM `family_elder_relation` WHERE `elder_id` IN "
+                "(SELECT `id` FROM `elder_profile` WHERE `name` IN ('端到端测试老人','端到端老人档案') "
+                "OR `remark`='端到端测试');")
+    mysql_value("DELETE FROM `elder_profile` WHERE `name` IN ('端到端测试老人','端到端老人档案') "
+                "OR `remark`='端到端测试';")
+    mysql_value("DELETE FROM `companion_audit_record` WHERE `applicant_user_id`=%s;" % (applicant_id or 0))
+    mysql_value("DELETE FROM `companion_profile` WHERE `user_id`=%s;" % (applicant_id or 0))
+    mysql_value("DELETE FROM `sys_user` WHERE `username` LIKE 'e2e%%';")
+    mysql_value("DELETE FROM `sys_login_log` WHERE `username` LIKE 'e2e%%';")
+    redis_del("pwd:version:" + str(applicant_id or 0),
+              "pwd:version:" + str(new_elder_user_id or 0))
+    # 复位被改过的种子昵称
+    mysql_value("UPDATE `sys_user` SET `nickname`='家属01' WHERE `username`='fam001';")
+    print("[清理] 已删除 e2e* 账号 / 档案 / 绑定关系 / 资质申请，并复位 fam001 昵称")
+    # 种子账号（fam001 等）本轮登录留下的日志也一并按基线删掉
+    cleanup_util.delete_since("sys_login_log", log_id_start, "sys_login_log")
+    cleanup_util.flush_unread_cache()
+
+
 def main():
+    global log_id_start, applicant_id, new_elder_user_id
+
     print("=" * 78)
     print("银龄伴诊 M3 端到端实测   (base=%s)" % BASE)
     print("=" * 78)
+
+    log_id_start = cleanup_util.max_id("sys_login_log")
 
     fam = login_ok(ACC_FAMILY)
     fam_token = fam["accessToken"]
@@ -577,21 +608,8 @@ def main():
         check(name, body.get("code") == 400, "code=%s message=%s"
               % (body.get("code"), body.get("message")))
 
-    # ================= 清理测试产物 =================
-    mysql_value("DELETE FROM `family_elder_relation` WHERE `elder_id` IN "
-                "(SELECT `id` FROM `elder_profile` WHERE `name` IN ('端到端测试老人','端到端老人档案') "
-                "OR `remark`='端到端测试');")
-    mysql_value("DELETE FROM `elder_profile` WHERE `name` IN ('端到端测试老人','端到端老人档案') "
-                "OR `remark`='端到端测试';")
-    mysql_value("DELETE FROM `companion_audit_record` WHERE `applicant_user_id`=%s;" % (applicant_id or 0))
-    mysql_value("DELETE FROM `companion_profile` WHERE `user_id`=%s;" % (applicant_id or 0))
-    mysql_value("DELETE FROM `sys_user` WHERE `username` LIKE 'e2e%%';")
-    mysql_value("DELETE FROM `sys_login_log` WHERE `username` LIKE 'e2e%%';")
-    redis_del("pwd:version:" + str(applicant_id or 0),
-              "pwd:version:" + str(new_elder_user_id or 0))
-    # 复位被改过的种子昵称
-    mysql_value("UPDATE `sys_user` SET `nickname`='家属01' WHERE `username`='fam001';")
-    print("\n[清理] 已删除 e2e* 账号 / 档案 / 绑定关系 / 资质申请，并复位 fam001 昵称")
+    # 清理测试产物已移到模块级 cleanup()，由 __main__ 的 finally 统一调用，
+    # 保证断言失败 / 中途异常退出时也会执行。
 
     total, passed = len(results), sum(1 for _, ok, _ in results if ok)
     print("=" * 78)
@@ -606,4 +624,16 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    code = 1
+    try:
+        code = main()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+    finally:
+        try:
+            cleanup()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+    sys.exit(code)

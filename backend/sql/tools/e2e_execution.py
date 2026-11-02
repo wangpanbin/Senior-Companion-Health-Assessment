@@ -40,6 +40,7 @@ UPLOAD_ROOT = r"F:\test\Senior Companion Health Assessment\backend\uploads"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+import cleanup_util  # noqa: E402  统一收尾：基线删除 + 未读缓存清理
 PASSWORD = SEED_PASSWORD
 
 # 种子数据的最大订单 ID。本脚本只操作「自己造」的订单，跑前先扫一遍
@@ -72,6 +73,7 @@ results = []
 created_order_ids = []
 log_id_start = 0
 sys_file_id_start = 0
+message_id_start = 0
 companion_score_before = {}
 
 
@@ -235,8 +237,50 @@ def rows_of(table, order_id, extra_where=""):
         return -1
 
 
+def cleanup():
+    print("\n" + "-" * 78)
+    new_files = mysql_value("SELECT GROUP_CONCAT(IFNULL(`store_path`,'')) FROM `sys_file` "
+                           "WHERE `id`>%d;" % sys_file_id_start)
+    if new_files:
+        for path in new_files.split(","):
+            path = path.strip()
+            if path:
+                try:
+                    full = path if os.path.isabs(path) else os.path.join(
+                        r"F:\test\Senior Companion Health Assessment\backend", path)
+                    if os.path.exists(full):
+                        os.remove(full)
+                except OSError as e:
+                    print("  跳过删除 %s：%s" % (path, e))
+    total_files = int(mysql_value("SELECT COUNT(*) FROM `sys_file` WHERE `id`>%d;"
+                                  % sys_file_id_start) or 0)
+    mysql_value("DELETE FROM `sys_file` WHERE `id`>%d;" % sys_file_id_start)
+
+    if created_order_ids:
+        ids = ",".join(str(i) for i in created_order_ids)
+        for table in ("order_checkin", "companion_track", "order_status_log",
+                      "order_reject_log", "order_review", "complaint"):
+            mysql_value("DELETE FROM `%s` WHERE `order_id` IN (%s);" % (table, ids))
+        mysql_value("DELETE FROM `companion_order` WHERE `id` IN (%s);" % ids)
+
+    # 刻意【不删】order:seq:{今天}：清了计数器，同一天的下一条订单会从 0001
+    # 重新发号，撞上当天仍在库里的其他订单号（详见 e2e_order.py 同位置注释）。
+    # 后端已补兜底，但测试不该主动制造冲突。
+    cleanup_util.delete_since("sys_login_log", log_id_start, "sys_login_log")
+    cleanup_util.delete_since("internal_message", message_id_start, "internal_message")
+    cleanup_util.flush_unread_cache()
+    for uid, score in companion_score_before.items():
+        if score:
+            mysql_value("UPDATE `companion_profile` SET `score`=%s WHERE `user_id`=%d;" % (score, uid))
+
+    left = mysql_value("SELECT COUNT(*) FROM `companion_order` WHERE `id` IN (%s);"
+                       % (",".join(str(i) for i in created_order_ids) or "0"))
+    print("[清理] 已删除 %d 条测试订单及其打卡/轨迹/日志，%d 个上传文件；订单残留 %s 条"
+          % (len(created_order_ids), total_files, left))
+
+
 def main():
-    global log_id_start, sys_file_id_start
+    global log_id_start, sys_file_id_start, message_id_start
 
     print("=" * 78)
     print("银龄伴诊 M5 端到端实测   (base=%s)" % BASE)
@@ -244,6 +288,7 @@ def main():
 
     log_id_start = int(mysql_value("SELECT COALESCE(MAX(`id`),0) FROM `sys_login_log`;") or 0)
     sys_file_id_start = int(mysql_value("SELECT COALESCE(MAX(`id`),0) FROM `sys_file`;") or 0)
+    message_id_start = cleanup_util.max_id("internal_message")
 
     # 跑前清扫：上一次中断留下的测试订单
     stale = mysql_value("SELECT GROUP_CONCAT(`id`) FROM `companion_order` WHERE `id`>%d;"
@@ -605,44 +650,6 @@ def main():
           "distance=%s" % mysql_value("SELECT IFNULL(`distance`,'NULL') FROM `order_checkin` "
                                       "WHERE `order_id`=%s AND `node`='LEAVE';" % order_no_point))
 
-    # ================= 清理测试产物 =================
-    print("\n" + "-" * 78)
-    new_files = mysql_value("SELECT GROUP_CONCAT(IFNULL(`store_path`,'')) FROM `sys_file` "
-                           "WHERE `id`>%d;" % sys_file_id_start)
-    if new_files:
-        for path in new_files.split(","):
-            path = path.strip()
-            if path:
-                try:
-                    full = path if os.path.isabs(path) else os.path.join(
-                        r"F:\test\Senior Companion Health Assessment\backend", path)
-                    if os.path.exists(full):
-                        os.remove(full)
-                except OSError as e:
-                    print("  跳过删除 %s：%s" % (path, e))
-    mysql_value("DELETE FROM `sys_file` WHERE `id`>%d;" % sys_file_id_start)
-
-    if created_order_ids:
-        ids = ",".join(str(i) for i in created_order_ids)
-        for table in ("order_checkin", "companion_track", "order_status_log",
-                      "order_reject_log", "order_review", "complaint"):
-            mysql_value("DELETE FROM `%s` WHERE `order_id` IN (%s);" % (table, ids))
-        mysql_value("DELETE FROM `companion_order` WHERE `id` IN (%s);" % ids)
-
-    # 刻意【不删】order:seq:{今天}：清了计数器，同一天的下一条订单会从 0001
-    # 重新发号，撞上当天仍在库里的其他订单号（详见 e2e_order.py 同位置注释）。
-    # 后端已补兜底，但测试不该主动制造冲突。
-    if log_id_start:
-        mysql_value("DELETE FROM `sys_login_log` WHERE `id` > %d;" % log_id_start)
-    for uid, score in companion_score_before.items():
-        if score:
-            mysql_value("UPDATE `companion_profile` SET `score`=%s WHERE `user_id`=%d;" % (score, uid))
-
-    left = mysql_value("SELECT COUNT(*) FROM `companion_order` WHERE `id` IN (%s);"
-                       % (",".join(str(i) for i in created_order_ids) or "0"))
-    print("[清理] 已删除 %d 条测试订单及其打卡/轨迹/日志，%d 个上传文件；订单残留 %s 条"
-          % (len(created_order_ids), total_files, left))
-
     total, passed = len(results), sum(1 for _, ok, _ in results if ok)
     print("=" * 78)
     print("结果：%d/%d 通过" % (passed, total))
@@ -656,4 +663,17 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    code = 1
+    try:
+        code = main()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        code = 1
+    finally:
+        try:
+            cleanup()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+    sys.exit(code)

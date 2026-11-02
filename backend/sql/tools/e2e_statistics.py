@@ -20,7 +20,8 @@
   G 导出（Content-Type / RFC 5987 中文文件名 / xlsx 可解析 / 列定义与顺序 /
     行数与页面筛选一致 / **不含密码·身份证·完整手机号** / 姓名脱敏）
 
-数据安全：**本脚本只读**，不插入、不更新、不删除任何数据，因此没有清理动作。
+数据安全：**本脚本只读业务数据**，不插入、不更新、不删除任何业务行；
+唯一的写入是登录日志（sys_login_log），退出前按 id 基线删掉自己产生的部分。
 所有断言都对着种子数据与 SQL 现算值，不使用写死的期望数字。
 """
 import datetime as dt
@@ -44,6 +45,7 @@ DB = "nianglin"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+import cleanup_util  # noqa: E402  统一收尾：登录日志基线删除
 PASSWORD = SEED_PASSWORD
 
 ACC_FAMILY = "fam001"
@@ -78,6 +80,7 @@ USER_EXPORT_HEADERS = ["用户 ID", "用户名", "昵称", "手机号", "角色"
                        "关联订单数", "注册时间", "最后登录时间"]
 
 results = []
+log_id_start = 0
 
 
 # ======================================================================
@@ -292,12 +295,21 @@ def sql_companion_orders(start, end, companion_id):
 # 主流程
 # ======================================================================
 
+def cleanup():
+    """本脚本只读业务数据，唯一写入是登录日志 —— 按基线删掉自己产生的部分。"""
+    print("\n" + "-" * 78)
+    cleanup_util.delete_since("sys_login_log", log_id_start, "sys_login_log")
+
+
 def main():
+    global log_id_start
     limit_phase = "--limit-phase" in sys.argv
 
     print("=" * 78)
     print("银龄伴诊 M10 数据统计与导出 端到端实测   (base=%s)" % BASE)
     print("=" * 78)
+
+    log_id_start = cleanup_util.max_id("sys_login_log")
 
     admin = login_ok(ACC_ADMIN)
     fam = login_ok(ACC_FAMILY)
@@ -873,4 +885,16 @@ def report():
 
 
 if __name__ == "__main__":
-    sys.exit(0 if main() else 1)
+    code = 1
+    try:
+        code = 0 if main() else 1
+    except Exception:
+        import traceback
+        traceback.print_exc()
+    finally:
+        try:
+            cleanup()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+    sys.exit(code)

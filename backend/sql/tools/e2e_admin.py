@@ -29,6 +29,7 @@ DB = "nianglin"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+import cleanup_util  # noqa: E402  统一收尾：基线删除 + 未读缓存清理
 PASSWORD = SEED_PASSWORD
 
 ACC_FAMILY = "fam001"       # 家属 101
@@ -79,6 +80,7 @@ created_complaint_ids = []
 created_audit_ids = []
 message_id_start = 0
 oper_log_base = 0
+log_id_start = 0
 
 
 def check(name, ok, detail=""):
@@ -294,6 +296,8 @@ def cleanup():
     if message_id_start:
         mysql_raw("DELETE FROM `internal_message` WHERE `id`>%d;" % message_id_start)
         print("[清理] 已删除本次新增的站内信（id>%d）" % message_id_start)
+    cleanup_util.delete_since("sys_login_log", log_id_start, "sys_login_log")
+    cleanup_util.flush_unread_cache()
 
     left = mysql_int("SELECT COUNT(*) FROM `companion_order` WHERE `id`>%d;" % SEED_ORDER_MAX_ID)
     left += mysql_int("SELECT COUNT(*) FROM `sys_user` WHERE `id`>=9000;")
@@ -307,11 +311,13 @@ def cleanup():
 # ======================================================================
 
 def main():
-    global message_id_start, oper_log_base
+    global message_id_start, oper_log_base, log_id_start
 
     print("=" * 78)
     print("银龄伴诊 M9 管理后台 端到端实测   (base=%s)" % BASE)
     print("=" * 78)
+
+    log_id_start = cleanup_util.max_id("sys_login_log")
 
     # 上次中断的残留先扫掉，否则 9001 这种 id 会撞主键
     stale = mysql_int("SELECT COUNT(*) FROM `sys_user` WHERE `id`>=9000;")
@@ -899,8 +905,6 @@ def main():
     check("G3 日志查询是只读接口（连续两次查询 total 不变）",
           body.get("code") == 200, "")
 
-    cleanup()
-
     print()
     print("=" * 78)
     failed = [r[0] for r in results if not r[1]]
@@ -922,4 +926,10 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         ok = False
+    finally:
+        try:
+            cleanup()
+        except Exception:
+            import traceback
+            traceback.print_exc()
     sys.exit(0 if ok else 1)

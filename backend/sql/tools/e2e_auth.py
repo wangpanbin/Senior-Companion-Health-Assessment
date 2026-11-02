@@ -29,6 +29,7 @@ DB = "nianglin"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+import cleanup_util  # noqa: E402  统一收尾：基线删除 + 未读缓存清理
 PASSWORD = SEED_PASSWORD
 
 # 种子账号（V2__seed_data.sql）
@@ -45,6 +46,8 @@ ACC_LOCK = "e2elock" + STAMP
 NEW_PASSWORD = "e2ePass123456"
 
 results = []
+log_id_start = 0
+new_user_id = None
 
 
 def check(name, ok, detail=""):
@@ -133,10 +136,35 @@ def register(username, phone, password, nickname, role):
     })
 
 
+def cleanup():
+    mysql_value("DELETE FROM `sys_user` WHERE `username` LIKE 'e2e%';")
+    mysql_value("DELETE FROM `sys_login_log` WHERE `username` LIKE 'e2e%';")
+    cleanup_util.delete_since("sys_login_log", log_id_start, "sys_login_log")
+
+    # 关键：本脚本会以种子账号跑「递增密码版本」的用例（改密 / 封禁类；
+    # 注意 F-01 之后**登出不再**递增 —— 它只按 jti 拉黑当前会话），
+    # 且 pwd:version:{userId} 这个键「没有 TTL」—— 不复位就会永久留在 Redis 里。
+    # 后果是任何「用固定 ver=0 签种子账号令牌」的测试都变成 401（验票失败），
+    # 且现象极具迷惑性（看起来像鉴权坏了）。所以这里把本脚本登录 / 操作过的
+    # 全部种子账号复位到「未设置」状态（读取时回落为默认 0，与种子库一致）。
+    seed_version_keys = []
+    for uname in (ACC_FAMILY, ACC_ELDER, ACC_COMPANION, ACC_ADMIN):
+        uid = mysql_value("SELECT `id` FROM `sys_user` WHERE `username`='%s' AND `deleted`=0;" % uname)
+        if uid.isdigit():
+            seed_version_keys.append("pwd:version:" + uid)
+
+    redis_del("login:fail:" + ACC_LOCK, "pwd:version:" + str(new_user_id or 0), *seed_version_keys)
+    print("\n[清理] 已删除测试账号 %s 与 e2e* 登录日志，并复位 Redis 锁计数 / 密码版本（含 %s）"
+          % (ACC_NEW, "、".join(seed_version_keys) or "无"))
+
+
 def main():
+    global log_id_start, new_user_id
     print("=" * 78)
     print("银龄伴诊 M2 端到端实测   (base=%s)" % BASE)
     print("=" * 78)
+
+    log_id_start = cleanup_util.max_id("sys_login_log")
 
     # ---------------- A. 公开接口 ----------------
     status, body = call("GET", "/health")
@@ -310,26 +338,6 @@ def main():
     check("I3 登录日志已落库（可按账号维度追溯）",
           rows.isdigit() and int(rows) > 0, "rows=%s" % rows)
 
-    # ---------------- 清理测试产物 ----------------
-    mysql_value("DELETE FROM `sys_user` WHERE `username` LIKE 'e2e%';")
-    mysql_value("DELETE FROM `sys_login_log` WHERE `username` LIKE 'e2e%';")
-
-    # 关键：本脚本会以种子账号跑「递增密码版本」的用例（改密 / 封禁类；
-    # 注意 F-01 之后**登出不再**递增 —— 它只按 jti 拉黑当前会话），
-    # 且 pwd:version:{userId} 这个键「没有 TTL」—— 不复位就会永久留在 Redis 里。
-    # 后果是任何「用固定 ver=0 签种子账号令牌」的测试都变成 401（验票失败），
-    # 且现象极具迷惑性（看起来像鉴权坏了）。所以这里把本脚本登录 / 操作过的
-    # 全部种子账号复位到「未设置」状态（读取时回落为默认 0，与种子库一致）。
-    seed_version_keys = []
-    for uname in (ACC_FAMILY, ACC_ELDER, ACC_COMPANION, ACC_ADMIN):
-        uid = mysql_value("SELECT `id` FROM `sys_user` WHERE `username`='%s' AND `deleted`=0;" % uname)
-        if uid.isdigit():
-            seed_version_keys.append("pwd:version:" + uid)
-
-    redis_del("login:fail:" + ACC_LOCK, "pwd:version:" + str(new_user_id or 0), *seed_version_keys)
-    print("\n[清理] 已删除测试账号 %s 与 e2e* 登录日志，并复位 Redis 锁计数 / 密码版本（含 %s）"
-          % (ACC_NEW, "、".join(seed_version_keys) or "无"))
-
     # ---------------- 汇总 ----------------
     total, passed = len(results), sum(1 for _, ok, _ in results if ok)
     print("=" * 78)
@@ -344,4 +352,17 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    code = 1
+    try:
+        code = main()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        code = 1
+    finally:
+        try:
+            cleanup()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+    sys.exit(code)

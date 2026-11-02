@@ -32,6 +32,7 @@ DB = "nianglin"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+import cleanup_util  # noqa: E402  统一收尾：基线删除 + 未读缓存清理
 PASSWORD = SEED_PASSWORD
 SRC_ROOT = r"F:\test\Senior Companion Health Assessment\backend\src\main\java"
 
@@ -54,6 +55,11 @@ results = []
 created_plan_ids = []
 scan_task_id = 0
 message_id_start = 0
+log_id_start = 0
+# B5 的临时订单 id。必须是模块级全局：cleanup() 要读它，而它只在 main() 里赋值 ——
+# 原来是 main 局部变量，阶段二（--scan-phase 新进程）的 cleanup() 一引用就 NameError，
+# 导致 internal_message 的基线删除永远执行不到（BUG_LIST L1 的残留根因之一）。
+b5_order_id = 0
 PHASE_SCAN = "--scan-phase" in sys.argv
 
 # 两阶段之间必须把「本次新增站内信的起始 id」与「本次创建的计划 id」落盘。
@@ -66,17 +72,19 @@ STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 def save_state():
     with open(STATE_FILE, "w", encoding="utf-8") as fh:
         json.dump({"message_id_start": message_id_start,
+                   "log_id_start": log_id_start,
                    "created_plan_ids": created_plan_ids,
                    "scan_task_id": scan_task_id}, fh, ensure_ascii=False)
 
 
 def load_state():
-    global message_id_start, created_plan_ids, scan_task_id
+    global message_id_start, log_id_start, created_plan_ids, scan_task_id
     if not os.path.exists(STATE_FILE):
         return False
     with open(STATE_FILE, encoding="utf-8") as fh:
         st = json.load(fh)
     message_id_start = st.get("message_id_start", 0)
+    log_id_start = st.get("log_id_start", 0)
     created_plan_ids = st.get("created_plan_ids", [])
     scan_task_id = st.get("scan_task_id", 0)
     return True
@@ -206,6 +214,9 @@ def cleanup():
     if message_id_start:
         mysql_raw("DELETE FROM `internal_message` WHERE `id`>%d;" % message_id_start)
         print("[清理] 已删除本次新增的站内信（id>%d）" % message_id_start)
+    # 登录日志的基线在阶段一记录、随状态文件带到阶段二，在这里一并删
+    cleanup_util.delete_since("sys_login_log", log_id_start, "sys_login_log")
+    cleanup_util.flush_unread_cache()
     left = mysql_value("SELECT GROUP_CONCAT(`id`) FROM `medication_plan` WHERE `id` IN (%s);"
                        % (",".join(str(i) for i in created_plan_ids) or "0"))
     print("[清理] 计划残留：%s" % (left or "0 条"))
@@ -270,12 +281,10 @@ def phase_scan():
                        "AND `type` LIKE 'MEDICATION%';")
     check("L6 漏服通知不会重复发（同一任务只通知一次）", before >= 1,
           "MEDICATION 类站内信总数=%d" % before)
-    cleanup()
-    drop_state()
 
 
 def main():
-    global message_id_start
+    global message_id_start, log_id_start, b5_order_id
     print("=" * 78)
     print("银龄伴诊 M6 用药管理 端到端实测   (base=%s)" % BASE)
     print("=" * 78)
@@ -285,6 +294,7 @@ def main():
         return
 
     message_id_start = int(mysql_value("SELECT COALESCE(MAX(`id`),0) FROM `internal_message`;") or 0)
+    log_id_start = cleanup_util.max_id("sys_login_log")
 
     fam = login_ok(ACC_FAMILY)
     fam2 = login_ok(ACC_FAMILY_OTHER)
@@ -393,7 +403,6 @@ def main():
     # ACCEPTED 订单，跑完清理。这里不走 HTTP 下单（订单号唯一性跨多个 e2e 脚本
     # 是个坑），直接 SQL 插一条装子 table，模拟“家属下单后陪诊员接单”后的状态。
     import datetime as _dt_mod
-    b5_order_id = None
     from datetime import datetime as _dt2
     b5_visit = (_dt2.now() + _dt_mod.timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
     b5_accept = _dt2.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -740,6 +749,17 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         ok = False
+    finally:
+        # 两阶段设计的清理只发生在阶段二：阶段一埋的扫描探针与计划必须活到
+        # 阶段二断言完才能删，所以阶段一的 finally 什么都不做（状态已落盘）。
+        # 阶段二即使断言失败也要清，否则探针和新增站内信会留在库里污染环境。
+        if PHASE_SCAN:
+            try:
+                cleanup()
+                drop_state()
+            except Exception:
+                import traceback
+                traceback.print_exc()
     passed = sum(1 for _, r, _ in results if r)
     total = len(results)
     print("\n" + "=" * 78)

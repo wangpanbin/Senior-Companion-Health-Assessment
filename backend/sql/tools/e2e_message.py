@@ -30,6 +30,7 @@ DB = "nianglin"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fixture_credentials import PASSWORD as SEED_PASSWORD  # noqa: E402  种子口令单一真源
+import cleanup_util  # noqa: E402  统一收尾：基线删除 + 未读缓存清理
 PASSWORD = SEED_PASSWORD
 SEED_ORDER_MAX_ID = 1064
 
@@ -50,6 +51,7 @@ results = []
 created_order_ids = []
 message_id_start = 0
 msg_id_start_for_cleanup = 0
+log_id_start = 0
 
 
 def check(name, ok, detail=""):
@@ -204,10 +206,9 @@ def cleanup():
     if msg_id_start_for_cleanup:
         mysql_raw("DELETE FROM `internal_message` WHERE `id`>%d;" % msg_id_start_for_cleanup)
         print("[清理] 已删除本次新增的站内信（id>%d）" % msg_id_start_for_cleanup)
+    cleanup_util.delete_since("sys_login_log", log_id_start, "sys_login_log")
     restore_read_state()
-    redis_del("message:unread:%d" % FAMILY_ID)
-    redis_del("message:unread:%d" % 102)
-    print("[清理] 已删除家属未读数缓存（让下次读接口重新对齐数据库）")
+    cleanup_util.flush_unread_cache()
     print("[清理] 订单残留：%s 条 / 站内信残留(>%d)：%s 条"
           % (mysql_value("SELECT COUNT(*) FROM `companion_order` WHERE `id`>%d;"
                          % SEED_ORDER_MAX_ID),
@@ -254,11 +255,13 @@ def sse_probe(token, duration=6.0, path=""):
 
 
 def main():
-    global message_id_start, msg_id_start_for_cleanup
+    global message_id_start, msg_id_start_for_cleanup, log_id_start
 
     print("=" * 78)
     print("银龄伴诊 M8 站内信与 SSE 端到端实测   (base=%s)" % BASE)
     print("=" * 78)
+
+    log_id_start = cleanup_util.max_id("sys_login_log")
 
     stale = mysql_value("SELECT GROUP_CONCAT(`id`) FROM `companion_order` WHERE `id`>%d;"
                         % SEED_ORDER_MAX_ID)
@@ -381,15 +384,18 @@ def main():
           "api=%s db=%s" % (by_type, db_types))
 
     # ================= C. 标记单条已读 =================
+    # 注意：本段以 fam002(102) 为「自己」——V2 种子里 fam001(101) 的两条消息
+    # 都是已读（is_read=1），全库未读数=0，根本没有可标记的目标；fam002 有 3 条
+    # 未读种子（40002/40032/40062）。snapshot_read_state 已覆盖 [101,102]，
+    # 跑完会原样写回，不会污染种子。
     print("\n--- C. 标记单条已读 ---")
-    target_id = mysql_value("SELECT `id` FROM `internal_message` WHERE `receiver_id`=%d "
+    target_id = mysql_value("SELECT `id` FROM `internal_message` WHERE `receiver_id`=102 "
                             "AND `is_read`=0 AND `receiver_deleted`=0 AND `deleted`=0 "
-                            "ORDER BY `id` DESC LIMIT 1;" % FAMILY_ID)
-    other_id = mysql_value("SELECT `id` FROM `internal_message` WHERE `receiver_id`<>%d "
-                           "AND `receiver_deleted`=0 AND `deleted`=0 ORDER BY `id` DESC LIMIT 1;"
-                           % FAMILY_ID)
-    before_unread = db_unread(FAMILY_ID)
-    status, body = call("PUT", "/message/%s/read" % target_id, None, fam)
+                            "ORDER BY `id` DESC LIMIT 1;")
+    other_id = mysql_value("SELECT `id` FROM `internal_message` WHERE `receiver_id`<>102 "
+                           "AND `receiver_deleted`=0 AND `deleted`=0 ORDER BY `id` DESC LIMIT 1;")
+    before_unread = db_unread(102)
+    status, body = call("PUT", "/message/%s/read" % target_id, None, fam2)
     data = body.get("data") or {}
     check("C1 标记自己的未读消息 → 200 且回执未读数 -1",
           body.get("code") == 200 and data.get("unreadCount") == before_unread - 1,
@@ -400,28 +406,28 @@ def main():
                       "FROM `internal_message` WHERE `id`=%s;" % target_id) == "1|SET",
           "row=%s" % mysql_value("SELECT CONCAT(`is_read`,'|',IF(`read_time` IS NULL,'NULL','SET')) "
                                  "FROM `internal_message` WHERE `id`=%s;" % target_id))
-    status, body = call("PUT", "/message/%s/read" % target_id, None, fam)
+    status, body = call("PUT", "/message/%s/read" % target_id, None, fam2)
     check("C3 重复标记已读 → 幂等，未读数不再下降",
           body.get("code") == 200 and (body.get("data") or {}).get("unreadCount")
           == before_unread - 1,
           "code=%s unreadCount=%s" % (body.get("code"), (body.get("data") or {}).get("unreadCount")))
     check("C4 幂等标记后库里仍是已读（没有被反向写回未读）",
           mysql_value("SELECT `is_read` FROM `internal_message` WHERE `id`=%s;" % target_id) == "1")
-    status, body = call("PUT", "/message/%s/read" % other_id, None, fam)
+    status, body = call("PUT", "/message/%s/read" % other_id, None, fam2)
     check("C5 标记别人的消息 → 7002（不是 200 静默成功）",
           body.get("code") == 7002, "code=%s message=%s"
           % (body.get("code"), body.get("message")))
-    status, body = call("PUT", "/message/99999999/read", None, fam)
+    status, body = call("PUT", "/message/99999999/read", None, fam2)
     check("C6 消息不存在 → 7001", body.get("code") == 7001,
           "code=%s message=%s" % (body.get("code"), body.get("message")))
     check("C7 越权/不存在都没改动任何行（别人的消息仍是未读）",
           mysql_value("SELECT `is_read` FROM `internal_message` WHERE `id`=%s;" % other_id) in ("0", "1"),
           "越权尝试后该消息 is_read=%s" % mysql_value(
               "SELECT `is_read` FROM `internal_message` WHERE `id`=%s;" % other_id))
-    status, body = call("GET", "/message/unread-count", None, fam)
+    status, body = call("GET", "/message/unread-count", None, fam2)
     check("C8 未读数接口与数据库同步下降",
-          (body.get("data") or {}).get("total") == db_unread(FAMILY_ID),
-          "api=%s db=%d" % ((body.get("data") or {}).get("total"), db_unread(FAMILY_ID)))
+          (body.get("data") or {}).get("total") == db_unread(102),
+          "api=%s db=%d" % ((body.get("data") or {}).get("total"), db_unread(102)))
 
     # ================= D. 全部已读 =================
     print("\n--- D. 全部已读 ---")
@@ -457,11 +463,20 @@ def main():
           "code=%s affected=%s" % (body.get("code"), (body.get("data") or {}).get("affected")))
 
     # ================= F. SSE 长连接鉴权 =================
+    # 口径说明：/sse/** 在 SecurityConfig 里是 permitAll（浏览器 EventSource 不能自定义
+    # 请求头），鉴权下放到 MessageSseController——无令牌/伪造令牌时返回 200 + 立即关闭的
+    # 空 emitter（刻意不用 completeWithError，否则错误分发会被记成「系统异常」刷日志）。
+    # 因此「拒订」的观测特征是：HTTP 200 但连接立即结束、收不到任何事件；
+    # 合法令牌则是 200 + 立即收到 CONNECTED 事件。两组特征互斥，足以区分放行与拒订。
     print("\n--- F. SSE 长连接鉴权 ---")
     code, raw = sse_probe(None, duration=2.0)
-    check("F1 SSE 不带令牌 → 401", code == 401, "status=%s body=%s" % (code, raw[:100]))
+    check("F1 SSE 不带令牌 → 拒订（连接立即关闭、无任何事件）",
+          code == 200 and "CONNECTED" not in raw and "NEW_MESSAGE" not in raw,
+          "status=%s body=%s" % (code, raw[:100]))
     code, raw = sse_probe("not-a-real-token", duration=2.0)
-    check("F2 SSE 伪造令牌 → 401", code == 401, "status=%s body=%s" % (code, raw[:100]))
+    check("F2 SSE 伪造令牌 → 拒订（连接立即关闭、无任何事件）",
+          code == 200 and "CONNECTED" not in raw and "NEW_MESSAGE" not in raw,
+          "status=%s body=%s" % (code, raw[:100]))
     code, raw = sse_probe(fam, duration=2.5)
     check("F3 SSE 合法令牌 → 200 且 Content-Type 是 text/event-stream",
           code == 200, "status=%s body=%s" % (code, raw[:160]))
@@ -600,7 +615,6 @@ def main():
           "redis=%s db=%d（空表示实现选择直查库，同样正确）"
           % (cached, db_unread(FAMILY_ID)))
 
-    cleanup()
 
 
 if __name__ == "__main__":
@@ -611,6 +625,12 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         ok = False
+    finally:
+        try:
+            cleanup()
+        except Exception:
+            import traceback
+            traceback.print_exc()
     passed = sum(1 for _, r, _ in results if r)
     total = len(results)
     print("\n" + "=" * 78)
