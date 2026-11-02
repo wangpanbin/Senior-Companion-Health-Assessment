@@ -110,11 +110,56 @@ const ElTagStub = {
   template: '<span class="el-tag-stub"><slot /></span>'
 }
 
+/* V4 · P1-2：订单详情「转入用药计划」弹窗用到 el-select / el-option，
+   未注册会在测试输出里冒 [Vue warn]，桩成原生 select/option 即可。 */
+const ElSelectStub = {
+  props: ['modelValue'],
+  emits: ['update:modelValue'],
+  template:
+    '<select class="el-select-stub" :value="modelValue" ' +
+    '@change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>'
+}
+
+const ElOptionStub = {
+  props: ['label', 'value'],
+  template: '<option class="el-option-stub">{{ label }}</option>'
+}
+
+/* 弹窗默认关闭：桩里用 v-if 控制，未打开时不渲染内部表单，避免子组件解析告警 */
+const ElDialogStub = {
+  props: ['modelValue', 'title', 'width'],
+  template: '<div v-if="modelValue" class="el-dialog-stub"><slot /><slot name="footer" /></div>'
+}
+
+const ElInputStub = {
+  props: ['modelValue', 'placeholder', 'maxlength'],
+  emits: ['update:modelValue'],
+  template:
+    '<input class="el-input-stub" :value="modelValue" :placeholder="placeholder" ' +
+    '@input="$emit(\'update:modelValue\', $event.target.value)" />'
+}
+
+const ElTimePickerStub = {
+  props: ['modelValue', 'format', 'valueFormat'],
+  emits: ['update:modelValue'],
+  template: '<input class="el-time-picker-stub" :value="modelValue" />'
+}
+
 const GLOBAL_STUBS = {
   ElButton: ElButtonStub,
   'el-button': ElButtonStub,
   ElTag: ElTagStub,
-  'el-tag': ElTagStub
+  'el-tag': ElTagStub,
+  ElSelect: ElSelectStub,
+  'el-select': ElSelectStub,
+  ElOption: ElOptionStub,
+  'el-option': ElOptionStub,
+  ElDialog: ElDialogStub,
+  'el-dialog': ElDialogStub,
+  ElInput: ElInputStub,
+  'el-input': ElInputStub,
+  ElTimePicker: ElTimePickerStub,
+  'el-time-picker': ElTimePickerStub
 }
 
 /* ---------------- 夹具 ---------------- */
