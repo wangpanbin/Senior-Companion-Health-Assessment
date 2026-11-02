@@ -40,6 +40,8 @@
 | 5 | POST | `/api/auth/logout` | 已登录 | 登出 |
 | 6 | GET | `/api/auth/me` | 已登录 | 获取当前用户信息 |
 | 7 | PUT | `/api/auth/password` | 已登录 | 修改密码 |
+| 8 | POST | `/api/user/deactivate` | FAMILY / COMPANION | 注销账号（V4 · P0-1） |
+| 9 | GET | `/api/user/data-export` | FAMILY / COMPANION | 导出我的个人数据（V4 · P0-1） |
 
 ---
 
@@ -343,6 +345,114 @@
 
 - 修改成功后**强制所有已签发 token 失效**（Redis 记录 `password:version:{userId}`，token 中带版本号比对），前端跳登录页。
 - 新密码同样 BCrypt 加密。
+
+---
+
+## 8. 注销账号（V4 · P0-1）
+
+`POST /api/user/deactivate`　权限：**FAMILY / COMPANION**
+
+> - ELDER：被 `ElderReadOnlyInterceptor` 拦截（403，「老人账号为只读模式」），与请求体是否合法无关。
+> - ADMIN：被 `@PreAuthorize` 拒绝（403）—— 管理员停用账号走 `POST /api/admin/user/{id}/disable` 后台封禁路径（08-admin.md §7），不走自助注销。
+> - 契约草案见 `docs/plan/iteration-plan-v4.md` §6.1。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `password` | String | ✓ | 当前密码（复验，防他人拿着未锁屏设备操作） |
+| `confirmText` | String | ✓ | 二次确认文本，必须**原样**输入 `我已知晓注销后果`（前端弹窗要求手打，后端校验固定串防误触） |
+
+```json
+{
+  "password": "abc123456",
+  "confirmText": "我已知晓注销后果"
+}
+```
+
+### 响应
+
+```json
+{ "code": 200, "message": "账号已注销", "data": null }
+```
+
+### 错误场景
+
+| code | 场景 |
+|---|---|
+| 400 | 参数校验失败（缺密码 / 缺确认文本）；`confirmText` 与固定串不匹配 |
+| 1006 | 原密码不正确 |
+| 11001 | 存在进行中订单（`PENDING` / `ACCEPTED` / `IN_SERVICE`，作为下单家属**或**接单陪诊员均计入）；`data` 返回 `{ "pendingOrderCount": 2 }` |
+| 401 | 未登录 |
+| 403 | ELDER（只读拦截器）/ ADMIN 调用 |
+
+### 副作用（成功路径，同一事务）
+
+1. `sys_user.deleted = 1`、`status = 'DISABLED'`，`remark` 记注销时间；
+2. **去标识化**（订单 / 评价 / 日志物理保留，只把可识别字段抹掉）：
+   - `sys_user.real_name` / `nickname` → `MaskUtil.nameAll`（只留姓氏，空值保持空）；
+   - `sys_user.phone` → 墓碑占位串 `"d" + userId`（如 `d10023`）。
+     ⚠️ **刻意偏离 `MaskUtil.phone`**：`uk_phone` 唯一约束仍在，而脱敏输出只有 11 位
+     （`138****8888`），两个不同原号可能撞同一占位串，第二次注销会被唯一索引拒掉。
+     `"d" + userId` ≤ 20 字符、必然唯一、且永远不可能与真实手机号（11 位数字）冲突；
+   - 陪诊员：`companion_profile.real_name` → `MaskUtil.nameAll`、`phone` → `MaskUtil.phone`
+     （该表 phone 无唯一约束）、`id_card` → **置 NULL**（AES 密文脱敏无意义，真去标识化即清除）；
+   - 家属：`family_elder_relation` 绑定行**逻辑删除**（`deleted = 1`），
+     老人档案 `elder_profile` 保留（账号注销不影响被照护人的档案存续）；
+3. `pwd:version:{userId}` 递增（`TokenStore#bumpPasswordVersion`）——
+   该账号**全部已签发令牌立即失效**，再次请求返回 **401**。
+   ⚠️ 注销**不**调 `markBanned`：那是「封禁」语义（过滤器就地 403 + 封禁文案），
+   注销要的是「未登录」语义（401），与「账号已不存在」的产品事实一致；
+4. **不写** `admin_oper_log`：注销是用户自助行为，不是管理员操作；
+5. 订单、评价、投诉、站内信、日志**物理保留**（合规审计需要），
+   但其中显示名经 `UserNameResolver` 读到的已是去标识化后的值。
+
+### 实现要点
+
+- 校验顺序：参数校验 → `confirmText` 固定串 → 密码复验 → 进行中订单闸门 → 落库。
+  密码复验用 `passwordEncoder.matches`，错误统一 `1006`，与修改密码同一口径。
+- 注销成功后该账号无法登录（逻辑删除后按手机号 / 用户名均查不到，`1001`）。
+- 前端成功后必须清空本地登录态并跳登录页。
+
+---
+
+## 9. 导出我的个人数据（V4 · P0-1）
+
+`GET /api/user/data-export`　权限：**FAMILY / COMPANION**（仅本人；`userId` 从令牌取，**禁止入参指定**）
+
+> GET 请求不触发老人只读拦截器，因此 ELDER / ADMIN 的排除由 `@PreAuthorize` 显式承担（403）。
+> 契约草案见 `docs/plan/iteration-plan-v4.md` §6.2。
+
+### 请求参数
+
+无。
+
+### 响应
+
+`application/octet-stream`（xlsx 二进制流，EasyExcel 多 sheet 写出，**不走统一响应结构**）。
+
+| sheet | 内容 | 口径 |
+|---|---|---|
+| 个人资料 | 用户 ID / 用户名 / 昵称 / 真实姓名 / 手机号 / 角色 / 账号状态 / 注册时间 | 姓名 `MaskUtil.name`、手机号 `MaskUtil.phone` |
+| 绑定老人 | 老人档案 ID / 姓名 / 与老人关系 / 绑定方式 / 关系状态 / 绑定时间 | 仅 FAMILY 有数据；老人姓名 `MaskUtil.name` |
+| 订单记录 | 订单号 / 我的角色 / 医院 / 科室 / 就诊时间 / 订单状态 / 服务费 / 结算状态 / 下单时间 | 作为下单家属或接单陪诊员的全部订单 |
+| 评价记录 | 订单号 / 我的角色 / 评分 / 评价内容 / 是否匿名 / 评价时间 | 我发出的（家属）或评价我的（陪诊员） |
+| 消息记录 | 标题 / 消息类型 / 正文 / 是否已读 / 接收时间 | 我的站内信收件箱（正文发信时已由后端模板脱敏） |
+
+### 错误场景
+
+| code | 场景 |
+|---|---|
+| 401 | 未登录 |
+| 403 | ELDER / ADMIN 调用 |
+
+### 实现要点（合规红线）
+
+- 导出文件**不含**身份证号、完整手机号、密码哈希（红线-2）——
+  与 `UserExportVO` 同一纪律：`password` 类字段**根本不定义**在导出行里；
+- 所有姓名 / 手机号在装配行对象时过 `MaskUtil`，**先脱敏再写入**，不依赖事后扫描；
+- 文件名带时间戳（`个人数据_yyyyMMdd_HHmmss.xlsx`），Content-Disposition 同时给
+  `filename`（ASCII 回退）与 `filename*`（RFC 5987）。
 
 ---
 

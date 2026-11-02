@@ -3,6 +3,7 @@ package org.company.nianglin.controller.user;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.company.nianglin.common.Result;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.CompanionApplyDTO;
 import org.company.nianglin.dto.CompanionWorkStatusUpdateDTO;
+import org.company.nianglin.dto.DeactivateAccountDTO;
 import org.company.nianglin.dto.ProfileUpdateDTO;
 import org.company.nianglin.service.CompanionService;
 import org.company.nianglin.service.UserService;
@@ -120,5 +122,31 @@ public class UserController {
             @Parameter(description = "陪诊员**用户 ID**（不是 companion_profile 主键）", example = "301")
             @PathVariable("id") Long id) {
         return Result.success(companionService.publicProfile(id));
+    }
+
+    /* ==================== 注销与数据导出（V4 · P0-1） ==================== */
+
+    @Operation(summary = "注销当前账号",
+            description = "仅家属（FAMILY）与陪诊员（COMPANION）可自助注销。"
+                    + "老人账号（ELDER）被只读规则拦截（403）；管理员（ADMIN）无注销入口（403），走后台封禁。"
+                    + "需复验当前密码并原样输入确认文本「我已知晓注销后果」。"
+                    + "存在进行中订单（待接单 / 已接单 / 服务中）时返回 11001，data 携带 pendingOrderCount。"
+                    + "成功后账号逻辑删除并禁用，姓名 / 手机号 / 身份证去标识化，全部已签发令牌立即失效（401）")
+    @PreAuthorize("hasAnyRole('" + RoleConstants.FAMILY + "','" + RoleConstants.COMPANION + "')")
+    @PostMapping("/deactivate")
+    public Result<Void> deactivate(@Valid @RequestBody DeactivateAccountDTO dto) {
+        userService.deactivate(dto);
+        return Result.success("账号已注销", null);
+    }
+
+    @Operation(summary = "导出我的个人数据",
+            description = "仅家属（FAMILY）与陪诊员（COMPANION）可导出本人数据；"
+                    + "老人账号（ELDER）与管理员（ADMIN）均返回 403。"
+                    + "直写 application/octet-stream（xlsx，5 个 sheet：个人资料 / 绑定老人 / 订单 / 评价 / 消息），"
+                    + "姓名与手机号全部脱敏，不含身份证号与密码哈希")
+    @PreAuthorize("hasAnyRole('" + RoleConstants.FAMILY + "','" + RoleConstants.COMPANION + "')")
+    @GetMapping("/data-export")
+    public void dataExport(HttpServletResponse response) {
+        userService.dataExport(response);
     }
 }

@@ -85,6 +85,16 @@ public class Result<T> implements Serializable {
         return new Result<>(code, message, null);
     }
 
+    /**
+     * 携带业务数据的失败响应（V4 新增）。
+     *
+     * <p>仅用于「错误本身必须附带机器可读上下文」的场景，如 {@code 11001}
+     * 的 {@code pendingOrderCount}。能写进 {@code message} 的信息不要放这里。</p>
+     */
+    public static <T> Result<T> fail(Integer code, String message, T data) {
+        return new Result<>(code, message, data);
+    }
+
     public static <T> Result<T> fail(String message) {
         return new Result<>(ResultCode.SYSTEM_ERROR.getCode(), message, null);
     }

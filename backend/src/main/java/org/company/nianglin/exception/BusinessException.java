@@ -30,24 +30,44 @@ public class BusinessException extends RuntimeException {
     /** 业务响应码 */
     private final Integer code;
 
+    /**
+     * 随错误返回的业务数据（V4 新增），绝大多数错误为 {@code null}。
+     *
+     * <p>首个用例是 {@code 11001}（注销时存在进行中订单）：{@code data} 携带
+     * {@code { "pendingOrderCount": n }}，前端据此如实提示「还有几单没走完」。
+     * 仅当错误<b>必须</b>附带机器可读的上下文时才使用本字段 —— 能写进
+     * {@code message} 的不放这里，避免两个出口漂移。</p>
+     */
+    private final transient Object data;
+
     public BusinessException(ResultCode resultCode) {
         super(resultCode.getMessage());
         this.code = resultCode.getCode();
+        this.data = null;
     }
 
     public BusinessException(ResultCode resultCode, String message) {
         super(message);
         this.code = resultCode.getCode();
+        this.data = null;
+    }
+
+    public BusinessException(ResultCode resultCode, String message, Object data) {
+        super(message);
+        this.code = resultCode.getCode();
+        this.data = data;
     }
 
     public BusinessException(Integer code, String message) {
         super(message);
         this.code = code;
+        this.data = null;
     }
 
     public BusinessException(String message) {
         super(message);
         this.code = ResultCode.SYSTEM_ERROR.getCode();
+        this.data = null;
     }
 
     /* ------------------------------------------------------------------ */

@@ -1,6 +1,7 @@
 package org.company.nianglin.security;
 
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.RedisKeyConstants;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.support.TestTokens;
 import org.junit.jupiter.api.DisplayName;
@@ -11,8 +12,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
 import static org.hamcrest.Matchers.containsString;
@@ -68,6 +71,10 @@ class UserAccessMatrixTest {
     /** 密码版本必须读实时值 —— 登出会 bump 版本，写死 0 会被历史遗留状态击穿 */
     @Autowired
     private TokenStore tokenStore;
+
+    /** 注销用例抬升 pwd:version 后要在 finally 里清键 —— Redis 不随 @Transactional 回滚 */
+    @Autowired
+    private StringRedisTemplate redisTemplate;
 
     /* ============ ① 未登录（4 条）：所有端点形态都对匿名关闭 ============ */
 
@@ -200,6 +207,146 @@ class UserAccessMatrixTest {
                         .header(AUTH_HEADER, token(COMPANION_PENDING, RoleConstants.COMPANION)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(ResultCode.COMPANION_NOT_AUDITED.getCode()));
+    }
+
+    /* ============ ⑤ 注销账号与数据导出（V4 · P0-1） ============ */
+
+    /**
+     * 注销端点挂的是 {@code hasAnyRole('FAMILY','COMPANION')}：
+     * ELDER 先到只读拦截器（非 GET 一律 403），ADMIN 被注解拦下（走后台封禁另一条路径）。
+     * 两条路径殊途同归都是 403，但<b>不能合并成一个断言糊弄过去</b> —— 角色串进 CsvSource
+     * 逐角色跑，谁在哪个环节被拦都有独立用例名可查。
+     */
+    @ParameterizedTest(name = "注销 · {0} → 403")
+    @CsvSource({"ELDER,201", "ADMIN,1"})
+    @DisplayName("注销 · 老人（只读）与管理员（无自助注销入口）→ 403")
+    void elderOrAdminShouldNotDeactivate(String role, long userId) throws Exception {
+        mockMvc.perform(post("/api/user/deactivate")
+                        .contentType(JSON)
+                        .content("{\"password\":\"Nl@123456\",\"confirmText\":\"我已知晓注销后果\"}")
+                        .header(AUTH_HEADER, token(userId, role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("注销 · 未登录 → 401")
+    void anonymousShouldNotDeactivate() throws Exception {
+        mockMvc.perform(post("/api/user/deactivate")
+                        .contentType(JSON)
+                        .content("{\"password\":\"Nl@123456\",\"confirmText\":\"我已知晓注销后果\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("注销 · 确认文本不符 → 400，提示语给出要原样输入的固定串")
+    @Transactional
+    void deactivateShouldRejectWrongConfirmText() throws Exception {
+        mockMvc.perform(post("/api/user/deactivate")
+                        .contentType(JSON)
+                        .content("{\"password\":\"Nl@123456\",\"confirmText\":\"我同意\"}")
+                        .header(AUTH_HEADER, token(FAMILY_ID, RoleConstants.FAMILY)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.PARAM_ERROR.getCode()))
+                .andExpect(jsonPath("$.message").value(containsString("我已知晓注销后果")));
+    }
+
+    @Test
+    @DisplayName("注销 · 密码错误 → 1006（与修改密码同一口径）")
+    @Transactional
+    void deactivateShouldRejectWrongPassword() throws Exception {
+        mockMvc.perform(post("/api/user/deactivate")
+                        .contentType(JSON)
+                        .content("{\"password\":\"WrongPass123\",\"confirmText\":\"我已知晓注销后果\"}")
+                        .header(AUTH_HEADER, token(FAMILY_ID, RoleConstants.FAMILY)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ResultCode.OLD_PASSWORD_ERROR.getCode()));
+    }
+
+    /**
+     * GET 请求不走老人只读拦截器（那道闸只拦写），所以 {@code data-export} 对 ELDER 的 403
+     * 只能来自 {@code @PreAuthorize("hasAnyRole('FAMILY','COMPANION')")} —— 这条用例锁的就是
+     * 「GET 端点不能只靠只读拦截器兜底，注解必须自己显式排除 ELDER」。
+     */
+    @ParameterizedTest(name = "数据导出 · {0} → 403")
+    @CsvSource({"ELDER,201", "ADMIN,1"})
+    @DisplayName("数据导出 · 老人与管理员 → 403（只能导出本人业务数据）")
+    void elderOrAdminShouldNotExport(String role, long userId) throws Exception {
+        mockMvc.perform(get("/api/user/data-export")
+                        .header(AUTH_HEADER, token(userId, role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("数据导出 · 未登录 → 401")
+    void anonymousShouldNotExport() throws Exception {
+        mockMvc.perform(get("/api/user/data-export"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    /**
+     * 端到端走完「注册 → 注销 → 旧令牌失效」全链路：
+     * 临时账号（无订单）注销成功后，它注销前签发的 JWT 必须拿到 401 而不是 200 ——
+     * 这是「密码版本 +1 踢全端」语义在注销场景的直接证据。
+     *
+     * <p>⚠️ 两个清理面：DB 写靠 {@code @Transactional} 回滚；
+     * Redis 的 {@code pwd:version:{userId}} 不随事务回滚，必须在 finally 里删掉，
+     * 否则这个一次性 userId 的脏键会永久留在共享 Redis 里（参见 TestTokens 类注释）。</p>
+     */
+    @Test
+    @DisplayName("注销 · 成功后旧令牌 401（密码版本 +1 踢全端）")
+    @Transactional
+    void oldTokenShouldDieAfterDeactivate() throws Exception {
+        // ① 取真实验证码（与 e2e fresh_captcha 同手法：key 由接口签发，码从 Redis 读，
+        //    validate 的 getAndDelete 在注册提交时才消耗，先读出来不影响校验）
+        MvcResult captchaResult = mockMvc.perform(get("/api/auth/captcha"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String captchaKey = com.jayway.jsonpath.JsonPath.read(
+                captchaResult.getResponse().getContentAsString(), "$.data.captchaKey");
+        String captchaCode = redisTemplate.opsForValue().get(RedisKeyConstants.captcha(captchaKey));
+
+        // ② 注册一个全新家属（无订单，必过 11001 闸门）
+        MvcResult registered = mockMvc.perform(post("/api/auth/register")
+                        .contentType(JSON)
+                        .content("{\"username\":\"mxdeact01\",\"phone\":\"13977776666\","
+                                + "\"password\":\"Nl@123456\",\"nickname\":\"矩阵注销\","
+                                + "\"role\":\"FAMILY\",\"captchaKey\":\"" + captchaKey + "\","
+                                + "\"captchaCode\":\"" + captchaCode + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andReturn();
+        long newUserId = Long.parseLong(
+                com.jayway.jsonpath.JsonPath.read(registered.getResponse().getContentAsString(), "$.data.userId")
+                        .toString());
+
+        // ② 注册成功后立刻签一张合法令牌（版本读实时值，与登录流程同口径）
+        String staleToken = token(newUserId, RoleConstants.FAMILY);
+        String versionKey = RedisKeyConstants.passwordVersion(newUserId);
+        try {
+            mockMvc.perform(get("/api/user/profile").header(AUTH_HEADER, staleToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(200));
+
+            // ③ 注销成功
+            mockMvc.perform(post("/api/user/deactivate")
+                            .contentType(JSON)
+                            .content("{\"password\":\"Nl@123456\",\"confirmText\":\"我已知晓注销后果\"}")
+                            .header(AUTH_HEADER, staleToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(200))
+                    .andExpect(jsonPath("$.message").value("账号已注销"));
+
+            // ④ 同一张旧令牌再访问 → 401（版本已被抬高，验票不通过）
+            mockMvc.perform(get("/api/user/profile").header(AUTH_HEADER, staleToken))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value(401));
+        } finally {
+            redisTemplate.delete(versionKey);
+        }
     }
 
     /* ============ 工具 ============ */

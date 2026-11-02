@@ -78,3 +78,31 @@ export function updateCompanionWorkStatus(workStatus) {
     data: { workStatus }
   })
 }
+
+/* ---------------- 账号注销与数据导出（V4 · P0-1，仅家属 / 陪诊员） ---------------- */
+
+/**
+ * 注销当前账号（对应 docs/api/01-auth-user.md §8）。
+ *
+ * @param {{password: string, confirmText: string}} data
+ *   confirmText 必须原样输入固定串「我已知晓注销后果」。
+ * 错误码：1006 密码错误；11001 存在进行中订单（data.pendingOrderCount）。
+ */
+export function deactivateAccount(data) {
+  return request({ url: '/user/deactivate', method: 'post', data })
+}
+
+/**
+ * 导出我的个人数据为 Excel（对应 docs/api/01-auth-user.md §9）。
+ *
+ * 返回 Blob；后端错误时可能 200 + json body（与统计导出同一口径），
+ * 调用方须按 blob.type 甄别后再触发下载。
+ */
+export function exportMyData() {
+  return request({
+    url: '/user/data-export',
+    method: 'get',
+    responseType: 'blob',
+    timeout: 60000
+  })
+}

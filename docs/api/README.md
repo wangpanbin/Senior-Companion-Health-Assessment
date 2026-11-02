@@ -338,6 +338,16 @@
 > 1xxx–9xxx 已用满，9xxx 语义固定为统计导出，故新开 **10xxx** 段（AGENTS.md §2.7 段位纪律）。
 > 通用 `400` / `401` / `403` / `3004` / `2006` 复用既有语义。
 
+### 4.12 11xxx 账号注销与数据导出（V4 · P0-1）
+
+| code | 含义 | 触发条件 |
+|---|---|---|
+| 11001 | 存在进行中订单，暂不能注销账号 | 注销账号时，存在 `PENDING` / `ACCEPTED` / `IN_SERVICE` 订单（作为下单家属**或**接单陪诊员均计入）；`data` 返回 `{ "pendingOrderCount": n }`，见 [01-auth-user.md §8](./01-auth-user.md) |
+
+> 10xxx 已固定为智能助手语义，V4 账号权利域新开 **11xxx** 段（同段位纪律）。
+> 注销 / 导出的其余错误复用既有码：`400`（确认文本不匹配 / 缺参）、`1006`（密码复验失败）、
+> `401`（未登录）、`403`（ELDER / ADMIN 调用）。
+
 ---
 
 ## 五、角色与权限矩阵
@@ -360,6 +370,8 @@
 | 陪诊员工作台统计 `/api/statistics/companion/**` | — | — | **读（仅本人，companionId 入参被忽略）** | — |
 | 候选陪诊员推荐 `/api/order/{id}/recommend-companions` | — | **读（仅本单下单家属；他人 3004）** | — | — |
 | 家属智能助手 `/api/assistant/**` | — | 读写（**仅下单家属可用问答**） | — | — |
+| 注销账号 `POST /api/user/deactivate` | **—**（写接口被只读拦截器拒，403） | 写（**仅本人**，11001 进行中订单闸门） | 写（**仅本人**，11001 进行中订单闸门） | **—**（403，走后台封禁另一路径） |
+| 个人数据导出 `GET /api/user/data-export` | **—**（403） | 读（**仅本人**，userId 从令牌取） | 读（**仅本人**，userId 从令牌取） | **—**（403） |
 | 运营驾驶舱 `/api/admin/operations/**` | — | — | — | 全部（概览 / 异常中心 / 趋势 / 健康度 / 供给缺口 / 干预效果） |
 | 指标字典导出 `/api/admin/metrics` | — | — | — | 全部（**只读**，导出的是口径定义而非统计值） |
 
@@ -581,3 +593,4 @@ M4 继续追加**订单状态机与相关方边界**：
 | v0.7.0 | 2026-10-20 | **V3.3 – V3.6 四版迭代**（[总报告](../reports/V3.3-V3.6-iteration-summary.md)）：<br>· **V3.3 陪诊员工作台** —— 新增 `GET /api/statistics/companion/me`、`/me/trend`、`/me/profile`、`/me/income`（仅 `COMPANION`，仅本人；`companionId` 入参被忽略）；`09-statistics-export.md` 新增 §8<br>· **V3.4 智能调度** —— 新增 `GET /api/order/{id}/recommend-companions`（仅下单家属，他人 `3004`）；`GET /api/order/hall?sortBy=` 开放 `DISTANCE` / `TIME_MATCH`（`INCOME` 仍 `400`）；`03-order.md` 新增 §13<br>· **V3.5 运营驾驶舱** —— 新增 `GET /api/admin/operations/overview`、`/exceptions`、`/trend`、`/health`（仅 `ADMIN`）；`08-admin.md` 新增 §17 – §20<br>· **V3.6 数据闭环** —— 新增 `GET /api/admin/operations/gap`、`/effect`（仅 `ADMIN`）；`08-admin.md` 新增 §21 – §23；新增端点↔指标机器面 `metrics/endpoints.yml` 与双向校验<br>**四版均零新增错误码**（复用 `200` / `400` / `401` / `403` / `3004` / `9002`） | — |
 | v0.8.0 | 2026-10-21 | **评审收口补漏**：<br>· **V3.6 兑现预写 spec** —— 实现 `GET /api/admin/metrics`（指标字典只读导出，仅 `ADMIN`；`08-admin.md` 新增 §24）<br>· **候选可解释性拆三段** —— `CompanionMatchVO` 新增 `mismatches`（该维度得 0 分的原因，如「超出服务半径」），`reasons` 收窄为「得分大于 0 的命中理由」，`notes`（降级说明）语义不变（`03-order.md` §13）<br>· 供给缺口 2 条指标的「统计范围」措辞与实现对齐（universe 明确为 `APPROVED + AVAILABLE`），口径值未变<br>**零新增错误码** | — |
 | v0.9.0 | 2026-10-21 | **V3.7 家属智能助手**（[ADR-0020](../adr/0020-assistant-boundary-and-recommendation-guardrail.md)）：新增 `POST /api/assistant/chat`（仅 FAMILY）；新开 10xxx 错误码段（10001 / 10002 / 10003）；新增 `ai-service` 独立 Python 服务（LangChain + FastAPI，8081 端口） | — |
+| v0.10.0 | 2026-11-02 | **V4 · P0-1 账号注销 + 个人数据导出**（[iteration-plan-v4.md](../plan/iteration-plan-v4.md) §6.1 / §6.2）：新增 `POST /api/user/deactivate`、`GET /api/user/data-export`（仅 FAMILY / COMPANION，仅本人）；新开 11xxx 错误码段（`11001` 存在进行中订单，`data` 带 `pendingOrderCount`）；权限矩阵补「注销 / 导出」两行；`BusinessException` 支持携带 `data` | — |

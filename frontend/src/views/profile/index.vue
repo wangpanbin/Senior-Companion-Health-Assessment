@@ -25,7 +25,7 @@ import {
 import { useResponsive } from '@/composables/useResponsive'
 import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
-import { getProfile } from '@/api/user'
+import { getProfile, deactivateAccount, exportMyData } from '@/api/user'
 import { changePassword } from '@/api/auth'
 import { confirmThen } from '@/utils/confirm'
 import { PASSWORD_RE, PASSWORD_MSG } from '@/constants/validation'
@@ -164,6 +164,121 @@ async function submitChangePwd() {
     // 定位不到字段的错误：保留全局兜底 toast（拦截器已弹，这里不重复）
   } finally {
     pwdLoading.value = false
+  }
+}
+
+/* ===== 数据导出与账号注销（V4 · P0-1；仅家属 / 陪诊员可见） ===== */
+
+/** 注销确认固定串：与后端 DeactivateAccountService 的校验串一致，错一个字都 400 */
+const DEACTIVATE_CONFIRM_TEXT = '我已知晓注销后果'
+
+const canManageAccount = computed(() => userStore.isFamily || userStore.isCompanion)
+
+/** 用 Blob 触发浏览器下载（与 admin/export.vue 同一手法） */
+function triggerDownload(blob, filename) {
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(url)
+}
+
+const exportLoading = ref(false)
+
+async function exportData() {
+  if (exportLoading.value) return
+  exportLoading.value = true
+  try {
+    const blob = await exportMyData()
+    // 甄别「业务错误」：后端未提交响应时按 GlobalExceptionHandler 返回 json，
+    // 直接下载会让用户拿到一个内容是报错信息的 .xlsx（同 admin/export.vue 的坑）
+    if (blob && blob.type && blob.type.includes('json')) {
+      const text = await blob.text()
+      let msg = '导出失败，请稍后重试'
+      try {
+        const err = JSON.parse(text)
+        if (err && err.message) msg = err.message
+      } catch {
+        // 保留默认提示
+      }
+      ElMessage.closeAll()
+      ElMessage.error(msg)
+      return
+    }
+    triggerDownload(blob, `我的数据_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    ElMessage.success('已开始下载')
+  } catch {
+    // 网络 / 权限错误由拦截器统一弹错
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+/* ===== 注销账号弹窗 ===== */
+const deactVisible = ref(false)
+const deactLoading = ref(false)
+const deactForm = reactive({ password: '', confirmText: '' })
+const deactFormRef = ref()
+
+const deactRules = {
+  password: [{ required: true, message: '请输入当前密码', trigger: ['blur', 'change'] }],
+  confirmText: [
+    { required: true, message: `请输入「${DEACTIVATE_CONFIRM_TEXT}」`, trigger: ['blur', 'change'] }
+  ]
+}
+
+/** 后端「指明字段」的错误码 → 表单字段（与修改密码同一取舍：能定位的落字段，否则走全局 toast） */
+const DEACT_ERROR_FIELD = {
+  1006: 'password' // OLD_PASSWORD_ERROR 原密码不正确
+}
+
+function openDeactivate() {
+  deactForm.password = ''
+  deactForm.confirmText = ''
+  deactVisible.value = true
+  deactFormRef.value?.clearValidate()
+}
+
+async function submitDeactivate() {
+  // in-flight 锁先于一切 await（同 submitChangePwd 的坑：连点会发两次请求）
+  if (deactLoading.value) return
+  deactLoading.value = true
+  try {
+    deactFormRef.value?.clearValidate()
+    const valid = await deactFormRef.value?.validate().catch(() => false)
+    if (!valid) return
+    await deactivateAccount({
+      password: deactForm.password,
+      confirmText: deactForm.confirmText
+    })
+    deactVisible.value = false
+    ElMessage.success('账号已注销')
+    // 注销后所有已签发令牌失效（密码版本 +1），主动登出并跳登录页
+    await userStore.logout()
+    router.push('/login')
+  } catch (err) {
+    if (err?.code === 11001) {
+      // 存在进行中订单：如实告诉用户还差几笔，关掉弹窗去处理订单
+      const count = err?.data?.pendingOrderCount
+      deactVisible.value = false
+      ElMessage.error(
+        `您还有 ${count ?? ''} 笔进行中的订单，请先完成或取消后再注销`.replace('  笔', ' 笔')
+      )
+      return
+    }
+    const field = DEACT_ERROR_FIELD[err?.code]
+    if (field) {
+      // 字段级错误已承接：撤掉全局兜底 toast，避免同一错误弹两次
+      ElMessage.closeAll()
+      deactFormRef.value?.setFieldError(field, err.message || '操作失败')
+      return
+    }
+    // 其余错误（如 400 确认文本不符）保留拦截器的全局 toast
+  } finally {
+    deactLoading.value = false
   }
 }
 </script>
@@ -399,6 +514,54 @@ async function submitChangePwd() {
             </template>
           </NlListRow>
           <NlListRow
+            v-if="canManageAccount"
+            title="导出我的数据"
+            subtitle="个人资料 / 订单 / 评价 / 消息（已脱敏）"
+            chevron
+            divider
+            @click="exportData"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 3v12m0 0l-4-4m4 4l4-4" />
+                <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+              </svg>
+            </template>
+          </NlListRow>
+          <NlListRow
+            v-if="canManageAccount"
+            title="注销账号"
+            subtitle="注销后无法恢复，订单与日志保留但去标识化"
+            chevron
+            divider
+            @click="openDeactivate"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M9 9l6 6m0-6l-6 6" />
+              </svg>
+            </template>
+          </NlListRow>
+          <NlListRow
             v-if="!userStore.isElder"
             title="隐私政策"
             chevron
@@ -469,6 +632,52 @@ async function submitChangePwd() {
         <template #footer>
           <el-button @click="pwdVisible = false">取消</el-button>
           <el-button type="primary" :loading="pwdLoading" @click="submitChangePwd">确定</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- 注销账号弹窗（V4 · P0-1） -->
+      <el-dialog
+        v-model="deactVisible"
+        title="注销账号"
+        width="90%"
+        :fullscreen="isXs"
+        align-center
+      >
+        <el-alert type="warning" :closable="false" show-icon class="deact-warning">
+          <p>注销后账号立即失效且无法恢复：</p>
+          <p>· 您的姓名与手机号将被去标识化处理；</p>
+          <p>· 历史订单、评价与平台日志将依法保留，但不再关联您的身份；</p>
+          <p>· 存在进行中的订单时无法注销，请先完成或取消。</p>
+        </el-alert>
+        <el-form
+          ref="deactFormRef"
+          :model="deactForm"
+          :rules="deactRules"
+          label-position="top"
+          @submit.prevent
+        >
+          <el-form-item label="当前密码" prop="password">
+            <el-input
+              v-model="deactForm.password"
+              type="password"
+              show-password
+              placeholder="请输入当前密码"
+              maxlength="32"
+            />
+          </el-form-item>
+          <el-form-item :label="`请输入「${DEACTIVATE_CONFIRM_TEXT}」以确认`" prop="confirmText">
+            <el-input
+              v-model="deactForm.confirmText"
+              :placeholder="DEACTIVATE_CONFIRM_TEXT"
+              maxlength="20"
+            />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="deactVisible = false">取消</el-button>
+          <el-button type="danger" :loading="deactLoading" @click="submitDeactivate">
+            确认注销
+          </el-button>
         </template>
       </el-dialog>
 
@@ -543,6 +752,15 @@ async function submitChangePwd() {
 
   &__btn {
     width: 100%;
+  }
+}
+
+.deact-warning {
+  margin-bottom: var(--nl-space-4);
+
+  p {
+    margin: 0;
+    line-height: 1.7;
   }
 }
 </style>

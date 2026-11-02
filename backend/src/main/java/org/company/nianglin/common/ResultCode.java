@@ -17,6 +17,8 @@ import lombok.Getter;
  *   <li>{@code 7xxx} —— 站内信与订单聊天（M13）</li>
  *   <li>{@code 8xxx} —— 管理后台</li>
  *   <li>{@code 9xxx} —— 数据统计与导出</li>
+ *   <li>{@code 10xxx} —— 家属智能助手（M14 · V3.7）</li>
+ *   <li>{@code 11xxx} —— 账号注销与数据导出（V4 · P0-1）</li>
  * </ul>
  *
  * <p>⚠️ 本枚举是接口文档 {@code docs/api/README.md} 中错误码表的唯一来源，新增码值必须同步更新文档。</p>
@@ -216,6 +218,23 @@ public enum ResultCode {
      * 读 {@code 6003} 的错误消息时不要默认它只拦一种东西。</p>
      */
     ASSISTANT_QUESTION_ILLEGAL(10003, "问题内容包含违规表述，请重新描述"),
+
+    /* ==================== 11xxx 账号注销与数据导出（V4 · P0-1） ==================== */
+    /**
+     * 注销账号时存在进行中订单。
+     *
+     * <p>触发条件：注销请求人作为<b>下单家属</b>（{@code family_id}）或
+     * <b>接单陪诊员</b>（{@code companion_id}），名下仍有
+     * {@code PENDING} / {@code ACCEPTED} / {@code IN_SERVICE} 订单。
+     * 进行中的订单关联着老人行程安排与陪诊劳动报酬，账号一注销
+     * （手机号、姓名去标识化）双方就失联了，必须先走完或取消这些订单。</p>
+     *
+     * <p>本码的 {@code data} 携带 {@code { "pendingOrderCount": n }}，
+     * 让前端能如实告诉用户「还有几单没走完」，而不是一句干巴巴的拒绝。
+     * 这是 {@code BusinessException} 首个携带 {@code data} 的用例
+     * （V4 新增的扩展，见该类的 javadoc）。</p>
+     */
+    DEACTIVATE_HAS_ACTIVE_ORDER(11001, "存在进行中的订单，请先完成或取消后再注销"),
     ;
 
     private final Integer code;

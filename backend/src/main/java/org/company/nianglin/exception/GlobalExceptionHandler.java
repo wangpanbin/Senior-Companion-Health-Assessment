@@ -48,9 +48,11 @@ public class GlobalExceptionHandler {
     /* ==================== 业务异常 ==================== */
 
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<Result<Void>> handleBusinessException(BusinessException e, HttpServletRequest request) {
+    public ResponseEntity<Result<Object>> handleBusinessException(BusinessException e, HttpServletRequest request) {
         log.warn("业务异常 | {} {} | code={} | message={}", request.getMethod(), request.getRequestURI(), e.getCode(), e.getMessage());
-        return ResponseEntity.status(httpStatusOf(e.getCode())).body(Result.fail(e.getCode(), e.getMessage()));
+        // data 仅少数错误携带（如 11001 的 pendingOrderCount），为 null 时与既往响应结构完全一致
+        return ResponseEntity.status(httpStatusOf(e.getCode()))
+                .body(Result.fail(e.getCode(), e.getMessage(), e.getData()));
     }
 
     /**
