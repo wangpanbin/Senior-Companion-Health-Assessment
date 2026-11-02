@@ -4,11 +4,14 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.MedicationCalendarQuery;
 import org.company.nianglin.dto.MedicationPlanCreateDTO;
 import org.company.nianglin.dto.MedicationTaskConfirmDTO;
+import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.ElderProfile;
+import org.company.nianglin.entity.FamilyElderRelation;
 import org.company.nianglin.entity.MedicationPlan;
 import org.company.nianglin.entity.MedicationTask;
 import org.company.nianglin.entity.MedicineDict;
@@ -23,7 +26,10 @@ import org.company.nianglin.mapper.MedicineDictMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.impl.MedicationServiceImpl;
+import org.company.nianglin.service.support.medication.InternalMessageReminderDispatcher;
 import org.company.nianglin.support.MybatisLambdaCache;
+import org.company.nianglin.util.ComplianceCheckUtil;
+import org.company.nianglin.util.MessageTemplateUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,15 +46,19 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -87,6 +97,7 @@ class MedicationServiceTest {
     private static final Long COMPANION_ID = 301L;
     private static final Long TASK_ID = 20002L;
     private static final Long MEDICINE_ID = 801L;
+    private static final Long ORDER_ID = 1001L;
 
     @Mock
     private MedicineDictMapper medicineMapper;
@@ -120,8 +131,12 @@ class MedicationServiceTest {
     @BeforeEach
     void setUp() {
         MybatisLambdaCache.warmUp();
+        // 触达渠道用真实实现（站内信默认渠道）：家属 / 陪诊员两侧的路由与去重
+        // 是本测试要锁死的行为，mock 掉等于没测
+        InternalMessageReminderDispatcher reminderDispatcher =
+                new InternalMessageReminderDispatcher(messageService, elderMapper, relationMapper, orderMapper);
         service = new MedicationServiceImpl(medicineMapper, planMapper, taskMapper, elderMapper,
-                relationMapper, orderMapper, sysUserMapper, elderService, messageService,
+                orderMapper, sysUserMapper, elderService, reminderDispatcher,
                 new ObjectMapper());
         // @Value 字段在纯单测里不会被注入，不手动设就是 0：
         // 日历上限 0 会让「查一天」都被拒，阈值 0 会让所有 PENDING 任务都被判漏服
@@ -452,6 +467,100 @@ class MedicationServiceTest {
     }
 
     /* ================================================================== */
+    /* 4.1 · 漏服提醒触达闭环（V4 · E1a）：家属 + 当天在途订单的陪诊员            */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("漏服触达 · 当天有 ACCEPTED 订单 → 家属与陪诊员各收一条，陪诊员侧 bizId=orderId")
+    void scanShouldNotifyCompanionWhenTodayOrderAccepted() {
+        MedicationTask overdueTask = task("PENDING", ELDER_ID);
+        overdueTask.setId(TASK_ID);
+        Page<MedicationTask> page = new Page<>();
+        page.setRecords(List.of(overdueTask));
+
+        given(taskMapper.selectPage(any(), any())).willReturn(page);
+        given(taskMapper.update(any(), any())).willReturn(1);
+        given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
+        given(relationMapper.selectList(any())).willReturn(List.of(relation(FAMILY_ID)));
+        given(orderMapper.selectList(any())).willReturn(List.of(order("ACCEPTED")));
+
+        assertEquals(1, service.scanMissedTasks());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Long>> familyCaptor = ArgumentCaptor.forClass(List.class);
+        verify(messageService).sendBatch(familyCaptor.capture(), eq(MessageType.MEDICATION_REMIND),
+                eq(ELDER_ID), any());
+        assertEquals(List.of(FAMILY_ID), familyCaptor.getValue());
+
+        // 陪诊员侧走单独的类型与跳转（MEDICATION_MISSED，bizId=orderId），
+        // 与家属侧（MEDICATION_REMIND，bizId=elderId）在 internal_message 行上区分
+        verify(messageService).send(eq(COMPANION_ID), eq(MessageType.MEDICATION_MISSED),
+                eq(ORDER_ID), any());
+    }
+
+    @Test
+    @DisplayName("漏服触达 · 无当天在途订单 → 只发家属，行为与现状一致")
+    void scanShouldOnlyNotifyFamilyWhenNoOngoingOrder() {
+        MedicationTask overdueTask = task("PENDING", ELDER_ID);
+        overdueTask.setId(TASK_ID);
+        Page<MedicationTask> page = new Page<>();
+        page.setRecords(List.of(overdueTask));
+
+        given(taskMapper.selectPage(any(), any())).willReturn(page);
+        given(taskMapper.update(any(), any())).willReturn(1);
+        given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
+        given(relationMapper.selectList(any())).willReturn(List.of(relation(FAMILY_ID)));
+        given(orderMapper.selectList(any())).willReturn(List.of());
+
+        assertEquals(1, service.scanMissedTasks());
+
+        verify(messageService).sendBatch(any(), eq(MessageType.MEDICATION_REMIND), eq(ELDER_ID), any());
+        verify(messageService, never()).send(any(), eq(MessageType.MEDICATION_MISSED), any(), any());
+    }
+
+    @Test
+    @DisplayName("漏服触达 · 重复扫描不重复发（认领语义兜底）")
+    void scanShouldNotNotifyTwiceOnRescan() {
+        MedicationTask overdueTask = task("PENDING", ELDER_ID);
+        overdueTask.setId(TASK_ID);
+        Page<MedicationTask> page = new Page<>();
+        page.setRecords(List.of(overdueTask));
+
+        given(taskMapper.selectPage(any(), any())).willReturn(page);
+        // 第一轮认领成功，第二轮已是 MISSED（或被人确认），条件更新影响 0 行 → 跳过
+        given(taskMapper.update(any(), any())).willReturn(1, 0);
+        given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
+        given(relationMapper.selectList(any())).willReturn(List.of(relation(FAMILY_ID)));
+        given(orderMapper.selectList(any())).willReturn(List.of(order("IN_SERVICE")));
+
+        assertEquals(1, service.scanMissedTasks(), "第一轮判定 1 条漏服");
+        assertEquals(0, service.scanMissedTasks(), "第二轮认领失败，不产生新漏服");
+
+        verify(messageService, times(1))
+                .sendBatch(any(), eq(MessageType.MEDICATION_REMIND), any(), any());
+        verify(messageService, times(1))
+                .send(eq(COMPANION_ID), eq(MessageType.MEDICATION_MISSED), eq(ORDER_ID), any());
+    }
+
+    @Test
+    @DisplayName("漏服触达 · 两侧文案均无剂量等合规词，且陪诊员侧模板能过词表")
+    void reminderContentShouldPassComplianceCheck() {
+        Map<String, Object> params = Map.of(
+                "elderName", "张*海",
+                "medicineName", "苯磺酸氨氯地平片",
+                "planTime", "11-02 08:00");
+
+        String familyContent = MessageTemplateUtil.content(MessageType.MEDICATION_REMIND, params);
+        String companionContent = MessageTemplateUtil.content(MessageType.MEDICATION_MISSED, params);
+
+        // 红线-1：提醒文案只含药名 + 时间 + 中性措辞，禁含剂量与任何用药建议
+        assertNull(ComplianceCheckUtil.firstHit(familyContent),
+                "家属侧文案不应命中合规词表：" + familyContent);
+        assertNull(ComplianceCheckUtil.firstHit(companionContent),
+                "陪诊员侧文案不应命中合规词表：" + companionContent);
+    }
+
+    /* ================================================================== */
     /* 5 · 归属校验：陪诊员与家属走的是两条不同的路                            */
     /* ================================================================== */
 
@@ -516,6 +625,24 @@ class MedicationServiceTest {
         return user;
     }
 
+    /** 一条有效绑定关系（家属侧提醒的接收人来源） */
+    private FamilyElderRelation relation(Long familyId) {
+        FamilyElderRelation relation = new FamilyElderRelation();
+        relation.setFamilyId(familyId);
+        relation.setElderId(ELDER_ID);
+        return relation;
+    }
+
+    /** 当天在途陪诊订单（陪诊员侧提醒的判定来源） */
+    private CompanionOrder order(String status) {
+        CompanionOrder order = new CompanionOrder();
+        order.setId(ORDER_ID);
+        order.setElderId(ELDER_ID);
+        order.setCompanionId(COMPANION_ID);
+        order.setStatus(status);
+        return order;
+    }
+
     private MedicationPlanCreateDTO createPlanDto(List<String> timePoints, int frequency) {
         MedicationPlanCreateDTO dto = new MedicationPlanCreateDTO();
         dto.setElderId(ELDER_ID);
@@ -548,11 +675,16 @@ class MedicationServiceTest {
         return captor.getValue();
     }
 
-    /** 同上，但允许在此之前已有其它 update 调用（扫描场景一条任务会写两次） */
+    /**
+     * 同上，但抓取<b>第一次</b> update 调用。
+     *
+     * <p>漏服扫描一条任务会写两次：先是「认领」（置 MISSED），后是 notify_sent 标记。
+     * 断言状态推进要用第一次；取最后一次只能看到 notify_sent 的 SET。</p>
+     */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private LambdaUpdateWrapper<MedicationTask> captureTaskUpdate(Long ignored) {
         ArgumentCaptor<LambdaUpdateWrapper> captor = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
         verify(taskMapper, org.mockito.Mockito.atLeastOnce()).update(any(), captor.capture());
-        return captor.getAllValues().get(captor.getAllValues().size() - 1);
+        return captor.getAllValues().get(0);
     }
 }

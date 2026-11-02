@@ -615,7 +615,8 @@ onMounted(loadElders)
         <span class="nl-h2">用药计划</span>
       </template>
       <p class="nl-caption nl-text-muted plan-tip">
-        剂量字段为家属录入，仅作提醒用途，不构成任何用药建议。
+        剂量字段为家属录入，仅作提醒用途，不构成任何用药建议。<br>
+        提醒方式：漏服后系统将通过站内信通知所有绑定家属；若老人当天有进行中的陪诊订单，会同步提醒该单陪诊员。
       </p>
 
       <NlSkeleton v-if="plansLoading" :count="3" />

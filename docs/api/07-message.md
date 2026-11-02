@@ -38,7 +38,8 @@
 | `ORDER_COMPLETED` | 服务已完成 | 陪诊员完成服务 | 下单家属 |
 | `ORDER_CANCELLED` | 订单已取消 | 取消 / 纠纷处理 | 双方 |
 | `AUDIT_RESULT` | 资质审核结果 | 管理员审核（M9） | 申请人 |
-| `MEDICATION_REMIND` | 用药提醒 | 漏服扫描（M6） | 下单家属 / 绑定家属 |
+| `MEDICATION_REMIND` | 用药提醒 | 漏服扫描（M6） | 全部绑定家属 |
+| `MEDICATION_MISSED` | 漏服提醒 | 漏服扫描（V4 · E1a） | 该老人**当天** `ACCEPTED` / `IN_SERVICE` 陪诊订单的接单陪诊员 |
 | `COMPLAINT_SUBMITTED` | 新投诉待处理 | 家属提交投诉（M7） | **全部管理员** + 被投诉方 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 管理员处理（M9） | 投诉双方 |
 | `REVIEW_REPLIED` | 评价被回复 | 陪诊员回复评价（E4） | 评价人（家属） |
@@ -272,6 +273,7 @@
 | `ORDER_CANCELLED` | 订单已取消 | 订单 {orderNo} 已取消，原因：{reason}。 |
 | `AUDIT_RESULT` | 资质审核结果 | 您的陪诊员资质申请{result}。{rejectReason} |
 | `MEDICATION_REMIND` | 用药提醒 | {elderName} 的「{medicineName}」在 {planTime} 未确认服用，请及时关注。 |
+| `MEDICATION_MISSED` | 漏服提醒 | 您正在陪诊的 {elderName} 在 {planTime} 未确认服用「{medicineName}」，请留意。 |
 | `COMPLAINT_SUBMITTED` | 新投诉待处理 | {submitterName} 就订单 {orderNo} 提交了投诉（{typeLabel}），请及时处理。 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 您提交的投诉（{orderNo}）已处理完成：{handleResult} |
 | `SYSTEM_NOTICE` | 系统公告 | {content} |
@@ -307,3 +309,4 @@
 |---|---|---|---|
 | v1.0.0 | — | M8 初版 | — |
 | v1.1.0 | 2026-09-29 | 新增 `GET /api/message/{id}` 消息详情（前端详情页按 id 拉取，废弃 base64 snapshot 传参）；`ORDER_COMPLETED` 模板增加可选 `{reason}`（M9 仲裁说明） | — |
+| v1.2.0 | 2026-11-02 | V4 阶段 P0-2（E1a）：新增 `MEDICATION_MISSED` 漏服提醒类型（接收人为当天陪诊订单的接单陪诊员，`linkUrl` 指向 `/companion/execute/{orderId}`）；`MEDICATION_REMIND` 接收人口径收敛为「全部绑定家属」 | — |

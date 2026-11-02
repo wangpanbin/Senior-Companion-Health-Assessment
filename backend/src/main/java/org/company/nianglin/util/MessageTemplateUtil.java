@@ -49,6 +49,7 @@ public final class MessageTemplateUtil {
             case ORDER_CANCELLED -> "订单已取消";
             case AUDIT_RESULT -> "资质审核结果";
             case MEDICATION_REMIND -> "用药提醒";
+            case MEDICATION_MISSED -> "漏服提醒";
             case COMPLAINT_SUBMITTED -> "新投诉待处理";
             case COMPLAINT_HANDLED -> "投诉处理结果";
             case REVIEW_REPLIED -> "评价被回复";
@@ -103,6 +104,8 @@ public final class MessageTemplateUtil {
                     value(p, "result"), emptyIfMissing(p, "rejectReason"));
             case MEDICATION_REMIND -> "%s 的「%s」在 %s 未确认服用，请及时关注。".formatted(
                     value(p, "elderName"), value(p, "medicineName"), value(p, "planTime"));
+            case MEDICATION_MISSED -> "您正在陪诊的 %s 在 %s 未确认服用「%s」，请留意。".formatted(
+                    value(p, "elderName"), value(p, "planTime"), value(p, "medicineName"));
             case COMPLAINT_SUBMITTED -> "%s 就订单 %s 提交了投诉（%s），请及时处理。".formatted(
                     value(p, "submitterName"), value(p, "orderNo"), value(p, "typeLabel"));
             case COMPLAINT_HANDLED -> "您提交的投诉（%s）已处理完成：%s".formatted(
@@ -178,6 +181,9 @@ public final class MessageTemplateUtil {
             case ORDER_URGED -> "/companion/order";
             case AUDIT_RESULT -> "/profile/companion";
             case MEDICATION_REMIND -> "/family?elderId=" + bizId;
+            // MEDICATION_MISSED 的 bizId 是 orderId，指向陪诊员侧真实存在的
+            // 订单执行路由（routes.js: companion/execute/:id，M5）
+            case MEDICATION_MISSED -> "/companion/execute/" + bizId;
             case COMPLAINT_SUBMITTED, REVIEW_APPEAL_SUBMITTED -> "/admin?complaintId=" + bizId;
             case COMPLAINT_HANDLED -> "/complaint/" + bizId;
             case SYSTEM_NOTICE -> null;

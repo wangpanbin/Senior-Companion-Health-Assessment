@@ -9,12 +9,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
-import org.company.nianglin.constant.BindStatus;
 import org.company.nianglin.constant.DosageForm;
 import org.company.nianglin.constant.MealRelation;
 import org.company.nianglin.constant.MedicationPlanStatus;
 import org.company.nianglin.constant.MedicationTaskStatus;
-import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.MedicationCalendarQuery;
 import org.company.nianglin.dto.MedicationPlanCreateDTO;
@@ -24,7 +22,6 @@ import org.company.nianglin.dto.MedicationTaskConfirmDTO;
 import org.company.nianglin.dto.MedicineQuery;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.ElderProfile;
-import org.company.nianglin.entity.FamilyElderRelation;
 import org.company.nianglin.entity.MedicationPlan;
 import org.company.nianglin.entity.MedicationTask;
 import org.company.nianglin.entity.MedicineDict;
@@ -32,7 +29,6 @@ import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.ElderProfileMapper;
-import org.company.nianglin.mapper.FamilyElderRelationMapper;
 import org.company.nianglin.mapper.MedicationPlanMapper;
 import org.company.nianglin.mapper.MedicationTaskMapper;
 import org.company.nianglin.mapper.MedicineDictMapper;
@@ -41,8 +37,7 @@ import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.ElderService;
 import org.company.nianglin.service.MedicationService;
-import org.company.nianglin.service.MessageService;
-import org.company.nianglin.util.MaskUtil;
+import org.company.nianglin.service.support.medication.ReminderDispatcher;
 import org.company.nianglin.util.MessageTemplateUtil;
 import org.company.nianglin.vo.MedicationCalendarVO;
 import org.company.nianglin.vo.MedicationConfirmVO;
@@ -67,7 +62,6 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -93,15 +87,17 @@ public class MedicationServiceImpl implements MedicationService {
     private final MedicationPlanMapper planMapper;
     private final MedicationTaskMapper taskMapper;
     private final ElderProfileMapper elderMapper;
-    private final FamilyElderRelationMapper relationMapper;
     private final CompanionOrderMapper orderMapper;
     private final SysUserMapper sysUserMapper;
 
     /** 归属校验复用 M3 的实现，绝不另写一套 */
     private final ElderService elderService;
 
-    /** 漏服提醒复用 M8 的发送入口，模块内禁止自己 INSERT 站内信 */
-    private final MessageService messageService;
+    /**
+     * 漏服提醒触达策略（V4 · E1a）：默认站内信实现，触达家属 + 当天在途订单的陪诊员。
+     * 渠道细节（文案渲染 / 合规闸 / 失败隔离）都在实现内，本类只负责「判漏服」。
+     */
+    private final ReminderDispatcher reminderDispatcher;
 
     private final ObjectMapper objectMapper;
 
@@ -490,7 +486,7 @@ public class MedicationServiceImpl implements MedicationService {
                 continue;
             }
             missed++;
-            notifyFamily(task);
+            dispatchMissedReminder(task);
         }
 
         log.info("漏服扫描完成 | 阈值={} 分钟 | 判定漏服={} 条", missThresholdMinutes, missed);
@@ -576,45 +572,16 @@ public class MedicationServiceImpl implements MedicationService {
     }
 
     /**
-     * 给该老人所有有效绑定的家属推送漏服提醒。
+     * 漏服提醒触达（V4 · E1a）：渠道细节下沉到 {@link ReminderDispatcher}
+     * （家属 + 当天在途订单的陪诊员，见 docs/api/05-medication.md §2.1）。
      *
-     * <p>推给<b>所有</b>绑定家属而不是只有「主要联系人」：主要联系人可能正在上班、
-     * 手机静音，而漏服提醒的价值全在时效上。多推几条的代价远小于谁都没看到。</p>
-     *
-     * <p>推送失败不影响状态变更 —— 任务已经被判为漏服是事实，
+     * <p>这里只做两件事：调触达策略、写 {@code notify_sent} 标记。
+     * 推送失败不影响状态变更 —— 任务已经被判为漏服是事实，
      * 不能因为一条站内信发不出去就把这个判定回滚。</p>
      */
-    private void notifyFamily(MedicationTask task) {
+    private void dispatchMissedReminder(MedicationTask task) {
         try {
-            ElderProfile elder = elderMapper.selectById(task.getElderId());
-            List<Long> familyIds = relationMapper.selectList(Wrappers.<FamilyElderRelation>lambdaQuery()
-                            .eq(FamilyElderRelation::getElderId, task.getElderId())
-                            .eq(FamilyElderRelation::getStatus, BindStatus.BOUND.name())
-                            // 只取需要推送的列，避免把整行（含关系备注等）读进内存
-                            .select(FamilyElderRelation::getFamilyId))
-                    .stream()
-                    .map(FamilyElderRelation::getFamilyId)
-                    .filter(Objects::nonNull)
-                    .distinct()
-                    .toList();
-
-            if (familyIds.isEmpty()) {
-                log.warn("漏服提醒无接收人（该老人已无绑定家属） | taskId={} | elderId={}",
-                        task.getId(), task.getElderId());
-                return;
-            }
-
-            Map<String, Object> params = new HashMap<>(4);
-            // 姓名在进入站内信之前就脱敏：MessageService 不知道哪个字段是隐私，
-            // 由调用方负责，这是 M8 定下的约定
-            params.put("elderName", MaskUtil.name(elder == null ? null : elder.getName()));
-            params.put("medicineName", task.getMedicineName());
-            params.put("planTime", task.getPlanTime() == null ? null
-                    : task.getPlanTime().format(DateTimeFormatter.ofPattern("MM-dd HH:mm")));
-
-            // bizId 传 elderId：消息点击后跳「这位老人的用药页」，
-            // 而不是跳到某一条任务 —— 家属要处理的是「今天还有哪些没吃」
-            messageService.sendBatch(familyIds, MessageType.MEDICATION_REMIND, task.getElderId(), params);
+            reminderDispatcher.dispatchMissedReminder(task);
 
             taskMapper.update(null, Wrappers.<MedicationTask>lambdaUpdate()
                     .eq(MedicationTask::getId, task.getId())

@@ -71,7 +71,7 @@
 | 任务 | Cron | 频率 | 说明 |
 |---|---|---|---|
 | 生成当日服药任务 | `0 0 7 * * ?` | 每天 07:00 | 扫描所有 `ACTIVE` 计划，生成当天全部 `medication_task` |
-| 漏服扫描与推送 | 每 30 分钟 | `FIXED_RATE` | 把超过阈值仍未确认的任务置为 `MISSED` 并推送家属 |
+| 漏服扫描与推送 | 每 30 分钟 | `FIXED_RATE` | 把超过阈值仍未确认的任务置为 `MISSED` 并推送家属（V4 起同步触达当天陪诊员，见 §2.1） |
 
 **Redis 分布式锁**（防止多实例重复执行）：
 
@@ -85,6 +85,22 @@ key   : nianglin:lock:medication:daily
 
 **幂等保证**：`medication_task` 上加唯一索引 `uk_plan_date_time (plan_id, plan_time)`，
 即使定时任务被重复触发也不会产生重复行。
+
+### 2.1 漏服提醒触达规则（V4 · E1a）
+
+任务被判为 `MISSED` 后，提醒按以下规则触达（实现：`ReminderDispatcher` 策略接口，站内信为默认实现）：
+
+| 接收人 | 判定条件 | 消息类型 | `bizId` / 跳转 |
+|---|---|---|---|
+| 全部绑定家属 | 恒触发 | `MEDICATION_REMIND` | `bizId=elderId` → `/family?elderId=` |
+| 当天陪诊订单的接单陪诊员 | 该老人**当天**（按 `visit_time` 落在当日区间判定）存在 `ACCEPTED` / `IN_SERVICE` 订单 | `MEDICATION_MISSED` | `bizId=orderId` → `/companion/execute/{orderId}` |
+
+- **去重**：同一条任务只触发一轮提醒，靠「认领式状态推进（PENDING→MISSED 条件更新）+ `notify_sent` 标记」双重保证；
+  接收者区分落在 `internal_message` 行（家属与陪诊员各收各的类型），**不改 `medication_task` 结构**。
+- **文案合规（红线-1）**：两侧文案**只含药名 + 计划时间 + 中性措辞**，禁含剂量与任何用药建议；
+  陪诊员侧文案发送前过 `ComplianceCheckUtil` 词表，命中即拦截（宁可不发）。
+- **触达失败不回滚漏服判定**：提醒是通知动作，漏服是事实判定，两者解耦。
+- **扫描节奏与锁粒度不变**：30 分钟一轮、`nianglin:lock:medication:*` 的 Redis 锁口径与 M6 一致，既有压测结论不失效。
 
 ---
 

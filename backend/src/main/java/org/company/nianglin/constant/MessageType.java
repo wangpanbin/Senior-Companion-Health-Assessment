@@ -30,6 +30,15 @@ public enum MessageType {
     ORDER_CANCELLED("订单已取消", MessageBizType.ORDER),
     AUDIT_RESULT("资质审核结果", MessageBizType.AUDIT),
     MEDICATION_REMIND("用药提醒", MessageBizType.MEDICATION),
+    /**
+     * 漏服提醒（V4 · E1a）：发给该老人<b>当天</b> ACCEPTED / IN_SERVICE 订单的接单陪诊员。
+     *
+     * <p>与 {@link #MEDICATION_REMIND}（发家属）分开成独立类型：两侧的跳转不同
+     * （家属跳用药页、陪诊员跳订单执行页），且接收人互不重叠，
+     * 挤在一个类型里就得靠占位符猜身份。文案只含药名与时间，
+     * 禁含剂量（发送前过 {@code ComplianceCheckUtil} 词表）。</p>
+     */
+    MEDICATION_MISSED("漏服提醒", MessageBizType.MEDICATION),
     COMPLAINT_SUBMITTED("新投诉待处理", MessageBizType.COMPLAINT),
     COMPLAINT_HANDLED("投诉处理结果", MessageBizType.COMPLAINT),
     /**
