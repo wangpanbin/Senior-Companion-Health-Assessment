@@ -190,6 +190,7 @@ python e2e_order_medication_draft.py
 | 14 | e2e 跑一轮后 `internal_message` 多出几百行，越跑越脏（BUG_LIST L1） | 造单 / 接单会触发 ORDER_CREATED 等站内信，而旧清理**不碰** `internal_message` 且不在 `finally` 里（断言失败就跳过清理）。统一改为：`main()` 开头 `cleanup_util.max_id(...)` 记基线，`__main__` 的 `finally` 里 `cleanup()` 按基线删行 + `flush_unread_cache()` |
 | 15 | cleanup() 一跑就把整张种子表删光 | `DELETE ... WHERE id > 0` 等价于清空。`cleanup_util.delete_since` 在**基线 ≤ 0 时拒绝执行**——宁可漏清一轮测试垃圾，也不许在基线缺失时动手 |
 | 16 | e2e_medication 阶段二报 `NameError: b5_order_id` | cleanup() 引用的变量只在 main() 局部赋值，阶段二（`--scan-phase` 新进程）根本读不到。**cleanup() 要读的每个变量都必须是模块级全局**（applicant_id / new_elder_user_id / b5_order_id 同理） |
+| 17 | 本地起后端「静默退出」，退出码 1 但几乎看不到错误日志 | `application.yml` 刻意**不给** `spring.profiles.active` 默认值（`${SPRING_PROFILES_ACTIVE:}`，防止生产漏配时兜底成 dev）。当前环境没设该变量 → profile 为空 → `application-dev.yml` 不加载（数据源缺失启动失败），且 `logback-spring.xml` 的 `<springProfile>` 块不生效、错误日志被完全吞掉。**本地启动 / 跑 e2e 前先 `$env:SPRING_PROFILES_ACTIVE="dev"`** |
 
 ## 生成物与手工物的边界
 

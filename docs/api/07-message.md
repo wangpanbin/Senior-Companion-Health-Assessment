@@ -237,6 +237,19 @@
 > 前端 `startUnreadPolling` 每 60 秒调 `/api/message/unread-count` 兜底，功能完整。
 > 若要拿到「秒级红点」，需后端把令牌改为支持 **query 参数**（与 `/ws/progress` 同一套做法）。
 
+### 鉴权失败的行为（既定契约，勿当缺陷）
+
+`/sse/**` 在 `SecurityConfig` 中是 `permitAll`（浏览器 `EventSource` 无法带请求头，令牌只能在建连后校验）。因此：
+
+| 场景 | HTTP 状态 | 行为 |
+|---|---|---|
+| 未带令牌 / 令牌无效 / 令牌过期 | **200** | 立即下发一个空 `SseEmitter` 并关闭连接，**不下发任何事件**（既无 `CONNECTED` 也无 `NEW_MESSAGE`） |
+| 令牌有效 | 200 | 保持长连接，先下发 `CONNECTED`，后续按 `NEW_MESSAGE` 推送 |
+
+> 之所以不在握手阶段返回 401：SSE 客户端（含反向代理与监控探针）会把 401 记成错误并反复重试，
+> 噪音淹没真实故障；「200 + 立即关闭」在客户端表现等价（收不到任何事件即视为未订阅成功）。
+> **客户端判定口径**：收到 `CONNECTED` 才算订阅成功；否则按未订阅处理并回落 60 秒轮询。
+
 ### 推送消息格式
 
 事件名 `NEW_MESSAGE`（`MessageSseHub.EVENT_NEW_MESSAGE`），`data` 为 JSON 字符串：
@@ -310,3 +323,4 @@
 | v1.0.0 | — | M8 初版 | — |
 | v1.1.0 | 2026-09-29 | 新增 `GET /api/message/{id}` 消息详情（前端详情页按 id 拉取，废弃 base64 snapshot 传参）；`ORDER_COMPLETED` 模板增加可选 `{reason}`（M9 仲裁说明） | — |
 | v1.2.0 | 2026-11-02 | V4 阶段 P0-2（E1a）：新增 `MEDICATION_MISSED` 漏服提醒类型（接收人为当天陪诊订单的接单陪诊员，`linkUrl` 指向 `/companion/execute/{orderId}`）；`MEDICATION_REMIND` 接收人口径收敛为「全部绑定家属」 | — |
+| v1.2.1 | 2026-11-03 | 补写 §7「鉴权失败的行为」既定契约：无令牌/无效令牌返回 **200 + 立即关闭空 emitter**、不下发任何事件；客户端以收到 `CONNECTED` 为订阅成功判据（文档补记，行为未改） | — |
