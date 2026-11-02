@@ -229,6 +229,7 @@ Senior Companion Health Assessment/
 - [ ] 没有硬编码状态字符串；新增状态流转都过了 `OrderStatusTest`。
 - [ ] 脱敏字段都走 `MaskUtil`；日志不含身份证号 / 完整手机号 / 密码。
 - [ ] 前端 `request.js` 的拦截器行为没有被绕过；业务代码没有再写 `if (res.code !== 200)`。
+- [ ] 前端交互改动（跳转 / 按钮反馈 / 表单校验 / 空态）已按 [`docs/agents/interaction-checklist.md`](docs/agents/interaction-checklist.md) 自查；引入了清单未收录的新陷阱时已补进清单。
 - [ ] 老人模式（`<html class="elderly-mode">`）下字号 / 触控区域 / 菜单隐藏行为符合预期。
 - [ ] 后端 `mvn -q -DskipTests compile` 通过；前端 `pnpm lint` 0 警告。
 - [ ] 没有把 `.env*` / `application-local.*` / 含真实密码的配置提交。

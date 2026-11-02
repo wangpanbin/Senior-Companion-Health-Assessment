@@ -27,3 +27,4 @@
 | 新增 / 修改 FAQ 知识库（`ai-service/knowledge/faq.json`） | 逐条核对 `source` + `anchor` 指向真实锚点 + `python tools/check_faq_anchors.py` 通过 + 答案不含合规禁用词 |
 | 新增 / 修改共享合规词表 | `backend/src/main/resources/compliance/medical-advice-words.txt` + Java `ComplianceCheckUtilTest` + Python `test_guard.py`（**两侧快照必须逐字相同**） |
 | 新增 / 修改 `docs/db/*` | ⚠️ **改生成器 `backend/sql/tools/gen_db_docs.py`，不要直接改 `docs/db/` 下的生成物** —— 那些文件由脚本整篇覆盖，下次 render 会把手写内容冲掉 |
+| 新增 / 修改前端交互流程（跳转 / 表单 / 空态 / 按钮反馈） | 自查 [`interaction-checklist.md`](interaction-checklist.md)；**若引入了该清单未收录的新陷阱，补进清单**（写清「症状 / 根因 / 判据」三段 + 真实文件行号） |

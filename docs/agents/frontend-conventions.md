@@ -112,6 +112,11 @@
 - 角色守卫在 `router/index.js` 的 `beforeEach`，通过 `AUTH_ENABLED` 开关开启（M2 交付后置 `true`）。
 - `meta.roles` 为空数组表示所有已登录角色可访问；不要在路由组件内部再判角色。
 - 老人模式下 `meta.elderlyHidden: true` 的路由会从菜单中隐藏，但**仍可通过 URL 进入**——这是设计如此（老人模式下也需要排障入口）。
+- ⚠️ 移动端底部 TabBar 是硬编码的（`components/NlAppTabBar.vue`），**不消费 `meta.elderlyHidden`** —— 新增带该 meta 的移动端路由不会自动隐藏。
+- ⚠️ **带 params 的路由**：`route.params.x` 必须是 `computed` + `watch` 重拉，不能快照成常量
+  （Vue Router 4 同路由换 params 会复用组件实例，`onMounted` 不再触发）—— 详见
+  [`interaction-checklist.md`](interaction-checklist.md) §0.2 / §1.1–1.3。
+- 角色主页只有 `router/index.js` 的 `ROLE_HOME` 一份真源（`roleHomePath()` / `resolveRedirect()` 都从它派生），别处不许抄。
 
 ## 3.10 API 封装规则
 

@@ -6,6 +6,7 @@
 |---|---|---|
 | [`domain.md`](domain.md) | **领域文档消费规则** —— 探索代码前先读哪些文件、术语表的唯一真源在哪、什么情况下该记 ADR | `/domain-modeling`、`/improve-codebase-architecture`、`/tdd` 等技能 |
 | [`FRONTEND_CONTRACT.md`](FRONTEND_CONTRACT.md) | **前后端联调契约** —— 页面接真实接口时的唯一事实来源：字段、鉴权、错误码、E2E 夹具与账号口令出处 | 前端实现 · E2E 套件 · 后端联调 |
+| [`interaction-checklist.md`](interaction-checklist.md) | **交互流程验收清单** —— 改前端交互前扫一遍：跳转路径 / 按钮反馈 / 表单校验 / 空态异常；含「演示当场翻车」的 4 条与判据 | 改 `frontend/` 交互前 · AI 收尾自查 |
 | [`issue-tracker.md`](issue-tracker.md) | Issue 管理约定（走 `gh` CLI） | AI 建 / 查 issue 时 |
 | [`triage-labels.md`](triage-labels.md) | 分诊标签的五个规范角色 | AI 分诊时 |
 | [`designs/`](designs/) | **模块设计评审** —— M4 订单 / M5 执行 / M6 用药 / M7 评价 / M8 站内信 / M9 管理 / M10 统计 | 改对应模块前先读 |
