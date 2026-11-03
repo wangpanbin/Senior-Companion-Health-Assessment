@@ -165,11 +165,28 @@ const ElDatePickerStub = {
     '@input="$emit(\'update:modelValue\', $event.target.value); $emit(\'change\', $event.target.value)" />'
 }
 
+const ElSelectStub = {
+  props: ['modelValue'],
+  emits: ['update:modelValue'],
+  template:
+    '<select class="el-select-stub" :value="modelValue" ' +
+    '@change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>'
+}
+
+const ElOptionStub = {
+  props: ['label', 'value'],
+  template: '<option class="el-option-stub">{{ label }}</option>'
+}
+
 const GLOBAL_STUBS = {
   ElButton: ElButtonStub,
   'el-button': ElButtonStub,
   ElDatePicker: ElDatePickerStub,
-  'el-date-picker': ElDatePickerStub
+  'el-date-picker': ElDatePickerStub,
+  ElSelect: ElSelectStub,
+  'el-select': ElSelectStub,
+  ElOption: ElOptionStub,
+  'el-option': ElOptionStub
 }
 
 async function mountOps() {
