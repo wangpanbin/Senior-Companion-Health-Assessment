@@ -249,6 +249,25 @@ nianglin:
     connect-timeout-ms: 3000
     # 请求超时（毫秒），仅 aliyun 通道使用
     request-timeout-ms: 5000
+    # ⚠️ templates 在 profile 里配置：dev 给假 Code，prod 走两个独立环境变量。
+    # 这里刻意不写默认，避免生产漏配时拿到一个「看起来能用」的假模板。
+    # 漏服站外提醒静默时段（默认 22:00–08:00，跨零点）
+    quiet-hours:
+      enabled: true
+      start: "22:00"
+      end: "08:00"
+    # 失败重试与死信策略
+    retry:
+      # 最大尝试次数：达到后状态置 DEAD，不再自动重试
+      max-attempts: 3
+      # 首次失败后的基础退避（毫秒），之后按 2^(n-1) 递增
+      base-delay-ms: 60000
+      # 单次退避上限（毫秒），防止指数增长到不可控
+      max-delay-ms: 3600000
+      # 重试扫描间隔（毫秒）
+      scan-interval-ms: 60000
+      # 单轮扫描上限
+      batch-size: 100
 
   # 安全策略
   security:

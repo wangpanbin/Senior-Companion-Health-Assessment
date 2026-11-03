@@ -11,7 +11,9 @@ import java.util.Map;
  *
  * <p><b>实现约定</b>：</p>
  * <ul>
- *   <li>参数 {@code params} 只放模板占位符（本任务只放 {@code code}），不要拼接额外文案；</li>
+ *   <li>参数 {@code params} 只放模板占位符（验证码场景放 {@code code}；
+ *       漏服提醒场景只放 {@code elderName} / {@code medicineName} / {@code planTime}），
+ *       不要拼接额外文案；</li>
  *   <li>发送失败应抛出 {@code BusinessException}，由调用方统一吞掉并记录
  *       —— 对外响应必须与「发送成功」完全同构，避免账号存在性侧信道；</li>
  *   <li><b>禁止</b>把验证码写进日志。</li>

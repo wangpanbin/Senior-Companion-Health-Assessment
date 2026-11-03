@@ -45,9 +45,12 @@ class SmsSenderTest {
         properties.setAccessKeyId("placeholder");
         properties.setAccessKeySecret("placeholder");
         properties.setSignName("银龄伴诊");
-        // template-code 特意留空
+        properties.getTemplates().put("verification", "SMS_TPL_VERIFY");
+        // missed-dose 特意留空
         IllegalStateException error = assertThrows(IllegalStateException.class, properties::validate);
-        assertTrue(error.getMessage().contains("template-code"), "提示必须指明缺失项");
+        assertTrue(error.getMessage().contains("missed-dose"), "提示必须指明缺失的场景键");
+        assertTrue(error.getMessage().contains("ALIYUN_SMS_TEMPLATE_CODE_MISSED_DOSE"),
+                "提示必须指明对应的环境变量");
     }
 
     @Test

@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.ClientInfo;
 import org.company.nianglin.common.ResultCode;
-import org.company.nianglin.config.SmsProperties;
 import org.company.nianglin.constant.AccountStatus;
 import org.company.nianglin.constant.AuthLogConstants;
 import org.company.nianglin.constant.RedisKeyConstants;
@@ -29,7 +28,9 @@ import org.company.nianglin.security.TokenPayload;
 import org.company.nianglin.service.AuthService;
 import org.company.nianglin.service.CaptchaService;
 import org.company.nianglin.service.ElderService;
+import org.company.nianglin.constant.SmsScene;
 import org.company.nianglin.service.sms.SmsSender;
+import org.company.nianglin.service.sms.SmsTemplateRouter;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.vo.LoginVO;
 import org.company.nianglin.vo.TokenVO;
@@ -108,7 +109,7 @@ public class AuthServiceImpl implements AuthService {
     private final ElderService elderService;
     private final StringRedisTemplate redisTemplate;
     private final SmsSender smsSender;
-    private final SmsProperties smsProperties;
+    private final SmsTemplateRouter smsTemplateRouter;
 
     /* ================================================================== */
     /* 注册                                                                */
@@ -401,7 +402,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         try {
-            smsSender.send(normalizedPhone, smsProperties.getTemplateCode(), Map.of("code", code));
+            smsSender.send(normalizedPhone, smsTemplateRouter.resolve(SmsScene.VERIFICATION), Map.of("code", code));
         } catch (Exception e) {
             // 通道故障绝不能透出：发送成功 / 失败的差异就是账号存在性侧信道
             log.error("找回密码短信发送失败，已按同构响应吞掉 | phone={} | err={}",

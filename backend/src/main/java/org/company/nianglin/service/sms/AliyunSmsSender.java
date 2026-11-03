@@ -77,15 +77,12 @@ public class AliyunSmsSender implements SmsSender {
 
     @Override
     public void send(String phone, String templateCode, Map<String, String> params) {
-        String resolvedTemplateCode = templateCode == null || templateCode.isBlank()
-                ? properties.getTemplateCode()
-                : templateCode;
-        if (resolvedTemplateCode == null || resolvedTemplateCode.isBlank()) {
+        if (templateCode == null || templateCode.isBlank()) {
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "短信模板未配置，请联系管理员");
         }
 
         try {
-            Map<String, String> allParams = buildParams(phone, resolvedTemplateCode, params);
+            Map<String, String> allParams = buildParams(phone, templateCode, params);
             String canonicalQuery = buildCanonicalQuery(allParams);
             String signature = sign(canonicalQuery);
             String body = canonicalQuery + "&Signature=" + percentEncode(signature);

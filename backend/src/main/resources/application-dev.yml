@@ -116,3 +116,8 @@ nianglin:
   # ------------------------------------------------------------------
   sms:
     provider: mock
+    # mock 下不会真实外发，但模板 Code 仍必须非空：
+    # 一是让路由逻辑与生产同构，二是避免「mock 全绿、切 aliyun 才发现模板漏配」。
+    templates:
+      verification: SMS_DEV_VERIFICATION
+      missed-dose: SMS_DEV_MISSED_DOSE

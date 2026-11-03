@@ -2,7 +2,6 @@ package org.company.nianglin.service;
 
 import org.company.nianglin.common.ClientInfo;
 import org.company.nianglin.common.ResultCode;
-import org.company.nianglin.config.SmsProperties;
 import org.company.nianglin.constant.AccountStatus;
 import org.company.nianglin.constant.AuthLogConstants;
 import org.company.nianglin.constant.RoleConstants;
@@ -102,7 +101,9 @@ class AuthServiceTest {
     void setUp() {
         authService = new AuthServiceImpl(sysUserMapper, sysLoginLogMapper, passwordEncoder,
                 captchaService, tokenProvider, new JwtProperties(), tokenStore, new SecurityProperties(),
-                elderService, redisTemplate, smsSender, new SmsProperties());
+                elderService, redisTemplate, smsSender,
+                new org.company.nianglin.service.sms.SmsTemplateRouter(
+                        org.company.nianglin.support.TestSmsProperties.forMock()));
     }
 
     @AfterEach
