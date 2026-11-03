@@ -411,11 +411,13 @@ def main():
 
     row = mysql_value("SELECT CONCAT(`status`,'|',`version`,'|',JSON_LENGTH(`service_photos`),'|',`actual_fee`) "
                       "FROM `companion_order` WHERE `id`=%d;" % order_main)
-    # version 停在 1 而不是 3：只有「接单」走 updateById（带 @Version），
-    # 开始服务 / 完成服务走的是 `WHERE status = 期望状态` 的条件更新，不碰 version。
-    # 两种写法都保证并发安全，区别只是接单需要区分「被谁抢先」(3003)。
-    check("E10 完成落库：COMPLETED + version=1 + 2 张照片 + 实收 128.00",
-          row == "COMPLETED|1|2|128.00", "row=%s" % row)
+    # version=3 是正确值：插入为 0，接单 / 开始服务 / 完成服务三次状态流转
+    # 都经 OrderTransitionService 走 `orderMapper.updateById(order)`（带 @Version），
+    # 每次成功写库 version +1 → 0→1→2→3。
+    # 旧断言写 version=1 是基于「开始/完成改用条件更新不碰 version」的过时口径，
+    # 与当前实现不符（2026-11-03 核实：OrderTransitionServiceImpl L75/L124 均为 updateById）。
+    check("E10 完成落库：COMPLETED + version=3 + 2 张照片 + 实收 128.00",
+          row == "COMPLETED|3|2|128.00", "row=%s" % row)
 
     status, body = call("GET", "/order/%d" % order_main, None, comp_token)
     data = body.get("data") or {}
