@@ -32,6 +32,7 @@ import { useResponsive } from '@/composables/useResponsive'
 import { useMonthCalendar } from '@/composables/useMonthCalendar'
 import { readMedicationDraft, saveMedicationDraft, clearMedicationDraft } from '@/utils/medicationDraft'
 import { listElder } from '@/api/user'
+import { getNotificationPreference, updateNotificationPreference } from '@/api/message'
 import {
   getTodayTasks, getMedicationCalendar, listMedicationPlans,
   createMedicationPlan, updateMedicationPlan, disableMedicationPlan,
@@ -116,6 +117,47 @@ const plans = ref([])
 const plansLoading = ref(false)
 const plansError = ref(false)
 const planTotal = ref(0)
+
+/* ====== 提醒方式（V4 · P1-3）：站外短信 + 静默时段，仅家属可见 ====== */
+const notifyPref = ref({ smsMissedEnabled: true, quietHoursEnabled: true })
+const notifyLoading = ref(false)
+const notifySaving = ref(false)
+
+async function loadNotificationPreference() {
+  notifyLoading.value = true
+  try {
+    const data = await getNotificationPreference()
+    notifyPref.value = {
+      smsMissedEnabled: data?.smsMissedEnabled !== false,
+      quietHoursEnabled: data?.quietHoursEnabled !== false
+    }
+  } catch {
+    // 读取失败保持默认展示；用户仍可操作，保存时拦截器会提示
+  } finally {
+    notifyLoading.value = false
+  }
+}
+
+/** 开关变更即保存：el-switch 已先更新 v-model，失败时回滚到上一个值 */
+async function saveNotifyPref(key) {
+  const previous = !notifyPref.value[key]
+  notifySaving.value = true
+  try {
+    const data = await updateNotificationPreference({
+      smsMissedEnabled: notifyPref.value.smsMissedEnabled,
+      quietHoursEnabled: notifyPref.value.quietHoursEnabled
+    })
+    notifyPref.value = {
+      smsMissedEnabled: data?.smsMissedEnabled !== false,
+      quietHoursEnabled: data?.quietHoursEnabled !== false
+    }
+    ElMessage.success('提醒设置已保存')
+  } catch {
+    notifyPref.value[key] = previous
+  } finally {
+    notifySaving.value = false
+  }
+}
 
 /* ====== 订单转入的草稿（V4 · P1-2）：只含药名 / 次数 / 时间点，永不含剂量 ====== */
 const pendingDraft = ref(readMedicationDraft())
@@ -515,6 +557,7 @@ async function submitPlan() {
 
 onMounted(async () => {
   await loadElders()
+  await loadNotificationPreference()
   await applyDraftFromOrder()
 })
 </script>
@@ -678,6 +721,36 @@ onMounted(async () => {
         剂量字段为家属录入，仅作提醒用途，不构成任何用药建议。<br>
         提醒方式：漏服后系统将通过站内信通知所有绑定家属；若老人当天有进行中的陪诊订单，会同步提醒该单陪诊员。
       </p>
+
+      <!-- V4 · P1-3：站外短信开关 + 静默时段说明。关闭后站内信仍保留 -->
+      <section class="notify-pref" aria-label="提醒方式">
+        <div class="notify-pref__head nl-h3">提醒方式</div>
+        <p class="notify-pref__desc nl-caption nl-text-muted">
+          站外短信仅提醒漏服这件事，内容只含药名与计划时间，不含任何用药建议；关闭后漏服提醒仍会以站内信发送。
+        </p>
+        <div class="notify-pref__row">
+          <div class="notify-pref__label">
+            <span>漏服站外短信</span>
+            <span class="nl-caption nl-text-muted">发送到家属手机</span>
+          </div>
+          <el-switch
+            v-model="notifyPref.smsMissedEnabled"
+            :disabled="notifyLoading || notifySaving"
+            @change="saveNotifyPref('smsMissedEnabled')"
+          />
+        </div>
+        <div class="notify-pref__row">
+          <div class="notify-pref__label">
+            <span>静默时段</span>
+            <span class="nl-caption nl-text-muted">22:00–08:00 不发送，短信顺延至次日 08:00</span>
+          </div>
+          <el-switch
+            v-model="notifyPref.quietHoursEnabled"
+            :disabled="notifyLoading || notifySaving"
+            @change="saveNotifyPref('quietHoursEnabled')"
+          />
+        </div>
+      </section>
 
       <!-- V4 · P1-2：从订单转入的草稿。只带药名 / 次数 / 时间点，剂量必须家属自行录入 -->
       <NlNoticeBar v-if="pendingDraft" tone="info" icon>
@@ -1064,6 +1137,41 @@ onMounted(async () => {
 
 .plan-tip {
   margin: 0 0 var(--nl-space-3);
+}
+
+.notify-pref {
+  padding: var(--nl-space-3);
+  margin-bottom: var(--nl-space-3);
+  background: var(--nl-bg-sunken);
+  border-radius: var(--nl-radius-card);
+
+  &__head {
+    margin-bottom: var(--nl-space-1);
+  }
+
+  &__desc {
+    margin: 0 0 var(--nl-space-2);
+    line-height: 1.6;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--nl-space-2);
+    padding: var(--nl-space-2) 0;
+
+    &:not(:last-child) {
+      border-bottom: 1px dashed var(--nl-divider);
+    }
+  }
+
+  &__label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
 }
 
 .plan-list {

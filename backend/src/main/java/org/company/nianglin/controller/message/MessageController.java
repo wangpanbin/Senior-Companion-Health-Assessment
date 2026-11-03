@@ -10,10 +10,14 @@ import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.dto.MessageQuery;
 import org.company.nianglin.dto.MessageReadAllDTO;
+import org.company.nianglin.dto.NotificationPreferenceUpdateDTO;
 import org.company.nianglin.service.MessageService;
+import org.company.nianglin.service.sms.NotificationPreferenceService;
 import org.company.nianglin.vo.MessageReadResultVO;
 import org.company.nianglin.vo.MessageVO;
+import org.company.nianglin.vo.NotificationPreferenceVO;
 import org.company.nianglin.vo.UnreadCountVO;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -54,8 +58,28 @@ import org.springframework.web.bind.annotation.RestController;
 public class MessageController {
 
     private final MessageService messageService;
+    private final NotificationPreferenceService notificationPreferenceService;
 
     /* ==================== 查询 ==================== */
+
+    @Operation(summary = "通知偏好",
+            description = "仅家属可用。返回漏服站外短信开关与静默时段开关；"
+                    + "从未设置过的用户返回两个 true（默认开启，不落库）")
+    @PreAuthorize("hasRole('FAMILY')")
+    @GetMapping("/notification-preference")
+    public Result<NotificationPreferenceVO> notificationPreference() {
+        return Result.success(notificationPreferenceService.get());
+    }
+
+    @Operation(summary = "更新通知偏好",
+            description = "仅家属可用。两个开关都必填；关闭站外短信后站内信仍会发送，"
+                    + "静默时段为 22:00–08:00（开启时短信顺延到次日 08:00）")
+    @PreAuthorize("hasRole('FAMILY')")
+    @PutMapping("/notification-preference")
+    public Result<NotificationPreferenceVO> updateNotificationPreference(
+            @Valid @RequestBody NotificationPreferenceUpdateDTO dto) {
+        return Result.success("通知偏好已保存", notificationPreferenceService.update(dto));
+    }
 
     @Operation(summary = "消息列表",
             description = "只返回当前登录用户自己的消息，按发送时间倒序。"

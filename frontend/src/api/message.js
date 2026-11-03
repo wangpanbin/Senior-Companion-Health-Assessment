@@ -41,6 +41,19 @@ export function removeMessage(messageId) {
 }
 
 /**
+ * 通知偏好（V4 · P1-3，仅 FAMILY）。
+ * 出参 `{ smsMissedEnabled, quietHoursEnabled }`；从未设置过时后端返回两个 true。
+ */
+export function getNotificationPreference() {
+  return request({ url: '/message/notification-preference', method: 'get' })
+}
+
+/** 更新通知偏好：两个开关都必填，保存成功后返回同构对象 */
+export function updateNotificationPreference(data) {
+  return request({ url: '/message/notification-preference', method: 'put', data })
+}
+
+/**
  * 站内信未读数订阅（M8）。
  *
  * 收口迭代 E4：轮询升级为 SSE 推送（后端 `/sse/message` 已支持 `?token=`，
