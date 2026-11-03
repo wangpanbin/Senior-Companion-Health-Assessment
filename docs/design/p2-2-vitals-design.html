@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>P2-2 体征记录 · 设计稿</title>
+<style>
+  :root {
+    --nl-primary: #1d6ff2;
+    --nl-primary-dark: #1557c8;
+    --nl-primary-light: #e8f1fe;
+    --nl-primary-ghost: #f4f8ff;
+    --nl-primary-soft: #7faef7;
+    --nl-bg: #f4f7fb;
+    --nl-bg-card: #ffffff;
+    --nl-bg-sunken: #f8fafd;
+    --nl-border: #e7edf5;
+    --nl-border-strong: #d5dfec;
+    --nl-divider: #eff3f8;
+    --nl-text-1: #17202f;
+    --nl-text-2: #5b6b84;
+    --nl-text-3: #93a1b5;
+    --nl-success-text: #0a7a46;
+    --nl-success-bg: #e7f8f0;
+    --nl-radius-card: 14px;
+    --nl-radius-btn: 12px;
+    --nl-radius-chip: 6px;
+    --nl-shadow-card: 0 2px 8px rgba(23, 43, 77, 0.06);
+    --nl-font-cn: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --nl-font-num: 'Inter', 'SF Pro', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 12% -10%, #ffffff 0%, rgba(255,255,255,0) 60%),
+      #e9eef5;
+    color: var(--nl-text-1);
+    font-family: var(--nl-font-cn);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .doc-head {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 34px 32px 8px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .doc-head h1 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 34px;
+    letter-spacing: 0.2px;
+  }
+  .doc-head p {
+    margin: 6px 0 0;
+    color: var(--nl-text-2);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .doc-badge {
+    flex: none;
+    padding: 8px 12px;
+    border: 1px solid var(--nl-border-strong);
+    border-radius: 999px;
+    background: rgba(255,255,255,.72);
+    color: var(--nl-text-2);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .board {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 32px 64px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 34px;
+    flex-wrap: wrap;
+  }
+
+  .col { display: flex; flex-direction: column; gap: 12px; }
+  .col-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 8px;
+    color: var(--nl-text-2);
+    font-size: 12px;
+    letter-spacing: .4px;
+  }
+  .col-label b { color: var(--nl-text-1); font-size: 13px; font-weight: 600; }
+  .col-label::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--nl-primary);
+  }
+
+  .phone {
+    width: 390px;
+    background: var(--nl-bg);
+    border: 1px solid var(--nl-border-strong);
+    border-radius: 36px;
+    box-shadow: 0 18px 46px rgba(23, 43, 77, 0.14), 0 2px 8px rgba(23, 43, 77, 0.06);
+    overflow: hidden;
+  }
+  .phone--elder { background: #f7f9fc; }
+
+  .topbar {
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 14px;
+    background: rgba(255,255,255,.94);
+    border-bottom: 1px solid var(--nl-border);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  .topbar__title {
+    flex: 1;
+    text-align: center;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .topbar__btn {
+    width: 36px; height: 36px;
+    display: grid; place-items: center;
+    border-radius: 10px;
+    color: var(--nl-text-2);
+  }
+  .topbar__btn svg { width: 20px; height: 20px; }
+  .topbar__spacer { width: 36px; height: 36px; }
+
+  .phone-body { padding: 16px 16px 22px; }
+
+  /* ---------- 通用卡片 ---------- */
+  .card {
+    background: var(--nl-bg-card);
+    border: 1px solid var(--nl-border);
+    border-radius: var(--nl-radius-card);
+    box-shadow: var(--nl-shadow-card);
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .card:last-child { margin-bottom: 0; }
+
+  .sec-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 4px 2px 10px;
+  }
+  .sec-head h2 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 26px;
+  }
+  .sec-head h3 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 24px;
+  }
+  .sec-sub {
+    margin: -4px 2px 10px;
+    color: var(--nl-text-2);
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: var(--nl-radius-chip);
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .chip--info { background: var(--nl-primary-light); color: var(--nl-primary-dark); }
+  .chip--ghost { background: #f1f4f9; color: var(--nl-text-2); }
+  .chip--neutral { background: var(--nl-bg-sunken); color: var(--nl-text-2); border: 1px solid var(--nl-border); }
+  .chip--green { background: var(--nl-success-bg); color: var(--nl-success-text); }
+
+  /* ---------- 老人信息 ---------- */
+  .who {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .avatar {
+    width: 46px; height: 46px;
+    flex: none;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: var(--nl-primary-light);
+    color: var(--nl-primary-dark);
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .who__name { font-size: 18px; font-weight: 700; line-height: 26px; }
+  .who__meta { color: var(--nl-text-2); font-size: 12px; line-height: 18px; }
+
+  /* ---------- 分段器 ---------- */
+  .segmented {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 4px;
+    background: var(--nl-bg-sunken);
+    border: 1px solid var(--nl-border);
+    border-radius: 14px;
+    margin-bottom: 14px;
+  }
+  .segmented button {
+    height: 38px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--nl-text-2);
+    font-family: inherit;
+    font-size: 14px;
+    cursor: default;
+  }
+  .segmented button.is-active {
+    background: #fff;
+    color: var(--nl-primary-dark);
+    font-weight: 600;
+    box-shadow: 0 1px 4px rgba(23, 43, 77, 0.08);
+  }
+
+  /* ---------- 表单 ---------- */
+  .field { margin-bottom: 12px; }
+  .field:last-of-type { margin-bottom: 0; }
+  .field__label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    color: var(--nl-text-2);
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .field__label b { color: var(--nl-text-1); font-size: 13px; font-weight: 600; }
+  .input {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border: 1px solid var(--nl-border);
+    border-radius: var(--nl-radius-btn);
+    background: var(--nl-bg-sunken);
+    color: var(--nl-text-1);
+    font-size: 16px;
+    font-family: var(--nl-font-num);
+  }
+  .input svg { width: 18px; height: 18px; color: var(--nl-text-3); flex: none; }
+  .input .unit { margin-left: auto; color: var(--nl-text-2); font-size: 12px; font-family: var(--nl-font-cn); }
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .btn-primary {
+    width: 100%;
+    height: 48px;
+    margin-top: 14px;
+    border: 0;
+    border-radius: var(--nl-radius-btn);
+    background: linear-gradient(135deg, #3d8bff 0%, #1d6ff2 100%);
+    color: #fff;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    box-shadow: 0 6px 14px rgba(29, 111, 242, 0.22);
+    cursor: default;
+  }
+  .form-note {
+    margin: 10px 2px 0;
+    color: var(--nl-text-3);
+    font-size: 12px;
+    line-height: 18px;
+    text-align: center;
+  }
+
+  /* ---------- 图表 ---------- */
+  .chart-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .range-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--nl-border);
+    border-radius: 999px;
+    background: var(--nl-bg-sunken);
+    color: var(--nl-text-2);
+    font-size: 12px;
+  }
+  .range-chip svg { width: 13px; height: 13px; }
+  .chart-wrap {
+    border-radius: 10px;
+    background: #fbfcfe;
+    border: 1px solid #f0f4fa;
+    padding: 6px 4px 2px;
+  }
+  .chart-wrap svg { display: block; width: 100%; height: auto; }
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 6px;
+    padding: 0 6px;
+    color: var(--nl-text-2);
+    font-size: 12px;
+  }
+  .legend i {
+    display: inline-block;
+    width: 8px; height: 8px;
+    margin-right: 6px;
+    border-radius: 50%;
+    vertical-align: 1px;
+    background: var(--nl-primary);
+  }
+  .legend .light { background: var(--nl-primary-soft); }
+  .chart-note {
+    margin: 8px 2px 0;
+    color: var(--nl-text-3);
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  /* ---------- 时间线 ---------- */
+  .tl-group {
+    margin: 2px 0 8px;
+    color: var(--nl-text-3);
+    font-size: 12px;
+    letter-spacing: .3px;
+  }
+  .tl-list { list-style: none; margin: 0; padding: 0; }
+  .tl-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--nl-divider);
+  }
+  .tl-item:last-child { border-bottom: 0; padding-bottom: 2px; }
+  .tl-icon {
+    width: 38px; height: 38px;
+    flex: none;
+    display: grid; place-items: center;
+    border-radius: 10px;
+    background: var(--nl-primary-ghost);
+    color: var(--nl-primary-dark);
+  }
+  .tl-icon svg { width: 19px; height: 19px; }
+  .tl-icon--glucose { background: #fff7e8; color: #9a5300; }
+  .tl-icon--weight { background: #f0f7f2; color: #0a7a46; }
+  .tl-body { flex: 1; min-width: 0; }
+  .tl-top {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .tl-top b { font-size: 14px; line-height: 20px; }
+  .tl-val {
+    font-family: var(--nl-font-num);
+    font-size: 16px;
+    font-weight: 650;
+    color: var(--nl-text-1);
+  }
+  .tl-val small { font-family: var(--nl-font-cn); font-size: 12px; font-weight: 400; color: var(--nl-text-2); }
+  .tl-meta {
+    margin-top: 2px;
+    color: var(--nl-text-3);
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .tl-meta em { font-style: normal; color: var(--nl-text-2); }
+  .tl-withdraw {
+    flex: none;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--nl-border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--nl-text-2);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: default;
+  }
+  .load-more {
+    width: 100%;
+    height: 40px;
+    margin-top: 12px;
+    border: 1px solid var(--nl-border);
+    border-radius: 10px;
+    background: var(--nl-bg-sunken);
+    color: var(--nl-text-2);
+    font-family: inherit;
+    font-size: 13px;
+    cursor: default;
+  }
+
+  /* ---------- 老人端 ---------- */
+  .phone--elder .phone-body { padding: 18px 18px 26px; }
+  .phone--elder .topbar { height: 64px; }
+  .phone--elder .topbar__title { font-size: 20px; }
+  .phone--elder .card { padding: 18px; }
+  .elder-hello {
+    margin: 2px 2px 14px;
+    font-size: 18px;
+    line-height: 28px;
+    color: var(--nl-text-2);
+  }
+  .elder-hello b { color: var(--nl-text-1); font-size: 20px; }
+  .latest-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--nl-text-2);
+    font-size: 18px;
+  }
+  .latest-value {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: var(--nl-font-num);
+    font-size: 40px;
+    line-height: 48px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .latest-value small { font-family: var(--nl-font-cn); font-size: 18px; font-weight: 500; color: var(--nl-text-2); }
+  .latest-meta {
+    margin-top: 4px;
+    color: var(--nl-text-2);
+    font-size: 18px;
+    line-height: 28px;
+  }
+  .elder-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 68px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--nl-divider);
+  }
+  .elder-row:last-child { border-bottom: 0; }
+  .elder-row .tl-icon { width: 44px; height: 44px; border-radius: 12px; }
+  .elder-row .tl-icon svg { width: 23px; height: 23px; }
+  .elder-row__body { flex: 1; min-width: 0; }
+  .elder-row__top {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 18px;
+    line-height: 28px;
+  }
+  .elder-row__top b { font-weight: 600; }
+  .elder-row__val { font-family: var(--nl-font-num); font-weight: 700; }
+  .elder-row__val small { font-family: var(--nl-font-cn); font-size: 18px; font-weight: 400; color: var(--nl-text-2); }
+  .elder-row__meta {
+    margin-top: 2px;
+    color: var(--nl-text-2);
+    font-size: 18px;
+    line-height: 28px;
+  }
+  .elder-note {
+    margin: 4px 2px 0;
+    color: var(--nl-text-2);
+    font-size: 18px;
+    line-height: 30px;
+    text-align: center;
+  }
+  .elder-empty {
+    padding: 22px 16px;
+    border-radius: 12px;
+    background: var(--nl-bg-sunken);
+    border: 1px dashed var(--nl-border-strong);
+    text-align: center;
+    color: var(--nl-text-2);
+    font-size: 18px;
+    line-height: 30px;
+  }
+
+  /* ---------- 说明栏 ---------- */
+  .notes {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .notes-title {
+    padding-left: 2px;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 26px;
+  }
+  .notes-title span {
+    display: block;
+    color: var(--nl-text-2);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
+  }
+  .note-card {
+    background: rgba(255,255,255,.88);
+    border: 1px solid var(--nl-border);
+    border-radius: var(--nl-radius-card);
+    box-shadow: var(--nl-shadow-card);
+    padding: 14px 16px;
+  }
+  .note-card h4 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .note-card p, .note-card li {
+    color: var(--nl-text-2);
+    font-size: 12px;
+    line-height: 20px;
+  }
+  .note-card ul { margin: 0; padding-left: 16px; }
+  .note-card li + li { margin-top: 4px; }
+  .matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .matrix th, .matrix td {
+    padding: 6px 4px;
+    text-align: center;
+    border-bottom: 1px solid var(--nl-divider);
+  }
+  .matrix th {
+    color: var(--nl-text-2);
+    font-weight: 500;
+  }
+  .matrix td:first-child, .matrix th:first-child { text-align: left; }
+  .matrix .yes { color: var(--nl-success-text); font-weight: 600; }
+  .matrix .no { color: var(--nl-text-3); }
+  .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag {
+    padding: 4px 7px;
+    border-radius: 6px;
+    background: var(--nl-bg-sunken);
+    border: 1px solid var(--nl-border);
+    color: var(--nl-text-2);
+    font-size: 11px;
+    line-height: 14px;
+  }
+
+  @media (max-width: 860px) {
+    .doc-head { padding: 24px 18px 4px; align-items: flex-start; flex-direction: column; }
+    .board { padding: 18px 18px 48px; gap: 24px; }
+    .notes { width: 390px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="doc-head">
+  <div>
+    <h1>P2-2 · 体征记录 · 单页设计稿</h1>
+    <p>家属端健康中心 · 老人端只读 · 三种体征（血压 / 血糖 / 体重）· 记录事实口径</p>
+  </div>
+  <div class="doc-badge">静态稿 · 不含业务逻辑</div>
+</header>
+
+<main class="board">
+
+  <!-- ============================================================ -->
+  <!-- 家属端 -->
+  <!-- ============================================================ -->
+  <section class="col">
+    <div class="col-label"><b>家属端</b> 健康中心 · 录入 / 趋势 / 时间线</div>
+    <div class="phone">
+      <div class="topbar">
+        <div class="topbar__btn" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </div>
+        <div class="topbar__title">健康中心</div>
+        <div class="topbar__btn" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="phone-body">
+        <div class="who">
+          <div class="avatar">张</div>
+          <div style="flex:1">
+            <div class="who__name">张*海</div>
+            <div class="who__meta">男 · 82 岁 · 儿子</div>
+          </div>
+          <span class="chip chip--ghost">家属代录</span>
+        </div>
+
+        <div class="sec-head">
+          <h2>体征记录</h2>
+          <span class="chip chip--info">只记录数值</span>
+        </div>
+        <div class="sec-sub">测量后记录数值，便于回看变化</div>
+
+        <!-- 录入卡 -->
+        <div class="card">
+          <div class="segmented" role="tablist" aria-label="体征类型">
+            <button class="is-active" role="tab" aria-selected="true">血压</button>
+            <button role="tab" aria-selected="false">血糖</button>
+            <button role="tab" aria-selected="false">体重</button>
+          </div>
+
+          <div class="field">
+            <div class="field__label"><b>测量时间</b><span>分钟</span></div>
+            <div class="input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>
+              </svg>
+              2026-11-03 08:10
+            </div>
+          </div>
+
+          <div class="grid2">
+            <div class="field">
+              <div class="field__label"><b>收缩压</b><span>mmHg</span></div>
+              <div class="input">128<span class="unit">mmHg</span></div>
+            </div>
+            <div class="field">
+              <div class="field__label"><b>舒张压</b><span>mmHg</span></div>
+              <div class="input">78<span class="unit">mmHg</span></div>
+            </div>
+          </div>
+
+          <button class="btn-primary">保存记录</button>
+          <div class="form-note">仅保存测量数值，不做解释</div>
+        </div>
+
+        <!-- 趋势卡 -->
+        <div class="card">
+          <div class="chart-head">
+            <h3>血压趋势</h3>
+            <span class="range-chip">
+              近 30 天
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
+            </span>
+          </div>
+
+          <div class="chart-wrap">
+            <!-- 仅展示原始测量点，无区间底色、无判断色 -->
+            <svg viewBox="0 0 360 176" role="img" aria-label="近 30 天血压测量记录折线图">
+              <!-- 网格 -->
+              <g stroke="#EFF3F8" stroke-width="1">
+                <line x1="42" y1="20" x2="342" y2="20"/>
+                <line x1="42" y1="56.7" x2="342" y2="56.7"/>
+                <line x1="42" y1="93.3" x2="342" y2="93.3"/>
+                <line x1="42" y1="130" x2="342" y2="130"/>
+              </g>
+              <!-- y 轴刻度 -->
+              <g fill="#93A1B5" font-size="10" font-family="Inter, system-ui, sans-serif">
+                <text x="8" y="24">150</text>
+                <text x="8" y="60.7">120</text>
+                <text x="8" y="97.3">90</text>
+                <text x="8" y="134">60</text>
+              </g>
+              <!-- x 轴刻度 -->
+              <g fill="#93A1B5" font-size="10" font-family="Inter, system-ui, sans-serif">
+                <text x="42" y="154" text-anchor="middle">10/06</text>
+                <text x="162" y="154" text-anchor="middle">10/16</text>
+                <text x="282" y="154" text-anchor="middle">10/26</text>
+                <text x="340" y="154" text-anchor="end">11/03</text>
+              </g>
+
+              <!-- 收缩压 -->
+              <polyline points="42,49.3 102,42 162,45.7 222,38.3 282,46.9 342,51.8"
+                        fill="none" stroke="#1D6FF2" stroke-width="2.4" stroke-linejoin="round"/>
+              <g fill="#1D6FF2">
+                <circle cx="42" cy="49.3" r="3"/>
+                <circle cx="102" cy="42" r="3"/>
+                <circle cx="162" cy="45.7" r="3"/>
+                <circle cx="222" cy="38.3" r="3"/>
+                <circle cx="282" cy="46.9" r="3"/>
+                <circle cx="342" cy="51.8" r="3"/>
+              </g>
+
+              <!-- 舒张压 -->
+              <polyline points="42,110.4 102,103.1 162,108 222,100.7 282,106.8 342,111.7"
+                        fill="none" stroke="#7FAEF7" stroke-width="2.4" stroke-linejoin="round"/>
+              <g fill="#7FAEF7">
+                <circle cx="42" cy="110.4" r="3"/>
+                <circle cx="102" cy="103.1" r="3"/>
+                <circle cx="162" cy="108" r="3"/>
+                <circle cx="222" cy="100.7" r="3"/>
+                <circle cx="282" cy="106.8" r="3"/>
+                <circle cx="342" cy="111.7" r="3"/>
+              </g>
+            </svg>
+          </div>
+
+          <div class="legend">
+            <span><i></i>收缩压</span>
+            <span><i class="light"></i>舒张压</span>
+          </div>
+          <div class="chart-note">仅展示已录入的测量数值</div>
+        </div>
+
+        <!-- 时间线卡 -->
+        <div class="card">
+          <div class="chart-head">
+            <h3>记录时间线</h3>
+            <span class="chip chip--neutral">共 12 条</span>
+          </div>
+
+          <div class="tl-group">今天 · 11 月 3 日</div>
+          <ul class="tl-list">
+            <li class="tl-item">
+              <div class="tl-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 12h4l2-5 4 10 2-5h6"/>
+                </svg>
+              </div>
+              <div class="tl-body">
+                <div class="tl-top"><b>血压</b><span class="tl-val">128/78 <small>mmHg</small></span></div>
+                <div class="tl-meta">08:10 · <em>家属代录</em></div>
+              </div>
+              <button class="tl-withdraw">撤回</button>
+            </li>
+            <li class="tl-item">
+              <div class="tl-icon tl-icon--glucose" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 3s5 5.2 5 9a5 5 0 0 1-10 0c0-3.8 5-9 5-9z"/>
+                </svg>
+              </div>
+              <div class="tl-body">
+                <div class="tl-top"><b>血糖</b><span class="tl-val">6.1 <small>mmol/L · 空腹</small></span></div>
+                <div class="tl-meta">07:05 · <em>家属代录</em></div>
+              </div>
+              <button class="tl-withdraw">撤回</button>
+            </li>
+          </ul>
+
+          <div class="tl-group" style="margin-top:14px">10 月 31 日 · 周五</div>
+          <ul class="tl-list">
+            <li class="tl-item">
+              <div class="tl-icon tl-icon--weight" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="4" y="5" width="16" height="15" rx="4"/>
+                  <path d="M9 10a3 3 0 0 1 6 0"/>
+                </svg>
+              </div>
+              <div class="tl-body">
+                <div class="tl-top"><b>体重</b><span class="tl-val">62.5 <small>kg</small></span></div>
+                <div class="tl-meta">09:20 · <em>陪诊员服务代录</em> · 订单 NL20261031000018</div>
+              </div>
+            </li>
+            <li class="tl-item">
+              <div class="tl-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 12h4l2-5 4 10 2-5h6"/>
+                </svg>
+              </div>
+              <div class="tl-body">
+                <div class="tl-top"><b>血压</b><span class="tl-val">132/82 <small>mmHg</small></span></div>
+                <div class="tl-meta">08:15 · <em>家属代录</em></div>
+              </div>
+              <button class="tl-withdraw">撤回</button>
+            </li>
+          </ul>
+
+          <button class="load-more">加载更多</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 老人端 -->
+  <!-- ============================================================ -->
+  <section class="col">
+    <div class="col-label"><b>老人端</b> 只读 · 大字 · 无录入</div>
+    <div class="phone phone--elder">
+      <div class="topbar">
+        <div class="topbar__btn" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </div>
+        <div class="topbar__title">我的健康</div>
+        <div class="topbar__spacer"></div>
+      </div>
+
+      <div class="phone-body">
+        <div class="elder-hello"><b>张*海</b> 您好</div>
+
+        <div class="card">
+          <div class="latest-label">
+            <span>最近一次 · 血压</span>
+            <span class="chip chip--green">家属代录</span>
+          </div>
+          <div class="latest-value">128/78 <small>mmHg</small></div>
+          <div class="latest-meta">11 月 3 日 08:10</div>
+        </div>
+
+        <div class="sec-head" style="margin-top:18px">
+          <h3 style="font-size:19px">全部记录</h3>
+          <span class="chip chip--neutral">12 条</span>
+        </div>
+
+        <div class="card">
+          <div class="elder-row">
+            <div class="tl-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 12h4l2-5 4 10 2-5h6"/>
+              </svg>
+            </div>
+            <div class="elder-row__body">
+              <div class="elder-row__top"><b>血压</b><span class="elder-row__val">128/78 <small>mmHg</small></span></div>
+              <div class="elder-row__meta">11 月 3 日 08:10 · 家属代录</div>
+            </div>
+          </div>
+
+          <div class="elder-row">
+            <div class="tl-icon tl-icon--glucose" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3s5 5.2 5 9a5 5 0 0 1-10 0c0-3.8 5-9 5-9z"/>
+              </svg>
+            </div>
+            <div class="elder-row__body">
+              <div class="elder-row__top"><b>血糖</b><span class="elder-row__val">6.1 <small>mmol/L · 空腹</small></span></div>
+              <div class="elder-row__meta">11 月 3 日 07:05 · 家属代录</div>
+            </div>
+          </div>
+
+          <div class="elder-row">
+            <div class="tl-icon tl-icon--weight" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="5" width="16" height="15" rx="4"/>
+                <path d="M9 10a3 3 0 0 1 6 0"/>
+              </svg>
+            </div>
+            <div class="elder-row__body">
+              <div class="elder-row__top"><b>体重</b><span class="elder-row__val">62.5 <small>kg</small></span></div>
+              <div class="elder-row__meta">10 月 31 日 09:20 · 陪诊员服务代录</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="elder-note">记录由家属或陪诊员代为录入，仅保存测量数值</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 说明栏 -->
+  <!-- ============================================================ -->
+  <aside class="notes">
+    <div class="notes-title">
+      设计说明
+      <span>与既有 design.md 令牌一致，不另起设计语言</span>
+    </div>
+
+    <div class="note-card">
+      <h4>权限与入口</h4>
+      <table class="matrix">
+        <thead>
+          <tr><th>操作</th><th>家属</th><th>陪诊员</th><th>老人</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>查看记录</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓ 本人</td></tr>
+          <tr><td>代录</td><td class="yes">✓ 绑定老人</td><td class="yes">✓ 服务中</td><td class="no">—</td></tr>
+          <tr><td>撤回</td><td class="yes">✓ 本人录入</td><td class="yes">✓ 服务中</td><td class="no">—</td></tr>
+        </tbody>
+      </table>
+      <div class="tag-list">
+        <span class="tag">家属：/family/elder/:id/health</span>
+        <span class="tag">陪诊员：/companion/execute</span>
+        <span class="tag">老人：/elder/health</span>
+      </div>
+    </div>
+
+    <div class="note-card">
+      <h4>记录事实口径</h4>
+      <ul>
+        <li>页面只出现测量数值、时间、来源，不做解释。</li>
+        <li>不展示任何区间带，不用颜色区分好坏。</li>
+        <li>不提供自由文本输入，避免写入描述性内容。</li>
+        <li>老人端没有录入与撤回按钮。</li>
+      </ul>
+    </div>
+
+    <div class="note-card">
+      <h4>状态与反馈</h4>
+      <ul>
+        <li>空态：还没有体征记录；家属端提示可上方录入。</li>
+        <li>重复：同一分钟同类记录，表单下方就地提示。</li>
+        <li>撤回：二次确认后从列表移除，可重新录入。</li>
+        <li>趋势点数超过上限时，显示「仅展示最近部分记录」。</li>
+      </ul>
+    </div>
+
+    <div class="note-card">
+      <h4>时间与顺序</h4>
+      <ul>
+        <li>时间线：测量时间倒序，同一时刻按记录 ID 倒序。</li>
+        <li>趋势：测量时间升序，先取最近记录再正向绘制。</li>
+        <li>筛选：近 30 天默认，可切换到近 90 天。</li>
+        <li>消费：不并入既有四类健康时间线，独立区块。</li>
+      </ul>
+    </div>
+
+    <div class="note-card">
+      <h4>老人模式</h4>
+      <ul>
+        <li>正文 18px 起，列表行高 ≥68px。</li>
+        <li>只保留「最近一次 + 全部记录」两层信息。</li>
+        <li>不使用小字号图表刻度，避免阅读负担。</li>
+      </ul>
+    </div>
+  </aside>
+
+</main>
+
+</body>
+</html>
