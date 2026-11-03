@@ -88,6 +88,17 @@ public enum ResultCode {
     RELATION_NOT_FOUND(2005, "绑定关系不存在"),
     NO_PERMISSION_FOR_ELDER(2006, "无权操作该老人档案"),
     COMPANION_NOT_FOUND(2007, "陪诊员不存在"),
+    /**
+     * 同一老人、同一类型、同一分钟的体征记录已存在（V4 · P2-2）。
+     *
+     * <p>由 {@code vital_sign_record} 的唯一键 {@code uk_vital_dedup} 兜底。
+     * 撤回后唯一键槽位释放，同一分钟可重新录入。</p>
+     */
+    VITAL_SIGN_DUPLICATED(2008, "同一时间的同类体征记录已存在"),
+    /** 体征记录不存在或已撤回（V4 · P2-2） */
+    VITAL_SIGN_NOT_FOUND(2009, "体征记录不存在或已撤回"),
+    /** 该体征记录不可撤回：来源为陪诊员代录，或不是本人录入（V4 · P2-2） */
+    VITAL_SIGN_NOT_WITHDRAWABLE(2010, "该体征记录不可撤回"),
 
     /* ==================== 3xxx 陪诊订单 ==================== */
     ORDER_NOT_FOUND(3001, "订单不存在"),

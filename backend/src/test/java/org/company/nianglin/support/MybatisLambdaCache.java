@@ -25,6 +25,7 @@ import org.company.nianglin.entity.SysDict;
 import org.company.nianglin.entity.SysFile;
 import org.company.nianglin.entity.SysLoginLog;
 import org.company.nianglin.entity.SysUser;
+import org.company.nianglin.entity.VitalSignRecord;
 
 /**
  * 为纯 Mockito 单测预热 MyBatis-Plus 的 lambda 列名缓存。
@@ -77,6 +78,7 @@ public final class MybatisLambdaCache {
             MedicineDict.class, MedicationPlan.class, MedicationTask.class,
             OrderReview.class, Complaint.class, InternalMessage.class,
             NotificationPreference.class, SmsSendLog.class,
+            VitalSignRecord.class,
     };
 
     /** 进程级只做一次，TableInfoHelper 本身就是全局缓存 */
