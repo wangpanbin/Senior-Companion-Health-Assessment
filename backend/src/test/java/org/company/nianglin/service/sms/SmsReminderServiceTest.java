@@ -13,6 +13,7 @@ import org.company.nianglin.mapper.MedicationTaskMapper;
 import org.company.nianglin.mapper.NotificationPreferenceMapper;
 import org.company.nianglin.mapper.SmsSendLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
+import org.company.nianglin.support.MybatisLambdaCache;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -85,6 +86,9 @@ class SmsReminderServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 纯 Mockito 单测不起 Spring 容器，lambda 列名缓存是空的；
+        // 不预热则单独跑本类会因 SmsSendLog 的 update(...).set(...) 报错
+        MybatisLambdaCache.warmUp();
         properties = org.company.nianglin.support.TestSmsProperties.forMock();
         properties.getRetry().setMaxAttempts(3);
         properties.getRetry().setBaseDelayMs(60_000);

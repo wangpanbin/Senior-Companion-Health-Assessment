@@ -15,10 +15,12 @@ import org.company.nianglin.entity.InternalMessage;
 import org.company.nianglin.entity.MedicationPlan;
 import org.company.nianglin.entity.MedicationTask;
 import org.company.nianglin.entity.MedicineDict;
+import org.company.nianglin.entity.NotificationPreference;
 import org.company.nianglin.entity.OrderCheckin;
 import org.company.nianglin.entity.OrderRejectLog;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.entity.OrderStatusLog;
+import org.company.nianglin.entity.SmsSendLog;
 import org.company.nianglin.entity.SysDict;
 import org.company.nianglin.entity.SysFile;
 import org.company.nianglin.entity.SysLoginLog;
@@ -65,7 +67,7 @@ import org.company.nianglin.entity.SysUser;
  */
 public final class MybatisLambdaCache {
 
-    /** 全部实体（与 {@code backend/sql/V1__init_schema.sql} 的 20 张表一一对应） */
+    /** 全部实体（与 {@code backend/sql/V*.sql} 建表结果一一对应，含 V8 通知偏好 / 短信回执） */
     private static final Class<?>[] ENTITY_CLASSES = {
             SysUser.class, SysLoginLog.class, SysDict.class, SysFile.class, AdminOperLog.class,
             ElderProfile.class, FamilyElderRelation.class, CompanionProfile.class,
@@ -74,6 +76,7 @@ public final class MybatisLambdaCache {
             OrderCheckin.class, CompanionTrack.class,
             MedicineDict.class, MedicationPlan.class, MedicationTask.class,
             OrderReview.class, Complaint.class, InternalMessage.class,
+            NotificationPreference.class, SmsSendLog.class,
     };
 
     /** 进程级只做一次，TableInfoHelper 本身就是全局缓存 */
