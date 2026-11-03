@@ -24,10 +24,12 @@
 | 11 | P2 | **客户端错误被兜底记成 500**：上传缺文件 → HTTP 200 + `code=500` + ERROR 堆栈 | `MissingServletRequestPartException` 未单独处理，落进 `@ExceptionHandler(Exception.class)` | 本轮 M12 收尾 |
 | 12 | P2 | **导出「取消下载」被记成 500**：`catch (IOException)` 实为死代码 | EasyExcel 在 `finish()` 用自己包装的异常顶掉原始异常，判据不该用异常类型 | 本轮 M12 收尾 |
 | 13 | P2 | 响应已提交时 `response.reset()` 抛 `IllegalStateException` **直接逃出方法** | 缺前置 `isCommitted()` 判断；不受检异常绕过所有 catch | 本轮 M12 收尾 |
+| 14 | P3 | **e2e E10 断言口径漂移**：期望 `version=1`，实际 `version=3`（测试侧，非产品缺陷） | 断言按「开始/完成走条件更新不碰 version」的旧实现写；实际上 `OrderTransitionService` 三次流转均 `updateById`（`@Version`），0→1→2→3 | `1269861` |
 
-> 合计 13 个已修复缺陷，其中 P0 三个（时序攻击 / JWT 版本 / 并发非原子）。
+> 合计 14 个已修复缺陷，其中 P0 三个（时序攻击 / JWT 版本 / 并发非原子）。
 > 第 11–13 条都由本轮补测试时**反向发现**（11 是越权矩阵用例假红后的深挖，12/13 是导出单测深挖），
 > 详见 `AUDIT_BACKEND_2026-09-16.md` §4.5 / §4.6。
+> 第 14 条为**测试侧口径漂移**（V4 · P1-2 收尾时核实），后端实现无缺陷。
 > 回归基线：`mvn verify` **511 测试全绿** + JaCoCo 门禁达标（Service 行覆盖 63.26%）。
 
 > ⚠️ **一条测试侧的教训**（不是产品缺陷，但差点变成「假绿」）：
