@@ -118,7 +118,8 @@ public class SmsReminderService {
                 continue;
             }
             try {
-                if (!isSmsEnabled(familyId)) {
+                NotificationPreference preference = loadPreference(familyId);
+                if (isSmsDisabled(preference)) {
                     log.info("家属已关闭漏服站外短信，跳过发送 | taskId={} | familyId={}", task.getId(), familyId);
                     continue;
                 }
@@ -135,7 +136,7 @@ public class SmsReminderService {
                             task.getId(), dedupKey);
                     return;
                 }
-                if (isQuietHours(now)) {
+                if (isQuietHours(now, isQuietEnabled(preference))) {
                     row.setNextRetryAt(nextQuietEnd(now));
                     persist(row);
                     log.info("处于静默时段，漏服短信顺延 | taskId={} | nextRetryAt={}",
@@ -173,7 +174,7 @@ public class SmsReminderService {
         int handled = 0;
         for (SmsSendLog row : due) {
             try {
-                if (isQuietHours(now)) {
+                if (isQuietHours(now, isQuietEnabled(loadPreference(row.getUserId())))) {
                     row.setNextRetryAt(nextQuietEnd(now));
                     persist(row);
                     handled++;
@@ -199,14 +200,22 @@ public class SmsReminderService {
     /* 入队与发送                                                          */
     /* ------------------------------------------------------------------ */
 
-    private boolean isSmsEnabled(Long familyId) {
-        NotificationPreference preference = preferenceMapper.selectOne(
+    private NotificationPreference loadPreference(Long familyId) {
+        return preferenceMapper.selectOne(
                 Wrappers.<NotificationPreference>lambdaQuery()
                         .eq(NotificationPreference::getUserId, familyId));
+    }
+
+    private static boolean isSmsDisabled(NotificationPreference preference) {
         // 无记录 = 默认开启（迁移不做数据回填，避免给所有家属塞一行默认值）
-        return preference == null
-                || preference.getSmsMissedEnabled() == null
-                || preference.getSmsMissedEnabled() == 1;
+        return preference != null && preference.getSmsMissedEnabled() != null
+                && preference.getSmsMissedEnabled() == 0;
+    }
+
+    private static boolean isQuietEnabled(NotificationPreference preference) {
+        // 无记录 = 默认开启静默；用户偏好与全局开关是「与」关系
+        return preference == null || preference.getQuietHoursEnabled() == null
+                || preference.getQuietHoursEnabled() == 1;
     }
 
     private SmsSendLog buildPendingRow(MedicationTask task, Long familyId, String dedupKey, LocalDateTime now) {
@@ -310,7 +319,7 @@ public class SmsReminderService {
      * {@code next_retry_at} 在成功 / 死信后仍然残留旧值。
      */
     private void persist(SmsSendLog row) {
-        smsSendLogMapper.update(null, Wrappers.<SmsSendLog>lambdaUpdate()
+        smsSendLogMapper.update(row, Wrappers.<SmsSendLog>lambdaUpdate()
                 .eq(SmsSendLog::getId, row.getId())
                 .set(SmsSendLog::getPhoneMasked, row.getPhoneMasked())
                 .set(SmsSendLog::getStatus, row.getStatus())
@@ -324,8 +333,8 @@ public class SmsReminderService {
     /* 时间与文案                                                          */
     /* ------------------------------------------------------------------ */
 
-    private boolean isQuietHours(LocalDateTime now) {
-        if (!properties.getQuietHours().isEnabled()) {
+    private boolean isQuietHours(LocalDateTime now, boolean userQuietEnabled) {
+        if (!userQuietEnabled || !properties.getQuietHours().isEnabled()) {
             return false;
         }
         LocalTime start = properties.getQuietHours().getStartTime();
