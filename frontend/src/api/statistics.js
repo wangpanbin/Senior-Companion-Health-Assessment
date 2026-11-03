@@ -109,3 +109,21 @@ export function exportUsers(params) {
     timeout: 60000
   })
 }
+
+/**
+ * 导出结算单 Excel（V4 · P2-1）。
+ *
+ * GET /api/settlement/export
+ * 筛选条件与 /api/admin/settlement 完全一致，周期按服务完成时间。
+ * ⚠️ 金额全部由服务端计算，前端不得传任何金额参数。
+ * ⚠️ 返回 Blob，不走统一响应结构；超限时后端仍 200 但 Content-Type 为 json。
+ */
+export function exportSettlement(params) {
+  return request({
+    url: '/settlement/export',
+    method: 'get',
+    params,
+    responseType: 'blob',
+    timeout: 60000
+  })
+}

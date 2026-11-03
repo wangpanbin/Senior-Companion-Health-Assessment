@@ -574,6 +574,19 @@ export const routes = [
           module: 'M9',
           code: 'W-10'
         }
+      },
+      {
+        // V4 · P2-1 结算闭环：按服务完成时间核对线下结算结果，核定结果写 admin_oper_log
+        path: 'settlement',
+        name: 'AdminSettlement',
+        component: () => import('@/views/admin/settlement.vue'),
+        meta: {
+          title: '结算核对',
+          icon: 'Money',
+          roles: ['ADMIN'],
+          module: 'M9',
+          code: 'W-12'
+        }
       }
     ]
   },

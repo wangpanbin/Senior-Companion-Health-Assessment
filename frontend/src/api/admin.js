@@ -252,3 +252,38 @@ export function getOperationsEffect(params) {
 export function getMetricDictionary() {
   return request({ url: '/admin/metrics', method: 'get' })
 }
+
+/* ---------------- V4 · P2-1 结算核对（ADMIN） ---------------- */
+
+/**
+ * 结算核对列表。
+ *
+ * GET /api/admin/settlement
+ * 入参：paymentStatus?（UNPAID / SETTLED）、keyword?（订单号 / 医院 / 科室）、
+ *      startDate? / endDate?（按服务完成时间 finish_time）、page / size
+ * 口径：只返回 COMPLETED / REVIEWED；取消单永不进入台账。
+ */
+export function listSettlement(params) {
+  return request({ url: '/admin/settlement', method: 'get', params })
+}
+
+/**
+ * 单条核定。
+ *
+ * POST /api/admin/settlement/{orderId}/confirm
+ * ⚠️ 不传金额：结算金额由服务端按记账口径计算并快照。
+ * ⚠️ 幂等：已结算重复调用返回 200 且 settledNow=false，不重复留痕。
+ */
+export function confirmSettlement(orderId) {
+  return request({ url: `/admin/settlement/${orderId}/confirm`, method: 'post' })
+}
+
+/**
+ * 批量核定。
+ *
+ * POST /api/admin/settlement/batch-confirm
+ * @param {number[]} orderIds 1–100 条；后端去重保序，逐项返回结果
+ */
+export function batchConfirmSettlement(orderIds) {
+  return request({ url: '/admin/settlement/batch-confirm', method: 'post', data: { orderIds } })
+}
