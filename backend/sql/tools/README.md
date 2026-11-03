@@ -18,7 +18,7 @@
 | `e2e_user_profile.py` … `e2e_statistics.py` | M3–M10 各模块端到端实测（共 9 个，命名对应模块） | 控制台 PASS/FAIL 汇总 |
 | `e2e_user_deactivate.py` | **V4 P0-1 账号注销 + 数据导出实测**：20 项断言（导出契约与四角色权限 / 注销四道闸门 / 11001 进行中订单拦截 / 注销后旧令牌 401、去标识化落库），注销全链路只在当轮注册的临时账号上跑 | 控制台 PASS/FAIL 汇总 |
 | `e2e_order_medication_draft.py` | **V4 P1-2 订单转用药计划草稿实测**：成功转草稿且响应无 dosage / 未匹配药名 / 非本单家属 3004 / 未完成 409 / 重复 409 / 非 FAMILY 403 / elderId 不符 400，自带订单与 Redis 键清理 | 控制台 PASS/FAIL 汇总 |
-| `e2e_sms_mock.py` | **V4 P1-3 通知偏好 + 漏服站外短信实测**：偏好读写与回读 / 关闭短信后只发站内信且无 SENT 行 / 开启后 mock 产生 SENT 行且仅存脱敏号；造 2 条逾期任务、按 biz_id 清理、恢复偏好快照 | 控制台 PASS/FAIL 汇总 |
+| `e2e_sms_mock.py` | **V4 P1-3 通知偏好 + 漏服站外短信实测**：偏好读写与回读 / 关闭短信后只发站内信且无 SENT 行 / 同一任务两位家属各一条（幂等键含 userId）/ 单用户日频控超限被拦；造 5 条逾期任务、临时绑定 102→401、按 biz_id 清理、恢复偏好与关系快照 | 控制台 PASS/FAIL 汇总 |
 | `cleanup_util.py` | **e2e 公共清理助手**（BUG_LIST L1）：`max_id` 记基线 / `delete_since` 按基线删行（基线≤0 拒绝执行）/ `flush_unread_cache` 清 `message:unread:*` | 被 9 个 e2e 脚本 import |
 | `bench_setup.py` / `bench_seed_orders.py` / `bench_teardown.py` | JMeter 压测的数据准备 / 造 50 单 / 清理 | `bench_tokens.csv`、`bench_meta.json` |
 | `jmeter_m4_accept.jmx` | M4 50 并发抢单（`@Version` 乐观锁防超卖） | `m4_*.jtl/csv` |
@@ -169,6 +169,8 @@ python e2e_order_medication_draft.py
 # 漏服扫描默认 5 分钟首跑 + 30 分钟节奏，e2e 用运行期覆盖加速（不改生产代码默认值）：
 $env:NIANGLIN_MEDICATION_MISSED_SCAN_INITIAL_DELAY_MS="5000"
 $env:NIANGLIN_MEDICATION_MISSED_SCAN_INTERVAL_MS="10000"
+# 频控阶段断言 cap=2，必须与脚本常量 E2E_CAP 一致；不设则默认 3，D2 会 FAIL
+$env:NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP="2"
 python e2e_sms_mock.py
 ```
 

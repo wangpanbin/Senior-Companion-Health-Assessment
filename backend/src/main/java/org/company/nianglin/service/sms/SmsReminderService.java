@@ -46,8 +46,11 @@ import java.util.Map;
  *   <li><b>文案与合规</b>：复用站内信模板渲染文案并过 {@link ComplianceCheckUtil}，
  *       命中违禁词 → 写 {@code DEAD} 且 {@code last_error=compliance:<词>}，
  *       不静默丢弃。</li>
- *   <li><b>幂等</b>：{@code dedup_key = medication-missed:<taskId>:<yyyy-MM-dd>}，
- *       依赖唯一索引兜底；冲突即视为已入队，直接返回。</li>
+ *   <li><b>频控</b>：单用户单日上限（{@code nianglin.sms.frequency.missed-dose-daily-cap}，
+ *       默认 3）—— 同一位家属当天已入队/已发送的行数达到上限后，后续任务直接跳过，
+ *       站内信仍照发。</li>
+ *   <li><b>幂等</b>：{@code dedup_key = medication-missed:<taskId>:<userId>:<yyyy-MM-dd>}，
+ *       依赖唯一索引兜底；冲突即视为已入队，继续处理下一位家属。</li>
  *   <li><b>静默时段</b>（默认 22:00–08:00，跨零点）：落在窗口内 →
  *       {@code PENDING} + {@code next_retry_at=次日 08:00}，延后不丢。</li>
  *   <li><b>发送</b>：从 {@code sys_user} 取手机号，调用 {@link SmsSender}；
@@ -58,11 +61,11 @@ import java.util.Map;
  * <h3>日志红线</h3>
  * <p>只打印脱敏手机号与 taskId，<b>禁止</b>打印完整手机号、验证码或短信正文。</p>
  *
- * <h3>为什么 dedup_key 是任务级而不是家属级</h3>
- * <p>产品口径是「同一漏服任务同一天只发一条站外短信」，所以键里只有
- * taskId + 日期。家属列表按绑定顺序遍历，第一个「开启短信且能取到手机号」的
- * 家属获得这条短信；后面的人即使继续尝试也会撞唯一键而跳过。若未来产品要求
- * 每位家属各收一条，把 {@code userId} 加进 dedup_key 即可，索引本身不用改。</p>
+ * <h3>为什么 dedup_key 含 userId</h3>
+ * <p>产品口径是「同一漏服任务、同一位家属、同一天只发一条站外短信」：
+ * 每位开启了短信的家属各收一条，而不是「第一位家属抢到、其余静默跳过」。
+ * 键由 taskId + userId + 日期组成，{@code uk_dedup_key} 唯一索引结构不变。
+ * 跨任务的轰炸由频控兜底（同一用户当天最多 N 条）。</p>
  *
  * @author 银龄伴诊团队
  * @since V4 · P1-3
@@ -108,7 +111,7 @@ public class SmsReminderService {
             return;
         }
         LocalDateTime now = LocalDateTime.now(clock);
-        String dedupKey = buildDedupKey(task.getId(), now.toLocalDate());
+        LocalDate today = now.toLocalDate();
         Map<String, Object> params = buildContentParams(task);
         String content = MessageTemplateUtil.content(MessageType.MEDICATION_REMIND, params);
         String complianceHit = ComplianceCheckUtil.firstHit(content);
@@ -117,6 +120,8 @@ public class SmsReminderService {
             if (familyId == null) {
                 continue;
             }
+            // 幂等键按「任务 + 家属 + 日期」生成：同一任务下每位家属各发一条
+            String dedupKey = buildDedupKey(task.getId(), familyId, today);
             try {
                 NotificationPreference preference = loadPreference(familyId);
                 if (isSmsDisabled(preference)) {
@@ -128,23 +133,27 @@ public class SmsReminderService {
                         log.error("漏服短信文案命中合规词「{}」，已进入死信 | taskId={} | familyId={}",
                                 complianceHit, task.getId(), familyId);
                     }
-                    return;
+                    continue;
+                }
+                if (isDailyCapReached(familyId, now)) {
+                    log.info("家属当日漏服短信已达上限，跳过 | taskId={} | familyId={} | cap={}",
+                            task.getId(), familyId, properties.getFrequency().getMissedDoseDailyCap());
+                    continue;
                 }
                 SmsSendLog row = buildPendingRow(task, familyId, dedupKey, now);
                 if (!insertIgnoreDuplicate(row)) {
                     log.info("漏服短信已入队（幂等键冲突），跳过重复发送 | taskId={} | dedupKey={}",
                             task.getId(), dedupKey);
-                    return;
+                    continue;
                 }
                 if (isQuietHours(now, isQuietEnabled(preference))) {
                     row.setNextRetryAt(nextQuietEnd(now));
                     persist(row);
-                    log.info("处于静默时段，漏服短信顺延 | taskId={} | nextRetryAt={}",
-                            task.getId(), row.getNextRetryAt());
-                    return;
+                    log.info("处于静默时段，漏服短信顺延 | taskId={} | familyId={} | nextRetryAt={}",
+                            task.getId(), familyId, row.getNextRetryAt());
+                    continue;
                 }
                 attemptSend(row, params);
-                return;
             } catch (Exception e) {
                 // 单家属失败不能影响其它家属，更不能影响已完成的站内信
                 log.warn("漏服短信编排失败（已隔离） | taskId={} | familyId={} | {}",
@@ -216,6 +225,21 @@ public class SmsReminderService {
         // 无记录 = 默认开启静默；用户偏好与全局开关是「与」关系
         return preference == null || preference.getQuietHoursEnabled() == null
                 || preference.getQuietHoursEnabled() == 1;
+    }
+
+    /**
+     * 单用户单日频控：当日该场景已入队（含待发送 / 已发送 / 死信）的行数达到上限即拦截。
+     *
+     * <p>计数口径是「行」而不是「发送成功数」——静默顺延与失败的短信同样占额度，
+     * 否则夜间排队 + 次日补偿会把 N 条上限瞬间放大成 2N 条。站内信不受此限。</p>
+     */
+    private boolean isDailyCapReached(Long familyId, LocalDateTime now) {
+        long todayCount = smsSendLogMapper.selectCount(
+                Wrappers.<SmsSendLog>lambdaQuery()
+                        .eq(SmsSendLog::getUserId, familyId)
+                        .eq(SmsSendLog::getScene, SmsScene.MISSED_DOSE.getKey())
+                        .ge(SmsSendLog::getCreateTime, now.toLocalDate().atStartOfDay()));
+        return todayCount >= properties.getFrequency().getMissedDoseDailyCap();
     }
 
     private SmsSendLog buildPendingRow(MedicationTask task, Long familyId, String dedupKey, LocalDateTime now) {
@@ -392,8 +416,9 @@ public class SmsReminderService {
         return value == null ? "" : value.toString();
     }
 
-    private static String buildDedupKey(Long taskId, LocalDate date) {
-        return "medication-missed:" + taskId + ":" + date.format(DateTimeFormatter.ISO_LOCAL_DATE);
+    private static String buildDedupKey(Long taskId, Long familyId, LocalDate date) {
+        return "medication-missed:" + taskId + ":" + familyId + ":"
+                + date.format(DateTimeFormatter.ISO_LOCAL_DATE);
     }
 
     private static String sanitizeError(Exception e, String phone) {

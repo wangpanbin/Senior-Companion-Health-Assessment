@@ -58,10 +58,13 @@ class SmsReminderServiceTest {
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final long FAMILY_ID = 101L;
+    private static final long FAMILY_ID_2 = 102L;
     private static final long ELDER_ID = 401L;
     private static final long TASK_ID = 20002L;
     private static final String PHONE = "13800008888";
     private static final String MASKED_PHONE = "138****8888";
+    private static final String PHONE_2 = "13900001111";
+    private static final String MASKED_PHONE_2 = "139****1111";
     private static final String TEMPLATE_CODE = "SMS_DEV_MISSED_DOSE";
 
     @Mock
@@ -83,6 +86,7 @@ class SmsReminderServiceTest {
     private SmsReminderService service;
     private MedicationTask task;
     private SysUser familyUser;
+    private SysUser secondFamilyUser;
 
     @BeforeEach
     void setUp() {
@@ -113,6 +117,11 @@ class SmsReminderServiceTest {
         familyUser.setId(FAMILY_ID);
         familyUser.setPhone(PHONE);
         lenient().when(sysUserMapper.selectById(FAMILY_ID)).thenReturn(familyUser);
+
+        secondFamilyUser = new SysUser();
+        secondFamilyUser.setId(FAMILY_ID_2);
+        secondFamilyUser.setPhone(PHONE_2);
+        lenient().when(sysUserMapper.selectById(FAMILY_ID_2)).thenReturn(secondFamilyUser);
 
         lenient().when(templateRouter.resolve(SmsScene.MISSED_DOSE)).thenReturn(TEMPLATE_CODE);
         lenient().when(smsSendLogMapper.insert(any(SmsSendLog.class))).thenAnswer(invocation -> {
@@ -199,6 +208,63 @@ class SmsReminderServiceTest {
 
         verify(smsSendLogMapper, times(1)).insert(any(SmsSendLog.class));
         verify(smsSender, never()).send(anyString(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("同一 task 两位开启短信的家属 → 各收到一条，幂等键含 userId")
+    void shouldSendOnePerFamilyForSameTask() {
+        service.enqueueMissedDose(task, List.of(FAMILY_ID, FAMILY_ID_2));
+
+        ArgumentCaptor<SmsSendLog> inserted = ArgumentCaptor.forClass(SmsSendLog.class);
+        verify(smsSendLogMapper, times(2)).insert(inserted.capture());
+        List<SmsSendLog> rows = inserted.getAllValues();
+        assertEquals(FAMILY_ID, rows.get(0).getUserId());
+        assertEquals(FAMILY_ID_2, rows.get(1).getUserId());
+        assertEquals("medication-missed:" + TASK_ID + ":101:2026-11-03", rows.get(0).getDedupKey());
+        assertEquals("medication-missed:" + TASK_ID + ":102:2026-11-03", rows.get(1).getDedupKey());
+        assertEquals(MASKED_PHONE, rows.get(0).getPhoneMasked());
+        assertEquals(MASKED_PHONE_2, rows.get(1).getPhoneMasked());
+
+        verify(smsSender).send(eq(PHONE), eq(TEMPLATE_CODE), any());
+        verify(smsSender).send(eq(PHONE_2), eq(TEMPLATE_CODE), any());
+    }
+
+    @Test
+    @DisplayName("同一家属当日已达频控上限 → 后续任务不再入队、不发送")
+    void shouldBlockWhenDailyCapReached() {
+        properties.getFrequency().setMissedDoseDailyCap(2);
+        // 第一次：当日 0 条 → 正常入队；第二次：当日已 2 条（= 上限）→ 拦截
+        when(smsSendLogMapper.selectCount(any())).thenReturn(0L, 2L);
+
+        service.enqueueMissedDose(task, List.of(FAMILY_ID));
+
+        MedicationTask another = new MedicationTask();
+        another.setId(TASK_ID + 1);
+        another.setElderId(ELDER_ID);
+        another.setMedicineName("苯磺酸氨氯地平片");
+        another.setPlanTime(LocalDateTime.of(2026, 11, 3, 8, 0));
+        service.enqueueMissedDose(another, List.of(FAMILY_ID));
+
+        verify(smsSendLogMapper, times(1)).insert(any(SmsSendLog.class));
+        verify(smsSender, times(1)).send(anyString(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("关闭开关的家属不产生记录，同任务的另一位家属照常收到")
+    void shouldSkipUnsubscribedFamilyWithoutBlockingOthers() {
+        NotificationPreference off = new NotificationPreference();
+        off.setUserId(FAMILY_ID);
+        off.setSmsMissedEnabled(0);
+        // 按收件人遍历顺序：101 关闭 → 跳过；102 无记录 → 默认开启
+        when(preferenceMapper.selectOne(any())).thenReturn(off, (NotificationPreference) null);
+
+        service.enqueueMissedDose(task, List.of(FAMILY_ID, FAMILY_ID_2));
+
+        ArgumentCaptor<SmsSendLog> inserted = ArgumentCaptor.forClass(SmsSendLog.class);
+        verify(smsSendLogMapper, times(1)).insert(inserted.capture());
+        assertEquals(FAMILY_ID_2, inserted.getValue().getUserId(), "关闭开关的家属不得留下回执行");
+        verify(smsSender, times(1)).send(eq(PHONE_2), eq(TEMPLATE_CODE), any());
+        verify(smsSender, never()).send(eq(PHONE), anyString(), any());
     }
 
     @Test

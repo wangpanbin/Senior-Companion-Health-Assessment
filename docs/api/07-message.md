@@ -323,16 +323,25 @@
 - `quiet_hours_enabled=0` → 该家属不受静默时段约束，立即发送；它与全局
   `nianglin.sms.quiet-hours.enabled` 是「与」关系：只有两者都开启才会顺延。
 
-### 9.3 幂等键（唯一索引是最终防线）
+### 9.3 幂等键与单用户日频控
 
 ```
-dedup_key = "medication-missed:" + taskId + ":" + yyyy-MM-dd
+dedup_key = "medication-missed:" + taskId + ":" + userId + ":" + yyyy-MM-dd
 ```
 
-- 先 `INSERT`，命中 `uk_dedup_key` 唯一键即视为已入队，直接跳过。
-- 键是**任务级**：同一漏服任务同一天只发一条站外短信。家属列表按绑定顺序遍历，
-  第一个「开启短信且能取到手机号」的家属获得这条短信。
-- 若后续产品要求「每位家属各收一条」，把 `userId` 加进 `dedup_key` 即可，索引结构不用改。
+- 先 `INSERT`，命中 `uk_dedup_key` 唯一键即视为该家属已入队，跳过该家属、继续处理下一位。
+- 键是**任务 + 家属 + 日期**级：同一漏服任务下，每位开启了短信的家属**各收到一条**。
+  `uk_dedup_key` 唯一索引结构与 V8 迁移**不变**，只是键值里多一段 `userId`。
+- 冲突跳过只影响当前家属，不再 `return` 中断整个家属列表。
+
+**单用户日频控**（防止一位家属被多个任务轰炸）：
+
+- 入队前统计「当前用户 + `scene=missed-dose` + 当日（`create_time >= 今天 0 点`）」的行数，
+  达到上限即跳过该用户，**不写回执行**、不调用短信通道；站内信不受影响。
+- 计数口径是**行数**而非成功数：`PENDING`（静默顺延 / 待重试）、`SENT`、`DEAD`
+  都占额度，避免「夜间排队 + 次日补偿」把上限放大成 2N。
+- 阈值 `nianglin.sms.frequency.missed-dose-daily-cap`，默认 **3**，
+  环境变量 `NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP`；`< 1` 启动失败（fail-fast）。
 
 ### 9.4 静默时段（跨零点）
 
@@ -396,6 +405,7 @@ dedup_key = "medication-missed:" + taskId + ":" + yyyy-MM-dd
 | `nianglin.sms.retry.max-delay-ms` | `3600000` | 单次退避上限 |
 | `nianglin.sms.retry.scan-interval-ms` | `60000` | 重试扫描间隔 |
 | `nianglin.sms.retry.batch-size` | `100` | 单轮扫描上限 |
+| `nianglin.sms.frequency.missed-dose-daily-cap` | `3` | 单用户单日漏服短信上限（≥1；环境变量 `NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP`） |
 
 ---
 
@@ -443,7 +453,8 @@ dedup_key = "medication-missed:" + taskId + ":" + yyyy-MM-dd
 - [ ] 消息详情（v1.1.0）：本人调用 `GET /api/message/{id}` 返回 200 且正文与列表一致，非本人 → `7002`（`MessageServiceTest#getDetailShouldReturnOwnMessage` / `#getDetailShouldReport7002ForOthersMessage`、`frontend/e2e/specs/07-message.spec.js`「消息详情（v1.1.0）：本人 200，别人的消息 7002（越权走服务端拦截）」）
 - [ ] 消息不存在或已被接收人删除 → 详情接口返回 `7001`，且详情为只读（不写 `is_read`）（`MessageServiceTest#getDetailShouldReport7001WhenMissing` / `#getDetailShouldHideReceiverDeletedMessage`）
 - [ ] 通知偏好（V4 · P1-3）：FAMILY 可读写两个开关，非 FAMILY 一律 `403`；从未设置过返回两个 `true`
-- [ ] 站外短信（V4 · P1-3）：同一任务同一天重复入队只落 1 行、只发 1 次；`sms_send_log.phone_masked` 不含完整手机号
+- [ ] 站外短信（V4 · P1-3）：同一任务同一天、同一家属重复入队只落 1 行、只发 1 次；同一任务的两位家属各落 1 行；`sms_send_log.phone_masked` 不含完整手机号
+- [ ] 单用户日频控：同一家属当日达到 `missed-dose-daily-cap` 后，新任务不再产生回执行；关闭开关的家属不产生任何行
 - [ ] 关闭站外短信后漏服只发站内信，`sms_send_log` 无 `SENT` 行；静默时段内入队为 `PENDING` 且 `next_retry_at=次日 08:00`
 
 ---
@@ -456,4 +467,5 @@ dedup_key = "medication-missed:" + taskId + ":" + yyyy-MM-dd
 | v1.1.0 | 2026-09-29 | 新增 `GET /api/message/{id}` 消息详情（前端详情页按 id 拉取，废弃 base64 snapshot 传参）；`ORDER_COMPLETED` 模板增加可选 `{reason}`（M9 仲裁说明） | — |
 | v1.2.0 | 2026-11-02 | V4 阶段 P0-2（E1a）：新增 `MEDICATION_MISSED` 漏服提醒类型（接收人为当天陪诊订单的接单陪诊员，`linkUrl` 指向 `/companion/execute/{orderId}`）；`MEDICATION_REMIND` 接收人口径收敛为「全部绑定家属」 | — |
 | v1.2.1 | 2026-11-03 | 补写 §7「鉴权失败的行为」既定契约：无令牌/无效令牌返回 **200 + 立即关闭空 emitter**、不下发任何事件；客户端以收到 `CONNECTED` 为订阅成功判据（文档补记，行为未改） | — |
+| v1.2.2 | 2026-11-03 | §9.3：`dedup_key` 加入 `userId`（同一任务每位家属各一条，唯一索引不变）；新增单用户单日频控 `nianglin.sms.frequency.missed-dose-daily-cap`（默认 3） | — |
 | v1.3.0 | 2026-11-03 | V4 · P1-3：新增通知偏好接口（仅 FAMILY）与「短信站外提醒编排」章节；模板配置改为按场景路由（`verification` / `missed-dose`），生产新增两个模板 Code 环境变量 | — |

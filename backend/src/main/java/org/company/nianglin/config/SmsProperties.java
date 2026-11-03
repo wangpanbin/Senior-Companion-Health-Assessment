@@ -73,6 +73,9 @@ public class SmsProperties {
     /** 重试与死信策略 */
     private Retry retry = new Retry();
 
+    /** 频控：防止同一位家属被多个漏服任务反复轰炸 */
+    private Frequency frequency = new Frequency();
+
     @PostConstruct
     public void validate() {
         String normalized = provider == null ? "" : provider.trim().toLowerCase();
@@ -97,6 +100,7 @@ public class SmsProperties {
         }
         validateQuietHours();
         validateRetry();
+        validateFrequency();
         log.info("短信通道配置已加载 | provider={} | scenes={} | quietHours={}~{} | maxAttempts={}",
                 normalized, templates.keySet(), quietHours.getStart(), quietHours.getEnd(),
                 retry.getMaxAttempts());
@@ -123,6 +127,13 @@ public class SmsProperties {
         }
         if (retry.getBatchSize() < 1) {
             throw new IllegalStateException("nianglin.sms.retry.batch-size 必须 ≥ 1。");
+        }
+    }
+
+    private void validateFrequency() {
+        if (frequency.getMissedDoseDailyCap() < 1) {
+            throw new IllegalStateException(
+                    "nianglin.sms.frequency.missed-dose-daily-cap 必须 ≥ 1（0 或负数会让所有漏服短信被静默拦截）。");
         }
     }
 
@@ -154,6 +165,19 @@ public class SmsProperties {
         private LocalTime startTime;
         /** 解析后的结束时刻，不参与配置绑定 */
         private LocalTime endTime;
+    }
+
+    /** 频控配置 */
+    @Data
+    public static class Frequency {
+        /**
+         * 单用户单日漏服短信上限（默认 3）。
+         *
+         * <p>按「用户 + 场景 + 当日已入队/已发送行数」计数，与任务数无关：
+         * 同一位家属当天第 N+1 条漏服短信直接跳过，但站内信仍照发。
+         * 环境变量：{@code NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP}。</p>
+         */
+        private int missedDoseDailyCap = 3;
     }
 
     /** 重试与死信配置 */
