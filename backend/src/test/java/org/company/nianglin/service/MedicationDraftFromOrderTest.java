@@ -177,6 +177,36 @@ class MedicationDraftFromOrderTest {
     }
 
     @Test
+    @DisplayName("转草稿 · 已取消（CANCELLED）→ 409（服务未完成不可转）")
+    void cancelledOrderShouldGet409() {
+        CompanionOrder order = completedOrder("已协助取药");
+        order.setStatus(OrderStatus.CANCELLED.name());
+        given(orderService.requireInvolved(ORDER_ID)).willReturn(order);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.buildDraftFromOrder(ORDER_ID, dto(item("苯磺酸氨氯地平片", 1, "08:00"))));
+
+        assertEquals(ResultCode.CONFLICT.getCode(), ex.getCode());
+    }
+
+    @Test
+    @DisplayName("转草稿 · 已评价（REVIEWED）→ 可转，成功生成草稿")
+    void reviewedOrderShouldBuildDraft() {
+        CompanionOrder order = completedOrder("已协助取药，老人精神状态良好");
+        order.setStatus(OrderStatus.REVIEWED.name());
+        given(orderService.requireInvolved(ORDER_ID)).willReturn(order);
+        given(medicineMapper.selectList(any())).willReturn(List.of(dict(MEDICINE_ID, "苯磺酸氨氯地平片", null)));
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).willReturn(true);
+
+        MedicationPlanDraftVO draft = service.buildDraftFromOrder(ORDER_ID, dto(
+                item("苯磺酸氨氯地平片", 1, "08:00")));
+
+        assertEquals(MEDICINE_ID, draft.getItems().get(0).getMedicineId());
+        verify(planMapper, never()).insert(any(org.company.nianglin.entity.MedicationPlan.class));
+    }
+
+    @Test
     @DisplayName("转草稿 · 服务小结为空 → 409 且提示「服务小结尚未填写」")
     void blankSummaryShouldGet409() {
         given(orderService.requireInvolved(ORDER_ID)).willReturn(completedOrder("   "));

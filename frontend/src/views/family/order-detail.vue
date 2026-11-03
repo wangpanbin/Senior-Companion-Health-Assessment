@@ -299,11 +299,11 @@ const canComplaint = computed(() =>
 )
 
 /**
- * V4 · P1-2：只有「下单家属本人 + 订单 COMPLETED + 服务小结非空」才出现「转入用药计划」。
+ * V4 · P1-2：只有「下单家属本人 + 订单 COMPLETED/REVIEWED + 服务小结非空」才出现「转入用药计划」。
  * 后端还会再校验一遍（非本人 3004、状态/小结 409），前端隐藏只是减少无效点击。
  */
 const canBuildMedicationDraft = computed(() =>
-  order.value?.status === 'COMPLETED' &&
+  ['COMPLETED', 'REVIEWED'].includes(order.value?.status) &&
   !!String(order.value?.serviceSummary || '').trim() &&
   currentUser?.role === 'FAMILY' &&
   String(currentUser?.id) === String(order.value?.familyId)

@@ -761,7 +761,8 @@ WHERE id = ?
 - 完成后**不自动变成 `SETTLED`**：一期线下结算，`paymentStatus` 如实读库返回，
   不写死 `UNPAID` —— 否则 M9 支持线下回填后写死就是一句谎话。
 - `photos` 为空列表时按「没填」处理，存 `null` 而不是 `[]`。
-- 完成后家属可调用 `POST /api/medication/plan/from-order/{orderId}` 生成用药计划草稿
+- 完成后家属可调用 `POST /api/medication/plan/from-order/{orderId}` 生成用药计划草稿；
+  订单进入 `REVIEWED`（已评价）后**仍可调用**，`CANCELLED` 等服务未完成状态不可
   （见 [05-medication.md §10](./05-medication.md#10-从订单转入用药计划草稿v4--p1-2)）；本接口不改变订单状态。
 - **未实现**：完成后的站内信 / WebSocket 推送属于 M8 / M5。
 

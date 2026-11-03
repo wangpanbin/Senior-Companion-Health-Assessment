@@ -585,7 +585,7 @@ key   : nianglin:lock:medication:daily
 | 3001 | 订单不存在 |
 | 3004 | 当前家属不是该订单的下单家属本人 |
 | 3007 | 服务小结命中诊断 / 用药建议词（防御性复查） |
-| 409 | 订单状态不是 `COMPLETED` |
+| 409 | 订单状态不是 `COMPLETED` / `REVIEWED`（服务未完成或被取消） |
 | 409 | 服务小结尚未填写（提示「服务小结尚未填写」） |
 | 409 | 该订单 30 分钟内已生成过草稿（一单一转） |
 | 400 | `elderId` 与订单不一致 / `items` 为空或超过 10 项 / `frequency` 越界 / `timePoint` 格式非法 |
@@ -595,7 +595,8 @@ key   : nianglin:lock:medication:daily
 
 - **访问权**：先走 `OrderService#requireInvolved`（非相关方 `3004`），再显式校验
   `order.familyId == 当前登录用户`——只有下单家属本人可转，其它相关方也一律 `3004`。
-- **状态**：订单必须为 `COMPLETED`；本接口**不触发任何订单状态流转**。
+- **状态**：订单必须为 `COMPLETED` 或 `REVIEWED`（V4 起放开已评价订单——家属评价后仍常需补建用药计划）；
+  其余状态（`PENDING` / `ACCEPTED` / `IN_SERVICE` / `CANCELLED`）一律 `409`。本接口**不触发任何订单状态流转**。
 - **小结兜底**：`serviceSummary` 为空返回 `409`；即便完成时已查过，仍再用
   `ComplianceCheckUtil#firstHit` 复查一次，命中返回 `3007`。
 - **药名解析**：对 `medicine_dict` 依次做「去空白后精确匹配 → 忽略大小写精确匹配 → 包含匹配（取第一条）」，
@@ -619,4 +620,4 @@ key   : nianglin:lock:medication:daily
 - [ ] 停用计划后不再生成新任务，历史记录完整保留
 - [ ] ELDER 角色调用新增计划 / 确认服药 → `403`
 - [ ] 陪诊员读「无 ACTIVE 订单」的老人计划 → `2006`（不限 COMPLETED / REVIEWED / CANCELLED 状态）
-- [ ] V4 · P1-2：下单家属对 `COMPLETED` 且有服务小结的订单转草稿成功，响应**不含** `dosage`；非本人 / 未完成 / 重复转入 / 命中合规词的拒绝码符合 §10
+- [ ] V4 · P1-2：下单家属对 `COMPLETED` 或 `REVIEWED` 且有服务小结的订单转草稿成功，响应**不含** `dosage`；非本人 / 服务未完成 / 取消 / 重复转入 / 命中合规词的拒绝码符合 §10

@@ -365,8 +365,10 @@ public class MedicationServiceImpl implements MedicationService {
                     "只有下单家属本人可以转入用药计划");
         }
 
-        // 2) 只有已完成且填写了服务小结的订单才可转入
-        if (!OrderStatus.COMPLETED.name().equals(order.getStatus())) {
+        // 2) 已完成（COMPLETED）或已评价（REVIEWED）且填写了服务小结的订单才可转入。
+        //    评价后家属仍常需要补建用药计划，因此 V4 起放开 REVIEWED；CANCELLED 等服务未完成的订单一律拒绝。
+        if (!OrderStatus.COMPLETED.name().equals(order.getStatus())
+                && !OrderStatus.REVIEWED.name().equals(order.getStatus())) {
             throw new BusinessException(ResultCode.CONFLICT, "订单完成后才能转入用药计划");
         }
         if (!StringUtils.hasText(order.getServiceSummary())) {
