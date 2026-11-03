@@ -312,7 +312,7 @@ class UserAccessMatrixTest {
         // ② 注册一个全新家属（无订单，必过 11001 闸门）
         MvcResult registered = mockMvc.perform(post("/api/auth/register")
                         .contentType(JSON)
-                        .content("{\"username\":\"mxdeact01\",\"phone\":\"13977776666\","
+                        .content("{\"username\":\"mxdeact01\",\"phone\":\"13900000000\","
                                 + "\"password\":\"Nl@123456\",\"nickname\":\"矩阵注销\","
                                 + "\"role\":\"FAMILY\",\"captchaKey\":\"" + captchaKey + "\","
                                 + "\"captchaCode\":\"" + captchaCode + "\"}"))
