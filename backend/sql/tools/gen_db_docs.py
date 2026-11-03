@@ -41,7 +41,8 @@ DOMAINS = [
                                           "order_fulfillment_event"]),
     ("四、用药管理域", ["medicine_dict", "medication_plan", "medication_task"]),
     ("五、评价、投诉与消息域", ["order_review", "complaint", "internal_message",
-                                   "chat_message", "chat_read_cursor"]),
+                                   "chat_message", "chat_read_cursor",
+                                   "notification_preference", "sms_send_log"]),
 ]
 
 MODULE_OF = {
@@ -54,6 +55,7 @@ MODULE_OF = {
     "order_checkin": "M5", "companion_track": "M5", "medicine_dict": "M6",
     "medication_plan": "M6", "medication_task": "M6", "order_review": "M7",
     "complaint": "M7", "internal_message": "M8", "chat_message": "M13", "chat_read_cursor": "M13",
+    "notification_preference": "V4 P1-3", "sms_send_log": "V4 P1-3",
 }
 
 TABLE_CN = {
@@ -70,6 +72,8 @@ TABLE_CN = {
     "order_review": "订单评价表", "complaint": "投诉表", "internal_message": "站内信表",
     "chat_message": "订单聊天消息表（会话=订单）", "chat_read_cursor": "订单聊天已读游标表",
     "order_fulfillment_event": "订单履约事件流水表（V3.1，只增不改，与 order_status_log 语义不同）",
+    "notification_preference": "通知偏好表（站外短信开关与静默时段，V4 P1-3）",
+    "sms_send_log": "短信发送回执表（幂等 + 指数退避 + 死信，V4 P1-3，只存脱敏手机号）",
 }
 
 # 表间逻辑关系（用于 ER 图与关系说明；不做物理外键，见索引文档）
@@ -88,6 +92,9 @@ RELATIONS = [
     ("companion_order", "order_checkin", "||--o{", "order_id", "打卡记录"),
     ("companion_order", "companion_track", "||--o{", "order_id", "轨迹点"),
     ("companion_order", "order_review", "||--o|", "order_id", "一单一评"),
+    ("sys_user", "notification_preference", "||--o|", "user_id", "家属通知偏好（一人一条）"),
+    ("medication_task", "sms_send_log", "||--o{", "biz_id",
+     "漏服提醒发送回执（biz_type=MEDICATION_MISSED）"),
     ("companion_order", "complaint", "||--o{", "order_id", "订单投诉"),
     ("elder_profile", "medication_plan", "||--o{", "elder_id", "老人用药计划"),
     ("medicine_dict", "medication_plan", "||--o{", "medicine_id", "药品被引用"),
