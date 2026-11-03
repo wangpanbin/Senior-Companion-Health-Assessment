@@ -12,6 +12,7 @@ import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.AdminAuditQuery;
 import org.company.nianglin.dto.AdminComplaintQuery;
 import org.company.nianglin.dto.AdminOrderQuery;
+import org.company.nianglin.dto.AdminSettlementQuery;
 import org.company.nianglin.dto.AdminUserQuery;
 import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
@@ -20,11 +21,13 @@ import org.company.nianglin.dto.FulfillmentRiskQuery;
 import org.company.nianglin.dto.OrderReassignDTO;
 import org.company.nianglin.dto.OperLogQuery;
 import org.company.nianglin.dto.ResetPasswordDTO;
+import org.company.nianglin.dto.SettlementBatchConfirmDTO;
 import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.dto.UserDisableDTO;
 import org.company.nianglin.dto.UserEnableDTO;
 import org.company.nianglin.service.AdminService;
 import org.company.nianglin.service.ReviewService;
+import org.company.nianglin.service.SettlementService;
 import org.company.nianglin.vo.AdminFulfillmentRiskItemVO;
 import org.company.nianglin.vo.AdminOrderVO;
 import org.company.nianglin.vo.AdminUserVO;
@@ -39,6 +42,9 @@ import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.ReassignResultVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
 import org.company.nianglin.vo.ReviewRulingResultVO;
+import org.company.nianglin.vo.SettlementBatchConfirmVO;
+import org.company.nianglin.vo.SettlementConfirmVO;
+import org.company.nianglin.vo.SettlementOrderVO;
 import org.company.nianglin.vo.UserStatusResultVO;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -76,6 +82,7 @@ public class AdminController {
 
     private final AdminService adminService;
     private final ReviewService reviewService;
+    private final SettlementService settlementService;
 
     /* ==================== 资质审核 ==================== */
 
@@ -256,5 +263,40 @@ public class AdminController {
     @GetMapping("/oper-log")
     public Result<PageResult<OperLogVO>> operLogList(@Valid OperLogQuery query) {
         return Result.success(adminService.operLogList(query));
+    }
+
+    /* ==================== 结算核对（V4 · P2-1） ==================== */
+
+    @Operation(summary = "结算核对列表",
+            description = "只返回服务已完成的订单（COMPLETED / REVIEWED），取消单永不进入台账。"
+                    + "周期按服务完成时间 finish_time 闭区间过滤，与订单统计的下单时间不是同一口径。"
+                    + "金额由服务端计算（actual_fee 非空取之，否则取 fee）；三个姓名列一律脱敏")
+    @GetMapping("/settlement")
+    public Result<PageResult<SettlementOrderVO>> settlementList(@Valid AdminSettlementQuery query) {
+        return Result.success(settlementService.list(query));
+    }
+
+    @Operation(summary = "单条结算核定",
+            description = "把一笔服务已完成、尚未结算的订单核对为已结算。"
+                    + "金额不接受入参：核定时由服务端把 actual_fee 快照为 COALESCE(actual_fee, fee)。"
+                    + "幂等：重复调用返回 200 且 settledNow=false，不重复写操作日志。"
+                    + "订单不存在返回 3001；状态不是 COMPLETED / REVIEWED 返回 8004；"
+                    + "越权由类级 @PreAuthorize 在过滤链预检阶段一律 403")
+    @PostMapping("/settlement/{orderId}/confirm")
+    public Result<SettlementConfirmVO> confirmSettlement(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("orderId") Long orderId) {
+        SettlementConfirmVO result = settlementService.confirm(orderId);
+        return Result.success(Boolean.TRUE.equals(result.getSettledNow()) ? "已核定" : "该单已结算", result);
+    }
+
+    @Operation(summary = "批量结算核定",
+            description = "入参为订单 ID 列表（1–100 条，重复 ID 去重保序），不是「全部核定」开关。"
+                    + "逐项独立成败：单项业务失败（如 8004）不中断其余项，数据库异常整批回滚。"
+                    + "每笔真正变更的订单各写一条操作日志，不写批量汇总日志。"
+                    + "汇总口径 total = settledCount + alreadySettledCount + failedCount")
+    @PostMapping("/settlement/batch-confirm")
+    public Result<SettlementBatchConfirmVO> batchConfirmSettlement(
+            @Valid @RequestBody SettlementBatchConfirmDTO dto) {
+        return Result.success("批量核定完成", settlementService.batchConfirm(dto));
     }
 }
