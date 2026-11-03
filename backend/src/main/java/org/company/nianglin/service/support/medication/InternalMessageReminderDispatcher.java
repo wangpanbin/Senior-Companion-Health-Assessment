@@ -14,6 +14,7 @@ import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.ElderProfileMapper;
 import org.company.nianglin.mapper.FamilyElderRelationMapper;
 import org.company.nianglin.service.MessageService;
+import org.company.nianglin.service.sms.SmsReminderService;
 import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.util.MessageTemplateUtil;
@@ -64,6 +65,7 @@ public class InternalMessageReminderDispatcher implements ReminderDispatcher {
     private final ElderProfileMapper elderMapper;
     private final FamilyElderRelationMapper relationMapper;
     private final CompanionOrderMapper orderMapper;
+    private final SmsReminderService smsReminderService;
 
     @Override
     public void dispatchMissedReminder(MedicationTask task) {
@@ -108,10 +110,26 @@ public class InternalMessageReminderDispatcher implements ReminderDispatcher {
             // bizId 传 elderId：消息点击后跳「这位老人的用药页」，
             // 而不是跳到某一条任务 —— 家属要处理的是「今天还有哪些没吃」
             messageService.sendBatch(familyIds, MessageType.MEDICATION_REMIND, task.getElderId(), params);
+            enqueueSmsQuietly(task, familyIds);
             return familyIds;
         } catch (Exception e) {
             log.warn("漏服提醒（家属侧）推送失败（不影响漏服判定） | taskId={} | {}", task.getId(), e.getMessage());
             return List.of();
+        }
+    }
+
+    /**
+     * 站外短信入队（V4 · P1-3）。
+     *
+     * <p>刻意放在站内信发送<b>之后</b>，并单独 try/catch：短信通道的配置错误、
+     * 运营商超时都不应该让「站内信已经发出去了」这件事被回滚或误报为失败。</p>
+     */
+    private void enqueueSmsQuietly(MedicationTask task, List<Long> familyIds) {
+        try {
+            smsReminderService.enqueueMissedDose(task, familyIds);
+        } catch (Exception e) {
+            log.warn("漏服短信编排失败（不影响站内信与漏服判定） | taskId={} | {}",
+                    task.getId(), e.getMessage());
         }
     }
 

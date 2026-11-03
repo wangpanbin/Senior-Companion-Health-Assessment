@@ -27,6 +27,7 @@ import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.impl.MedicationServiceImpl;
 import org.company.nianglin.service.support.medication.InternalMessageReminderDispatcher;
+import org.company.nianglin.service.sms.SmsReminderService;
 import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MessageTemplateUtil;
@@ -116,6 +117,8 @@ class MedicationServiceTest {
 
     @Mock
     private CompanionOrderMapper orderMapper;
+    @Mock
+    private SmsReminderService smsReminderService;
 
     @Mock
     private SysUserMapper sysUserMapper;
@@ -140,7 +143,8 @@ class MedicationServiceTest {
         // 触达渠道用真实实现（站内信默认渠道）：家属 / 陪诊员两侧的路由与去重
         // 是本测试要锁死的行为，mock 掉等于没测
         InternalMessageReminderDispatcher reminderDispatcher =
-                new InternalMessageReminderDispatcher(messageService, elderMapper, relationMapper, orderMapper);
+                new InternalMessageReminderDispatcher(messageService, elderMapper, relationMapper, orderMapper,
+                        smsReminderService);
         service = new MedicationServiceImpl(medicineMapper, planMapper, taskMapper, elderMapper,
                 orderMapper, sysUserMapper, elderService, reminderDispatcher,
                 new ObjectMapper(), orderService, stringRedisTemplate);
