@@ -18,6 +18,8 @@ public final class TestSmsProperties {
         properties.setProvider(SmsProperties.PROVIDER_MOCK);
         properties.getTemplates().put("verification", "SMS_DEV_VERIFICATION");
         properties.getTemplates().put("missed-dose", "SMS_DEV_MISSED_DOSE");
+        // 解析静默时段并校验默认退避，单测里才能直接拿到 startTime / endTime
+        properties.validate();
         return properties;
     }
 }

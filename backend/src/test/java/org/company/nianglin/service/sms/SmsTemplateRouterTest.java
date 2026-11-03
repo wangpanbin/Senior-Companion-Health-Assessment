@@ -36,6 +36,7 @@ class SmsTemplateRouterTest {
     void shouldRejectBlankTemplateAtRuntime() {
         SmsProperties properties = TestSmsProperties.forMock();
         properties.getTemplates().put("verification", "TPL_VERIFY");
+        properties.getTemplates().remove("missed-dose");
         SmsTemplateRouter router = new SmsTemplateRouter(properties);
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
