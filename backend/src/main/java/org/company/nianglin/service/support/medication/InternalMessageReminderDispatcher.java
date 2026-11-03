@@ -89,8 +89,9 @@ public class InternalMessageReminderDispatcher implements ReminderDispatcher {
      * @return 实际触达（意图发送）的家属 ID 列表，供陪诊员侧排除重复接收人
      */
     private List<Long> notifyFamily(MedicationTask task, Map<String, Object> params) {
+        List<Long> familyIds;
         try {
-            List<Long> familyIds = relationMapper.selectList(Wrappers.<FamilyElderRelation>lambdaQuery()
+            familyIds = relationMapper.selectList(Wrappers.<FamilyElderRelation>lambdaQuery()
                             .eq(FamilyElderRelation::getElderId, task.getElderId())
                             .eq(FamilyElderRelation::getStatus, BindStatus.BOUND.name())
                             // 只取需要推送的列，避免把整行（含关系备注等）读进内存
@@ -100,22 +101,28 @@ public class InternalMessageReminderDispatcher implements ReminderDispatcher {
                     .filter(Objects::nonNull)
                     .distinct()
                     .toList();
+        } catch (Exception e) {
+            log.warn("漏服提醒收件人查询失败（不影响漏服判定） | taskId={} | {}", task.getId(), e.getMessage());
+            return List.of();
+        }
 
-            if (familyIds.isEmpty()) {
-                log.warn("漏服提醒无家属接收人（该老人已无绑定家属） | taskId={} | elderId={}",
-                        task.getId(), task.getElderId());
-                return List.of();
-            }
+        if (familyIds.isEmpty()) {
+            log.warn("漏服提醒无家属接收人（该老人已无绑定家属） | taskId={} | elderId={}",
+                    task.getId(), task.getElderId());
+            return List.of();
+        }
 
+        // 站内信与站外短信各自 try/catch：任一渠道失败都不该让另一渠道跟着不发
+        try {
             // bizId 传 elderId：消息点击后跳「这位老人的用药页」，
             // 而不是跳到某一条任务 —— 家属要处理的是「今天还有哪些没吃」
             messageService.sendBatch(familyIds, MessageType.MEDICATION_REMIND, task.getElderId(), params);
-            enqueueSmsQuietly(task, familyIds);
-            return familyIds;
         } catch (Exception e) {
-            log.warn("漏服提醒（家属侧）推送失败（不影响漏服判定） | taskId={} | {}", task.getId(), e.getMessage());
-            return List.of();
+            log.warn("漏服提醒（家属侧站内信）推送失败（不影响站外短信与漏服判定） | taskId={} | {}",
+                    task.getId(), e.getMessage());
         }
+        enqueueSmsQuietly(task, familyIds);
+        return familyIds;
     }
 
     /**
