@@ -8,10 +8,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.dto.ChangePasswordDTO;
+import org.company.nianglin.dto.ForgotPasswordDTO;
 import org.company.nianglin.dto.LoginDTO;
 import org.company.nianglin.dto.LogoutDTO;
 import org.company.nianglin.dto.RefreshTokenDTO;
 import org.company.nianglin.dto.RegisterDTO;
+import org.company.nianglin.dto.SmsCodeDTO;
 import org.company.nianglin.security.AllowElderWrite;
 import org.company.nianglin.service.AuthService;
 import org.company.nianglin.service.CaptchaService;
@@ -43,8 +45,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
-@Tag(name = "01-认证与账号", description = "验证码、注册、登录、刷新令牌、登出、当前用户、修改密码")
+@Tag(name = "01-认证与账号", description = "验证码、注册、登录、刷新令牌、登出、当前用户、修改密码、自助找回密码")
 public class AuthController {
+
+    private static final String SMS_SENT_MESSAGE = "若该手机号已注册，验证码将发送至该号码";
+    private static final String PASSWORD_RESET_MESSAGE = "密码已重置，请重新登录";
 
     private final AuthService authService;
     private final CaptchaService captchaService;
@@ -93,5 +98,37 @@ public class AuthController {
     public Result<Void> changePassword(@Valid @RequestBody ChangePasswordDTO dto) {
         authService.changePassword(dto);
         return Result.<Void>success("密码修改成功，请重新登录", null);
+    }
+
+    /**
+     * 发送找回密码短信验证码。
+     *
+     * <p><b>防枚举</b>：无论手机号是否注册、短信通道是否发送成功，响应与 HTTP 状态完全一致；
+     * 只有参数格式错误返回 400。频控：同手机号 60 秒 1 次 / 每天 10 次，同 IP 每小时 20 次。</p>
+     */
+    @Operation(summary = "发送找回密码短信验证码",
+            description = "公开接口。防枚举：无论手机号是否注册、短信通道是否发送成功，响应体与 HTTP 状态完全一致；"
+                    + "仅参数格式错误返回 400。频控：同手机号 60 秒 1 次、每天 10 次；同 IP 每小时 20 次（超限 1009）。")
+    @AllowElderWrite("找回密码属于老人本人的账号恢复，必须允许老人账号发起")
+    @PostMapping("/sms-code")
+    public Result<Void> sendSmsCode(@Valid @RequestBody SmsCodeDTO dto, HttpServletRequest request) {
+        authService.sendSmsCode(dto.getPhone(), WebUtil.ip(request));
+        return Result.<Void>success(SMS_SENT_MESSAGE, null);
+    }
+
+    /**
+     * 凭手机号 + 短信验证码自助找回密码。
+     *
+     * <p>手机号不存在时与成功路径返回完全同构、且不真正改密；验证码错误 / 过期 / 已用 /
+     * 错满 5 次一律 1008。成功后 {@code pwd:version} 递增，该用户全部令牌立即失效。</p>
+     */
+    @Operation(summary = "自助找回密码",
+            description = "公开接口。成功与「手机号不存在」返回完全同构；验证码错误 / 过期 / 已使用 / 错满 5 次返回 1008；"
+                    + "密码强度与注册一致。成功后 pwd:version 递增，该用户全部已签发令牌立即失效。")
+    @AllowElderWrite("找回密码属于老人本人的账号恢复，必须允许老人账号发起")
+    @PostMapping("/forgot-password")
+    public Result<Void> forgotPassword(@Valid @RequestBody ForgotPasswordDTO dto) {
+        authService.forgotPassword(dto);
+        return Result.<Void>success(PASSWORD_RESET_MESSAGE, null);
     }
 }

@@ -2,6 +2,7 @@ package org.company.nianglin.service;
 
 import org.company.nianglin.common.ClientInfo;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.config.SmsProperties;
 import org.company.nianglin.constant.AccountStatus;
 import org.company.nianglin.constant.AuthLogConstants;
 import org.company.nianglin.constant.RoleConstants;
@@ -20,6 +21,7 @@ import org.company.nianglin.security.SecurityProperties;
 import org.company.nianglin.security.TokenPayload;
 import org.company.nianglin.security.TokenStore;
 import org.company.nianglin.service.impl.AuthServiceImpl;
+import org.company.nianglin.service.sms.SmsSender;
 import org.company.nianglin.vo.LoginVO;
 import org.company.nianglin.vo.TokenVO;
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +32,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -87,13 +90,19 @@ class AuthServiceTest {
     @Mock
     private ElderService elderService;
 
+    @Mock
+    private StringRedisTemplate redisTemplate;
+
+    @Mock
+    private SmsSender smsSender;
+
     private AuthServiceImpl authService;
 
     @BeforeEach
     void setUp() {
         authService = new AuthServiceImpl(sysUserMapper, sysLoginLogMapper, passwordEncoder,
                 captchaService, tokenProvider, new JwtProperties(), tokenStore, new SecurityProperties(),
-                elderService);
+                elderService, redisTemplate, smsSender, new SmsProperties());
     }
 
     @AfterEach

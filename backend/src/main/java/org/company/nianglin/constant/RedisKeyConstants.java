@@ -56,6 +56,23 @@ public final class RedisKeyConstants {
      */
     public static final String MEDICATION_DRAFT_FROM_ORDER_PREFIX = "medication:draft:from-order:";
 
+    /* ---------- V4 · P1-1 自助找回密码短信 ---------- */
+
+    /** 找回密码验证码：{@code sms:reset:{phone}} → 6 位数字，TTL 5 分钟 */
+    public static final String SMS_RESET_CODE_PREFIX = "sms:reset:";
+
+    /** 验证码连续输错计数：{@code sms:reset:fail:{phone}} → 次数，TTL 5 分钟 */
+    public static final String SMS_RESET_FAIL_PREFIX = "sms:reset:fail:";
+
+    /** 同手机号 60 秒发送标记：{@code sms:sent:{phone}} → 1，SET NX EX 60 */
+    public static final String SMS_SEND_MARKER_PREFIX = "sms:sent:";
+
+    /** 同手机号自然日发送计数：{@code sms:daily:{phone}:{yyyyMMdd}} → 次数，TTL 1 天 */
+    public static final String SMS_DAILY_PREFIX = "sms:daily:";
+
+    /** 同 IP 小时发送计数：{@code sms:ip:{ip}:{yyyyMMddHH}} → 次数，TTL 1 小时 */
+    public static final String SMS_IP_PREFIX = "sms:ip:";
+
     public static String captcha(String captchaKey) {
         return CAPTCHA_PREFIX + captchaKey;
     }
@@ -110,5 +127,30 @@ public final class RedisKeyConstants {
     /** 某订单的用药计划草稿判重标记 */
     public static String medicationDraftFromOrder(Long orderId) {
         return MEDICATION_DRAFT_FROM_ORDER_PREFIX + orderId;
+    }
+
+    /** 某手机号的找回密码短信验证码 */
+    public static String smsResetCode(String phone) {
+        return SMS_RESET_CODE_PREFIX + phone;
+    }
+
+    /** 某手机号验证码的连续输错计数 */
+    public static String smsResetFail(String phone) {
+        return SMS_RESET_FAIL_PREFIX + phone;
+    }
+
+    /** 某手机号的 60 秒发送标记 */
+    public static String smsSendMarker(String phone) {
+        return SMS_SEND_MARKER_PREFIX + phone;
+    }
+
+    /** 某手机号在指定自然日的发送计数 */
+    public static String smsDailyCount(String phone, String yyyyMMdd) {
+        return SMS_DAILY_PREFIX + phone + ":" + yyyyMMdd;
+    }
+
+    /** 某 IP 在指定小时的发送计数 */
+    public static String smsIpHourlyCount(String ip, String yyyyMMddHH) {
+        return SMS_IP_PREFIX + ip + ":" + yyyyMMddHH;
     }
 }

@@ -91,6 +91,10 @@ public class SecurityConfig {
             "/api/auth/register",
             "/api/auth/login",
             "/api/auth/refresh",
+            // V4 · P1-1 自助找回密码：两条接口必须匿名可达；
+            // 防枚举与频控在 Service 层承担，不依赖登录态
+            "/api/auth/sms-code",
+            "/api/auth/forgot-password",
             // WebSocket 升级请求：令牌走 query 参数（浏览器 WebSocket 不允许自定义请求头），
             // 由 websocket/JwtHandshakeInterceptor 在握手阶段校验 JWT 与订单归属。
             // 放行到 Security 之外是必须的 —— 否则过滤器链会因为「没有 Authorization 头」

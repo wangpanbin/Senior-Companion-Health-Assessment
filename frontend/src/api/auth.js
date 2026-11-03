@@ -42,3 +42,19 @@ export function getCurrentUser() {
 export function changePassword(data) {
   return request({ url: '/auth/password', method: 'put', data })
 }
+
+/**
+ * 发送找回密码短信验证码（V4 · P1-1）
+ * → data 恒为 null；未注册手机号也返回成功（防枚举，见 docs/api/01-auth-user.md §10）
+ */
+export function sendSmsCode(data) {
+  return request({ url: '/auth/sms-code', method: 'post', data, skipAuth: true })
+}
+
+/**
+ * 凭手机号 + 短信验证码自助找回密码（V4 · P1-1）
+ * → data 恒为 null；手机号不存在时响应与成功完全同构（见 docs/api/01-auth-user.md §11）
+ */
+export function forgotPassword(data) {
+  return request({ url: '/auth/forgot-password', method: 'post', data, skipAuth: true })
+}

@@ -2,6 +2,7 @@ package org.company.nianglin.service;
 
 import org.company.nianglin.common.ClientInfo;
 import org.company.nianglin.dto.ChangePasswordDTO;
+import org.company.nianglin.dto.ForgotPasswordDTO;
 import org.company.nianglin.dto.LoginDTO;
 import org.company.nianglin.dto.RegisterDTO;
 import org.company.nianglin.vo.LoginVO;
@@ -16,6 +17,24 @@ import org.company.nianglin.vo.UserInfoVO;
  * @author 银龄伴诊团队
  */
 public interface AuthService {
+
+    /**
+     * 发送找回密码短信验证码（V4 · P1-1）。
+     *
+     * <p>无论手机号是否注册、通道是否发送成功，调用方都应返回**同一个**成功响应；
+     * 未注册手机号不调用 {@link org.company.nianglin.service.sms.SmsSender}。</p>
+     *
+     * @param phone    11 位手机号
+     * @param clientIp 请求方 IP，用于「同 IP 每小时 20 次」频控；为空时跳过该窗口
+     */
+    void sendSmsCode(String phone, String clientIp);
+
+    /**
+     * 凭手机号 + 短信验证码自助找回密码（V4 · P1-1）。
+     *
+     * <p>手机号不存在时与成功路径返回完全同构，且不真正改密 —— 防止账号枚举。</p>
+     */
+    void forgotPassword(ForgotPasswordDTO dto);
 
     /**
      * 注册。

@@ -5,10 +5,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.ClientInfo;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.config.SmsProperties;
 import org.company.nianglin.constant.AccountStatus;
 import org.company.nianglin.constant.AuthLogConstants;
+import org.company.nianglin.constant.RedisKeyConstants;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.ChangePasswordDTO;
+import org.company.nianglin.dto.ForgotPasswordDTO;
 import org.company.nianglin.dto.LoginDTO;
 import org.company.nianglin.dto.RegisterDTO;
 import org.company.nianglin.entity.SysLoginLog;
@@ -26,16 +29,23 @@ import org.company.nianglin.security.TokenPayload;
 import org.company.nianglin.service.AuthService;
 import org.company.nianglin.service.CaptchaService;
 import org.company.nianglin.service.ElderService;
+import org.company.nianglin.service.sms.SmsSender;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.vo.LoginVO;
 import org.company.nianglin.vo.TokenVO;
 import org.company.nianglin.vo.UserInfoVO;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -67,6 +77,26 @@ public class AuthServiceImpl implements AuthService {
     private static final String DUMMY_PASSWORD_HASH =
             "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
+    /* ==================== V4 · P1-1 短信验证码 ==================== */
+
+    /** 验证码长度 */
+    private static final int SMS_CODE_LENGTH = 6;
+    /** 验证码有效期 */
+    private static final Duration SMS_CODE_TTL = Duration.ofMinutes(5);
+    /** 同手机号最小发送间隔 */
+    private static final Duration SMS_SEND_INTERVAL = Duration.ofSeconds(60);
+    /** 同手机号每日上限 */
+    private static final long SMS_DAILY_LIMIT = 10L;
+    /** 同 IP 每小时上限 */
+    private static final long SMS_IP_HOURLY_LIMIT = 20L;
+    /** 同一验证码允许输错的次数，达到即作废 */
+    private static final long SMS_MAX_FAIL = 5L;
+
+    private static final DateTimeFormatter DAY_BUCKET = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final DateTimeFormatter HOUR_BUCKET = DateTimeFormatter.ofPattern("yyyyMMddHH");
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     private final SysUserMapper sysUserMapper;
     private final SysLoginLogMapper sysLoginLogMapper;
     private final PasswordEncoder passwordEncoder;
@@ -76,6 +106,9 @@ public class AuthServiceImpl implements AuthService {
     private final TokenStore tokenStore;
     private final SecurityProperties securityProperties;
     private final ElderService elderService;
+    private final StringRedisTemplate redisTemplate;
+    private final SmsSender smsSender;
+    private final SmsProperties smsProperties;
 
     /* ================================================================== */
     /* 注册                                                                */
@@ -345,6 +378,79 @@ public class AuthServiceImpl implements AuthService {
     }
 
     /* ================================================================== */
+    /* 找回密码（V4 · P1-1）                                                */
+    /* ================================================================== */
+
+    @Override
+    public void sendSmsCode(String phone, String clientIp) {
+        String normalizedPhone = normalizePhone(phone);
+        checkSendFrequency(normalizedPhone, clientIp);
+
+        // 无论手机号是否注册都生成并落 Redis：保持两条路径的 Redis 状态一致，
+        // 这是「未注册手机号也能走完同构响应」的前提，不要以省一次写入为由改掉
+        String code = generateSmsCode();
+        redisTemplate.opsForValue()
+                .set(RedisKeyConstants.smsResetCode(normalizedPhone), code, SMS_CODE_TTL);
+        redisTemplate.delete(RedisKeyConstants.smsResetFail(normalizedPhone));
+
+        SysUser user = findUserByPhone(normalizedPhone);
+        if (user == null) {
+            log.info("找回密码验证码：手机号未注册，已生成但不发送 | phone={}",
+                    MaskUtil.phone(normalizedPhone));
+            return;
+        }
+
+        try {
+            smsSender.send(normalizedPhone, smsProperties.getTemplateCode(), Map.of("code", code));
+        } catch (Exception e) {
+            // 通道故障绝不能透出：发送成功 / 失败的差异就是账号存在性侧信道
+            log.error("找回密码短信发送失败，已按同构响应吞掉 | phone={} | err={}",
+                    MaskUtil.phone(normalizedPhone), e.toString());
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void forgotPassword(ForgotPasswordDTO dto) {
+        String phone = normalizePhone(dto.getPhone());
+        String inputCode = dto.getSmsCode().trim();
+        String codeKey = RedisKeyConstants.smsResetCode(phone);
+
+        String expected = redisTemplate.opsForValue().get(codeKey);
+        if (expected == null || !expected.equals(inputCode)) {
+            recordWrongCode(phone, expected != null);
+            throw new BusinessException(ResultCode.SMS_CODE_INVALID);
+        }
+
+        // 一次性：验证通过即消费；后续无论用户是否存在都不能再复用这个码
+        redisTemplate.delete(codeKey);
+        redisTemplate.delete(RedisKeyConstants.smsResetFail(phone));
+
+        // 防时序枚举：用户存在 / 不存在都执行一次同等开销的 BCrypt；
+        // 不存在时丢弃结果，不写库
+        String encodedPassword = passwordEncoder.encode(dto.getNewPassword());
+
+        SysUser user = findUserByPhone(phone);
+        if (user == null) {
+            log.info("找回密码：手机号未注册，按成功同构返回且不改密 | phone={}", MaskUtil.phone(phone));
+            return;
+        }
+
+        SysUser update = new SysUser();
+        update.setId(user.getId());
+        update.setPassword(encodedPassword);
+        // 用户已自行重置密码，管理员打下的「必须改密」标记随之清除
+        update.setNeedChangePassword(0);
+        sysUserMapper.updateById(update);
+
+        // 与「修改密码」同一套逻辑：版本 +1 → 该用户全部已签发令牌立即失效（踢全端）
+        tokenStore.bumpPasswordVersion(user.getId());
+
+        log.info("自助找回密码成功，该用户全部令牌已失效 | userId={} | phone={}",
+                user.getId(), MaskUtil.phone(phone));
+    }
+
+    /* ================================================================== */
     /* 私有方法                                                            */
     /* ================================================================== */
 
@@ -445,6 +551,80 @@ public class AuthServiceImpl implements AuthService {
             return null;
         }
         return value.length() <= maxLength ? value : value.substring(0, maxLength);
+    }
+
+    /* -------------------- 找回密码私有逻辑 -------------------- */
+
+    private static String normalizePhone(String phone) {
+        String value = phone == null ? "" : phone.trim();
+        if (!PHONE_PATTERN.matcher(value).matches()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "请输入正确的 11 位手机号");
+        }
+        return value;
+    }
+
+    /**
+     * 三层频控：同手机号 60 秒 1 次 → 同 IP 每小时 20 次 → 同手机号每天 10 次。
+     *
+     * <p>IP 窗口放在日上限之前：被 IP 拦下的请求不消耗该手机号的日配额，
+     * 避免攻击者用一个被限流的 IP 把受害者的日配额刷光。</p>
+     */
+    private void checkSendFrequency(String phone, String clientIp) {
+        String markerKey = RedisKeyConstants.smsSendMarker(phone);
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(markerKey, "1", SMS_SEND_INTERVAL);
+        if (!Boolean.TRUE.equals(acquired)) {
+            throw new BusinessException(ResultCode.SMS_CODE_TOO_FREQUENT);
+        }
+
+        if (clientIp != null && !clientIp.isBlank() && !"unknown".equalsIgnoreCase(clientIp)) {
+            String ipKey = RedisKeyConstants.smsIpHourlyCount(
+                    clientIp, LocalDateTime.now().format(HOUR_BUCKET));
+            long ipCount = incrementWithTtl(ipKey, Duration.ofHours(1));
+            if (ipCount > SMS_IP_HOURLY_LIMIT) {
+                throw new BusinessException(ResultCode.SMS_CODE_TOO_FREQUENT);
+            }
+        }
+
+        String dailyKey = RedisKeyConstants.smsDailyCount(phone, LocalDate.now().format(DAY_BUCKET));
+        long dailyCount = incrementWithTtl(dailyKey, Duration.ofDays(1));
+        if (dailyCount > SMS_DAILY_LIMIT) {
+            throw new BusinessException(ResultCode.SMS_CODE_TOO_FREQUENT);
+        }
+    }
+
+    /** 首次计数时设置 TTL；返回累加后的次数（Redis 异常返回 0，按未超限放行） */
+    private long incrementWithTtl(String key, Duration ttl) {
+        Long count = redisTemplate.opsForValue().increment(key);
+        if (count != null && count == 1L) {
+            redisTemplate.expire(key, ttl);
+        }
+        return count == null ? 0L : count;
+    }
+
+    private static String generateSmsCode() {
+        return String.format("%0" + SMS_CODE_LENGTH + "d", SECURE_RANDOM.nextInt(1_000_000));
+    }
+
+    /**
+     * 验证码不匹配时的失败计数；满 {@link #SMS_MAX_FAIL} 次直接删键作废。
+     *
+     * <p>验证码本身不存在（未发送 / 已过期 / 已用）时不计数 —— 没有可作废的对象。</p>
+     */
+    private void recordWrongCode(String phone, boolean codeExists) {
+        if (!codeExists) {
+            return;
+        }
+        String failKey = RedisKeyConstants.smsResetFail(phone);
+        long fails = incrementWithTtl(failKey, SMS_CODE_TTL);
+        if (fails >= SMS_MAX_FAIL) {
+            redisTemplate.delete(RedisKeyConstants.smsResetCode(phone));
+            redisTemplate.delete(failKey);
+            log.warn("找回密码验证码连续输错 {} 次，已作废 | phone={}", fails, MaskUtil.phone(phone));
+        }
+    }
+
+    private SysUser findUserByPhone(String phone) {
+        return sysUserMapper.selectOne(Wrappers.<SysUser>lambdaQuery().eq(SysUser::getPhone, phone));
     }
 
     /** 把数据库唯一索引冲突翻译成业务错误码 */

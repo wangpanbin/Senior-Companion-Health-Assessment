@@ -241,6 +241,13 @@
 | 1005 | 登录状态已失效，请重新登录 |
 | 1006 | 原密码不正确 |
 | 1007 | 该手机号已被注册 |
+| 1008 | 短信验证码错误、已过期或已使用（V4 · P1-1；连续错 5 次即作废，之后一律返回本码） |
+| 1009 | 短信验证码操作过于频繁（V4 · P1-1：同手机号 60 秒 1 次 / 每天 10 次；同 IP 每小时 20 次） |
+
+> **V4 · P1-1 选号说明**：`1007` 已被「该手机号已被注册」占用，找回密码所需的
+> 「验证码错误」与「操作过于频繁」顺延为 `1008` / `1009`，**不复用 `1007`**，
+> 以免同一错误码同时表达「手机号已存在」与「验证码错误」两类语义。
+> 详见 [01-auth-user.md §10 – §11](./01-auth-user.md)。
 
 ### 4.3 2xxx 用户与档案（M3）
 
@@ -596,3 +603,4 @@ M4 继续追加**订单状态机与相关方边界**：
 | v0.8.0 | 2026-10-21 | **评审收口补漏**：<br>· **V3.6 兑现预写 spec** —— 实现 `GET /api/admin/metrics`（指标字典只读导出，仅 `ADMIN`；`08-admin.md` 新增 §24）<br>· **候选可解释性拆三段** —— `CompanionMatchVO` 新增 `mismatches`（该维度得 0 分的原因，如「超出服务半径」），`reasons` 收窄为「得分大于 0 的命中理由」，`notes`（降级说明）语义不变（`03-order.md` §13）<br>· 供给缺口 2 条指标的「统计范围」措辞与实现对齐（universe 明确为 `APPROVED + AVAILABLE`），口径值未变<br>**零新增错误码** | — |
 | v0.9.0 | 2026-10-21 | **V3.7 家属智能助手**（[ADR-0020](../adr/0020-assistant-boundary-and-recommendation-guardrail.md)）：新增 `POST /api/assistant/chat`（仅 FAMILY）；新开 10xxx 错误码段（10001 / 10002 / 10003）；新增 `ai-service` 独立 Python 服务（LangChain + FastAPI，8081 端口） | — |
 | v0.10.0 | 2026-11-02 | **V4 · P0-1 账号注销 + 个人数据导出**（[iteration-plan-v4.md](../plan/iteration-plan-v4.md) §6.1 / §6.2）：新增 `POST /api/user/deactivate`、`GET /api/user/data-export`（仅 FAMILY / COMPANION，仅本人）；新开 11xxx 错误码段（`11001` 存在进行中订单，`data` 带 `pendingOrderCount`）；权限矩阵补「注销 / 导出」两行；`BusinessException` 支持携带 `data` | — |
+| v0.11.0 | 2026-11-03 | **V4 · P1-1 自助找回密码（阿里云短信通道）**：新增 `POST /api/auth/sms-code`、`POST /api/auth/forgot-password`（公开，`@AllowElderWrite`）；新增错误码 `1008`（验证码错误 / 过期 / 已使用）/ `1009`（频控超限）；`01-auth-user.md` 新增 §10 – §11；防枚举口径、频控窗口、验证码规则与 `pwd:version` 踢全端行为已写入契约 | — |

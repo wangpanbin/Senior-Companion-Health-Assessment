@@ -238,6 +238,18 @@ nianglin:
     miss-scan-batch: 200
     # 服药日历允许查询的最大天数
     max-calendar-days: 31
+  # 短信通道（V4 · P1-1 自助找回密码）
+  #
+  # 这里只放与环境无关的默认值；凭证与签名 / 模板一律在 profile 或环境变量里，
+  # 共享配置不留任何真实密钥。provider=aliyun 且凭证缺失时 SmsProperties 会
+  # 直接抛 IllegalStateException 拒绝启动（不静默降级为 mock）。
+  sms:
+    provider: ${SMS_PROVIDER:mock}
+    # 连接超时（毫秒），仅 aliyun 通道使用
+    connect-timeout-ms: 3000
+    # 请求超时（毫秒），仅 aliyun 通道使用
+    request-timeout-ms: 5000
+
   # 安全策略
   security:
     # 登录失败几次后锁定（分钟）

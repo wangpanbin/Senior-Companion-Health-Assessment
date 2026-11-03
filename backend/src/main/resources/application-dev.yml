@@ -109,3 +109,10 @@ nianglin:
   security:
     id-card-key: ${ID_CARD_AES_KEY:nianglin-dev-id-card-key-please-change-in-production}
     default-password: ${DEFAULT_RESET_PASSWORD:Nl@123456}
+
+  # ------------------------------------------------------------------
+  # 开发 / 测试 / e2e 固定走 mock 通道：只打脱敏手机号日志，验证码不落日志。
+  # e2e 需要验证码时直接读 Redis `sms:reset:{phone}`。
+  # ------------------------------------------------------------------
+  sms:
+    provider: mock

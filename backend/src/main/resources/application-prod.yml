@@ -68,3 +68,15 @@ logging:
 nianglin:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://nianglin.example.com}
+
+  # ------------------------------------------------------------------
+  # 短信通道（V4 · P1-1）：生产默认 aliyun。
+  # 四个凭证 / 签名 / 模板全部走环境变量，空默认值意味着「未注入即启动失败」
+  # （SmsProperties#validate 抛 IllegalStateException），不允许静默降级为 mock。
+  # ------------------------------------------------------------------
+  sms:
+    provider: ${SMS_PROVIDER:aliyun}
+    access-key-id: ${ALIYUN_SMS_ACCESS_KEY:}
+    access-key-secret: ${ALIYUN_SMS_ACCESS_SECRET:}
+    sign-name: ${ALIYUN_SMS_SIGN_NAME:}
+    template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
