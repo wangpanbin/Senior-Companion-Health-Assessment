@@ -464,8 +464,14 @@ async function submitDraft() {
     draftDialog.value = false
     ElMessage.success('草稿已生成，请在用药计划页补齐用量')
     router.push('/family/medication')
-  } catch {
-    // 拦截器已弹错误提示（如 3004 / 409 / 3007）
+  } catch (err) {
+    // 拦截器已弹通用错误提示；11002 是「已转过」而非失败，改成精确引导并直接带家属去用药计划页。
+    if (err?.code === 11002) {
+      ElMessage.closeAll()
+      ElMessage.warning('该订单已生成过用药计划草稿，正在带你去继续填写')
+      draftDialog.value = false
+      router.push('/family/medication')
+    }
   } finally {
     draftSaving.value = false
   }

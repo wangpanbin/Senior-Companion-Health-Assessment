@@ -18,7 +18,7 @@ import lombok.Getter;
  *   <li>{@code 8xxx} —— 管理后台</li>
  *   <li>{@code 9xxx} —— 数据统计与导出</li>
  *   <li>{@code 10xxx} —— 家属智能助手（M14 · V3.7）</li>
- *   <li>{@code 11xxx} —— 账号注销与数据导出（V4 · P0-1）</li>
+ *   <li>{@code 11xxx} —— 账号注销与数据导出（V4 · P0-1）、用药计划草稿（V4 · P1-2）</li>
  * </ul>
  *
  * <p>⚠️ 本枚举是接口文档 {@code docs/api/README.md} 中错误码表的唯一来源，新增码值必须同步更新文档。</p>
@@ -235,6 +235,19 @@ public enum ResultCode {
      * （V4 新增的扩展，见该类的 javadoc）。</p>
      */
     DEACTIVATE_HAS_ACTIVE_ORDER(11001, "存在进行中的订单，请先完成或取消后再注销"),
+
+    /* ==================== 11xxx 用药计划草稿（V4 · P1-2） ==================== */
+    /**
+     * 同一订单 30 分钟内重复转入用药计划草稿。
+     *
+     * <p>一单一转的去重键为 Redis {@code medication:draft:from-order:{orderId}}（SET NX + TTL 30 分钟）。
+     * 与通用 {@link #CONFLICT} 分开，是为了让前端能把「已转过」与「订单状态不允许」
+     * 区分开——前者应引导家属直接去用药计划页继续填写，后者提示稍后/联系客服。</p>
+     *
+     * <p>刻意不落库、不新增迁移：草稿是会话级产物，TTL 过期后允许重新生成；
+     * Redis 故障时该闸门放行（草稿不是核心写路径）。</p>
+     */
+    MEDICATION_DRAFT_DUPLICATED(11002, "该订单已生成过用药计划草稿，请到用药计划页继续填写"),
     ;
 
     private final Integer code;

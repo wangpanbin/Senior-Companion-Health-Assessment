@@ -6,7 +6,7 @@
     2. 响应**不含** dosage / 剂量字段，药名命中药品字典时 matched=true；
     3. 非本单家属 → 3004；
     4. 订单未完成 → 409；
-    5. 30 分钟内重复调用 → 409（一单一转）；
+    5. 30 分钟内重复调用 → 11002（一单一转）；
     6. 非 FAMILY 角色 → 403。
 
 与其它 e2e 脚本同一原则：除验证码旁路外全部走正常接口；
@@ -173,10 +173,10 @@ def main():
     check("C1 订单未完成（PENDING）→ 409", body.get("code") == 409,
           "code=%s message=%s" % (body.get("code"), body.get("message")))
 
-    # ================= D. 一单一转：30 分钟内重复 → 409 =================
+    # ================= D. 一单一转：30 分钟内重复 → 11002 =================
     _, body = call("POST", "/medication/plan/from-order/%d" % order_completed,
                    draft_body(ELDER_OWN), fam_token)
-    check("D1 30 分钟内重复转草稿 → 409", body.get("code") == 409,
+    check("D1 30 分钟内重复转草稿 → 11002", body.get("code") == 11002,
           "code=%s message=%s" % (body.get("code"), body.get("message")))
 
     # ================= E. 角色：非 FAMILY → 403 =================

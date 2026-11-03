@@ -587,7 +587,7 @@ key   : nianglin:lock:medication:daily
 | 3007 | 服务小结命中诊断 / 用药建议词（防御性复查） |
 | 409 | 订单状态不是 `COMPLETED` / `REVIEWED`（服务未完成或被取消） |
 | 409 | 服务小结尚未填写（提示「服务小结尚未填写」） |
-| 409 | 该订单 30 分钟内已生成过草稿（一单一转） |
+| 11002 | 该订单 30 分钟内已生成过草稿（一单一转；前端据此引导去用药计划页继续填写） |
 | 400 | `elderId` 与订单不一致 / `items` 为空或超过 10 项 / `frequency` 越界 / `timePoint` 格式非法 |
 | 403 | 非 FAMILY 角色调用（COMPANION / ELDER / ADMIN） |
 
@@ -603,7 +603,8 @@ key   : nianglin:lock:medication:daily
   匹配到即回填 `medicineId` / `medicineName` 且 `matched=true`；匹配不到保留原文、`medicineId=null`、`matched=false`。
   该过程**只做字典比对，不解析服务小结、不推断适应症**。
 - **一单一转**：Redis `SET NX` 键 `medication:draft:from-order:{orderId}`，TTL 30 分钟；
-  已存在返回 `409`。Redis 故障时**放行**并 `log.warn`——草稿不是核心写路径，缓存故障不应挡住家属。
+  已存在返回专用码 `11002`（不用通用 `409`，让前端能精确提示「去用药计划页继续填写」）。
+  Redis 故障时**放行**并 `log.warn`——草稿不是核心写路径，缓存故障不应挡住家属。
 - **不落库**：全流程不写任何数据表；草稿只存在于响应与前端表单中。
 
 ---

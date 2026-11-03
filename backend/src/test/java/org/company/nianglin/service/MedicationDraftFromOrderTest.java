@@ -278,12 +278,12 @@ class MedicationDraftFromOrderTest {
     }
 
     /* ================================================================== */
-    /* 8 ~ 9 · 判重：窗口内 409 / Redis 故障放行                              */
+    /* 8 ~ 9 · 判重：窗口内 11002 / Redis 故障放行                          */
     /* ================================================================== */
 
     @Test
-    @DisplayName("转草稿 · 30 分钟内重复调用 → 409（SET NX 失败）")
-    void duplicatedDraftShouldGet409() {
+    @DisplayName("转草稿 · 30 分钟内重复调用 → 11002（专用码，SET NX 失败）")
+    void duplicatedDraftShouldGet11002() {
         given(orderService.requireInvolved(ORDER_ID)).willReturn(completedOrder("已协助取药"));
         given(medicineMapper.selectList(any())).willReturn(List.of(dict(MEDICINE_ID, "苯磺酸氨氯地平片", null)));
         given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
@@ -292,7 +292,7 @@ class MedicationDraftFromOrderTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.buildDraftFromOrder(ORDER_ID, dto(item("苯磺酸氨氯地平片", 1, "08:00"))));
 
-        assertEquals(ResultCode.CONFLICT.getCode(), ex.getCode());
+        assertEquals(ResultCode.MEDICATION_DRAFT_DUPLICATED.getCode(), ex.getCode());
         assertTrue(ex.getMessage().contains("已生成过"));
     }
 

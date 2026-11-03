@@ -408,7 +408,7 @@ public class MedicationServiceImpl implements MedicationService {
             Boolean first = stringRedisTemplate.opsForValue()
                     .setIfAbsent(key, "1", Duration.ofMinutes(DRAFT_TTL_MINUTES));
             if (Boolean.FALSE.equals(first)) {
-                throw new BusinessException(ResultCode.CONFLICT, "该订单已生成过用药计划草稿，请稍后再试");
+                throw new BusinessException(ResultCode.MEDICATION_DRAFT_DUPLICATED);
             }
         } catch (BusinessException ex) {
             throw ex;
