@@ -81,6 +81,7 @@
 | `HANDLE_COMPLAINT` | 处理投诉 |
 | `REVIEW_RULING` | 评价有效性裁定（E4 评价公信力闭环） |
 | `PUBLISH_NOTICE` | 发布系统公告 |
+| `SETTLE_ORDER` | 订单结算核定（P2-1 结算闭环） |
 
 ---
 
@@ -111,6 +112,9 @@
 | 21 | GET | `/api/admin/operations/gap` | ADMIN | 供给时段缺口分析（V3.6） |
 | 22 | GET | `/api/admin/operations/effect` | ADMIN | 干预效果对比（V3.6） |
 | 23 | GET | `/api/admin/metrics` | ADMIN | 指标字典只读导出（V3.6） |
+| 24 | GET | `/api/admin/settlement` | ADMIN | 结算核对列表（P2-1） |
+| 25 | POST | `/api/admin/settlement/{orderId}/confirm` | ADMIN | 单条结算核定（P2-1） |
+| 26 | POST | `/api/admin/settlement/batch-confirm` | ADMIN | 批量结算核定（P2-1） |
 
 ---
 
@@ -1104,3 +1108,154 @@ V3.6 起，「哪个端点返回了哪些指标」由
 |---|---|---|
 | 401 | 未登录 | 无令牌 |
 | 403 | 无权限 | 角色不是 `ADMIN` |
+
+---
+
+## 25. 结算核对列表（P2-1）
+
+`GET /api/admin/settlement`　权限：**ADMIN**
+
+> 结算台账**只收**服务已完成的订单（`COMPLETED` / `REVIEWED`）；
+> `CANCELLED` 永不进入台账。
+> 周期口径是**服务完成时间 `finish_time`**，与订单统计的「下单时间」不是同一口径。
+
+### 请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `paymentStatus` | String | 否 | `UNPAID`（未结算）/ `SETTLED`（已结算）；不传为全部 |
+| `keyword` | String | 否 | 订单号 / 医院 / 科室模糊匹配 |
+| `startDate` / `endDate` | String | 否 | `yyyy-MM-dd`，按 `finish_time` 闭区间（含当天） |
+| `page` / `size` | Integer | 否 | 分页，默认 1 / 10 |
+
+固定条件：`status IN (COMPLETED, REVIEWED)`，排序 `finish_time DESC, id DESC`。
+
+### 响应
+
+```json
+{
+  "code": 200, "message": "操作成功",
+  "data": {
+    "total": 128, "page": 1, "size": 10, "pages": 13,
+    "records": [
+      {
+        "id": 1001,
+        "orderNo": "NL20260915000001",
+        "familyName": "张*",
+        "elderName": "李*",
+        "companionName": "王*",
+        "hospital": "市第一人民医院",
+        "department": "心内科",
+        "visitTime": "2026-09-15 09:00:00",
+        "finishTime": "2026-09-15 12:30:00",
+        "fee": "120.00",
+        "settleAmount": "120.00",
+        "paymentStatus": "UNPAID",
+        "paymentStatusLabel": "未结算",
+        "status": "COMPLETED",
+        "statusLabel": "已完成"
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `fee` | 下单时的服务费，只读；两位小数字符串 |
+| `settleAmount` | **服务端计算**：`actual_fee` 非空取之，否则取 `fee`；两位小数字符串。前端不得回传该值 |
+| `paymentStatus` | `UNPAID` / `SETTLED`，中文名在 `paymentStatusLabel` |
+| 姓名三列 | 一律 `MaskUtil.name()` 脱敏；本页不适用订单详情的全名豁免 |
+
+---
+
+## 26. 单条结算核定（P2-1）
+
+`POST /api/admin/settlement/{orderId}/confirm`　权限：**ADMIN**
+
+请求体：**无**。金额不接受入参 —— 核定时由服务端把 `actual_fee` 快照为
+`COALESCE(actual_fee, fee)`，「核定那一刻的结算金额」自此冻结。
+
+### 结果语义
+
+| 场景 | code | 结果 |
+|---|---|---|
+| 订单不存在 | `3001` | 失败 |
+| 订单状态不在 `COMPLETED` / `REVIEWED` | `8004` | 失败 |
+| 已是 `SETTLED` | `200` | 成功，`settledNow=false`，**不重复写操作日志** |
+| `UNPAID` 且状态合法 | `200` | 成功，`settledNow=true`，写一条 `admin_oper_log` |
+
+留痕内容：`operType=SETTLE_ORDER`、`targetType=ORDER`、`targetId=orderId`、
+`targetDesc=orderNo`、`beforeStatus=UNPAID`、`afterStatus=SETTLED`、
+备注含服务费与结算金额；操作人、IP、时间由留痕组件自动补齐。
+
+### 响应
+
+```json
+{
+  "code": 200, "message": "已核定",
+  "data": {
+    "orderId": 1001,
+    "orderNo": "NL20260915000001",
+    "paymentStatus": "SETTLED",
+    "paymentStatusLabel": "已结算",
+    "settleAmount": "120.00",
+    "settledNow": true
+  }
+}
+```
+
+> 幂等语义：同一订单重复调用始终返回 `200`，第二次起 `settledNow=false`，
+> 不会再产生第二条日志。客户端可安全重试。
+
+---
+
+## 27. 批量结算核定（P2-1）
+
+`POST /api/admin/settlement/batch-confirm`　权限：**ADMIN**
+
+### 请求体
+
+```json
+{ "orderIds": [1001, 1002, 1003] }
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `orderIds` | Long[] | 是 | 1–100 条；为空或超限返回 `400`；重复 ID 去重并保留首次出现顺序 |
+
+### 响应
+
+```json
+{
+  "code": 200, "message": "批量核定完成",
+  "data": {
+    "total": 3,
+    "settledCount": 1,
+    "alreadySettledCount": 1,
+    "failedCount": 1,
+    "items": [
+      { "orderId": 1001, "orderNo": "NL...0001", "success": true,
+        "settledNow": true, "code": 200, "message": "已核定", "settleAmount": "120.00" },
+      { "orderId": 1002, "orderNo": "NL...0002", "success": true,
+        "settledNow": false, "code": 200, "message": "该单已结算", "settleAmount": "80.00" },
+      { "orderId": 1003, "orderNo": null, "success": false,
+        "settledNow": false, "code": 8004, "message": "当前订单状态不可结算核对", "settleAmount": null }
+    ]
+  }
+}
+```
+
+- 逐项独立成败：业务失败不中断其余项
+- 只有真正发生 `UNPAID → SETTLED` 的订单才各写一条日志（不写批量汇总日志）
+- 数据库层异常整批回滚，走全局异常处理
+- 汇总口径：`total = settledCount + alreadySettledCount + failedCount`
+
+### 错误码
+
+| 码 | 含义 | 触发条件 |
+|---|---|---|
+| 400 | 请求参数错误 | `orderIds` 为空或超过 100 条 |
+| 403 | 无权限 | 角色不是 `ADMIN` |
+| 8004 | 当前订单状态不可结算核对 | 单项订单不是 `COMPLETED` / `REVIEWED` |
+| 3001 | 订单不存在 | 单项订单 ID 不存在 |

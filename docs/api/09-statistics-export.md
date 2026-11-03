@@ -38,6 +38,7 @@
 | 9 | GET | `/api/statistics/companion/me/trend` | COMPANION | 陪诊员工作台趋势（V3.3） |
 | 10 | GET | `/api/statistics/companion/me/profile` | COMPANION | 陪诊员服务画像（V3.3） |
 | 11 | GET | `/api/statistics/companion/me/income` | COMPANION | 陪诊员收入中心（V3.3） |
+| 12 | GET | `/api/settlement/export` | ADMIN | 导出结算单 Excel（P2-1） |
 
 ---
 
@@ -565,3 +566,57 @@
 | `401` | 未登录 | 无令牌 |
 | `403` | 无权限 | 角色不是 `COMPANION` |
 | `9002` | 统计时间区间不合法 | 区间长度 > 366 天，或开始日晚于结束日 |
+
+---
+
+## 9. 导出结算单 Excel（P2-1）
+
+`GET /api/settlement/export`　权限：**ADMIN**
+
+### 请求参数
+
+筛选条件与 `/api/admin/settlement`（`08-admin.md` §25）**完全一致**：
+`paymentStatus` / `keyword` / `startDate` / `endDate`，不含分页。
+周期口径为**服务完成时间 `finish_time`**，固定只导 `COMPLETED` / `REVIEWED`。
+
+> 金额一律由服务端计算（`actual_fee` 非空取之，否则取 `fee`），
+> 接口**不接收任何金额入参**，导出结果与页面筛选结果一致。
+
+### 响应
+
+- `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+- `Content-Disposition: attachment; filename="结算单_20261103_104500.xlsx"`
+- Body 为二进制流（不走统一响应结构）
+
+### 导出列定义（12 列）
+
+| 列序号 | 列名 | 字段 | 说明 |
+|---|---|---|---|
+| 0 | 订单号 | orderNo | |
+| 1 | 家属姓名 | familyName | 脱敏 |
+| 2 | 老人姓名 | elderName | 脱敏 |
+| 3 | 陪诊员 | companionName | 脱敏，可空 |
+| 4 | 医院 | hospital | |
+| 5 | 科室 | department | |
+| 6 | 就诊时间 | visitTime | `yyyy-MM-dd HH:mm:ss` |
+| 7 | 服务完成时间 | finishTime | `yyyy-MM-dd HH:mm:ss` |
+| 8 | 服务费(元) | fee | 两位小数 |
+| 9 | 结算金额(元) | settleAmount | 服务端计算，两位小数 |
+| 10 | 结算状态 | paymentStatusLabel | 中文 |
+| 11 | 订单状态 | statusLabel | 中文 |
+
+不含手机号、身份证号；不提供任何可回传金额的字段。
+
+### 错误场景
+
+| code | 场景 |
+|---|---|
+| 9001 | 导出数据量超过上限，请缩小筛选范围 |
+| 403 | 角色不是 `ADMIN` |
+
+### 实现要点
+
+- 复用既有 `ExportService.writeExcel(...)`，不新造第二套导出实现
+- 行数上限复用现有导出配置，超限抛 `9001`
+- 金额 `setScale(2, HALF_UP).toPlainString()`；姓名 `MaskUtil.name()`
+- 文件名中文按既有导出范式做 URL 编码
