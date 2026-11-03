@@ -205,6 +205,7 @@ public enum ResultCode {
     AUDIT_STATUS_ILLEGAL(8001, "资质审核状态不合法"),
     CANNOT_DISABLE_ADMIN(8002, "不能封禁管理员账号"),
     AUDIT_REASON_REQUIRED(8003, "驳回时必须填写原因"),
+    SETTLEMENT_STATUS_ILLEGAL(8004, "当前订单状态不可结算核对"),
 
     /* ==================== 9xxx 数据统计与导出 ==================== */
     EXPORT_LIMIT_EXCEEDED(9001, "导出数据量超过上限，请缩小筛选范围"),

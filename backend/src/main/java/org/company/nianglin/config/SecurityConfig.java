@@ -194,6 +194,10 @@ public class SecurityConfig {
                         // /reset-password；带合法请求体时才是 403）。越权者据此可从响应码区分
                         // 「没权限」与「有权限但参数错」。放在过滤链上就与请求体是否合法无关。
                         .requestMatchers("/api/admin/**").hasRole(RoleConstants.ADMIN)
+                        // 结算单导出同样只允许管理员：路径不在 /api/admin 下，
+                        // 必须在过滤链上单独收口，否则非管理员带着非法查询参数
+                        // 会先被参数校验拦成 400，而不是 403（理由同上）
+                        .requestMatchers("/api/settlement/**").hasRole(RoleConstants.ADMIN)
                         // 其余全部需要登录。角色细粒度控制在各接口的 @PreAuthorize 上，
                         // 不在这里堆路径规则 —— 路径规则一多就必然有人漏配，而漏配的那条就是漏洞
                         .anyRequest().authenticated())

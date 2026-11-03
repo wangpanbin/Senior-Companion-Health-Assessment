@@ -44,6 +44,14 @@ public enum OperType {
      * 申诉是触发线索，裁定是评价侧的写动作；管理员先裁定、再单独结案投诉。</p>
      */
     REVIEW_RULING("评价有效性裁定"),
+    /**
+     * 订单结算核定（V4 · P2-1 结算闭环）。
+     *
+     * <p>管理员在结算台账上把一笔「服务已完成、尚未结算」的订单核对为已结算。
+     * 这是 {@code payment_status} 从 {@code UNPAID} 变成 {@code SETTLED} 的<b>唯一入口</b>，
+     * 与 {@link #ARBITRATE_ORDER}（改订单状态）、{@link #REASSIGN_ORDER}（改归属）互不替代。</p>
+     */
+    SETTLE_ORDER("订单结算核定"),
     PUBLISH_NOTICE("发布系统公告"),
     ;
 
