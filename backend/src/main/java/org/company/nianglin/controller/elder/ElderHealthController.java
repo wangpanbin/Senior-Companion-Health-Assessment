@@ -5,12 +5,18 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.dto.DateRangeQuery;
 import org.company.nianglin.dto.HealthTimelineQuery;
+import org.company.nianglin.dto.VitalSignQuery;
+import org.company.nianglin.dto.VitalTrendQuery;
 import org.company.nianglin.service.ElderHealthService;
+import org.company.nianglin.service.VitalSignService;
 import org.company.nianglin.vo.ElderHealthOverviewVO;
 import org.company.nianglin.vo.HealthTimelineVO;
+import org.company.nianglin.vo.VitalSignVO;
+import org.company.nianglin.vo.VitalTrendVO;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,6 +50,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ElderHealthController {
 
     private final ElderHealthService elderHealthService;
+    private final VitalSignService vitalSignService;
 
     @Operation(summary = "我的健康概览",
             description = "只返回自己的数据：今日用药完成情况、近期就医次数、待处理事项。"
@@ -61,5 +68,26 @@ public class ElderHealthController {
     @GetMapping("/health/timeline")
     public Result<HealthTimelineVO> timeline(@Valid HealthTimelineQuery query) {
         return Result.success(elderHealthService.selfTimeline(query));
+    }
+
+    /* ==================== 体征记录（V4 · P2-2，只读） ==================== */
+
+    @Operation(summary = "我的体征记录",
+            description = "只返回自己的测量数值、时间与录入来源，不含任何解释或区间。"
+                    + "按测量时间倒序分页；档案由登录态取，不接受 elderId 参数；"
+                    + "尚未建立老人档案时返回 2001")
+    @PreAuthorize("hasRole('ELDER')")
+    @GetMapping("/vitals")
+    public Result<PageResult<VitalSignVO>> vitals(@Valid VitalSignQuery query) {
+        return Result.success(vitalSignService.listForElder(query));
+    }
+
+    @Operation(summary = "我的体征趋势",
+            description = "按测量时间升序返回单一体征的数值点；超过 500 条时取最近 500 条并置 truncated=true；"
+                    + "档案由登录态取，不接受 elderId 参数")
+    @PreAuthorize("hasRole('ELDER')")
+    @GetMapping("/vitals/trend")
+    public Result<VitalTrendVO> vitalTrend(@Valid VitalTrendQuery query) {
+        return Result.success(vitalSignService.trendForElder(query));
     }
 }

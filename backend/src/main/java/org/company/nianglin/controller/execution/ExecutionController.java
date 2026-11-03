@@ -9,13 +9,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.CheckinCreateDTO;
+import org.company.nianglin.dto.VitalSignCreateDTO;
 import org.company.nianglin.service.ExecutionService;
+import org.company.nianglin.service.VitalSignService;
 import org.company.nianglin.vo.CheckinResultVO;
 import org.company.nianglin.vo.CheckinVO;
 import org.company.nianglin.vo.FileUploadVO;
 import org.company.nianglin.vo.ProgressVO;
 import org.company.nianglin.vo.TrackPointVO;
+import org.company.nianglin.vo.VitalSignVO;
+import org.company.nianglin.vo.VitalWithdrawVO;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -56,6 +61,7 @@ import java.util.List;
 public class ExecutionController {
 
     private final ExecutionService executionService;
+    private final VitalSignService vitalSignService;
 
     /* ==================== 陪诊员操作 ==================== */
 
@@ -82,6 +88,32 @@ public class ExecutionController {
             @Parameter(description = "订单 ID", example = "1001") @PathVariable("orderId") Long orderId,
             @Parameter(description = "文件", required = true) @RequestParam("file") MultipartFile file) {
         return Result.success("上传成功", executionService.uploadPhoto(orderId, file));
+    }
+
+    /* ==================== 服务中代录体征（V4 · P2-2） ==================== */
+
+    @Operation(summary = "服务中代录体征",
+            description = "须为本单陪诊员（否则 3004），订单须为「服务中」（否则 3002），"
+                    + "订单不存在返回 3001。只保存测量数值，老人取订单关联档案；"
+                    + "同一老人同一类型同一分钟只允许一条（否则 2008）")
+    @PreAuthorize("hasRole('" + RoleConstants.COMPANION + "')")
+    @PostMapping("/{orderId}/vitals")
+    public Result<VitalSignVO> createVital(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("orderId") Long orderId,
+            @Valid @RequestBody VitalSignCreateDTO dto) {
+        return Result.success("记录已保存", vitalSignService.createForCompanion(orderId, dto));
+    }
+
+    @Operation(summary = "撤回服务中代录的体征",
+            description = "须为本单陪诊员且订单仍在「服务中」（否则 3004 / 3002）；"
+                    + "记录不存在返回 2009，不属于本单返回 3004，非本人代录返回 2010")
+    @PreAuthorize("hasRole('" + RoleConstants.COMPANION + "')")
+    @DeleteMapping("/{orderId}/vitals/{recordId}")
+    public Result<VitalWithdrawVO> withdrawVital(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("orderId") Long orderId,
+            @Parameter(description = "体征记录 ID", example = "123")
+            @PathVariable("recordId") Long recordId) {
+        return Result.success("记录已撤回", vitalSignService.withdrawByCompanion(orderId, recordId));
     }
 
     /* ==================== 相关方查询 ==================== */
