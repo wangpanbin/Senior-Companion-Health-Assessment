@@ -18,6 +18,7 @@
 | `e2e_user_profile.py` … `e2e_statistics.py` | M3–M10 各模块端到端实测（共 9 个，命名对应模块） | 控制台 PASS/FAIL 汇总 |
 | `e2e_user_deactivate.py` | **V4 P0-1 账号注销 + 数据导出实测**：20 项断言（导出契约与四角色权限 / 注销四道闸门 / 11001 进行中订单拦截 / 注销后旧令牌 401、去标识化落库），注销全链路只在当轮注册的临时账号上跑 | 控制台 PASS/FAIL 汇总 |
 | `e2e_order_medication_draft.py` | **V4 P1-2 订单转用药计划草稿实测**：成功转草稿且响应无 dosage / 未匹配药名 / 非本单家属 3004 / 未完成 409 / 重复 409 / 非 FAMILY 403 / elderId 不符 400，自带订单与 Redis 键清理 | 控制台 PASS/FAIL 汇总 |
+| `e2e_sms_mock.py` | **V4 P1-3 通知偏好 + 漏服站外短信实测**：偏好读写与回读 / 关闭短信后只发站内信且无 SENT 行 / 开启后 mock 产生 SENT 行且仅存脱敏号；造 2 条逾期任务、按 biz_id 清理、恢复偏好快照 | 控制台 PASS/FAIL 汇总 |
 | `cleanup_util.py` | **e2e 公共清理助手**（BUG_LIST L1）：`max_id` 记基线 / `delete_since` 按基线删行（基线≤0 拒绝执行）/ `flush_unread_cache` 清 `message:unread:*` | 被 9 个 e2e 脚本 import |
 | `bench_setup.py` / `bench_seed_orders.py` / `bench_teardown.py` | JMeter 压测的数据准备 / 造 50 单 / 清理 | `bench_tokens.csv`、`bench_meta.json` |
 | `jmeter_m4_accept.jmx` | M4 50 并发抢单（`@Version` 乐观锁防超卖） | `m4_*.jtl/csv` |
@@ -163,6 +164,12 @@ python e2e_statistics.py      # M10 统计与导出（含导出上限的特殊�
 # V4 P1-2：订单 → 用药计划草稿（需要后端显式 dev profile，否则 application.yml 无默认 profile 会静默退出）
 $env:SPRING_PROFILES_ACTIVE="dev"
 python e2e_order_medication_draft.py
+
+# V4 P1-3：通知偏好 + 漏服站外短信（mock 通道，不真实外发；靠 sms_send_log 回库核对）
+# 漏服扫描默认 5 分钟首跑 + 30 分钟节奏，e2e 用运行期覆盖加速（不改生产代码默认值）：
+$env:NIANGLIN_MEDICATION_MISSED_SCAN_INITIAL_DELAY_MS="5000"
+$env:NIANGLIN_MEDICATION_MISSED_SCAN_INTERVAL_MS="10000"
+python e2e_sms_mock.py
 ```
 
 ## 环境要求
@@ -191,6 +198,7 @@ python e2e_order_medication_draft.py
 | 15 | cleanup() 一跑就把整张种子表删光 | `DELETE ... WHERE id > 0` 等价于清空。`cleanup_util.delete_since` 在**基线 ≤ 0 时拒绝执行**——宁可漏清一轮测试垃圾，也不许在基线缺失时动手 |
 | 16 | e2e_medication 阶段二报 `NameError: b5_order_id` | cleanup() 引用的变量只在 main() 局部赋值，阶段二（`--scan-phase` 新进程）根本读不到。**cleanup() 要读的每个变量都必须是模块级全局**（applicant_id / new_elder_user_id / b5_order_id 同理） |
 | 17 | 本地起后端「静默退出」，退出码 1 但几乎看不到错误日志 | `application.yml` 刻意**不给** `spring.profiles.active` 默认值（`${SPRING_PROFILES_ACTIVE:}`，防止生产漏配时兜底成 dev）。当前环境没设该变量 → profile 为空 → `application-dev.yml` 不加载（数据源缺失启动失败），且 `logback-spring.xml` 的 `<springProfile>` 块不生效、错误日志被完全吞掉。**本地启动 / 跑 e2e 前先 `$env:SPRING_PROFILES_ACTIVE="dev"`** |
+| 18 | 本地 e2e 看到 `sms_send_log` 有 `SENT` 行，就以为真的发出去了；或生产切 aliyun 后启动直接失败，报缺模板 | **mock 通道不会真实外发**，`SENT` 只代表「编排层认为发送成功」，手机不会收到短信；生产 `provider=aliyun` 时 `verification` / `missed-dose` 两个模板 Code **都必须非空**（`ALIYUN_SMS_TEMPLATE_CODE_VERIFICATION` / `ALIYUN_SMS_TEMPLATE_CODE_MISSED_DOSE`），缺任一即启动失败，这是刻意 fail-fast 而不是 bug；静默时段默认 `22:00–08:00` **跨零点**，判定用 `now >= start || now < end`（`08:00` 整点视为非静默），`next_retry_at` 要按「当前时刻早于 end → 当天 08:00，否则次日 08:00」计算，别写成 `now + 8h` |
 
 ## 生成物与手工物的边界
 

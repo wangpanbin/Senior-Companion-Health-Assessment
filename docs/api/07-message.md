@@ -64,6 +64,8 @@
 | 5 | PUT | `/api/message/read-all` | 已登录 | 全部已读 |
 | 6 | DELETE | `/api/message/{id}` | 已登录 | 删除消息 |
 | 7 | GET | `/sse/message` | 已登录 | 未读数实时推送（**SSE 长连接**，事件名 `NEW_MESSAGE`；**不带 `/api` 前缀**，鉴权走 `Authorization` 头） |
+| 8 | GET | `/api/message/notification-preference` | **仅 FAMILY** | 读取漏服站外短信 / 静默时段偏好 |
+| 9 | PUT | `/api/message/notification-preference` | **仅 FAMILY** | 更新偏好（两个开关都必填） |
 
 ---
 
@@ -275,6 +277,128 @@
 
 ---
 
+## 8. 通知偏好（V4 · P1-3）
+
+`GET /api/message/notification-preference`　权限：**仅 FAMILY**
+`PUT /api/message/notification-preference`　权限：**仅 FAMILY**
+
+### 请求体（PUT）
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `smsMissedEnabled` | Boolean | 是 | 是否接收漏服站外短信；关闭后**站内信仍然发送** |
+| `quietHoursEnabled` | Boolean | 是 | 是否启用静默时段（22:00–08:00 不发送短信，顺延到次日 08:00） |
+
+### 响应（GET / PUT 同构）
+
+```json
+{ "smsMissedEnabled": true, "quietHoursEnabled": true }
+```
+
+### 实现要点
+
+- 偏好按「当前登录用户」读写，**入参不接收 userId**；FAMILY 之外的任何角色调用均返回 `403`。
+- 从未设置过的用户返回两个 `true`（默认开启），**GET 不落库**，避免给全体家属回填无意义的行。
+- 关闭站外短信只影响短信渠道：站内信仍按既有规则推送给全部绑定家属。
+- PUT 成功文案「通知偏好已保存」，前端以返回值刷新本地开关，不再重复 GET。
+
+---
+
+## 9. 短信站外提醒编排（V4 · P1-3）
+
+> 本节描述**非 HTTP 契约**：漏服扫描判定后，站内信照常发送，短信作为第二条渠道独立编排。
+
+### 9.1 触发与失败隔离
+
+1. `MedicationScheduler` 每 30 分钟扫描漏服（节奏与锁**不变**）。
+2. `MedicationServiceImpl#scanMissedTasks` 判定漏服并写 `notify_sent`。
+3. `InternalMessageReminderDispatcher#notifyFamily` 先发站内信，**之后**调用
+   `SmsReminderService#enqueueMissedDose(task, familyIds)`。
+4. 两个渠道各自 `try/catch`：站内信失败不阻断短信，短信失败不阻断站内信，也不影响漏服判定。
+
+### 9.2 偏好与退订
+
+- 每位家属读 `notification_preference`；**无记录视为默认开启**。
+- `sms_missed_enabled=0` → 跳过短信入队与发送，站内信不受影响。
+- `quiet_hours_enabled=0` → 该家属不受静默时段约束，立即发送；它与全局
+  `nianglin.sms.quiet-hours.enabled` 是「与」关系：只有两者都开启才会顺延。
+
+### 9.3 幂等键（唯一索引是最终防线）
+
+```
+dedup_key = "medication-missed:" + taskId + ":" + yyyy-MM-dd
+```
+
+- 先 `INSERT`，命中 `uk_dedup_key` 唯一键即视为已入队，直接跳过。
+- 键是**任务级**：同一漏服任务同一天只发一条站外短信。家属列表按绑定顺序遍历，
+  第一个「开启短信且能取到手机号」的家属获得这条短信。
+- 若后续产品要求「每位家属各收一条」，把 `userId` 加进 `dedup_key` 即可，索引结构不用改。
+
+### 9.4 静默时段（跨零点）
+
+- 默认 `22:00–08:00`，可配置、可开关。
+- 落在静默段内：写入 `status=PENDING`、`next_retry_at=次日 08:00`，**延后不丢**。
+- 跨零点判定：`start > end` 时，`now >= start || now < end` 即为静默；
+  `08:00` 这一分钟视为**非静默**（`[start, end)` 半开区间）。
+- 静默时段只影响短信，站内信仍即时入库 / 推送。
+
+### 9.5 发送、退避与死信
+
+| 状态 | 含义 |
+|---|---|
+| `PENDING` | 待发送 / 待重试（静默顺延或退避中） |
+| `SENT` | 已发送，写 `sent_at` |
+| `FAILED` | 永久失败不重试（用户已注销、无手机号、任务已不存在） |
+| `DEAD` | 死信：重试耗尽或合规词拦截 |
+
+- 文案复用 `MessageTemplateUtil.content(MessageType.MEDICATION_REMIND, params)` 并先过
+  `ComplianceCheckUtil.firstHit`；命中 → `DEAD` + `last_error=compliance:<词>`，**不静默丢弃**。
+- 短信模板参数只放中性变量：`elderName`（已脱敏）+ `medicineName` + `planTime`；
+  **禁止** dosage / 剂量 / 诊断 / 建议类词。
+- 失败退避：第 1 次 `baseDelay`，第 2 次 `2 × baseDelay`，第 `n` 次 `baseDelay × 2^(n-1)`，
+  上限 `maxDelay`。
+- `attempt_count >= max-attempts` → `DEAD`，`last_error` 记录原因（截断 500 字）。
+- `SmsRetryScheduler` 独立扫描 `status=PENDING && next_retry_at <= now`，Redis 锁
+  `nianglin:lock:sms:retry`，**不复用** `MedicationScheduler` 的锁与节奏。
+
+### 9.6 审计表 `sms_send_log`
+
+| 字段 | 说明 |
+|---|---|
+| `biz_type` / `biz_id` | 业务类型（`MEDICATION_MISSED`）与 `medication_task.id` |
+| `user_id` | 接收家属 ID |
+| `phone_masked` | **只存脱敏号**（`138****8888`），禁止存完整手机号 |
+| `scene` / `template_code` | `missed-dose` 与模板 Code 快照 |
+| `status` / `attempt_count` / `last_error` | 状态机与失败原因 |
+| `dedup_key` | 唯一键，见 9.3 |
+| `scheduled_at` / `sent_at` / `next_retry_at` | 入队、成功、下次重试时间 |
+| `create_time` / `update_time` / `deleted` | 审计与逻辑删除 |
+
+> 日志只允许打印**脱敏手机号**与 `taskId`，禁止打印完整手机号、验证码或短信正文。
+
+### 9.7 模板 Code 与配置项
+
+| 场景 | Spring 配置键 | 生产环境变量 | dev 假值 |
+|---|---|---|---|
+| 找回密码 | `nianglin.sms.templates.verification` | `ALIYUN_SMS_TEMPLATE_CODE_VERIFICATION` | `SMS_DEV_VERIFICATION` |
+| 漏服提醒 | `nianglin.sms.templates.missed-dose` | `ALIYUN_SMS_TEMPLATE_CODE_MISSED_DOSE` | `SMS_DEV_MISSED_DOSE` |
+
+> `provider=aliyun` 时两个模板 Code 都必须非空，缺任一即**启动失败**（`SmsProperties#validate`）。
+> 不再保留单 `templateCode` 字段，也不提供兼容层。
+
+| 配置项 | 默认 | 说明 |
+|---|---|---|
+| `nianglin.sms.quiet-hours.enabled` | `true` | 静默时段总开关 |
+| `nianglin.sms.quiet-hours.start` | `22:00` | 静默开始（HH:mm） |
+| `nianglin.sms.quiet-hours.end` | `08:00` | 静默结束（HH:mm，跨零点） |
+| `nianglin.sms.retry.max-attempts` | `3` | 最大尝试次数，达到后 `DEAD` |
+| `nianglin.sms.retry.base-delay-ms` | `60000` | 首次退避 |
+| `nianglin.sms.retry.max-delay-ms` | `3600000` | 单次退避上限 |
+| `nianglin.sms.retry.scan-interval-ms` | `60000` | 重试扫描间隔 |
+| `nianglin.sms.retry.batch-size` | `100` | 单轮扫描上限 |
+
+---
+
 ## 三、消息模板（统一在后端维护，禁止前端拼文案）
 
 | 类型 | 标题模板 | 正文模板 |
@@ -298,6 +422,11 @@
 > 家属收到的就是「出发：—（订单 NL2026…）」——一个破折号当正文。
 > 因此该类型单独判定：**备注为空时改用不带冒号的句式**，而不是套用缺省占位符。
 > `ORDER_COMPLETED` 的 `{reason}` 同为可选占位符，仅 M9 仲裁强制完成的路径传入。
+>
+> **短信站外提醒（V4 · P1-3）** 不新增正文模板，短信发送前用同一份 `MEDICATION_REMIND`
+> 文案做合规检查；实际下发到短信模板的变量只有 `elderName`（脱敏）、`medicineName`、
+> `planTime` 三个中性变量。阿里云控制台的两个模板正文也必须遵守「不做诊断、不开药方」，
+> 不得出现剂量 / 诊断 / 建议类表述。
 
 ---
 
@@ -313,6 +442,9 @@
 - [ ] 四类核心消息（订单事件、审核结果、漏服提醒、系统公告）均能正常下发
 - [ ] 消息详情（v1.1.0）：本人调用 `GET /api/message/{id}` 返回 200 且正文与列表一致，非本人 → `7002`（`MessageServiceTest#getDetailShouldReturnOwnMessage` / `#getDetailShouldReport7002ForOthersMessage`、`frontend/e2e/specs/07-message.spec.js`「消息详情（v1.1.0）：本人 200，别人的消息 7002（越权走服务端拦截）」）
 - [ ] 消息不存在或已被接收人删除 → 详情接口返回 `7001`，且详情为只读（不写 `is_read`）（`MessageServiceTest#getDetailShouldReport7001WhenMissing` / `#getDetailShouldHideReceiverDeletedMessage`）
+- [ ] 通知偏好（V4 · P1-3）：FAMILY 可读写两个开关，非 FAMILY 一律 `403`；从未设置过返回两个 `true`
+- [ ] 站外短信（V4 · P1-3）：同一任务同一天重复入队只落 1 行、只发 1 次；`sms_send_log.phone_masked` 不含完整手机号
+- [ ] 关闭站外短信后漏服只发站内信，`sms_send_log` 无 `SENT` 行；静默时段内入队为 `PENDING` 且 `next_retry_at=次日 08:00`
 
 ---
 
@@ -324,3 +456,4 @@
 | v1.1.0 | 2026-09-29 | 新增 `GET /api/message/{id}` 消息详情（前端详情页按 id 拉取，废弃 base64 snapshot 传参）；`ORDER_COMPLETED` 模板增加可选 `{reason}`（M9 仲裁说明） | — |
 | v1.2.0 | 2026-11-02 | V4 阶段 P0-2（E1a）：新增 `MEDICATION_MISSED` 漏服提醒类型（接收人为当天陪诊订单的接单陪诊员，`linkUrl` 指向 `/companion/execute/{orderId}`）；`MEDICATION_REMIND` 接收人口径收敛为「全部绑定家属」 | — |
 | v1.2.1 | 2026-11-03 | 补写 §7「鉴权失败的行为」既定契约：无令牌/无效令牌返回 **200 + 立即关闭空 emitter**、不下发任何事件；客户端以收到 `CONNECTED` 为订阅成功判据（文档补记，行为未改） | — |
+| v1.3.0 | 2026-11-03 | V4 · P1-3：新增通知偏好接口（仅 FAMILY）与「短信站外提醒编排」章节；模板配置改为按场景路由（`verification` / `missed-dose`），生产新增两个模板 Code 环境变量 | — |

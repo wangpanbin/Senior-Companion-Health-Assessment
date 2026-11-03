@@ -93,6 +93,9 @@
 | `chat_message` | `idx_order_id_id` | 普通 | `order_id`, `id` | 聊天历史倒序游标、未读计数、会话最后一条 |
 | `chat_message` | `idx_sender` | 普通 | `sender_id`, `create_time` | 按发送人审计聊天记录 |
 | `chat_read_cursor` | `uk_order_user` | 唯一 | `order_id`, `user_id` | 一订单一用户一条已读游标（幂等 upsert） |
+| `notification_preference` | `uk_user_id` | 唯一 | `user_id` | 一账号一份陪诊员资料 |
+| `sms_send_log` | `uk_dedup_key` | 唯一 | `dedup_key` | 支撑业务查询条件 |
+| `sms_send_log` | `idx_status_retry` | 普通 | `status`, `next_retry_at` | 支撑业务查询条件 |
 
 ## 二、关键设计决策
 
