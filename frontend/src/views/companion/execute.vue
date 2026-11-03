@@ -18,14 +18,16 @@
  */
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElNotification } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import {
   NlPhoneShell, NlMobileOnlyPage, NlTimeline, NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlNoticeBar
 } from '@/components'
+import VitalSignForm from '@/components/health/VitalSignForm.vue'
 import { getOrder, startService, completeService } from '@/api/order'
 import {
   getProgress, listCheckins, checkin, uploadExecutionPhoto, connectProgressSocket
 } from '@/api/execution'
+import { withdrawCompanionVital } from '@/api/vitalSign'
 import { formatVisitTime, formatMoney, formatTime, formatDateTime } from '@/utils/format'
 
 const route = useRoute()
@@ -63,6 +65,17 @@ const summary = ref('')
 /** 现场照 / 取药凭证 URL（来自 uploadExecutionPhoto） */
 const photoUrls = ref([])
 const uploading = ref(false)
+
+/**
+ * 本次打开页面期间录入的体征（V4 · P2-2）。
+ *
+ * 规格只给了陪诊员「录 + 撤回」两个写端点，没有给订单维度的体征查询端点，
+ * 因此这里只回显本次会话内刚录入的记录，刷新页面即清空；
+ * 完整记录在老人 / 家属端的时间线中查看。是否补「陪诊员查询本单体征」端点，
+ * 已作为待拍板项记录，不擅自加接口。
+ */
+const submittedVitals = ref([])
+const withdrawingVital = ref(null)
 
 /** 设备定位（来自 geolocation，仅用于距离校验） */
 const location = ref({ lng: '', lat: '', addr: '', getting: false })
@@ -147,6 +160,36 @@ async function reloadProgress() {
     // 拦截器已弹错
   } finally {
     maybeCloseSocket()
+  }
+}
+
+/* ===================== 体征代录（V4 · P2-2） ===================== */
+
+/** 录入成功：把服务端返回的这条记录就地加进本次会话列表 */
+function handleVitalCreated(record) {
+  if (record && record.id != null) {
+    submittedVitals.value = [record, ...submittedVitals.value]
+  }
+}
+
+/** 撤回本人本单的记录：服务端会再校验一次「订单仍在服务中」 */
+async function handleWithdrawVital(record) {
+  try {
+    await ElMessageBox.confirm('撤回后这条记录将不再显示，可重新录入。确认撤回？', '撤回体征记录', {
+      confirmButtonText: '撤回',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  withdrawingVital.value = record.id
+  try {
+    await withdrawCompanionVital(orderId.value, record.id)
+    ElMessage.success('记录已撤回')
+    submittedVitals.value = submittedVitals.value.filter((item) => item.id !== record.id)
+  } finally {
+    withdrawingVital.value = null
   }
 }
 
@@ -359,6 +402,7 @@ onMounted(async () => {
 // 换订单必须先断开旧订阅再按新订单重连，否则会出现「推送的是 A、页面看的是 B」。
 watch(orderId, async () => {
   closeSocket()
+  submittedVitals.value = []
   await loadAll()
   if (subable.value) setupSocket()
 })
@@ -433,6 +477,35 @@ onBeforeUnmount(() => {
             </el-button>
           </template>
         </NlTimeline>
+      </NlCard>
+
+      <!-- 服务中代录体征（V4 · P2-2）：仅服务中显示，其它状态整卡隐藏 -->
+      <NlCard v-if="orderStatus === 'IN_SERVICE'" title="服务中代录体征">
+        <p class="nl-caption nl-text-muted node-hint">
+          记录会进入这位老人的体征时间线，家属与老人端可查看；本页只显示本次录入的记录
+        </p>
+        <VitalSignForm mode="companion" :order-id="orderId" @created="handleVitalCreated" />
+
+        <ul v-if="submittedVitals.length" class="vlist">
+          <li v-for="v in submittedVitals" :key="v.id" class="vrow">
+            <div class="vrow__main">
+              <span class="nl-h3">{{ v.vitalTypeLabel }}</span>
+              <span class="vrow__value is-num">{{ v.valueText }}</span>
+            </div>
+            <div class="vrow__meta">
+              <span class="nl-caption nl-text-muted is-num">{{ formatDateTime(v.measuredAt) }}</span>
+              <el-button
+                link
+                type="danger"
+                size="small"
+                :loading="withdrawingVital === v.id"
+                @click="handleWithdrawVital(v)"
+              >
+                撤回
+              </el-button>
+            </div>
+          </li>
+        </ul>
       </NlCard>
 
       <!-- 打卡记录 -->
@@ -684,5 +757,44 @@ onBeforeUnmount(() => {
 .live {
   margin: var(--nl-space-2) 0 0;
   color: var(--nl-success-text);
+}
+
+/* ---------- 服务中代录体征（V4 · P2-2） ---------- */
+
+.vlist {
+  padding: 0;
+  margin: var(--nl-space-3) 0 0;
+  list-style: none;
+
+  .vrow {
+    padding: var(--nl-space-2) 0;
+    border-bottom: 1px dashed var(--nl-divider);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &__main {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--nl-space-2);
+    }
+
+    &__value {
+      color: var(--nl-text-1);
+      font-family: var(--nl-font-num);
+      font-size: var(--nl-font-h3);
+      font-weight: 650;
+    }
+
+    &__meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--nl-space-2);
+      margin-top: 2px;
+    }
+  }
 }
 </style>

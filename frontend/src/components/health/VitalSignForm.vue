@@ -124,18 +124,18 @@ async function submit() {
 
   submitting.value = true
   try {
-    if (props.mode === 'companion') {
-      await createCompanionVital(props.orderId, payload)
-    } else {
-      await createElderVital(props.elderId, payload)
-    }
+    const created =
+      props.mode === 'companion'
+        ? await createCompanionVital(props.orderId, payload)
+        : await createElderVital(props.elderId, payload)
     ElMessage.success('记录已保存')
     systolic.value = ''
     diastolic.value = ''
     glucoseValue.value = ''
     weightKg.value = ''
     measuredAt.value = nowText()
-    emit('created')
+    // 把服务端返回的那条记录交给父级：陪诊员页据此就地展示本次录入
+    emit('created', created)
   } catch (error) {
     // 2008 是「同一分钟同类记录已存在」—— 就地提示，避免用户以为没保存上
     if (error?.code === 2008) {

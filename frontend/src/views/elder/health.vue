@@ -17,7 +17,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NlPageShell, NlEmpty, NlSkeleton, NlCard } from '@/components'
+import VitalTrendChart from '@/components/health/VitalTrendChart.vue'
 import { getMyHealthOverview, getMyHealthTimeline } from '@/api/elderHealth'
+import { getMyVitals, getMyVitalTrend } from '@/api/vitalSign'
 import { timelineCategoryTone, eventTimeText } from '@/utils/elderHealth'
 
 const router = useRouter()
@@ -37,6 +39,70 @@ const truncated = ref(false)
 const isEmptyTimeline = computed(
   () => !timelineLoading.value && !timelineError.value && !items.value.length
 )
+
+/* ==================== 我的体征（V4 · P2-2，只读） ==================== */
+
+/**
+ * 老人端不提供任何录入 / 撤回入口 —— 老人账号为只读模式，
+ * 记录由家人或陪诊员代录（后端对 ELDER 的写请求统一 403）。
+ */
+const VITAL_PAGE_SIZE = 10
+
+const vitalRecords = ref([])
+const vitalsLoading = ref(false)
+const vitalsError = ref(false)
+const vitalsHasMore = ref(false)
+
+const trendType = ref('BLOOD_PRESSURE')
+const trend = ref(null)
+const trendLoading = ref(false)
+const trendError = ref(false)
+
+const trendPoints = computed(() => trend.value?.points || [])
+
+async function loadVitals(page = 1) {
+  vitalsLoading.value = true
+  try {
+    const data = await getMyVitals({ page, size: VITAL_PAGE_SIZE })
+    const records = data?.records || []
+    vitalRecords.value = page === 1 ? records : [...vitalRecords.value, ...records]
+    vitalsHasMore.value = (data?.pages ?? 0) > page
+    vitalsError.value = false
+  } catch {
+    if (page === 1) {
+      vitalRecords.value = []
+      vitalsHasMore.value = false
+    }
+    vitalsError.value = true
+  } finally {
+    vitalsLoading.value = false
+  }
+}
+
+function loadMoreVitals() {
+  const loadedPages = Math.ceil(vitalRecords.value.length / VITAL_PAGE_SIZE)
+  loadVitals(loadedPages + 1)
+}
+
+async function loadTrend() {
+  trendLoading.value = true
+  try {
+    trend.value = await getMyVitalTrend({ vitalType: trendType.value })
+    trendError.value = false
+  } catch {
+    trend.value = null
+    trendError.value = true
+  } finally {
+    trendLoading.value = false
+  }
+}
+
+/** 切换趋势类型：只读视图，不需要任何写操作 */
+function switchTrendType(next) {
+  if (trendType.value === next) return
+  trendType.value = next
+  loadTrend()
+}
 
 async function loadOverview() {
   loading.value = true
@@ -97,6 +163,8 @@ function goMedication() {
 onMounted(() => {
   loadOverview()
   loadTimeline()
+  loadVitals()
+  loadTrend()
 })
 </script>
 
@@ -155,6 +223,63 @@ onMounted(() => {
               <span class="todo__count is-num">{{ item.count }}</span>
             </li>
           </ul>
+        </NlCard>
+      </section>
+
+      <!-- 我的体征：只读，没有任何录入 / 撤回入口 -->
+      <section class="pad">
+        <NlCard title="我的体征" :padding="12">
+          <p class="vital-hint">这里是自己测过的数值，只做记录</p>
+
+          <div class="vital-types" role="tablist" aria-label="体征类型">
+            <button
+              v-for="item in [
+                { key: 'BLOOD_PRESSURE', label: '血压' },
+                { key: 'BLOOD_GLUCOSE', label: '血糖' },
+                { key: 'WEIGHT', label: '体重' }
+              ]"
+              :key="item.key"
+              type="button"
+              role="tab"
+              class="vital-type"
+              :class="{ 'is-active': trendType === item.key }"
+              :aria-selected="trendType === item.key"
+              @click="switchTrendType(item.key)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+
+          <NlSkeleton v-if="trendLoading" :count="2" />
+          <NlEmpty
+            v-else-if="trendError"
+            type="network"
+            title="加载失败"
+            action-text="重试"
+            @action="loadTrend"
+          />
+          <NlEmpty
+            v-else-if="!trendPoints.length"
+            title="还没有记录"
+            description="家人或陪诊员录入后会显示在这里"
+          />
+          <VitalTrendChart v-else :trend="trend" />
+
+          <ul v-if="vitalRecords.length" role="list" class="vital-list">
+            <li v-for="v in vitalRecords" :key="v.id" class="vital-row">
+              <span class="vital-row__label">{{ v.vitalTypeLabel }}</span>
+              <span class="vital-row__value is-num">{{ v.valueText }}</span>
+              <span class="vital-row__time">{{ eventTimeText(v.measuredAt) }}</span>
+            </li>
+          </ul>
+          <p v-else-if="vitalsLoading" class="vital-hint">正在加载…</p>
+          <p v-else-if="vitalsError" class="vital-hint">记录加载失败，可稍后再看</p>
+
+          <div v-if="vitalsHasMore" class="more">
+            <el-button plain round size="large" :loading="vitalsLoading" @click="loadMoreVitals">
+              看更早的记录
+            </el-button>
+          </div>
         </NlCard>
       </section>
 
@@ -367,5 +492,88 @@ onMounted(() => {
 .trunc-note {
   margin-top: var(--nl-space-2);
   text-align: center;
+}
+
+/* ---------- 我的体征（V4 · P2-2，只读） ---------- */
+
+.vital-hint {
+  margin: 0 0 var(--nl-space-3);
+  color: var(--nl-text-2);
+  font-size: var(--nl-font-h3);
+  line-height: 26px;
+}
+
+/* 老人端触控区 ≥48px、字号 ≥18px */
+.vital-types {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--nl-space-2);
+  margin-bottom: var(--nl-space-3);
+}
+
+.vital-type {
+  min-height: 48px;
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-btn);
+  background: var(--nl-bg-card);
+  color: var(--nl-text-2);
+  font-family: inherit;
+  font-size: var(--nl-font-h3);
+  cursor: pointer;
+
+  &.is-active {
+    border-color: var(--nl-primary);
+    background: var(--nl-primary-light);
+    color: var(--nl-primary-dark);
+    font-weight: 600;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--nl-primary);
+    outline-offset: 2px;
+  }
+}
+
+.vital-list {
+  margin: var(--nl-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vital-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--nl-space-2);
+  min-height: 48px;
+  padding: var(--nl-space-2) 0;
+  border-bottom: 1px solid var(--nl-border);
+  font-size: var(--nl-font-h3);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+}
+
+.vital-row__label {
+  color: var(--nl-text-2);
+}
+
+.vital-row__value {
+  color: var(--nl-text-1);
+  font-family: var(--nl-font-num);
+  font-size: var(--nl-font-h2);
+  font-weight: 650;
+}
+
+.vital-row__time {
+  margin-left: auto;
+  color: var(--nl-text-3);
+}
+
+/* 图表内的刻度文字随老人模式放大 */
+:deep(.vital-chart__ticks text),
+:deep(.vital-chart__dates text) {
+  font-size: 12px;
 }
 </style>
