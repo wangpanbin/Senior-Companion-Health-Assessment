@@ -4,6 +4,7 @@ import org.company.nianglin.common.Result;
 import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.service.AdminService;
 import org.company.nianglin.service.ReviewService;
+import org.company.nianglin.service.SettlementService;
 import org.company.nianglin.vo.ReviewRulingResultVO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,11 +29,14 @@ class AdminControllerReviewTest {
     @Mock
     private ReviewService reviewService;
 
+    @Mock
+    private SettlementService settlementService;
+
     private AdminController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new AdminController(adminService, reviewService);
+        controller = new AdminController(adminService, reviewService, settlementService);
     }
 
     @Test

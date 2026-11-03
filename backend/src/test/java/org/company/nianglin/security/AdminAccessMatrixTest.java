@@ -56,6 +56,22 @@ class AdminAccessMatrixTest {
     private static final String API_FULFILLMENT_RISK_LIST = "/api/admin/fulfillment/risk-list";
     /** 改派陪诊员（V3.1 · T7） */
     private static final String API_REASSIGN = "/api/admin/order/1001/reassign";
+    /** 结算核对列表（V4 · P2-1） */
+    private static final String API_SETTLEMENT_LIST = "/api/admin/settlement";
+    /** 单条结算核定（V4 · P2-1） */
+    private static final String API_SETTLEMENT_CONFIRM = "/api/admin/settlement/1001/confirm";
+    /** 批量结算核定（V4 · P2-1） */
+    private static final String API_SETTLEMENT_BATCH = "/api/admin/settlement/batch-confirm";
+    /**
+     * 结算单导出（V4 · P2-1）。
+     *
+     * <p>路径不在 {@code /api/admin} 下，靠 {@code SecurityConfig} 里
+     * 新增的 {@code /api/settlement/**} 规则在过滤链上收口 ——
+     * 这条用例就是那条规则的回归防线。</p>
+     */
+    private static final String API_SETTLEMENT_EXPORT = "/api/settlement/export";
+    /** 批量核定的合法请求体：越权用例必须能通过参数校验，否则会得到「参数层假绿」 */
+    private static final String VALID_BATCH_CONFIRM_BODY = "{\"orderIds\":[1001]}";
 
     @Autowired
     private MockMvc mockMvc;
@@ -233,6 +249,65 @@ class AdminAccessMatrixTest {
                         .content(VALID_REASSIGN_BODY))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(401));
+    }
+
+    /* ================================================================== */
+    /* 7 · 结算核对（V4 · P2-1）：非管理员一律 403                          */
+    /* ================================================================== */
+
+    @ParameterizedTest(name = "结算列表 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("结算 · 非管理员看结算台账 → 403（台账含全平台金额与脱敏姓名）")
+    void nonAdminShouldNotReadSettlementList(String role) throws Exception {
+        mockMvc.perform(get(API_SETTLEMENT_LIST).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @ParameterizedTest(name = "单条核定 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("结算 · 非管理员核定单条 → 403（改记账状态是最敏感的写操作）")
+    void nonAdminShouldNotConfirmSettlement(String role) throws Exception {
+        mockMvc.perform(post(API_SETTLEMENT_CONFIRM).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @ParameterizedTest(name = "批量核定 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("结算 · 非管理员批量核定 → 403（携带合法请求体，避免参数层假绿）")
+    void nonAdminShouldNotBatchConfirmSettlement(String role) throws Exception {
+        mockMvc.perform(post(API_SETTLEMENT_BATCH)
+                        .contentType(JSON)
+                        .content(VALID_BATCH_CONFIRM_BODY)
+                        .header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @ParameterizedTest(name = "结算导出 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("结算 · 非管理员导出结算单 → 403（路径不在 /api/admin 下，靠 /api/settlement 规则收口）")
+    void nonAdminShouldNotExportSettlement(String role) throws Exception {
+        mockMvc.perform(get(API_SETTLEMENT_EXPORT).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("结算 · 未登录核定 → 401")
+    void anonymousShouldGet401OnConfirmSettlement() throws Exception {
+        mockMvc.perform(post(API_SETTLEMENT_CONFIRM))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("结算 · 管理员读台账 → 200 且 records 为数组")
+    void adminShouldReadSettlementList() throws Exception {
+        mockMvc.perform(get(API_SETTLEMENT_LIST).header(AUTH_HEADER, admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records").isArray());
     }
 
     /* ================================================================== */
