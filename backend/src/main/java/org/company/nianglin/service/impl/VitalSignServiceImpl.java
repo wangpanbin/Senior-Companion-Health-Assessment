@@ -8,15 +8,18 @@ import org.company.nianglin.common.DateRange;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.GlucoseContext;
+import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.VitalSource;
 import org.company.nianglin.constant.VitalType;
 import org.company.nianglin.dto.DateRangeQuery;
 import org.company.nianglin.dto.VitalSignCreateDTO;
 import org.company.nianglin.dto.VitalSignQuery;
 import org.company.nianglin.dto.VitalTrendQuery;
+import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.entity.VitalSignRecord;
 import org.company.nianglin.exception.BusinessException;
+import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.mapper.VitalSignRecordMapper;
 import org.company.nianglin.security.SecurityUtils;
@@ -80,6 +83,7 @@ public class VitalSignServiceImpl implements VitalSignService {
     private static final int FUTURE_TOLERANCE_MINUTES = 5;
 
     private final VitalSignRecordMapper vitalSignRecordMapper;
+    private final CompanionOrderMapper companionOrderMapper;
     private final ElderService elderService;
     private final SysUserMapper sysUserMapper;
 
@@ -136,6 +140,63 @@ public class VitalSignServiceImpl implements VitalSignService {
     @Override
     public VitalTrendVO trendForElder(VitalTrendQuery query) {
         return trendOf(requireSelfElderId(), query);
+    }
+
+    /* ================================================================== */
+    /* 陪诊员端                                                            */
+    /* ================================================================== */
+
+    @Override
+    public VitalSignVO createForCompanion(Long orderId, VitalSignCreateDTO dto) {
+        CompanionOrder order = requireOrderInService(orderId);
+        VitalSignRecord record = validatedRecord(dto, order.getElderId());
+        record.setSourceType(VitalSource.COMPANION_SERVICE.name());
+        record.setOperatorUserId(SecurityUtils.currentUserId());
+        record.setOrderId(orderId);
+        return insert(record);
+    }
+
+    @Override
+    public VitalWithdrawVO withdrawByCompanion(Long orderId, Long recordId) {
+        requireOrderInService(orderId);
+        VitalSignRecord record = requireRecord(recordId);
+        if (!orderId.equals(record.getOrderId())) {
+            // 记录不属于本单：按「无权操作该订单」处理，不暴露记录归属细节
+            throw new BusinessException(ResultCode.ORDER_NO_PERMISSION);
+        }
+        if (VitalSource.of(record.getSourceType()) != VitalSource.COMPANION_SERVICE
+                || !SecurityUtils.currentUserId().equals(record.getOperatorUserId())) {
+            throw new BusinessException(ResultCode.VITAL_SIGN_NOT_WITHDRAWABLE);
+        }
+        vitalSignRecordMapper.deleteById(recordId);
+        log.info("陪诊员已撤回体征记录 | recordId={} | orderId={} | operator={}",
+                recordId, orderId, SecurityUtils.currentUserId());
+        return VitalWithdrawVO.withdrawn(recordId);
+    }
+
+    /**
+     * 陪诊员链路唯一的准入判断：订单存在 → 本单陪诊员 → 服务中。
+     *
+     * <p>刻意<b>不调用</b> {@code ElderService#requireAccessible}：该方法按既定规则
+     * 对 {@code COMPANION} 抛 {@code 2006}，改动它会放宽陪诊员查看老人档案的权限。
+     * 这里改用订单自带的 {@code elderId} 定位老人，权限收口在订单上。</p>
+     */
+    private CompanionOrder requireOrderInService(Long orderId) {
+        if (orderId == null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
+        }
+        CompanionOrder order = companionOrderMapper.selectById(orderId);
+        if (order == null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
+        }
+        if (!SecurityUtils.currentUserId().equals(order.getCompanionId())) {
+            throw new BusinessException(ResultCode.ORDER_NO_PERMISSION);
+        }
+        if (OrderStatus.of(order.getStatus()) != OrderStatus.IN_SERVICE) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL,
+                    "仅服务中的订单可以代录或撤回体征记录");
+        }
+        return order;
     }
 
     /* ================================================================== */

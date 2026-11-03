@@ -3,14 +3,17 @@ package org.company.nianglin.service;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.constant.VitalSource;
 import org.company.nianglin.dto.VitalSignCreateDTO;
 import org.company.nianglin.dto.VitalSignQuery;
 import org.company.nianglin.dto.VitalTrendQuery;
+import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.VitalSignRecord;
 import org.company.nianglin.exception.BusinessException;
+import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.mapper.VitalSignRecordMapper;
 import org.company.nianglin.security.LoginUser;
@@ -63,15 +66,19 @@ import static org.mockito.Mockito.verify;
  * @since V4 · P2-2
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("体征：家属录入 / 去重 / 校验 / 撤回 / 趋势")
+@DisplayName("体征：家属 / 陪诊员录入、去重、校验、撤回与趋势")
 class VitalSignServiceImplTest {
 
     private static final Long ELDER_ID = 301L;
     private static final Long FAMILY_ID = 11L;
     private static final Long OTHER_FAMILY_ID = 12L;
+    private static final Long COMPANION_ID = 21L;
+    private static final Long ORDER_ID = 1001L;
 
     @Mock
     private VitalSignRecordMapper vitalSignRecordMapper;
+    @Mock
+    private CompanionOrderMapper companionOrderMapper;
     @Mock
     private ElderService elderService;
     @Mock
@@ -82,7 +89,8 @@ class VitalSignServiceImplTest {
     @BeforeEach
     void setUp() {
         MybatisLambdaCache.warmUp();
-        service = new VitalSignServiceImpl(vitalSignRecordMapper, elderService, sysUserMapper);
+        service = new VitalSignServiceImpl(vitalSignRecordMapper, companionOrderMapper,
+                elderService, sysUserMapper);
     }
 
     @AfterEach
@@ -339,6 +347,82 @@ class VitalSignServiceImplTest {
     }
 
     /* ================================================================== */
+    /* 12–14. 陪诊员服务中代录                                              */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("陪诊员代录：老人取订单的 elderId，来源 COMPANION_SERVICE 并带 orderId")
+    void companionCreateShouldUseOrderElderAndOrderId() {
+        loginAs(COMPANION_ID, RoleConstants.COMPANION);
+        given(companionOrderMapper.selectById(ORDER_ID))
+                .willReturn(order(ORDER_ID, ELDER_ID, COMPANION_ID, OrderStatus.IN_SERVICE));
+        given(vitalSignRecordMapper.insert(any(VitalSignRecord.class))).willReturn(1);
+
+        VitalSignVO vo = service.createForCompanion(ORDER_ID,
+                weightDto(new BigDecimal("62.5"), LocalDateTime.now().minusMinutes(1)));
+
+        ArgumentCaptor<VitalSignRecord> captor = ArgumentCaptor.forClass(VitalSignRecord.class);
+        verify(vitalSignRecordMapper).insert(captor.capture());
+        VitalSignRecord saved = captor.getValue();
+
+        assertEquals(ELDER_ID, saved.getElderId());
+        assertEquals(VitalSource.COMPANION_SERVICE.name(), saved.getSourceType());
+        assertEquals(COMPANION_ID, saved.getOperatorUserId());
+        assertEquals(ORDER_ID, saved.getOrderId());
+        assertEquals("62.5 kg", vo.getValueText());
+        verify(elderService, never()).requireAccessible(anyLong());
+    }
+
+    @Test
+    @DisplayName("陪诊员代录：订单不存在 3001、非本单 3004、非服务中 3002")
+    void companionPreconditionsShouldFailWithOrderCodes() {
+        loginAs(COMPANION_ID, RoleConstants.COMPANION);
+
+        assertCode(3001, () -> service.createForCompanion(ORDER_ID,
+                weightDto(new BigDecimal("62.5"), LocalDateTime.now())));
+
+        given(companionOrderMapper.selectById(ORDER_ID))
+                .willReturn(order(ORDER_ID, ELDER_ID, 999L, OrderStatus.IN_SERVICE));
+        assertCode(3004, () -> service.createForCompanion(ORDER_ID,
+                weightDto(new BigDecimal("62.5"), LocalDateTime.now())));
+
+        given(companionOrderMapper.selectById(ORDER_ID))
+                .willReturn(order(ORDER_ID, ELDER_ID, COMPANION_ID, OrderStatus.COMPLETED));
+        assertCode(3002, () -> service.createForCompanion(ORDER_ID,
+                weightDto(new BigDecimal("62.5"), LocalDateTime.now())));
+
+        verify(vitalSignRecordMapper, never()).insert(any(VitalSignRecord.class));
+    }
+
+    @Test
+    @DisplayName("陪诊员撤回本人本单记录：成功；记录属于其它订单返回 3004")
+    void companionWithdrawShouldRespectOrderOwnership() {
+        loginAs(COMPANION_ID, RoleConstants.COMPANION);
+        given(companionOrderMapper.selectById(ORDER_ID))
+                .willReturn(order(ORDER_ID, ELDER_ID, COMPANION_ID, OrderStatus.IN_SERVICE));
+        given(vitalSignRecordMapper.selectById(9L)).willReturn(
+                companionRecord(9L, ORDER_ID));
+
+        assertTrue(service.withdrawByCompanion(ORDER_ID, 9L).getDeleted());
+        verify(vitalSignRecordMapper).deleteById(9L);
+
+        given(vitalSignRecordMapper.selectById(10L)).willReturn(
+                companionRecord(10L, 2002L));
+        assertCode(3004, () -> service.withdrawByCompanion(ORDER_ID, 10L));
+    }
+
+    @Test
+    @DisplayName("陪诊员撤回：订单已离开服务中返回 3002，不执行删除")
+    void companionWithdrawAfterServiceShouldReturn3002() {
+        loginAs(COMPANION_ID, RoleConstants.COMPANION);
+        given(companionOrderMapper.selectById(ORDER_ID))
+                .willReturn(order(ORDER_ID, ELDER_ID, COMPANION_ID, OrderStatus.COMPLETED));
+
+        assertCode(3002, () -> service.withdrawByCompanion(ORDER_ID, 9L));
+        verify(vitalSignRecordMapper, never()).deleteById(anyLong());
+    }
+
+    /* ================================================================== */
     /* 测试夹具                                                            */
     /* ================================================================== */
 
@@ -406,6 +490,27 @@ class VitalSignServiceImplTest {
         record.setDiastolic(76);
         record.setSourceType(VitalSource.FAMILY_MANUAL.name());
         record.setOperatorUserId(FAMILY_ID);
+        return record;
+    }
+
+    private static CompanionOrder order(Long id, Long elderId, Long companionId, OrderStatus status) {
+        CompanionOrder order = new CompanionOrder();
+        order.setId(id);
+        order.setElderId(elderId);
+        order.setCompanionId(companionId);
+        order.setStatus(status.name());
+        return order;
+    }
+
+    private static VitalSignRecord companionRecord(Long id, Long orderId) {
+        VitalSignRecord record = recordAt(id, LocalDateTime.now().minusMinutes(1));
+        record.setVitalType("WEIGHT");
+        record.setSystolic(null);
+        record.setDiastolic(null);
+        record.setWeightKg(new BigDecimal("62.5"));
+        record.setSourceType(VitalSource.COMPANION_SERVICE.name());
+        record.setOperatorUserId(COMPANION_ID);
+        record.setOrderId(orderId);
         return record;
     }
 }

@@ -49,4 +49,19 @@ public interface VitalSignService {
 
     /** 老人：本人体征趋势（档案由登录态推导） */
     VitalTrendVO trendForElder(VitalTrendQuery query);
+
+    /**
+     * 陪诊员：服务中为订单关联老人代录一条体征。
+     *
+     * <p>校验顺序固定：订单不存在 {@code 3001} → 非本单 {@code 3004} →
+     * 非 {@code IN_SERVICE} {@code 3002} → 请求体校验 {@code 400}。</p>
+     */
+    VitalSignVO createForCompanion(Long orderId, VitalSignCreateDTO dto);
+
+    /**
+     * 陪诊员：撤回本单在服务中代录的体征。
+     *
+     * <p>订单校验同上；记录必须属于本单且为本人录入，否则 {@code 3004} / {@code 2010}。</p>
+     */
+    VitalWithdrawVO withdrawByCompanion(Long orderId, Long recordId);
 }
