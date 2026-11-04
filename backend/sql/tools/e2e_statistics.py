@@ -4,8 +4,11 @@
     python e2e_statistics.py            # 前提：后端已在 8080 启动，MySQL 与 Redis 可用
     python e2e_statistics.py --limit-phase
         # 额外验证「导出行数上限 → 9001」这条分支。
-        # 需要后端**以 --nianglin.export.max-rows=N（N 很小，如 2）启动**，
-        # 否则 1 万行上限在这份种子数据上永远触发不到。
+        # P2-3 起运营参数 export.max-rows 优先于启动参数，且允许区间是 [100, 50000]；
+        # 种子数据只有 65 条订单 / 93 个用户，凑不到 100 行，所以本阶段必须先把
+        # sys_dict 的 export.max-rows 行临时停用（status=0），再以
+        # --nianglin.export.max-rows=2 启动后端（停用后才会回落到启动参数）。
+        # 跑完记得把该行 status 恢复为 1。
 
 覆盖（对应 docs/api/09-statistics-export.md）：
   A 整类 ADMIN 鉴权边界（7 个接口，未登录 401 / 三类角色 403）
@@ -859,7 +862,8 @@ def section_export_limit(admin):
     if not hit_row_cap:
         # 上限定的是 1 万行，而这份种子数据只有几十条订单 —— 用默认配置跑本阶段
         # 永远触发不到。必须把「跑法不对」说清楚，否则有人会去导出代码里找一个不存在的 bug。
-        reason = ("上限未触发：后端不是以 --nianglin.export.max-rows=2 启动的"
+        reason = ("上限未触发：后端不是以 --nianglin.export.max-rows=2 启动的，"
+                  "或 sys_dict 的 export.max-rows 仍启用（运营参数优先，停用后才会回落启动参数）"
                   "（本阶段的前提，见文件头用法说明）")
         print("     ⚠️ " + reason)
         check("H2 订单导出超限的 code = 9001 且提示里给出「缩小筛选范围」的出路", False, reason)
