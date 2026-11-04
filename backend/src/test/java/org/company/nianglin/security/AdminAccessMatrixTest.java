@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -72,6 +73,14 @@ class AdminAccessMatrixTest {
     private static final String API_SETTLEMENT_EXPORT = "/api/settlement/export";
     /** 批量核定的合法请求体：越权用例必须能通过参数校验，否则会得到「参数层假绿」 */
     private static final String VALID_BATCH_CONFIRM_BODY = "{\"orderIds\":[1001]}";
+
+    /** 运营参数列表（V4 · P2-3） */
+    private static final String API_OPERATION_PARAM = "/api/admin/operation-param";
+    /** 运营参数修改：用真实字典键，避免「键不存在」把越权用例变成 400 假绿 */
+    private static final String API_OPERATION_PARAM_UPDATE =
+            "/api/admin/operation-param/medication.missed-threshold-minutes";
+    /** 合法请求体：非管理员必须在鉴权层被拒，不能死在参数校验层 */
+    private static final String VALID_OPERATION_PARAM_BODY = "{\"value\":60,\"remark\":\"越权用例\"}";
 
     @Autowired
     private MockMvc mockMvc;
@@ -308,6 +317,74 @@ class AdminAccessMatrixTest {
         mockMvc.perform(get(API_SETTLEMENT_LIST).header(AUTH_HEADER, admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.records").isArray());
+    }
+
+    /* ================================================================== */
+    /* 8 · 运营参数（V4 · P2-3）：非管理员一律 403；管理员只读正面用例          */
+    /* ================================================================== */
+
+    @ParameterizedTest(name = "参数列表 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("运营参数 · 非管理员读参数列表 → 403（阈值属于平台运营口径）")
+    void nonAdminShouldNotReadOperationParams(String role) throws Exception {
+        mockMvc.perform(get(API_OPERATION_PARAM).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @ParameterizedTest(name = "修改参数 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("运营参数 · 非管理员修改参数 → 403（携带合法请求体，避免参数层假绿）")
+    void nonAdminShouldNotUpdateOperationParam(String role) throws Exception {
+        mockMvc.perform(put(API_OPERATION_PARAM_UPDATE)
+                        .contentType(JSON)
+                        .content(VALID_OPERATION_PARAM_BODY)
+                        .header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("运营参数 · 未登录读列表 → 401")
+    void anonymousShouldGet401OnOperationParams() throws Exception {
+        mockMvc.perform(get(API_OPERATION_PARAM))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("运营参数 · 未登录修改 → 401")
+    void anonymousShouldGet401OnOperationParamUpdate() throws Exception {
+        mockMvc.perform(put(API_OPERATION_PARAM_UPDATE)
+                        .contentType(JSON)
+                        .content(VALID_OPERATION_PARAM_BODY))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("运营参数 · 管理员读列表 → 200 且四个参数齐全")
+    void adminShouldReadOperationParams() throws Exception {
+        // 同时验证 V10 种子确实落库：读不到 OPS_PARAM 时这里会红
+        mockMvc.perform(get(API_OPERATION_PARAM).header(AUTH_HEADER, admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data.length()").value(4))
+                .andExpect(jsonPath("$.data[0].code").value("medication.missed-threshold-minutes"))
+                // status=1 且不是回落默认值，说明 V10 种子确实落库
+                .andExpect(jsonPath("$.data[0].status").value(1))
+                .andExpect(jsonPath("$.data[0].usingDefault").value(false));
+    }
+
+    @Test
+    @DisplayName("运营参数 · 管理员改越界值 → 400 且不落库（服务端范围校验前置）")
+    void adminShouldGet400OnOutOfRangeOperationParam() throws Exception {
+        mockMvc.perform(put(API_OPERATION_PARAM_UPDATE)
+                        .contentType(JSON)
+                        .content("{\"value\":0}")
+                        .header(AUTH_HEADER, admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400));
     }
 
     /* ================================================================== */
