@@ -193,7 +193,7 @@ const ariaLabel = computed(() => {
 
   &__ticks text {
     fill: var(--nl-text-3);
-    font-size: 9px;
+    font-size: var(--nl-font-micro);
     font-family: var(--nl-font-num);
     text-anchor: end;
   }
@@ -227,7 +227,7 @@ const ariaLabel = computed(() => {
 
   &__dates text {
     fill: var(--nl-text-3);
-    font-size: 9px;
+    font-size: var(--nl-font-micro);
     text-anchor: middle;
   }
 
