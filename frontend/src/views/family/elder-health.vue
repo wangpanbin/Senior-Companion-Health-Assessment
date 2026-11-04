@@ -11,7 +11,7 @@
  * 所有口径由后端计算（docs/spec/metric-dictionary.md），前端不做再计算。
  * 文案一律是事实陈述，不出现任何健康判断（合规红线-1）。
  *
- * 体征区块只做「记录 + 展示趋势」：不展示任何区间 / 目标值，不做任何评价。
+ * 体征区块只做「记录 + 展示趋势」：不展示任何区间 / 判定标尺，不做任何评价。
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
