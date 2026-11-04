@@ -35,6 +35,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -74,11 +75,9 @@ def http_get(url: str, timeout: int = 8):
         return None, str(exc)
 
 
-def port_map(ports):
-    """端口 -> {"pid": str, "cmd": str}。取不到就返回空 dict（断言会因此判负）。"""
-    ps = _PS.replace("__PORTS__", ",".join(str(p) for p in ports))
+def _ps_run(ps: str):
     try:
-        out = subprocess.run(
+        return subprocess.run(
             ["pwsh", "-NoProfile", "-Command", ps],
             capture_output=True,
             text=True,
@@ -87,18 +86,83 @@ def port_map(ports):
         )
     except FileNotFoundError:
         print("  [WARN] 找不到 pwsh，无法取「端口 -> 监听进程」映射；身份断言将判负。")
-        return {}
+        return None
+
+
+def port_map(ports):
+    """端口 -> {"pid": str, "cmd": str}。取不到就返回空 dict（断言会因此判负）。
+
+    ⚠️ `Get-NetTCPConnection` 在本机**会间歇性返回空表**（2026-11-04 实测：
+    8080/8081/5141 的 HTTP 全部正常，但同一时刻枚举出的 Listen 条目时有时无，
+    甚至给出 CLOSED / FIN_WAIT_1）。只查一次会让闸门随机变红，
+    所以这里**重试**并把各次结果合并；仍缺的端口再用「进程命令行」兜底定位 pid。
+    """
+    ps = _PS.replace("__PORTS__", ",".join(str(p) for p in ports))
     rows = {}
-    for line in (out.stdout or "").splitlines():
-        parts = line.split("\t")
-        if len(parts) < 3:
-            continue
-        try:
-            port = int(parts[0])
-        except ValueError:
-            continue
-        rows[port] = {"pid": parts[1].strip(), "cmd": parts[2].strip()}
+    for _ in range(3):
+        out = _ps_run(ps)
+        if out is None:
+            return {}
+        for line in (out.stdout or "").splitlines():
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            try:
+                port = int(parts[0])
+            except ValueError:
+                continue
+            pid, cmd = parts[1].strip(), parts[2].strip()
+            if pid.upper() == "DOWN":
+                continue
+            # 只保留有效行；重试时用非空结果覆盖空结果
+            rows[port] = {"pid": pid, "cmd": cmd}
+        if all(p in rows for p in ports):
+            break
+        time.sleep(0.5)
+    missing = [p for p in ports if p not in rows]
+    weak = [p for p in ports if p in rows and rows[p]["cmd"] in ("", "<unknown>")]
+    need_scan = missing + weak
+    if need_scan:
+        rows.update(_scan_process_by_cmdline(need_scan))
     return rows
+
+
+# 进程命令行兜底：枚举失败时按「该端口应有哪个进程」反查 pid。
+# 判据与断言一致 —— 后端含 nianglin 且不含 surefire、ai 含 uvicorn + app.main:app、前端含 vite。
+def _needles_for(port):
+    if port == BACKEND_PORT:
+        return ("nianglin",), ("surefire",)
+    if port == AI_PORT:
+        return ("uvicorn", "app.main:app"), ()
+    if port == WEB_PORT:
+        return ("vite",), ()
+    return None
+
+
+def _scan_process_by_cmdline(ports):
+    ps = ("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine } | "
+          "ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }")
+    out = _ps_run(ps)
+    if out is None:
+        return {}
+    procs = []
+    for line in (out.stdout or "").splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        procs.append((parts[0].strip(), parts[1].strip()))
+    found = {}
+    for port in ports:
+        needles = _needles_for(port)
+        if not needles:
+            continue
+        must, must_not = needles
+        for pid, cmd in procs:
+            low = cmd.lower()
+            if all(n.lower() in low for n in must) and not any(n.lower() in low for n in must_not):
+                found[port] = {"pid": pid, "cmd": cmd}
+                break
+    return found
 
 
 def cmd_of(rows, port) -> str:
