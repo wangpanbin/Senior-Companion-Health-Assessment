@@ -213,6 +213,16 @@ python scripts/seed-hall-demo.py --rollback # 回滚到种子基线
 2. 重新应用 `seed-hall-demo.py`（若此前跑过测试回滚了造数）。
 3. 浏览器预登录 4 个角色（`admin` / `fam001` / `comp009` / `elder001`），确认 `/api/health` 返回 `UP`。
 
+**两个已经踩过的坑**：
+
+1. **Redis 服务壳显示 Running 但进程不存在**。Windows 服务状态不可信，以 `redis-cli ping` 返回 `PONG` 为准；
+   对不上时直接起进程：`D:\develop\Redis-8.8.0\redis-server.exe --port 6379 --appendonly no`（后台常驻即可）。
+   否则所有 `@SpringBootTest` 会以 `Unable to connect to Redis` 失败，看起来像代码问题。
+2. **不要手工 `mysql < V*.sql` 之后又手工 DROP 表**。应用启动时 Flyway 发现迁移表里已记录该版本，
+   `CREATE TABLE IF NOT EXISTS` 会空转；此时若手工删表，就出现「历史说有、实物没有」，
+   测试报 `Table 'xxx' doesn't exist`。正确做法是**重新执行同一份迁移脚本**补回结构，
+   不要改 `flyway_schema_history`、也不要手工删表。
+
 **日志轮转与清理指引**：`logback-spring.xml` 已配置滚动（按天 + 50MB 分卷，全量日志保留 30 天 /
 错误日志 60 天 / 总量上限 2GB），不需要手工轮转。`backend/logs/` 偶发膨胀的主因是 **surefire
 fork 与应用共写相对路径 `./logs`**（测试栈帧混进 `nianglin-error.log`，属已知现象、非产品缺陷）。
