@@ -43,6 +43,7 @@ DOMAINS = [
     ("五、评价、投诉与消息域", ["order_review", "complaint", "internal_message",
                                    "chat_message", "chat_read_cursor",
                                    "notification_preference", "sms_send_log"]),
+    ("六、体征记录域", ["vital_sign_record"]),
 ]
 
 MODULE_OF = {
@@ -56,6 +57,7 @@ MODULE_OF = {
     "medication_plan": "M6", "medication_task": "M6", "order_review": "M7",
     "complaint": "M7", "internal_message": "M8", "chat_message": "M13", "chat_read_cursor": "M13",
     "notification_preference": "V4 P1-3", "sms_send_log": "V4 P1-3",
+    "vital_sign_record": "V4 P2-2",
 }
 
 TABLE_CN = {
@@ -73,6 +75,7 @@ TABLE_CN = {
     "chat_message": "订单聊天消息表（会话=订单）", "chat_read_cursor": "订单聊天已读游标表",
     "order_fulfillment_event": "订单履约事件流水表（V3.1，只增不改，与 order_status_log 语义不同）",
     "notification_preference": "通知偏好表（站外短信开关与静默时段，V4 P1-3）",
+    "vital_sign_record": "体征记录表（血压 / 血糖 / 体重，V4 P2-2）",
     "sms_send_log": "短信发送回执表（幂等 + 指数退避 + 死信，V4 P1-3，只存脱敏手机号）",
 }
 

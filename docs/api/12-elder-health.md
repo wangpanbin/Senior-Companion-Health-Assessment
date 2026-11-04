@@ -17,6 +17,18 @@
 | `GET /api/family/elder/{elderId}/health/timeline` | FAMILY | 同上 | `2006` |
 | `GET /api/elder/health/overview` | ELDER | 老人档案 ID 从**登录态**取，不接受入参 | — |
 | `GET /api/elder/health/timeline` | ELDER | 同上 | — |
+| `GET /api/family/elder/{elderId}/vitals` | FAMILY | `ElderService.requireAccessible(elderId)` | `2006` |
+| `GET /api/family/elder/{elderId}/vitals/trend` | FAMILY | 同上 | `2006` |
+| `POST /api/family/elder/{elderId}/vitals` | FAMILY | 同上 | `2006` |
+| `DELETE /api/family/vitals/{recordId}` | FAMILY | 记录归属的老人可访问 **且** 录入人=当前家属 | `2006` / `2010` |
+| `GET /api/elder/vitals` | ELDER | 老人档案 ID 从**登录态**取，不接受入参 | — |
+| `GET /api/elder/vitals/trend` | ELDER | 同上 | — |
+| `POST /api/execution/{orderId}/vitals` | COMPANION | 订单存在 `3001` → 本单陪诊员 `3004` → `IN_SERVICE` `3002` | `3001` / `3004` / `3002` |
+| `DELETE /api/execution/{orderId}/vitals/{recordId}` | COMPANION | 同上 + 记录须属本单且由本人代录 | 同上 / `2010` |
+
+> **陪诊员链路刻意不走 `ElderService#requireAccessible`**：该方法对 COMPANION 一律返回 `2006`，
+> 而陪诊员代录的正当性来自**订单**，不来自家庭绑定关系。因此校验顺序固定为
+> 「订单存在 → 本单陪诊员 → 订单在服务中」，不引入第二次归属口径。
 
 ⚠️ **角色注解只回答「你是这类角色吗」，回答不了「这条数据是不是你的」。**
 一个 FAMILY 角色的家属去读别人绑定老人的健康数据，角色校验会放行，
@@ -33,6 +45,7 @@
 | 不做诊断、不开药方 | 全部文案是**事实陈述**（「今日有 1 次服药任务未确认」），不出现任何结论式判断 |
 | 隐私最小化 | 老人姓名脱敏（`张*三`）；老人端不返回费用、催单、履约风险与家属姓名 |
 | 聊天内容不进时间线 | 时间线只读 `internal_message`（站内信），**不读 `chat_message`**（M13 订单聊天）—— 两者天然隔离 |
+| 体征只记录、不判断 | 体征接口只返回数值、单位、时间与录入来源；**不内置参考区间**，不返回分级 / 解释字段，不出现偏高 / 偏低 / 异常 / 建议就医等判断性文案 |
 
 ---
 
@@ -47,6 +60,7 @@
 | 陪诊订单 | `companion_order` | 走 `elder_id` 索引 |
 | 陪诊打卡 | `order_checkin` | **没有 `elder_id`**，靠订单 ID 集合定位 |
 | 站内信 | `internal_message` | **没有 `elder_id`**，靠 `biz_type` + `biz_id` 定位 |
+| 体征记录 | `vital_sign_record` | 单表装三类体征；`dedup_key` 为 STORED 生成列（`elder_id + vital_type + 分钟`），逻辑删除时置 `NULL` 释放唯一槽位 |
 
 ### 1.2 用药三桶（唯一真源）
 
@@ -359,6 +373,223 @@ bucket = TAKEN    其余
 
 ---
 
+### 6. 体征时间线（家属）
+
+`GET /api/family/elder/{elderId}/vitals`　权限：FAMILY
+
+| 参数 | 位置 | 必填 | 说明 |
+|---|---|---|---|
+| `elderId` | path | 是 | 老人档案 ID；不属于当前家属时 `2006` |
+| `vitalType` | query | 否 | `BLOOD_PRESSURE` / `BLOOD_GLUCOSE` / `WEIGHT`；不传取全部 |
+| `startDate` / `endDate` | query | 否 | `yyyy-MM-dd`，闭区间；默认最近 30 天，上限 366 天（`9002`） |
+| `page` / `size` | query | 否 | 默认 `1 / 10`，`size` 上限 100 |
+
+**响应**
+
+```json
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "total": 2,
+    "page": 1,
+    "size": 10,
+    "pages": 1,
+    "records": [
+      {
+        "id": 10,
+        "elderId": 401,
+        "vitalType": "BLOOD_PRESSURE",
+        "vitalTypeLabel": "血压",
+        "measuredAt": "2026-11-04 16:34:00",
+        "valueText": "128/78 mmHg",
+        "unit": "mmHg",
+        "systolic": 128,
+        "diastolic": 78,
+        "sourceType": "FAMILY_MANUAL",
+        "sourceTypeLabel": "家属代录"
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `valueText` | 服务端拼装的展示文本：血压 `128/78 mmHg`、血糖 `6.2 mmol/L · 空腹`、体重 `62.5 kg`；三端一致 |
+| `systolic` / `diastolic` | 仅血压返回 |
+| `glucoseValue` / `glucoseContext` / `glucoseContextLabel` | 仅血糖返回；场景为 `FASTING` / `POSTPRANDIAL` / `RANDOM` |
+| `weightKg` | 仅体重返回 |
+| `sourceType` / `sourceTypeLabel` | `FAMILY_MANUAL`（家属代录）/ `COMPANION_SERVICE`（陪诊员服务代录） |
+| `orderId` | 仅陪诊员代录时返回 |
+
+**排序**：`measured_at DESC, id DESC`（同分钟多条时按 ID 兜底，翻页稳定）。
+
+**不返回**：录入人姓名 / 手机号、任何区间、分级或解释性字段。
+
+**错误场景**
+
+| 码 | 场景 |
+|---|---|
+| 2006 | 该老人不属于当前家属 |
+| 400 | `vitalType` 超过 24 字符 / `page` / `size` 越界 |
+| 9002 | 统计区间不合法 |
+| 401 / 403 | 未登录 / 非 FAMILY 角色 |
+
+---
+
+### 7. 体征趋势（家属）
+
+`GET /api/family/elder/{elderId}/vitals/trend`　权限：FAMILY
+
+参数同 §6，差异：**`vitalType` 必填**，不接受 `page` / `size`（趋势一次取全）。
+
+**响应**
+
+```json
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "vitalType": "BLOOD_PRESSURE",
+    "vitalTypeLabel": "血压",
+    "unit": "mmHg",
+    "range": { "startDate": "2026-10-06", "endDate": "2026-11-04", "days": 30 },
+    "pointCount": 1,
+    "truncated": false,
+    "points": [
+      {
+        "measuredAt": "2026-11-04 16:34:00",
+        "valueText": "128/78 mmHg",
+        "systolic": 128,
+        "diastolic": 78
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `range` | 本次取数的闭区间与天数（含首尾） |
+| `pointCount` | `points` 的实际长度 |
+| `truncated` | 区间内超过 **500** 条时为 `true`，只返回最近 500 条并如实告知 |
+| `points` | 按测量时间**升序**；无数据时为空数组 |
+
+**错误场景**
+
+| 码 | 场景 |
+|---|---|
+| 400 | `vitalType` 缺失或取值不合法 |
+| 2006 / 9002 / 401 / 403 | 同 §6 |
+
+---
+
+### 8. 代录体征（家属）
+
+`POST /api/family/elder/{elderId}/vitals`　权限：FAMILY
+
+**请求体**
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `vitalType` | String | 是 | 三类之一 |
+| `measuredAt` | DateTime | 是 | 分钟精度；服务端截断到分钟，允许 5 分钟以内的设备时钟偏差 |
+| `systolic` / `diastolic` | Integer | 血压时必填 | 收缩压 50–300、舒张压 30–200，且舒张压 < 收缩压 |
+| `glucoseValue` | Decimal | 血糖时必填 | 1.0–33.3，最多 1 位小数 |
+| `glucoseContext` | String | 血糖时必填 | `FASTING` / `POSTPRANDIAL` / `RANDOM` |
+| `weightKg` | Decimal | 体重时必填 | 10.0–300.0，最多 1 位小数 |
+
+> **这些上下限是「合法性校验」，不是医学参考区间。** 目的是拦住 `1280/78`、`体重 6.25` 这类误录，
+> 接口与文案不据此给出任何结论。
+>
+> 三类字段**互斥**：填了当前类型用不到的字段一律 `400`。
+> 请求体**刻意不含** `elderId` / `sourceType` / `operatorUserId` / `orderId` / 备注 ——
+> 归属与来源由路径和登录态决定，备注则不给判断性描述留入口。
+
+**唯一性**：同一老人 + 同一类型 + **同一分钟**只允许一条，重复录入返回 `2008`。
+去重由数据库唯一键（STORED 生成列）实现，不依赖「先查再插」；撤回（逻辑删除）后该分钟槽位自动释放。
+
+**响应**：`201` 风格的业务成功 —— `code=200`，`data` 为本次创建的记录（结构见 §6 列表元素）。
+
+**错误场景**
+
+| 码 | 场景 |
+|---|---|
+| 2006 | 该老人不属于当前家属 |
+| 2008 | 同一分钟同类型已有记录 |
+| 400 | 字段互斥 / 数值超界 / 小数位超 1 / 未来时间超过容差 / 类型非法 |
+
+---
+
+### 9. 撤回体征记录（家属）
+
+`DELETE /api/family/vitals/{recordId}`　权限：FAMILY
+
+**响应**
+
+```json
+{ "code": 200, "message": "记录已撤回", "data": { "recordId": 6, "deleted": true } }
+```
+
+逻辑删除，记录从列表与趋势中消失；同一分钟可立即重新录入。
+
+| 码 | 场景 |
+|---|---|
+| 2009 | 记录不存在或已撤回 |
+| 2006 | 记录所属老人不属于当前家属 |
+| 2010 | 记录不是本人代录（家属只能撤回自己录的） |
+
+---
+
+### 10. 我的体征时间线（老人本人）
+
+`GET /api/elder/vitals`　权限：ELDER
+
+**无 `elderId` 入参**：档案从登录态取；参数与响应结构同 §6。
+
+**写请求一律被拒**：老人账号为只读模式，前端不提供任何录入 / 撤回入口。
+
+---
+
+### 11. 我的体征趋势（老人本人）
+
+`GET /api/elder/vitals/trend`　权限：ELDER
+
+**无 `elderId` 入参**；参数与响应结构同 §7。
+
+---
+
+### 12. 服务中代录体征（陪诊员）
+
+`POST /api/execution/{orderId}/vitals`　权限：COMPANION
+
+**请求体**：同 §8（不含 `elderId` / `orderId`；老人取订单关联档案）。
+
+**校验顺序**（顺序固定，先失败者先返回）：
+
+1. 订单不存在 → `3001`
+2. 当前用户不是本单陪诊员 → `3004`
+3. 订单不是「服务中」→ `3002`
+4. 数值 / 去重校验 → `400` / `2008`
+
+**响应**：`data` 为本次记录，`sourceType=COMPANION_SERVICE`，`orderId` 为当前订单。
+
+---
+
+### 13. 撤回服务中代录的体征（陪诊员）
+
+`DELETE /api/execution/{orderId}/vitals/{recordId}`　权限：COMPANION
+
+校验顺序同上；另加两条归属判定：记录不属于本单 → `3004`；不是本人代录 → `2010`。
+
+**响应**：同 §9。
+
+> ⚠️ **已知边界（待拍板）**：本期未提供「按订单查询体征」端点，陪诊员页只回显本次会话内刚录入的记录，
+> 刷新后清空；完整记录在老人 / 家属端时间线查看。是否补充该端点需另行确认，不擅自加接口。
+
+---
+
 ## 三、验收标准（V3.2）
 
 ### 3.1 计划书验收项（迭代计划 §29）
@@ -384,6 +615,17 @@ bucket = TAKEN    其余
 - [x] 非法 `categories` / 越界区间 → 400 / 9002，不静默降级
 - [x] 每个指标都在指标字典里登记（`MetricDictionaryTest` 双向校验）
 
+### 3.3 体征记录（V4 · P2-2）
+
+- [x] 三端读：家属 / 老人 / 陪诊员（陪诊员仅有写与撤回）
+- [x] 唯一键按「老人 + 类型 + 分钟」去重，重复返回 `2008`，撤回后槽位释放
+- [x] 三类数值字段互斥；上下限只做合法性校验，不内置参考区间
+- [x] 老人端只读：写请求被 `ElderReadOnlyInterceptor` 拒绝，且无 `elderId` 入参
+- [x] 陪诊员代录走「订单存在 → 本单陪诊员 → 服务中」链路，错误码 `3001 / 3004 / 3002`
+- [x] 趋势按时间升序、超过 500 点以 `truncated=true` 如实告知
+- [x] 新增后端 / 前端文件禁用词扫描命中数为 0（证据见 `docs/spec/V4-P2-2-vitals-tickets.md` 的交付说明）
+- [x] e2e `backend/sql/tools/e2e_vital_sign.py` 31 项全过，清理后无残留
+
 ---
 
 ## 四、变更记录
@@ -391,3 +633,4 @@ bucket = TAKEN    其余
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-10-20 | v1.0 | 新增 V3.2 老人健康协同五个端点 |
+| 2026-11-04 | v1.1 | 新增 V4 · P2-2 体征记录八个端点（家属 4 / 老人 2 / 陪诊员 2）与错误码 `2008 / 2009 / 2010` |

@@ -96,6 +96,11 @@
 | `notification_preference` | `uk_user_id` | 唯一 | `user_id` | 一账号一份陪诊员资料 |
 | `sms_send_log` | `uk_dedup_key` | 唯一 | `dedup_key` | 支撑业务查询条件 |
 | `sms_send_log` | `idx_status_retry` | 普通 | `status`, `next_retry_at` | 支撑业务查询条件 |
+| `vital_sign_record` | `uk_vital_dedup` | 唯一 | `dedup_key` | 支撑业务查询条件 |
+| `vital_sign_record` | `idx_elder_type_time` | 普通 | `elder_id`, `vital_type`, `measured_at` | 支撑业务查询条件 |
+| `vital_sign_record` | `idx_elder_time` | 普通 | `elder_id`, `measured_at` | 支撑业务查询条件 |
+| `vital_sign_record` | `idx_order_id` | 普通 | `order_id` | 支撑业务查询条件 |
+| `vital_sign_record` | `idx_operator` | 普通 | `operator_user_id` | 按操作人追溯 |
 
 ## 二、关键设计决策
 
