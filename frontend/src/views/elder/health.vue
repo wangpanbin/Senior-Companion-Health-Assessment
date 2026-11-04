@@ -60,6 +60,26 @@ const trendError = ref(false)
 
 const trendPoints = computed(() => trend.value?.points || [])
 
+/**
+ * 最近一次读数：趋势点按测量时间升序返回，末项即最近一次。
+ *
+ * 老人端不放大绘图区，改用这张大字卡片让关键读数一眼可见；
+ * 只陈述数值与时间，不做任何判断（合规红线-1）。
+ */
+const latestReading = computed(() => {
+  if (!trend.value || trend.value.vitalType !== trendType.value) return null
+  const points = trendPoints.value
+  if (!points.length) return null
+  const last = points[points.length - 1]
+  const text = String(last.valueText || '')
+  const index = text.indexOf(' ')
+  return {
+    value: index < 0 ? text : text.slice(0, index),
+    suffix: index < 0 ? '' : text.slice(index + 1),
+    measuredAt: last.measuredAt
+  }
+})
+
 async function loadVitals(page = 1) {
   vitalsLoading.value = true
   try {
@@ -248,6 +268,15 @@ onMounted(() => {
             >
               {{ item.label }}
             </button>
+          </div>
+
+          <div v-if="latestReading" class="vital-latest">
+            <span class="vital-latest__k">最近一次 · {{ trend?.vitalTypeLabel || '' }}</span>
+            <div class="vital-latest__row">
+              <span class="vital-latest__v is-num">{{ latestReading.value }}</span>
+              <span v-if="latestReading.suffix" class="vital-latest__u">{{ latestReading.suffix }}</span>
+            </div>
+            <span class="vital-latest__t">{{ eventTimeText(latestReading.measuredAt) }}</span>
           </div>
 
           <NlSkeleton v-if="trendLoading" :count="2" />
@@ -532,6 +561,48 @@ onMounted(() => {
     outline: 2px solid var(--nl-primary);
     outline-offset: 2px;
   }
+}
+
+/* 最近一次读数：大字卡片，绘图区保持不变 */
+.vital-latest {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--nl-space-1);
+  padding: var(--nl-space-3);
+  margin-bottom: var(--nl-space-3);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-card);
+  background: var(--nl-bg-sunken);
+}
+
+.vital-latest__k {
+  color: var(--nl-text-2);
+  font-size: var(--nl-font-h3);
+}
+
+.vital-latest__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--nl-space-2);
+}
+
+.vital-latest__v {
+  color: var(--nl-primary);
+  font-family: var(--nl-font-num);
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.vital-latest__u {
+  color: var(--nl-text-2);
+  font-size: var(--nl-font-h3);
+}
+
+.vital-latest__t {
+  color: var(--nl-text-3);
+  font-size: var(--nl-font-body);
 }
 
 .vital-list {
