@@ -64,4 +64,14 @@ public interface VitalSignService {
      * <p>订单校验同上；记录必须属于本单且为本人录入，否则 {@code 3004} / {@code 2010}。</p>
      */
     VitalWithdrawVO withdrawByCompanion(Long orderId, Long recordId);
+
+    /**
+     * 陪诊员：本单已录入的体征时间线（只读）。
+     *
+     * <p>校验顺序：订单不存在 {@code 3001} → 非本单陪诊员 {@code 3004} →
+     * 订单未进入服务（{@code IN_SERVICE / COMPLETED / REVIEWED} 之外）{@code 3002}。
+     * 与写入链路的差别只在状态边界：写入 / 撤回要求「服务中」，
+     * 读取允许「已完成 / 已评价」—— 服务结束后仍要能回看本单记录。</p>
+     */
+    PageResult<VitalSignVO> listForCompanion(Long orderId, VitalSignQuery query);
 }

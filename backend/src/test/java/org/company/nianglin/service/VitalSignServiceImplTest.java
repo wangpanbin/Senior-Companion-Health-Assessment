@@ -422,6 +422,44 @@ class VitalSignServiceImplTest {
         verify(vitalSignRecordMapper, never()).deleteById(anyLong());
     }
 
+    @Test
+    @DisplayName("陪诊员按订单查询：服务中 / 已完成 / 已评价可读，已接单 3002、非本单 3004、不存在 3001")
+    void companionListShouldRespectReadableStatuses() {
+        loginAs(COMPANION_ID, RoleConstants.COMPANION);
+        given(vitalSignRecordMapper.selectPage(any(), any())).willAnswer(invocation -> {
+            Page<VitalSignRecord> page = invocation.getArgument(0);
+            page.setRecords(List.of(companionRecord(9L, ORDER_ID)));
+            page.setTotal(1);
+            return page;
+        });
+
+        given(companionOrderMapper.selectById(ORDER_ID))
+                .willReturn(order(ORDER_ID, ELDER_ID, COMPANION_ID, OrderStatus.IN_SERVICE));
+        PageResult<VitalSignVO> page = service.listForCompanion(ORDER_ID, new VitalSignQuery());
+        assertEquals(1L, page.getTotal());
+        assertEquals(ORDER_ID, page.getRecords().get(0).getOrderId());
+        verify(elderService, never()).requireAccessible(anyLong());
+
+        given(companionOrderMapper.selectById(ORDER_ID))
+                .willReturn(order(ORDER_ID, ELDER_ID, COMPANION_ID, OrderStatus.COMPLETED));
+        assertEquals(1, service.listForCompanion(ORDER_ID, new VitalSignQuery()).getRecords().size());
+
+        given(companionOrderMapper.selectById(ORDER_ID))
+                .willReturn(order(ORDER_ID, ELDER_ID, COMPANION_ID, OrderStatus.REVIEWED));
+        assertEquals(1, service.listForCompanion(ORDER_ID, new VitalSignQuery()).getRecords().size());
+
+        given(companionOrderMapper.selectById(ORDER_ID))
+                .willReturn(order(ORDER_ID, ELDER_ID, COMPANION_ID, OrderStatus.ACCEPTED));
+        assertCode(3002, () -> service.listForCompanion(ORDER_ID, new VitalSignQuery()));
+
+        given(companionOrderMapper.selectById(ORDER_ID))
+                .willReturn(order(ORDER_ID, ELDER_ID, 999L, OrderStatus.COMPLETED));
+        assertCode(3004, () -> service.listForCompanion(ORDER_ID, new VitalSignQuery()));
+
+        given(companionOrderMapper.selectById(ORDER_ID)).willReturn(null);
+        assertCode(3001, () -> service.listForCompanion(ORDER_ID, new VitalSignQuery()));
+    }
+
     /* ================================================================== */
     /* 测试夹具                                                            */
     /* ================================================================== */

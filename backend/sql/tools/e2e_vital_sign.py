@@ -12,7 +12,8 @@
      Spring 先于拦截器返回，语义均为「没有写入口」）
   D 家属越权：非绑定老人读 / 写 → 2006，且不落库
   E 陪诊员代录：本单 IN_SERVICE → 200 且来源/订单/老人正确；跨单 → 3004；
-    本单非服务中 → 3002；服务结束后撤回 → 3002
+    本单非服务中 → 3002；服务结束后撤回 → 3002；
+    按订单查询（收尾 A）：本单可回显刚录入的记录、跨单 3004、服务结束后可回看、不存在 3001
   F 撤回：200；重复撤回 → 2009；撤回后同分钟可重录（唯一键槽位释放）；
     列表不再返回旧记录
   G 残留：脚本创建的记录按 ID 物理清理，清理后计数为 0
@@ -371,6 +372,39 @@ def section_companion(companion):
     check("E4 不存在的订单 → 3001",
           body_resp.get("code") == 3001,
           "code=%s message=%s" % (body_resp.get("code"), body_resp.get("message")))
+
+    http, body_resp = call("GET", "/execution/%d/vitals?size=20" % COMPANION_ORDER_ID,
+                           None, companion)
+    records = (body_resp.get("data") or {}).get("records") or []
+    ids = [r.get("id") for r in records]
+    check("E5 按订单回显本单记录 → 200 且含刚录入的 ID",
+          body_resp.get("code") == 200 and comp_id in ids,
+          "code=%s 条数=%d ids=%s" % (body_resp.get("code"), len(ids), ids[:4]))
+    check("E6 回显记录只属本单（orderId 一致、老人一致）",
+          all(r.get("orderId") == COMPANION_ORDER_ID and r.get("elderId") == ORDER_ELDER_ID
+              for r in records),
+          "orderIds=%s" % sorted({r.get("orderId") for r in records}))
+
+    http, body_resp = call("GET", "/execution/%d/vitals" % CROSS_ORDER_ID, None, companion)
+    check("E7 跨单查询 → 3004（不是本单陪诊员）",
+          body_resp.get("code") == 3004,
+          "code=%s message=%s" % (body_resp.get("code"), body_resp.get("message")))
+
+    if NON_SERVICE_ORDER_ID:
+        # 同一订单：写被拒（E3 已断言 3002），读被允许 —— 这正是读写状态边界的不同
+        http, body_resp = call("GET", "/execution/%d/vitals" % NON_SERVICE_ORDER_ID,
+                               None, companion)
+        check("E8 同一非服务中订单：写已 3002、读 → 200（服务结束后可回看）",
+              body_resp.get("code") == 200,
+              "status=已完成/已评价 code=%s message=%s"
+              % (body_resp.get("code"), body_resp.get("message")))
+    else:
+        check("E8 同一非服务中订单：写已 3002、读 → 200", True, "无样本订单，跳过（种子缺口）")
+
+    http, body_resp = call("GET", "/execution/999999999/vitals", None, companion)
+    check("E9 不存在的订单查询 → 3001",
+          body_resp.get("code") == 3001,
+          "code=%s message=%s" % (body_resp.get("code"), body_resp.get("message")))
     return comp_id
 
 
@@ -409,6 +443,13 @@ def section_withdraw(family, companion, bp_id, comp_id):
                       None, companion)
     check("F6 陪诊员重复撤回 → 2009",
           body.get("code") == 2009, "code=%s message=%s" % (body.get("code"), body.get("message")))
+
+    http, body = call("GET", "/execution/%d/vitals?size=20" % COMPANION_ORDER_ID,
+                      None, companion)
+    ids = [r.get("id") for r in ((body.get("data") or {}).get("records") or [])]
+    check("F7 按订单回显不再包含已撤回的记录",
+          body.get("code") == 200 and comp_id not in ids,
+          "code=%s ids=%s" % (body.get("code"), ids[:4]))
 
 
 def section_residual():

@@ -94,7 +94,7 @@ public class VitalSignServiceImpl implements VitalSignService {
     @Override
     public PageResult<VitalSignVO> listForFamily(Long elderId, VitalSignQuery query) {
         elderService.requireAccessible(elderId);
-        return pageOf(elderId, query);
+        return pageOf(elderId, null, query);
     }
 
     @Override
@@ -134,7 +134,7 @@ public class VitalSignServiceImpl implements VitalSignService {
 
     @Override
     public PageResult<VitalSignVO> listForElder(VitalSignQuery query) {
-        return pageOf(requireSelfElderId(), query);
+        return pageOf(requireSelfElderId(), null, query);
     }
 
     @Override
@@ -174,6 +174,12 @@ public class VitalSignServiceImpl implements VitalSignService {
         return VitalWithdrawVO.withdrawn(recordId);
     }
 
+    @Override
+    public PageResult<VitalSignVO> listForCompanion(Long orderId, VitalSignQuery query) {
+        requireOrderReadable(orderId);
+        return pageOf(null, orderId, query);
+    }
+
     /**
      * 陪诊员链路唯一的准入判断：订单存在 → 本单陪诊员 → 服务中。
      *
@@ -199,12 +205,46 @@ public class VitalSignServiceImpl implements VitalSignService {
         return order;
     }
 
+    /**
+     * 陪诊员读取链路的准入判断：订单存在 → 本单陪诊员 → 已进入服务。
+     *
+     * <p>与 {@link #requireOrderInService(Long)} 的唯一差别是状态边界：
+     * 写入 / 撤回必须「服务中」，读取允许「服务中 / 已完成 / 已评价」。
+     * 服务结束后陪诊员仍要能回看本单记录；未接单、已取消的订单一律拒绝。</p>
+     */
+    private CompanionOrder requireOrderReadable(Long orderId) {
+        if (orderId == null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
+        }
+        CompanionOrder order = companionOrderMapper.selectById(orderId);
+        if (order == null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
+        }
+        if (!SecurityUtils.currentUserId().equals(order.getCompanionId())) {
+            throw new BusinessException(ResultCode.ORDER_NO_PERMISSION);
+        }
+        OrderStatus status = OrderStatus.of(order.getStatus());
+        if (status != OrderStatus.IN_SERVICE
+                && status != OrderStatus.COMPLETED
+                && status != OrderStatus.REVIEWED) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL,
+                    "仅服务中、已完成或已评价的订单可以查看体征记录");
+        }
+        return order;
+    }
+
     /* ================================================================== */
     /* 读取                                                                */
     /* ================================================================== */
 
-    /** 分页查询：{@code measured_at DESC, id DESC}，不重不漏 */
-    private PageResult<VitalSignVO> pageOf(Long elderId, VitalSignQuery query) {
+    /**
+     * 分页查询：{@code measured_at DESC, id DESC}，不重不漏。
+     *
+     * <p>{@code elderId} 与 {@code orderId} 二选一：家属 / 老人按老人档案取，
+     * 陪诊员按订单取。陪诊员链路刻意<b>不</b>按 {@code elderId} 过滤 ——
+     * 同一位老人可能有多单，按老人取会把别的订单代录的记录混进本单。</p>
+     */
+    private PageResult<VitalSignVO> pageOf(Long elderId, Long orderId, VitalSignQuery query) {
         DateRange range = query == null ? new DateRangeQuery().toRange() : query.toRange();
         VitalType type = parseOptionalType(query == null ? null : query.getVitalType());
         long pageNo = query == null || query.getPage() == null || query.getPage() < 1 ? 1L : query.getPage();
@@ -213,7 +253,8 @@ public class VitalSignServiceImpl implements VitalSignService {
 
         Page<VitalSignRecord> page = new Page<>(pageNo, pageSize);
         vitalSignRecordMapper.selectPage(page, Wrappers.<VitalSignRecord>lambdaQuery()
-                .eq(VitalSignRecord::getElderId, elderId)
+                .eq(orderId == null, VitalSignRecord::getElderId, elderId)
+                .eq(orderId != null, VitalSignRecord::getOrderId, orderId)
                 .eq(type != null, VitalSignRecord::getVitalType, type == null ? null : type.name())
                 .ge(VitalSignRecord::getMeasuredAt, range.startTime())
                 .lt(VitalSignRecord::getMeasuredAt, range.endExclusive())

@@ -6,10 +6,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.CheckinCreateDTO;
 import org.company.nianglin.dto.VitalSignCreateDTO;
+import org.company.nianglin.dto.VitalSignQuery;
 import org.company.nianglin.service.ExecutionService;
 import org.company.nianglin.service.VitalSignService;
 import org.company.nianglin.vo.CheckinResultVO;
@@ -91,6 +93,18 @@ public class ExecutionController {
     }
 
     /* ==================== 服务中代录体征（V4 · P2-2） ==================== */
+
+    @Operation(summary = "按订单查询已录入的体征",
+            description = "须为本单陪诊员（否则 3004），订单须为「服务中 / 已完成 / 已评价」"
+                    + "（否则 3002），订单不存在返回 3001。只返回本订单关联的代录记录，"
+                    + "按测量时间倒序分页；刷新页面后据此回显")
+    @PreAuthorize("hasRole('" + RoleConstants.COMPANION + "')")
+    @GetMapping("/{orderId}/vitals")
+    public Result<PageResult<VitalSignVO>> listVitals(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("orderId") Long orderId,
+            @Valid VitalSignQuery query) {
+        return Result.success(vitalSignService.listForCompanion(orderId, query));
+    }
 
     @Operation(summary = "服务中代录体征",
             description = "须为本单陪诊员（否则 3004），订单须为「服务中」（否则 3002），"

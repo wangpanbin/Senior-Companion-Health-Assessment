@@ -55,6 +55,12 @@ class VitalSignSecurityTest {
     private static final String API_ELDER_VITALS = "/api/elder/vitals";
     private static final String API_ELDER_TREND = "/api/elder/vitals/trend";
     private static final String API_COMPANION_VITALS = "/api/execution/1001/vitals";
+    /** 1015 · 陪诊员 315 的「服务中」订单 */
+    private static final String API_ORDER_IN_SERVICE = "/api/execution/1015/vitals";
+    /** 1025 · 陪诊员 301 的「已完成」订单 */
+    private static final String API_ORDER_COMPLETED = "/api/execution/1025/vitals";
+    /** 1012 · 陪诊员 312 的「已接单」订单（尚未进入服务） */
+    private static final String API_ORDER_ACCEPTED = "/api/execution/1012/vitals";
 
     @Autowired
     private MockMvc mockMvc;
@@ -163,6 +169,63 @@ class VitalSignSecurityTest {
                         .header(AUTH_HEADER, bearer(301L, RoleConstants.COMPANION)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(3001));
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 2.1 · 陪诊员按订单查询（V4 · P2-2 收尾）                             */
+    /* ------------------------------------------------------------------ */
+
+    @ParameterizedTest(name = "按订单查询体征 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.FAMILY, RoleConstants.ELDER, RoleConstants.ADMIN})
+    @DisplayName("按订单查询体征 · 非陪诊员 → 403")
+    void nonCompanionShouldNotReadOrderVitals(String role) throws Exception {
+        mockMvc.perform(get(API_ORDER_IN_SERVICE).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("陪诊员查询非本单订单的体征 → 3004")
+    void companionShouldNotReadForeignOrderVitals() throws Exception {
+        // 1015 的陪诊员是 315，当前令牌是 301
+        mockMvc.perform(get(API_ORDER_IN_SERVICE).header(AUTH_HEADER, bearer(301L, RoleConstants.COMPANION)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(3004));
+    }
+
+    @Test
+    @DisplayName("陪诊员查询不存在的订单 → 3001")
+    void companionShouldGet3001ForUnknownOrderQuery() throws Exception {
+        mockMvc.perform(get("/api/execution/999999/vitals")
+                        .header(AUTH_HEADER, bearer(301L, RoleConstants.COMPANION)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(3001));
+    }
+
+    @Test
+    @DisplayName("陪诊员查询「已接单」订单的体征 → 3002")
+    void companionShouldGet3002ForAcceptedOrder() throws Exception {
+        mockMvc.perform(get(API_ORDER_ACCEPTED).header(AUTH_HEADER, bearer(312L, RoleConstants.COMPANION)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(3002));
+    }
+
+    @Test
+    @DisplayName("陪诊员查询本单「服务中」订单的体征 → 200")
+    void companionShouldReadInServiceOrderVitals() throws Exception {
+        mockMvc.perform(get(API_ORDER_IN_SERVICE).header(AUTH_HEADER, bearer(315L, RoleConstants.COMPANION)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.records").isArray());
+    }
+
+    @Test
+    @DisplayName("陪诊员查询本单「已完成」订单的体征 → 200（服务结束后仍可回看）")
+    void companionShouldReadCompletedOrderVitals() throws Exception {
+        mockMvc.perform(get(API_ORDER_COMPLETED).header(AUTH_HEADER, bearer(301L, RoleConstants.COMPANION)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.records").isArray());
     }
 
     /* ================================================================== */
