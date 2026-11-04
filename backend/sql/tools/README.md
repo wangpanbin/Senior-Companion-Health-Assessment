@@ -15,7 +15,7 @@
 | `verify_data.sql` | 校验行数、中文编码、密码/密文、边界场景、枚举分布 | 查询结果 |
 | `explain_index.sql` | 7 条高频查询的 `EXPLAIN`，验证索引命中 | 查询结果 |
 | `e2e_auth.py` | **M2 端到端实测**：真实 HTTP 打 8080，40 项断言（错误码 / 越权 / 验证码防重放 / 登出黑名单 / 改密失效 / 锁定），自带测试数据清理 | 控制台 PASS/FAIL 汇总 |
-| `e2e_user_profile.py` … `e2e_statistics.py` | M3–M10 各模块端到端实测（共 9 个，命名对应模块） | 控制台 PASS/FAIL 汇总 |
+| `e2e_user_profile.py` … `e2e_statistics.py` | M3–M10 各模块端到端实测（共 8 个，命名对应模块） | 控制台 PASS/FAIL 汇总 |
 | `e2e_user_deactivate.py` | **V4 P0-1 账号注销 + 数据导出实测**：20 项断言（导出契约与四角色权限 / 注销四道闸门 / 11001 进行中订单拦截 / 注销后旧令牌 401、去标识化落库），注销全链路只在当轮注册的临时账号上跑 | 控制台 PASS/FAIL 汇总 |
 | `e2e_order_medication_draft.py` | **V4 P1-2 订单转用药计划草稿实测**：成功转草稿且响应无 dosage / 未匹配药名 / 非本单家属 3004 / 未完成 409 / 重复 409 / 非 FAMILY 403 / elderId 不符 400，自带订单与 Redis 键清理 | 控制台 PASS/FAIL 汇总 |
 | `e2e_sms_mock.py` | **V4 P1-3 通知偏好 + 漏服站外短信实测**：偏好读写与回读 / 关闭短信后只发站内信且无 SENT 行 / 同一任务两位家属各一条（幂等键含 userId）/ 单用户日频控超限被拦；造 5 条逾期任务、临时绑定 102→401、按 biz_id 清理、恢复偏好与关系快照 | 控制台 PASS/FAIL 汇总 |
@@ -170,13 +170,91 @@ python e2e_order_medication_draft.py
 # 漏服扫描默认 5 分钟首跑 + 30 分钟节奏，e2e 用运行期覆盖加速（不改生产代码默认值）：
 $env:NIANGLIN_MEDICATION_MISSED_SCAN_INITIAL_DELAY_MS="5000"
 $env:NIANGLIN_MEDICATION_MISSED_SCAN_INTERVAL_MS="10000"
-# 频控阶段断言 cap=2，必须与脚本常量 E2E_CAP 一致；不设则默认 3，D2 会 FAIL
-$env:NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP="2"
+# 日频控上限不再用环境变量：P2-3 起 sys_dict 的 sms.frequency.missed-dose-daily-cap
+# 优先于 NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP，脚本运行时读运营参数按剩余额度断言
 python e2e_sms_mock.py
 
 # V4 P2-1：结算闭环（会临时核定一笔 COMPLETED+UNPAID 种子订单，退出前还原并删本轮日志）
 python e2e_settlement.py
 ```
+
+### 9. 全量 e2e 回归（跑法与依赖顺序）
+
+全量回归必须**串行**跑，且按下面的阶段划分 —— 阶段之间要重启后端或改运营参数，
+顺序错了会出现「对空后端起跑」「扫描节奏没生效」「导出上限没生效」这类假红。
+
+**阶段 0 · 服务与基线**
+
+```powershell
+$env:MYSQL_PASSWORD = "<本机 dev 口令>"
+pwsh -File tools\e2e\start-services.ps1          # 显式 dev；以 /api/health 为就绪判据
+python tools\e2e\l0_identity_gate.py             # 身份闸门，10/10 才继续
+# 跑前基线：关键表 count / max(id) 存一份（工具自选，如 reports/e2e_baseline.py before）
+```
+
+**阶段 1 · 普通后端（不重启）**
+
+顺序固定为「认证 → 档案 → 订单 → 履约 → 评价 → 站内信 → 管理 → 结算 → 草稿 → 统计」：
+
+```powershell
+python e2e_auth.py
+python e2e_user_profile.py
+python e2e_order.py
+python e2e_execution.py
+python e2e_review.py
+python e2e_message.py
+python e2e_admin.py
+python e2e_settlement.py
+python e2e_order_medication_draft.py
+python e2e_statistics.py
+```
+
+订单类脚本会造订单，后续履约 / 评价 / 站内信 / 结算依赖这些订单形态，所以不能倒序；
+`e2e_statistics` 放在最后，避免其它脚本的临时订单被统计口径算进去。
+
+**阶段 2 · 加速漏服扫描（需重启后端一次）**
+
+```powershell
+pwsh -File tools\e2e\stop-services.ps1
+$env:SPRING_PROFILES_ACTIVE="dev"
+$env:NIANGLIN_MEDICATION_MISSED_SCAN_INITIAL_DELAY_MS="5000"
+$env:NIANGLIN_MEDICATION_MISSED_SCAN_INTERVAL_MS="10000"
+# 重新 start-services 后跑：
+python e2e_medication.py                 # 阶段一：埋探针，故意不清理
+python e2e_medication.py --scan-phase    # 阶段二：断言新进程首次扫描并统一清理
+python e2e_sms_mock.py                   # 复用同一套扫描节奏与频控运营参数
+```
+
+两阶段之间**必须重启后端**：`e2e_medication` 验证的就是「新进程首次扫描」，
+不重启的话阶段二会等不到扫描结果。
+
+**阶段 3 · 导出行数上限（需临时改运营参数 + 重启一次）**
+
+```powershell
+# 后台不能直接 --nianglin.export.max-rows=2：P2-3 起 sys_dict 的 export.max-rows
+# 优先于启动参数，且允许区间是 [100, 50000]；种子数据只有 65 单 / 93 用户，
+# 凑不到 100 行。先把该字典行停用（status=0），启动参数才有机会生效。
+mysql ... -e "UPDATE sys_dict SET status=0 WHERE dict_type='OPS_PARAM' AND dict_code='export.max-rows';"
+# 停掉后端，用 mvn spring-boot:run -Dspring-boot.run.arguments=--nianglin.export.max-rows=2 启动
+python e2e_statistics.py --limit-phase
+# 跑完恢复：
+mysql ... -e "UPDATE sys_dict SET status=1 WHERE dict_type='OPS_PARAM' AND dict_code='export.max-rows';"
+```
+
+**阶段 4 · 跑后基线与收尾**
+
+- 再取一次关键表 count / max(id)，与阶段 0 对比，**diff 为 0** 才算各脚本清理有效；
+- 非 0 的差异先分清是「脚本漏清」还是「有业务写入未按基线删」，不要直接手删了事；
+- `pwsh -File tools\e2e\stop-services.ps1` 停后端；前端由 Playwright 自己回收。
+
+**超时口径**：单脚本建议 240–300s 硬超时（`e2e_sms_mock` 在扫描节奏生效时约 35s、
+最长不超过 60s；曾出现 210s 是频控被历史残留顶满后的重复等待）。卡住即杀掉并记录，
+不要无限等待；同一脚本连续失败两次就先查环境，不要盲目重跑。
+
+**运营参数优先（P2-3 起）**：`sms.frequency.missed-dose-daily-cap`、
+`export.max-rows`、`medication.missed-threshold-minutes`、`fulfillment.urge-cooldown-minutes`
+在 `sys_dict` 有启用行时**一律以字典为准**，启动环境变量只在字典行停用时兜底。
+回归前先确认这四行的值与脚本断言前提一致。
 
 ## 环境要求
 
@@ -205,6 +283,8 @@ python e2e_settlement.py
 | 16 | e2e_medication 阶段二报 `NameError: b5_order_id` | cleanup() 引用的变量只在 main() 局部赋值，阶段二（`--scan-phase` 新进程）根本读不到。**cleanup() 要读的每个变量都必须是模块级全局**（applicant_id / new_elder_user_id / b5_order_id 同理） |
 | 17 | 本地起后端「静默退出」，退出码 1 但几乎看不到错误日志 | `application.yml` 刻意**不给** `spring.profiles.active` 默认值（`${SPRING_PROFILES_ACTIVE:}`，防止生产漏配时兜底成 dev）。当前环境没设该变量 → profile 为空 → `application-dev.yml` 不加载（数据源缺失启动失败），且 `logback-spring.xml` 的 `<springProfile>` 块不生效、错误日志被完全吞掉。**本地启动 / 跑 e2e 前先 `$env:SPRING_PROFILES_ACTIVE="dev"`** |
 | 18 | 本地 e2e 看到 `sms_send_log` 有 `SENT` 行，就以为真的发出去了；或生产切 aliyun 后启动直接失败，报缺模板 | **mock 通道不会真实外发**，`SENT` 只代表「编排层认为发送成功」，手机不会收到短信；生产 `provider=aliyun` 时 `verification` / `missed-dose` 两个模板 Code **都必须非空**（`ALIYUN_SMS_TEMPLATE_CODE_VERIFICATION` / `ALIYUN_SMS_TEMPLATE_CODE_MISSED_DOSE`），缺任一即启动失败，这是刻意 fail-fast 而不是 bug；静默时段默认 `22:00–08:00` **跨零点**，判定用 `now >= start || now < end`（`08:00` 整点视为非静默），`next_retry_at` 要按「当前时刻早于 end → 当天 08:00，否则次日 08:00」计算，别写成 `now + 8h` |
+| 19 | 用 `NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP=2` 起后端，e2e 却仍收到 3 条；`--nianglin.export.max-rows=2` 也不生效 | P2-3 起运营参数（`sys_dict` 的 `sms.frequency.missed-dose-daily-cap` / `export.max-rows` 等）**优先于**启动参数与环境变量；环境变量只在对应字典行 `status=0` 时兜底。改断言前先读字典当前值，别假设启动参数生效 |
+| 20 | 订单删了，跑后基线仍多出 `order_fulfillment_event` / `order_fee_item`；家属短信频控无故满额 | 新增表后各脚本的删除清单没跟上（V3.1 履约事件、V4 费用明细、漏服扫描写出的 `sms_send_log`）。订单类脚本删单时要连带删这两张表；用药脚本删任务前要先按 `plan_id` 反查并删 `sms_send_log`（静默时段是 `PENDING` 行，同样占频控额度） |
 
 ## 生成物与手工物的边界
 
