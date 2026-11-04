@@ -50,10 +50,10 @@
 
 ## D · 推送（需按用户指令执行）
 
-- [ ] D1 `git remote -v` 核对远端名/URL
-- [ ] D2 `git fetch` + 核对默认分支与远端提交
-- [ ] D3 判断 ff / 空仓 / 分叉；分叉或无关历史 → 停下回报
-- [ ] D4 `python tools/check_secrets.py`；确认 `.gitignore` 覆盖本地配置
-- [ ] D5 推默认分支（ff 或空仓直推）与 `feature/p2-health`；`v4-phase1` / `p2-settlement-loop` 按关系判断并说明
-- [ ] D6 认证失败立即回报，不重试、不绕过
-- [ ] D7 回报：远端核对结论、策略、分支清单与提交范围、认证结果、工作区状态、推送前后验证数字
+- [x] D1 `git remote -v` 核对远端名/URL（origin：`git@github.com:wangpanbin/Senior-Companion-Health-Assessment.git`，同一仓库 SSH 形式）
+- [x] D2 `git fetch` + 核对默认分支 `main` 与远端提交（`origin/main` = `5faf961`）
+- [x] D3 判断 ff：`origin/main` 落后 74、领先 0 → **fast-forward 可行**，无分叉
+- [x] D4 `python tools/check_secrets.py` 五条全过（1106 个入库文件）；`.gitignore` 已忽略 `application-local.yml`，入库的 `application-dev.yml` 只有占位兜底值
+- [x] D5 推默认分支（ff 到 `feature/p2-health`）+ `feature/p2-health`；`v4-phase1` / `p2-settlement-loop` 按决策只留本地
+- [x] D6 SSH 认证成功，无认证失败
+- [x] D7 回报：远端核对结论、策略、分支清单与提交范围、认证结果、工作区状态、推送前后验证数字
