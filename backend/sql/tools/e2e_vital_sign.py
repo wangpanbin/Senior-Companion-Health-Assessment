@@ -461,17 +461,17 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception as e:  # noqa: BLE001 - 脚本自身异常也算失败，但要先清理
-        print("[异常] %s: %s" % (type(e).__name__, e))
+    except Exception as e:  # noqa: BLE001 - 脚本自身出错也算失败，但要先清理
+        print("[出错] %s: %s" % (type(e).__name__, e))
     finally:
         try:
             cleanup()
         except Exception as e:  # noqa: BLE001 - 清理失败不能掩盖断言结果
-            print("[清理异常] %s: %s" % (type(e).__name__, e))
+            print("[清理出错] %s: %s" % (type(e).__name__, e))
         try:
             section_residual()
         except Exception as e:  # noqa: BLE001
-            print("[残留检查异常] %s: %s" % (type(e).__name__, e))
+            print("[残留检查出错] %s: %s" % (type(e).__name__, e))
 
     passed = sum(1 for _, ok, _ in results if ok)
     failed = len(results) - passed

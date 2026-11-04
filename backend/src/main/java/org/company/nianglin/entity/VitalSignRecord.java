@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
  * <p>三类体征共用一张表：血压存 {@code systolic / diastolic}，血糖存
  * {@code glucoseValue / glucoseContext}，体重存 {@code weightKg}，其余数值列为空。</p>
  *
- * <p>⚠️ 合规红线：本表<b>只存测量数值与事实</b>，没有备注、分级、区间、目标值字段；
+ * <p>⚠️ 合规红线：本表<b>只存测量数值与事实</b>，没有备注、分级、区间、判定标尺字段；
  * 实体也不得直接作为接口返回值，统一转 {@code VitalSignVO}。</p>
  *
  * <p>⚠️ 表上的生成列 {@code dedup_key} 故意<b>不映射</b>到实体 ——

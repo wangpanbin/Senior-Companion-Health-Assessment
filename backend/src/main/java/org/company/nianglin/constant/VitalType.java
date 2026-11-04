@@ -5,7 +5,7 @@ import java.util.Arrays;
 /**
  * 体征类型（V4 · P2-2）。
  *
- * <p>本枚举只回答「这条记录是哪一类测量」，<b>不携带任何区间、目标值或分级</b>
+ * <p>本枚举只回答「这条记录是哪一类测量」，<b>不携带任何区间、判定标尺或分级</b>
  * （合规红线-1：只记录与展示数值，不做任何解释）。单位用于服务端拼装展示文本，
  * 前端不重复拼字符串。</p>
  *
@@ -60,7 +60,7 @@ public enum VitalType {
                 .orElse(null);
     }
 
-    /** 中文展示名；非法值返回 {@code null}（不抛异常，展示层自行兜底） */
+    /** 中文展示名；非法值返回 {@code null}（不抛出运行期错误，展示层自行兜底） */
     public static String labelOf(String name) {
         VitalType type = of(name);
         return type == null ? null : type.label;
