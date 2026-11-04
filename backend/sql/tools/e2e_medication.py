@@ -74,11 +74,12 @@ def save_state():
         json.dump({"message_id_start": message_id_start,
                    "log_id_start": log_id_start,
                    "created_plan_ids": created_plan_ids,
-                   "scan_task_id": scan_task_id}, fh, ensure_ascii=False)
+                   "scan_task_id": scan_task_id,
+                   "b5_order_id": b5_order_id}, fh, ensure_ascii=False)
 
 
 def load_state():
-    global message_id_start, log_id_start, created_plan_ids, scan_task_id
+    global message_id_start, log_id_start, created_plan_ids, scan_task_id, b5_order_id
     if not os.path.exists(STATE_FILE):
         return False
     with open(STATE_FILE, encoding="utf-8") as fh:
@@ -86,6 +87,7 @@ def load_state():
     message_id_start = st.get("message_id_start", 0)
     log_id_start = st.get("log_id_start", 0)
     created_plan_ids = st.get("created_plan_ids", [])
+    b5_order_id = st.get("b5_order_id", 0)
     scan_task_id = st.get("scan_task_id", 0)
     return True
 
@@ -409,6 +411,16 @@ def main():
     # 插一行 orderNo 唯一的 PENDING 订单，随后 UPDATE 为 ACCEPTED 状态（进 ACTIVE 集合）。
     # 选个本日高序列、不会与当前 seq 冲突的 orderNo（seq 已被 e2e 抬高，这里取一个不可能的数）。
     b5_order_no = f"NL{dt.date.today().strftime('%Y%m%d')}B5TEST"
+    # 自愈：阶段一按设计把清理留给阶段二。若阶段二没跑成（中断/超时），当天会
+    # 留下 B5TEST 临时订单，把统计脚本的「最近订单日」锚到今天，导致 B16/E8 假红。
+    # 插入前先清掉当天所有同名残留（含状态日志），保证脚本可反复运行。
+    stale = mysql_value(
+        "SELECT GROUP_CONCAT(`id`) FROM `companion_order` "
+        "WHERE `order_no` LIKE 'NL%sB5TEST%%';" % dt.date.today().strftime("%Y%m%d"))
+    if stale:
+        mysql_raw("DELETE FROM `order_status_log` WHERE `order_id` IN (%s);" % stale)
+        mysql_raw("DELETE FROM `companion_order` WHERE `id` IN (%s);" % stale)
+        print("[清理] 清掉上一次中断留下的 B5TEST 临时订单 id=%s" % stale)
     # 如果上面这个 orderNo 已被用过，换个带微秒的
     dup = mysql_int(f"SELECT COUNT(*) FROM companion_order WHERE order_no='{b5_order_no}';")
     if dup and dup > 0:
