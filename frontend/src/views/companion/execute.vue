@@ -197,6 +197,18 @@ async function loadVitals() {
   }
 }
 
+/**
+ * 顶部快捷入口：跳到「本单体征记录」卡片。
+ *
+ * 只滚动定位，不改变板块顺序；目标不存在时静默返回（例如订单状态不可读）。
+ */
+function jumpToVitals() {
+  const target = document.getElementById('order-vitals')
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
 /** 录入成功：把服务端返回的这条记录就地加进本单列表 */
 function handleVitalCreated(record) {
   if (record && record.id != null) {
@@ -488,6 +500,9 @@ onBeforeUnmount(() => {
             进度 {{ progress?.progressPercent != null ? progress.progressPercent : 0 }}%
           </span>
         </div>
+        <el-button v-if="canReadVitals" link type="primary" class="vitals-jump" @click="jumpToVitals">
+          ↓ 本单体征记录
+        </el-button>
         <el-button v-if="order.companionId" type="primary" plain @click="$router.push(`/chat/${orderId}`)">联系对方</el-button>
       </NlCard>
 
@@ -514,7 +529,7 @@ onBeforeUnmount(() => {
       </NlCard>
 
       <!-- 本单体征（V4 · P2-2）：服务中可代录，已完成 / 已评价只读回看 -->
-      <NlCard v-if="canReadVitals" title="本单体征记录">
+      <NlCard v-if="canReadVitals" id="order-vitals" title="本单体征记录">
         <p class="nl-caption nl-text-muted node-hint">
           <template v-if="canWriteVitals">
             记录会进入这位老人的体征时间线，家属与老人端可查看；本单已录入的记录在下方列出
@@ -708,6 +723,12 @@ onBeforeUnmount(() => {
 
 .check-btn {
   width: 100%;
+}
+
+/* 顶部快捷入口不占满整行，保持摘要卡片的既有节奏 */
+.vitals-jump {
+  align-self: flex-start;
+  padding-left: 0;
 }
 
 .clist {
