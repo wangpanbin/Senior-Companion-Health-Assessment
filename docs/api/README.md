@@ -375,7 +375,7 @@
 | 陪诊员资质 `/api/user/companion/**` | 读（查自己的申请） | 读写（申请 / 查状态） | 读写 | 审核（M9） |
 | 订单 `/api/order/**` | 读（自己） | 下单 / 取消 / 读 | 接单 / 流转 / 读 | 读 / 强制终态 |
 | 陪诊执行 `/api/execution/**` | 读 | 读 | 打卡 / 上传 | 读 |
-| 体征记录 `/api/family/elder/{id}/vitals`、`/api/elder/vitals`、`/api/execution/{orderId}/vitals` | 读（**仅自己档案，无写入口**） | 读写（**仅绑定老人；撤回仅本人代录**） | 读写（**须为本单陪诊员且订单服务中**） | — |
+| 体征记录 `/api/family/elder/{id}/vitals`、`/api/elder/vitals`、`/api/execution/{orderId}/vitals` | 读（**仅自己档案，无写入口**） | 读写（**仅绑定老人；撤回仅本人代录**） | 读写（**须为本单陪诊员；写 / 撤回仅服务中，读可至已完成 / 已评价**） | — |
 | 用药管理 `/api/medication/**` | 读 / 确认 | 读写 / 确认 | 确认 | 读 |
 | 评价与投诉 `/api/review`、`/api/complaint` | 读 | 写 | 读 | 读 / 处理 |
 | 站内信 `/api/message/**` | ○ | ○ | ○ | ○ |
