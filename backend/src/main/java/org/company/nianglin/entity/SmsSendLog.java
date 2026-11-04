@@ -61,9 +61,9 @@ public class SmsSendLog extends BaseEntity {
     private String templateCode;
 
     /**
-     * 状态：PENDING-待发送 / SENT-已发送 / FAILED-永久失败不重试 / DEAD-死信（重试耗尽或合规拦截）
+     * 状态：PENDING-待发送 / SENT-已发送 / FAILED-永久失败不重试 / DEAD-死信（重试耗尽或合规拦截） / VOIDED-已作废（任务删除或停用，不再发送且不计频控）
      */
-    @Schema(description = "状态：PENDING-待发送 / SENT-已发送 / FAILED-永久失败不重试 / DEAD-死信（重试耗尽或合规拦截）")
+    @Schema(description = "状态：PENDING-待发送 / SENT-已发送 / FAILED-永久失败不重试 / DEAD-死信（重试耗尽或合规拦截） / VOIDED-已作废（任务删除或停用，不再发送且不计频控）")
     private String status;
 
     /**

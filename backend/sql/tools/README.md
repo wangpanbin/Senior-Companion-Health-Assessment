@@ -14,6 +14,7 @@
 | `GenSeedSecrets.java` | 一次性工具：产出 BCrypt 密码哈希与 AES 身份证密文 | 控制台输出（粘贴进 `gen_seed.py`） |
 | `verify_data.sql` | 校验行数、中文编码、密码/密文、边界场景、枚举分布 | 查询结果 |
 | `explain_index.sql` | 7 条高频查询的 `EXPLAIN`，验证索引命中 | 查询结果 |
+| `cleanup_orphan_sms_logs.sql` | **一次性存量清理**：把指向已删除 / 已停用用药任务的 `PENDING` / `FAILED` / `DEAD` 短信回执置 `VOIDED`；幂等、可重复执行，不参与 Flyway | 查询结果 / UPDATE 影响行数 |
 | `e2e_auth.py` | **M2 端到端实测**：真实 HTTP 打 8080，40 项断言（错误码 / 越权 / 验证码防重放 / 登出黑名单 / 改密失效 / 锁定），自带测试数据清理 | 控制台 PASS/FAIL 汇总 |
 | `e2e_user_profile.py` … `e2e_statistics.py` | M3–M10 各模块端到端实测（共 8 个，命名对应模块） | 控制台 PASS/FAIL 汇总 |
 | `e2e_user_deactivate.py` | **V4 P0-1 账号注销 + 数据导出实测**：20 项断言（导出契约与四角色权限 / 注销四道闸门 / 11001 进行中订单拦截 / 注销后旧令牌 401、去标识化落库），注销全链路只在当轮注册的临时账号上跑 | 控制台 PASS/FAIL 汇总 |
@@ -31,6 +32,10 @@
 > `e2e_auth.py` 不属于数据库脚本范畴，放在这里是因为它同样需要
 > 「连着真实的 MySQL / Redis 才跑得起来」—— 与其它工具的前置条件一致。
 > 它读 Redis 只为拿验证码明文（图片识别不是测试该做的事），其余全部走正常接口。
+>
+> `cleanup_orphan_sms_logs.sql` 只用于**存量历史数据**：执行前先跑文件内第 1 段 dry-run SELECT，
+> 第 2 段把孤儿回执置 `VOIDED`，第 3 段复核应为 0。新代码已把该行为内置到
+> 「删除 / 停用任务」与「频控 SQL」两处，脚本不替代代码修复。
 
 ## 为什么用脚本而不是手写 SQL
 
@@ -285,6 +290,7 @@ mysql ... -e "UPDATE sys_dict SET status=1 WHERE dict_type='OPS_PARAM' AND dict_
 | 18 | 本地 e2e 看到 `sms_send_log` 有 `SENT` 行，就以为真的发出去了；或生产切 aliyun 后启动直接失败，报缺模板 | **mock 通道不会真实外发**，`SENT` 只代表「编排层认为发送成功」，手机不会收到短信；生产 `provider=aliyun` 时 `verification` / `missed-dose` 两个模板 Code **都必须非空**（`ALIYUN_SMS_TEMPLATE_CODE_VERIFICATION` / `ALIYUN_SMS_TEMPLATE_CODE_MISSED_DOSE`），缺任一即启动失败，这是刻意 fail-fast 而不是 bug；静默时段默认 `22:00–08:00` **跨零点**，判定用 `now >= start || now < end`（`08:00` 整点视为非静默），`next_retry_at` 要按「当前时刻早于 end → 当天 08:00，否则次日 08:00」计算，别写成 `now + 8h` |
 | 19 | 用 `NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP=2` 起后端，e2e 却仍收到 3 条；`--nianglin.export.max-rows=2` 也不生效 | P2-3 起运营参数（`sys_dict` 的 `sms.frequency.missed-dose-daily-cap` / `export.max-rows` 等）**优先于**启动参数与环境变量；环境变量只在对应字典行 `status=0` 时兜底。改断言前先读字典当前值，别假设启动参数生效 |
 | 20 | 订单删了，跑后基线仍多出 `order_fulfillment_event` / `order_fee_item`；家属短信频控无故满额 | 新增表后各脚本的删除清单没跟上（V3.1 履约事件、V4 费用明细、漏服扫描写出的 `sms_send_log`）。订单类脚本删单时要连带删这两张表；用药脚本删任务前要先按 `plan_id` 反查并删 `sms_send_log`（静默时段是 `PENDING` 行，同样占频控额度） |
+| 21 | 删了用药任务，家属当天仍收不到漏服短信 | 旧版频控按行数统计，指向已删除任务的孤儿回执会继续占额度。**删除 / 停用任务会归还短信额度**（回执置 `VOIDED`，且频控只计仍存在的任务），这是刻意行为不是漏发。存量孤儿数据执行 `backend/sql/tools/cleanup_orphan_sms_logs.sql` |
 
 ## 生成物与手工物的边界
 

@@ -43,6 +43,7 @@ import org.company.nianglin.service.ElderService;
 import org.company.nianglin.service.MedicationService;
 import org.company.nianglin.service.OperationParamService;
 import org.company.nianglin.service.OrderService;
+import org.company.nianglin.service.sms.SmsReminderService;
 import org.company.nianglin.service.support.medication.ReminderDispatcher;
 import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MessageTemplateUtil;
@@ -126,6 +127,9 @@ public class MedicationServiceImpl implements MedicationService {
 
     /** 订单转草稿的「一单一转」判重标记 */
     private final StringRedisTemplate stringRedisTemplate;
+
+    /** 删除 / 停用用药计划时，同步作废这些任务下未发送的短信回执 */
+    private final SmsReminderService smsReminderService;
 
     /**
      * 运营参数服务（V4 · P2-3）。
@@ -359,12 +363,27 @@ public class MedicationServiceImpl implements MedicationService {
         // 把停用后的日子算成漏服，等于用系统的账错误地指责家属。
         // 至于已经过了时间点、确实没吃的那些任务，保持 PENDING 不动，
         // 让漏服扫描按统一规则把它们判为漏服 —— 那才是事实。
+        LocalDateTime cutoff = LocalDateTime.now();
+        List<Long> futureTaskIds = taskMapper.selectList(Wrappers.<MedicationTask>lambdaQuery()
+                        .select(MedicationTask::getId)
+                        .eq(MedicationTask::getPlanId, planId)
+                        .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
+                        .gt(MedicationTask::getPlanTime, cutoff))
+                .stream()
+                .map(MedicationTask::getId)
+                .toList();
+
         int removed = taskMapper.delete(Wrappers.<MedicationTask>lambdaQuery()
                 .eq(MedicationTask::getPlanId, planId)
                 .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
-                .gt(MedicationTask::getPlanTime, LocalDateTime.now()));
+                .gt(MedicationTask::getPlanTime, cutoff));
 
-        log.info("用药计划已停用 | planId={} | 清理未到期任务={} 条 | operator={}", planId, removed, me.userId());
+        // 回执与任务同生共死：任务删了，未发送的短信也必须作废。
+        // 否则这些孤儿回执会继续占用家属当日频控额度，导致后续真正需要提醒的任务被静默跳过。
+        int voided = smsReminderService.voidUnsentForTasks(futureTaskIds, "plan-disabled");
+
+        log.info("用药计划已停用 | planId={} | 清理未到期任务={} 条 | 作废未发送回执={} 条 | operator={}",
+                planId, removed, voided, me.userId());
     }
 
     @Override

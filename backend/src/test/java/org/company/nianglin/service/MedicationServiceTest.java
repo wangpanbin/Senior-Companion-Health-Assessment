@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.MedicationPlanStatus;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.MedicationCalendarQuery;
@@ -147,7 +148,7 @@ class MedicationServiceTest {
                         smsReminderService);
         service = new MedicationServiceImpl(medicineMapper, planMapper, taskMapper, elderMapper,
                 orderMapper, sysUserMapper, elderService, reminderDispatcher,
-                new ObjectMapper(), orderService, stringRedisTemplate);
+                new ObjectMapper(), orderService, stringRedisTemplate, smsReminderService);
         // @Value 字段在纯单测里不会被注入，不手动设就是 0：
         // 日历上限 0 会让「查一天」都被拒，阈值 0 会让所有 PENDING 任务都被判漏服
         ReflectionTestUtils.setField(service, "missThresholdMinutes", 60);
@@ -279,6 +280,29 @@ class MedicationServiceTest {
 
         assertEquals(ResultCode.PARAM_ERROR.getCode(), ex.getCode());
         verify(taskMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("停用计划 · 删除未到期任务后同步作废其未发送短信回执（否则孤儿回执继续占额度）")
+    void disablePlanShouldVoidUnsentSmsReceipts() {
+        MedicationPlan plan = new MedicationPlan();
+        plan.setId(10001L);
+        plan.setElderId(ELDER_ID);
+        plan.setStatus(MedicationPlanStatus.ACTIVE.name());
+        given(planMapper.selectById(10001L)).willReturn(plan);
+        given(elderService.requireAccessible(ELDER_ID)).willReturn(elder());
+
+        MedicationTask future = task("PENDING", ELDER_ID);
+        future.setId(20002L);
+        given(taskMapper.selectList(any())).willReturn(List.of(future));
+        given(taskMapper.delete(any())).willReturn(1);
+        given(smsReminderService.voidUnsentForTasks(any(), any())).willReturn(1);
+
+        service.disablePlan(10001L);
+
+        verify(planMapper).update(any(), any());
+        verify(taskMapper).delete(any());
+        verify(smsReminderService).voidUnsentForTasks(List.of(20002L), "plan-disabled");
     }
 
     /* ================================================================== */

@@ -16,6 +16,7 @@ import org.company.nianglin.mapper.MedicineDictMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.impl.MedicationServiceImpl;
+import org.company.nianglin.service.sms.SmsReminderService;
 import org.company.nianglin.service.support.medication.ReminderDispatcher;
 import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.vo.MedicationPlanDraftVO;
@@ -91,6 +92,8 @@ class MedicationDraftFromOrderTest {
     @Mock
     private StringRedisTemplate stringRedisTemplate;
     @Mock
+    private SmsReminderService smsReminderService;
+    @Mock
     private ValueOperations<String, String> valueOperations;
 
     private MedicationServiceImpl service;
@@ -100,7 +103,7 @@ class MedicationDraftFromOrderTest {
         MybatisLambdaCache.warmUp();
         service = new MedicationServiceImpl(medicineMapper, planMapper, taskMapper, elderMapper,
                 orderMapper, sysUserMapper, elderService, reminderDispatcher,
-                new ObjectMapper(), orderService, stringRedisTemplate);
+                new ObjectMapper(), orderService, stringRedisTemplate, smsReminderService);
         loginAs(FAMILY_ID);
     }
 

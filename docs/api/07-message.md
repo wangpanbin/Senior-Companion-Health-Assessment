@@ -340,8 +340,14 @@ dedup_key = "medication-missed:" + taskId + ":" + userId + ":" + yyyy-MM-dd
   达到上限即跳过该用户，**不写回执行**、不调用短信通道；站内信不受影响。
 - 计数口径是**行数**而非成功数：`PENDING`（静默顺延 / 待重试）、`SENT`、`DEAD`
   都占额度，避免「夜间排队 + 次日补偿」把上限放大成 2N。
-- 阈值 `nianglin.sms.frequency.missed-dose-daily-cap`，默认 **3**，
+- **只计仍有效任务的回执**：统计 SQL 带
+  `biz_id IN (SELECT id FROM medication_task WHERE deleted = 0)` 且排除 `status=VOIDED`。
+  用药任务被删除 / 停用后，其回执不再占额度；历史孤儿行（任务已不存在）也不会阻塞后续发送。
+  **删除 / 停用任务会归还短信额度**，这是刻意行为，不是漏发。
+- 阈值优先取运营参数 `sms.frequency.missed-dose-daily-cap`（`sys_dict` 启用时），
+  字典停用 / 缺失才回落 `nianglin.sms.frequency.missed-dose-daily-cap`，默认 **3**，
   环境变量 `NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP`；`< 1` 启动失败（fail-fast）。
+  详见 [08-admin.md §28.4](08-admin.md)。
 
 ### 9.4 静默时段（跨零点）
 
@@ -357,8 +363,14 @@ dedup_key = "medication-missed:" + taskId + ":" + userId + ":" + yyyy-MM-dd
 |---|---|
 | `PENDING` | 待发送 / 待重试（静默顺延或退避中） |
 | `SENT` | 已发送，写 `sent_at` |
-| `FAILED` | 永久失败不重试（用户已注销、无手机号、任务已不存在） |
+| `FAILED` | 永久失败不重试（用户已注销、无手机号） |
 | `DEAD` | 死信：重试耗尽或合规词拦截 |
+| `VOIDED` | 已作废：任务被删除 / 停用，不再发送、不占频控额度；`last_error=voided:<原因>` |
+
+- 任务删除 / 停用路径会把该任务下 `PENDING` / `FAILED` / `DEAD` 的回执置 `VOIDED`；
+  `SENT` 保留原状（确实发送过，维持审计事实）。
+- 重试扫描发现任务已不存在时同样置 `VOIDED`（`voided:task-not-found`），
+  不再写成 `FAILED`，避免继续占额度。
 
 - 文案复用 `MessageTemplateUtil.content(MessageType.MEDICATION_REMIND, params)` 并先过
   `ComplianceCheckUtil.firstHit`；命中 → `DEAD` + `last_error=compliance:<词>`，**不静默丢弃**。
@@ -384,6 +396,11 @@ dedup_key = "medication-missed:" + taskId + ":" + userId + ":" + yyyy-MM-dd
 | `create_time` / `update_time` / `deleted` | 审计与逻辑删除 |
 
 > 日志只允许打印**脱敏手机号**与 `taskId`，禁止打印完整手机号、验证码或短信正文。
+>
+> 历史孤儿行（`biz_id` 指向已删除 / 已停用任务）可用一次性脚本
+> `backend/sql/tools/cleanup_orphan_sms_logs.sql` 清理：脚本幂等、可重复执行，
+> 只把 `PENDING` / `FAILED` / `DEAD` 置 `VOIDED`，不动 `SENT`。
+> 新代码已把该行为内置到删除路径 + 频控 SQL，脚本只用于存量数据。
 
 ### 9.7 模板 Code 与配置项
 
@@ -405,7 +422,7 @@ dedup_key = "medication-missed:" + taskId + ":" + userId + ":" + yyyy-MM-dd
 | `nianglin.sms.retry.max-delay-ms` | `3600000` | 单次退避上限 |
 | `nianglin.sms.retry.scan-interval-ms` | `60000` | 重试扫描间隔 |
 | `nianglin.sms.retry.batch-size` | `100` | 单轮扫描上限 |
-| `nianglin.sms.frequency.missed-dose-daily-cap` | `3` | 单用户单日漏服短信上限（≥1；环境变量 `NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP`） |
+| `nianglin.sms.frequency.missed-dose-daily-cap` | `3` | 单用户单日漏服短信上限（≥1；环境变量 `NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP`；**运营参数 `sys_dict` 启用时优先**） |
 
 ---
 

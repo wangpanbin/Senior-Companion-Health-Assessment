@@ -31,6 +31,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +52,8 @@ import java.util.Map;
  *       不静默丢弃。</li>
  *   <li><b>频控</b>：单用户单日上限（{@code nianglin.sms.frequency.missed-dose-daily-cap}，
  *       默认 3）—— 同一位家属当天已入队/已发送的行数达到上限后，后续任务直接跳过，
- *       站内信仍照发。</li>
+ *       站内信仍照发。计数只算<b>仍有效任务</b>的回执：任务被删除 / 停用而作废的
+ *       {@code VOIDED} 行与孤儿行都不占额度。</li>
  *   <li><b>幂等</b>：{@code dedup_key = medication-missed:<taskId>:<userId>:<yyyy-MM-dd>}，
  *       依赖唯一索引兜底；冲突即视为已入队，继续处理下一位家属。</li>
  *   <li><b>静默时段</b>（默认 22:00–08:00，跨零点）：落在窗口内 →
@@ -85,6 +87,8 @@ public class SmsReminderService {
     private static final String STATUS_SENT = "SENT";
     private static final String STATUS_FAILED = "FAILED";
     private static final String STATUS_DEAD = "DEAD";
+    /** 任务已删除 / 已停用 → 回执作废：不再发送，也不计入频控额度 */
+    private static final String STATUS_VOIDED = "VOIDED";
 
     private static final int LAST_ERROR_MAX_LENGTH = 500;
     private static final String UNKNOWN_PHONE = "unknown";
@@ -201,7 +205,8 @@ public class SmsReminderService {
                 }
                 MedicationTask task = medicationTaskMapper.selectById(row.getBizId());
                 if (task == null) {
-                    markPermanentFailure(row, "task-not-found");
+                    // 任务已删除 / 停用：回执作废而不是 FAILED，避免继续占用当日额度
+                    markVoided(row, "task-not-found");
                     handled++;
                     continue;
                 }
@@ -213,6 +218,36 @@ public class SmsReminderService {
             }
         }
         return handled;
+    }
+
+    /**
+     * 作废一批用药任务下尚未发送的短信回执。
+     *
+     * <p>用药任务被删除 / 停用后调用：{@code PENDING} / {@code FAILED} / {@code DEAD}
+     * 一律置 {@code VOIDED}（不再重试、也不再计入当日频控额度），
+     * {@code SENT} 保留原状以维持「确实发过」的审计事实。</p>
+     *
+     * @param taskIds 已删除 / 停用的用药任务 ID
+     * @param reason  作废原因，写入 {@code last_error=voided:<reason>}
+     * @return 实际作废的行数
+     */
+    public int voidUnsentForTasks(Collection<Long> taskIds, String reason) {
+        if (taskIds == null || taskIds.isEmpty()) {
+            return 0;
+        }
+        int voided = smsSendLogMapper.update(null,
+                Wrappers.<SmsSendLog>lambdaUpdate()
+                        .in(SmsSendLog::getBizId, taskIds)
+                        .eq(SmsSendLog::getScene, SmsScene.MISSED_DOSE.getKey())
+                        .in(SmsSendLog::getStatus, List.of(STATUS_PENDING, STATUS_FAILED, STATUS_DEAD))
+                        .set(SmsSendLog::getStatus, STATUS_VOIDED)
+                        .set(SmsSendLog::getLastError, truncate("voided:" + reason))
+                        .set(SmsSendLog::getNextRetryAt, null));
+        if (voided > 0) {
+            log.info("用药任务已删除 / 停用，作废未发送短信回执 | tasks={} | voided={} | reason={}",
+                    taskIds.size(), voided, reason);
+        }
+        return voided;
     }
 
     /* ------------------------------------------------------------------ */
@@ -238,17 +273,27 @@ public class SmsReminderService {
     }
 
     /**
-     * 单用户单日频控：当日该场景已入队（含待发送 / 已发送 / 死信）的行数达到上限即拦截。
+     * 单用户单日频控：当日该场景仍有效任务的回执行数达到上限即拦截。
      *
      * <p>计数口径是「行」而不是「发送成功数」——静默顺延与失败的短信同样占额度，
      * 否则夜间排队 + 次日补偿会把 N 条上限瞬间放大成 2N 条。站内信不受此限。</p>
+     *
+     * <p><b>只计有效任务</b>（V4 缺陷修复）：任务被删除 / 停用后，其回执即使仍是
+     * {@code PENDING} / {@code FAILED} 也不再占额度。两道保险：
+     * ① 删除路径会把未发送回执置 {@code VOIDED}；
+     * ② 这里再用 {@code biz_id IN (SELECT id FROM medication_task WHERE deleted = 0)}
+     * 兜底，历史孤儿行（任务已不存在）不会再阻塞后续发送。</p>
      */
     private boolean isDailyCapReached(Long familyId, LocalDateTime now) {
         long todayCount = smsSendLogMapper.selectCount(
                 Wrappers.<SmsSendLog>lambdaQuery()
                         .eq(SmsSendLog::getUserId, familyId)
                         .eq(SmsSendLog::getScene, SmsScene.MISSED_DOSE.getKey())
-                        .ge(SmsSendLog::getCreateTime, now.toLocalDate().atStartOfDay()));
+                        .ne(SmsSendLog::getStatus, STATUS_VOIDED)
+                        .ge(SmsSendLog::getCreateTime, now.toLocalDate().atStartOfDay())
+                        // 只计仍存在（未逻辑删除）的用药任务回执
+                        .inSql(SmsSendLog::getBizId,
+                                "SELECT id FROM medication_task WHERE deleted = 0"));
         return todayCount >= effectiveMissedDoseDailyCap();
     }
 
@@ -351,6 +396,14 @@ public class SmsReminderService {
         row.setAttemptCount((row.getAttemptCount() == null ? 0 : row.getAttemptCount()) + 1);
         row.setStatus(STATUS_FAILED);
         row.setLastError(truncate(reason));
+        row.setNextRetryAt(null);
+        persist(row);
+    }
+
+    /** 任务已不存在 / 已停用 → 回执作废：不再重试，也不占额度 */
+    private void markVoided(SmsSendLog row, String reason) {
+        row.setStatus(STATUS_VOIDED);
+        row.setLastError(truncate("voided:" + reason));
         row.setNextRetryAt(null);
         persist(row);
     }

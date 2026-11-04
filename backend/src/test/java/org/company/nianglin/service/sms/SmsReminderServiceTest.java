@@ -1,5 +1,7 @@
 package org.company.nianglin.service.sms;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.company.nianglin.config.SmsProperties;
 import org.company.nianglin.constant.SmsScene;
@@ -250,6 +252,52 @@ class SmsReminderServiceTest {
     }
 
     @Test
+    @DisplayName("频控只计有效任务：历史孤儿行不再阻塞发送（排除 VOIDED 且限定任务仍存在）")
+    void dailyCapShouldIgnoreOrphanAndVoidedRows() {
+        properties.getFrequency().setMissedDoseDailyCap(1);
+        // 孤儿行不会被这条 SQL 计入，因此 selectCount 返回 0 → 正常发送
+        when(smsSendLogMapper.selectCount(any())).thenReturn(0L);
+
+        service.enqueueMissedDose(task, List.of(FAMILY_ID));
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(smsSendLogMapper).selectCount(captor.capture());
+        String sql = captor.getValue().getSqlSegment().replaceAll("\\s+", " ");
+        assertTrue(sql.contains("status <> "), "作废回执必须排除: " + sql);
+        assertTrue(sql.contains("biz_id IN (SELECT id FROM medication_task WHERE deleted = 0)"),
+                "只计仍有效任务的回执: " + sql);
+        verify(smsSender).send(eq(PHONE), eq(TEMPLATE_CODE), any());
+    }
+
+    @Test
+    @DisplayName("任务删除 / 停用 → 未发送回执置 VOIDED，SENT 不在作废集合")
+    void shouldVoidOnlyUnsentReceiptsForDeletedTasks() {
+        when(smsSendLogMapper.update(any(), any())).thenReturn(2);
+
+        int voided = service.voidUnsentForTasks(List.of(TASK_ID, TASK_ID + 1), "plan-disabled");
+
+        assertEquals(2, voided);
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<LambdaUpdateWrapper> captor = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(smsSendLogMapper).update(any(), captor.capture());
+        LambdaUpdateWrapper<SmsSendLog> wrapper = captor.getValue();
+
+        // 先物化 WHERE 片段，条件参数才会落到 paramNameValuePairs
+        String where = wrapper.getSqlSegment().replaceAll("\\s+", " ");
+        assertTrue(where.contains("status IN ("), "只作废指定状态: " + where);
+        assertTrue(where.contains("scene = "), "只动 missed-dose: " + where);
+
+        assertTrue(wrapper.getParamNameValuePairs().containsValue("VOIDED"), "必须写入 VOIDED 状态");
+        assertTrue(wrapper.getParamNameValuePairs().containsValue("voided:plan-disabled"),
+                "必须留作废原因");
+        assertTrue(wrapper.getParamNameValuePairs().containsValue("PENDING"), "应作废待发送行");
+        assertTrue(wrapper.getParamNameValuePairs().containsValue("FAILED"), "应作废失败行");
+        assertTrue(wrapper.getParamNameValuePairs().containsValue("DEAD"), "应作废死信行");
+        assertFalse(wrapper.getParamNameValuePairs().containsValue("SENT"), "SENT 不应被作废");
+    }
+
+    @Test
     @DisplayName("关闭开关的家属不产生记录，同任务的另一位家属照常收到")
     void shouldSkipUnsubscribedFamilyWithoutBlockingOthers() {
         NotificationPreference off = new NotificationPreference();
@@ -341,6 +389,22 @@ class SmsReminderServiceTest {
         assertEquals(1, handled, "顺延的行也要计入本轮处理数");
         verify(smsSender, never()).send(anyString(), anyString(), any());
         assertEquals(LocalDateTime.of(2026, 11, 4, 8, 0), row.getNextRetryAt());
+    }
+
+    @Test
+    @DisplayName("重试扫描遇到任务已删除 → 回执作废为 VOIDED，不再发送")
+    void shouldVoidRetryRowWhenTaskMissing() {
+        SmsSendLog row = failedRow(1, LocalDateTime.of(2026, 11, 3, 8, 1));
+        stubDueRows(row);
+        when(medicationTaskMapper.selectById(TASK_ID)).thenReturn(null);
+
+        int handled = service.scanDueRetries();
+
+        assertEquals(1, handled);
+        verify(smsSender, never()).send(anyString(), anyString(), any());
+        SmsSendLog persisted = captureSingleUpdate();
+        assertEquals("VOIDED", persisted.getStatus());
+        assertEquals("voided:task-not-found", persisted.getLastError());
     }
 
     /* ------------------------------------------------------------------ */
