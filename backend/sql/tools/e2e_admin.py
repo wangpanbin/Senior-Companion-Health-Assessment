@@ -608,8 +608,10 @@ def main():
     # 重置密码
     st_reset, body = call("POST", "/admin/user/%d/reset-password" % U_BAN,
                           {"remark": "e2e 测试：用户来电请求重置密码"}, admin)
-    check("C23 重置密码 → 200 且返回默认密码（供管理员电话告知）",
-          body.get("code") == 200 and (body.get("data") or {}).get("defaultPassword") == PASSWORD,
+    check("C23 重置密码 → 200 且响应不含任何口令（data 只有 userId / needChangePassword）",
+          body.get("code") == 200
+          and set((body.get("data") or {}).keys()) == {"userId", "needChangePassword"}
+          and (body.get("data") or {}).get("needChangePassword") is True,
           "code=%s data=%s" % (body.get("code"), body.get("data")))
     check("C24 重置后库里是 BCrypt 哈希，且强制下次改密",
           BCRYPT_RE.match(mysql_value("SELECT `password` FROM `sys_user` WHERE `id`=%d;"
