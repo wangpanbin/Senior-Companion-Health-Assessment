@@ -51,7 +51,23 @@ if (-not (Test-Path 'target\classes')) { mvn -q clean compile }
 
 $logDir = Join-Path $PROJ 'backend\logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-if (-not (Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue)) {
+
+# ⚠️ 不要单靠 Get-NetTCPConnection：本机会间歇性返回空表（2026-11-04 实测）。
+#    用 netstat 重试 + /api/health 探活双保险，避免「端口明明有人却判为空」而重复起进程。
+function Test-BackendUp {
+  for ($i = 0; $i -lt 3; $i++) {
+    $listen = netstat -ano | Select-String 'LISTENING' | Where-Object { $_ -match ':8080\s' }
+    if ($listen) { return $true }
+    try {
+      $r = Invoke-RestMethod 'http://127.0.0.1:8080/api/health' -TimeoutSec 2
+      if ($r.code -eq 200) { return $true }
+    } catch { }
+    Start-Sleep -Milliseconds 500
+  }
+  return $false
+}
+
+if (-not (Test-BackendUp)) {
   Start-Process -FilePath 'mvn.cmd' -ArgumentList 'spring-boot:run' -WorkingDirectory (Get-Location) `
     -RedirectStandardOutput (Join-Path $logDir 'run.out') `
     -RedirectStandardError (Join-Path $logDir 'run.err') -WindowStyle Hidden
