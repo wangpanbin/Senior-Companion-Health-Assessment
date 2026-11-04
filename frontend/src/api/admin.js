@@ -109,6 +109,32 @@ export function listOperLogs(params) {
   return request({ url: '/admin/oper-log', method: 'get', params })
 }
 
+/* ---------------- 运营参数（V4 · P2-3） ---------------- */
+
+/**
+ * 参数列表：当前值、application.yml 默认值、可调范围与最近更新时间。
+ *
+ * 后端在字典缺失 / 读库失败时会回落默认值，并在 `usingDefault` 上标记。
+ */
+export function getOperationParams() {
+  return request({ url: '/admin/operation-param', method: 'get' })
+}
+
+/**
+ * 修改单个参数。
+ *
+ * @param {string} code 字典键（如 medication.missed-threshold-minutes）
+ * @param {{ value: number, remark?: string }} data 新值与修改原因
+ */
+export function updateOperationParam(code, data) {
+  return request({ url: `/admin/operation-param/${code}`, method: 'put', data })
+}
+
+/** 参数变更留痕（operType=UPDATE_OPERATION_PARAM，按时间倒序） */
+export function listOperationParamLogs(params) {
+  return request({ url: '/admin/operation-param/logs', method: 'get', params })
+}
+
 /* ---------------- 履约风险中心（V3.1 · T6） ---------------- */
 
 /**

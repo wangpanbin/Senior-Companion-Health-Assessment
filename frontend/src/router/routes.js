@@ -587,6 +587,19 @@ export const routes = [
           module: 'M9',
           code: 'W-12'
         }
+      },
+      {
+        // V4 · P2-3 运营参数可调化：只开放 4 个运营阈值，改完即生效并写 admin_oper_log
+        path: 'operation-param',
+        name: 'AdminOperationParam',
+        component: () => import('@/views/admin/operation-param.vue'),
+        meta: {
+          title: '参数配置',
+          icon: 'Setting',
+          roles: ['ADMIN'],
+          module: 'M9',
+          code: 'W-13'
+        }
       }
     ]
   },
