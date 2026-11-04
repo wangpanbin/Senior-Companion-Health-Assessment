@@ -60,7 +60,7 @@
 | `operatorName` | String | 操作人姓名 |
 | `operType` | String | 操作类型，见下表 |
 | `operTypeLabel` | String | 中文类型 |
-| `targetType` | String | 目标类型：`USER` / `ORDER` / `COMPANION` / `COMPLAINT` / `REVIEW`（E4） |
+| `targetType` | String | 目标类型：`USER` / `ORDER` / `COMPANION` / `COMPLAINT` / `REVIEW`（E4） / `OPERATION_PARAM`（P2-3） |
 | `targetId` | Long | 目标 ID |
 | `targetDesc` | String | 目标描述（如订单号） |
 | `beforeStatus` | String | 变更前状态 |
@@ -82,6 +82,7 @@
 | `REVIEW_RULING` | 评价有效性裁定（E4 评价公信力闭环） |
 | `PUBLISH_NOTICE` | 发布系统公告 |
 | `SETTLE_ORDER` | 订单结算核定（P2-1 结算闭环） |
+| `UPDATE_OPERATION_PARAM` | 修改运营参数（P2-3 运营参数可调化） |
 
 ---
 
@@ -115,6 +116,9 @@
 | 24 | GET | `/api/admin/settlement` | ADMIN | 结算核对列表（P2-1） |
 | 25 | POST | `/api/admin/settlement/{orderId}/confirm` | ADMIN | 单条结算核定（P2-1） |
 | 26 | POST | `/api/admin/settlement/batch-confirm` | ADMIN | 批量结算核定（P2-1） |
+| 27 | GET | `/api/admin/operation-param` | ADMIN | 运营参数列表（P2-3） |
+| 28 | PUT | `/api/admin/operation-param/{code}` | ADMIN | 修改运营参数（P2-3） |
+| 29 | GET | `/api/admin/operation-param/logs` | ADMIN | 参数变更留痕（P2-3） |
 
 ---
 
@@ -1259,3 +1263,93 @@ V3.6 起，「哪个端点返回了哪些指标」由
 | 403 | 无权限 | 角色不是 `ADMIN` |
 | 8004 | 当前订单状态不可结算核对 | 单项订单不是 `COMPLETED` / `REVIEWED` |
 | 3001 | 订单不存在 | 单项订单 ID 不存在 |
+
+---
+
+## 28. 运营参数配置（P2-3）
+
+> 目标：让运营能在线调整 4 个阈值，改完**不发版即生效**；读取失败时回落
+> `application.yml` 默认值，**不允许因为调参把主流程拖挂**。
+
+### 28.1 参数列表
+
+`GET /api/admin/operation-param`　权限：**ADMIN**　只读，**不写操作日志**
+
+响应 `data` 为数组（固定 4 项，顺序同下表）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `code` | String | 字典键（`sys_dict.dict_code`） |
+| `label` | String | 中文名 |
+| `value` | Integer | 当前生效值 |
+| `defaultValue` | Integer | `application.yml` 默认值 |
+| `min` / `max` | Integer | 允许区间 |
+| `unit` | String | 单位 |
+| `description` | String | 参数说明 |
+| `status` | Integer | 字典状态：`0` 停用 / `1` 启用；无字典行时为 `null` |
+| `overridden` | Boolean | 是否已被字典覆盖（与默认值不同） |
+| `usingDefault` | Boolean | 是否正在使用默认值（字典缺失、停用或读库失败） |
+| `updateTime` | String | 字典行最近更新时间 |
+
+### 28.2 迁移的 4 个参数
+
+| `code` | 中文名 | 默认值 | 范围 | 单位 | 读取点 |
+|---|---|---|---|---|---|
+| `medication.missed-threshold-minutes` | 漏服判定阈值 | 60 | 1–1440 | 分钟 | `MedicationServiceImpl#scanMissedTasks` |
+| `fulfillment.urge-cooldown-minutes` | 催单最小间隔 | 10 | 1–1440 | 分钟 | `FulfillmentServiceImpl` / `OrderServiceImpl#urgeGate` |
+| `export.max-rows` | 单次导出条数上限 | 10000 | 100–50000 | 行 | `StatisticsServiceImpl` / `SettlementServiceImpl` |
+| `sms.frequency.missed-dose-daily-cap` | 漏服短信单用户日上限 | 3 | 1–100 | 条 | `SmsReminderService` |
+
+**为什么只收这 4 项**：连接串、密钥、JWT、调度开关、权重配比属于部署 / 结构配置，
+放进字典会同时失去「谁能改」与「改错怎么回滚」两道保护，因此**一律不收**。
+字典类型 `OPS_PARAM` 与既有下拉字典（`HOSPITAL` / `DEPARTMENT` / ...）按 `dict_type` 隔离。
+
+### 28.3 修改参数
+
+`PUT /api/admin/operation-param/{code}`　权限：**ADMIN**
+
+请求体：
+
+| 字段 | 类型 | 必填 | 约束 | 说明 |
+|---|---|---|---|---|
+| `value` | Integer | ✓ | 必须落在该参数的 `[min, max]` 内 | 新值 |
+| `remark` | String | 否 | ≤ 200 字 | 修改原因，写入 `admin_oper_log.remark` |
+
+响应：`{ "code": 200, "message": "操作成功", "data": null }`
+
+错误场景：
+
+| code | 触发条件 |
+|---|---|
+| 400 | `code` 不在 4 个枚举内 / `value` 为空 / 越界 / `remark` 超长 |
+| 403 | 非 ADMIN |
+| 401 | 未登录 |
+
+### 28.4 生效方式与缓存
+
+- **生效方式**：读取点每次调用实时从进程内快照取当前值。
+  管理端修改成功后，事务**提交后**立即刷新本实例缓存 → 下一次业务调用即生效，无需重启或发版。
+- **缓存 TTL**：默认 60 秒（`nianglin.operation-param.cache-ttl-ms`）。
+  TTL 到期后由下一次读取同步重载，`synchronized` 防击穿。
+- **多实例**：其他实例最多 60 秒收敛（本期单实例部署）。
+- **失败回落**：读库异常时保留上一份成功快照；无快照则使用 `application.yml` 默认值。
+  字典值非数字或越界同样回落默认值，**读取路径不抛异常**。
+- **启动**：懒加载，不在 `@PostConstruct` 访问数据库；SQL 缺失或 DB 不可用时业务仍按默认值运行。
+- **事务边界**：修改参数与写日志在同一事务；回滚时缓存保持旧值。
+
+### 28.5 留痕
+
+每次修改写 `admin_oper_log`：
+
+| 字段 | 值 |
+|---|---|
+| `oper_type` | `UPDATE_OPERATION_PARAM` |
+| `target_type` | `OPERATION_PARAM` |
+| `target_id` | `sys_dict` 行 ID |
+| `target_desc` | 字典键（如 `medication.missed-threshold-minutes`） |
+| `before_status` / `after_status` | 旧值 / 新值 |
+| `remark` | `键=...；旧值=...；新值=...；备注=...` |
+| `operator_id` / `operator_name` | 由 `OperLogRecorder` 自动写入 |
+
+留痕查询：`GET /api/admin/operation-param/logs?page=1&size=10`　权限：**ADMIN**，
+返回 `PageResult<OperLogVO>`，`operType` 固定为 `UPDATE_OPERATION_PARAM`，按操作时间倒序。
