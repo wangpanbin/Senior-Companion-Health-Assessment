@@ -107,6 +107,13 @@
 
 生效方式：**读取点每次调用实时取缓存值**；管理端修改成功后本实例立即生效，无需重启或发版。导出的「单次」语义为每个导出请求读取一次。
 
+**优先级（P2-3 硬约束）**：`sys_dict` 的 `OPS_PARAM` 行（`status=1`）**优先于**
+`application.yml`、启动参数与环境变量。字典行有值且启用时，同名环境变量
+（如 `NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP`、`NIANGLIN_EXPORT_MAXROWS`）
+**不再生效**；只有把该字典行 `status=0` 停用后，环境变量/启动参数才兜底。
+排查配置不生效时，先查 `sys_dict` 再查配置文件；完整说明见
+[`docs/api/08-admin.md` §28.4](../../api/08-admin.md)。
+
 ### 3.4 管理端接口（仅 ADMIN）
 
 新增 `controller/admin/OperationParamController.java`，类级 `@PreAuthorize("hasRole('ADMIN')")`：

@@ -158,6 +158,15 @@ mvn -Dspring-boot.run.profiles=dev spring-boot:run  # 启动，默认 8080
 - 健康检查：`GET http://localhost:8080/api/health`
 - 接口文档：`http://localhost:8080/doc.html`
 - 生产部署：必须显式 `SPRING_PROFILES_ACTIVE=prod` 并注入 `JWT_SECRET` / `ID_CARD_AES_KEY` / `DEFAULT_RESET_PASSWORD` / `REDIS_PASSWORD`，缺失即启动失败（见 `docs/security/`）
+- **运营参数优先（排查必读）**：`sys_dict` 中 `dict_type='OPS_PARAM'` 且 `status=1` 的值
+  **优先于** `application.yml`、启动参数与环境变量。字典里一旦有值且启用，同名环境变量
+  （如 `NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP`、`NIANGLIN_EXPORT_MAXROWS`）**不再生效**；
+  只有把该字典行 `status=0` 停用后环境变量才兜底。配错时先查
+  `SELECT dict_code, dict_value, status FROM sys_dict WHERE dict_type='OPS_PARAM';`，
+  不要先怀疑配置文件。详见 `docs/api/08-admin.md` §28.4。
+- **短信额度行为**：删除 / 停用用药任务会**归还**当日漏服短信额度（对应未发送回执置
+  `VOIDED`），这是刻意行为不是漏发；存量孤儿回执用
+  `backend/sql/tools/cleanup_orphan_sms_logs.sql` 清理。
 
 ### 前端
 

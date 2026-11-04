@@ -1327,6 +1327,13 @@ V3.6 起，「哪个端点返回了哪些指标」由
 
 ### 28.4 生效方式与缓存
 
+- **优先级（排查第一现场）**：`sys_dict` 中 `dict_type='OPS_PARAM'` 且 `status=1` 的行
+  **优先于** `application.yml`、启动参数（`--nianglin.xxx`）与环境变量（`NIANGLIN_XXX`）。
+  字典里一旦有值且启用，同名配置项的环境变量/启动参数**不再生效**；只有把该行
+  `status=0` 停用后，环境变量/启动参数才作为兜底。配错时先查这张表，不要先怀疑配置文件：
+  `SELECT dict_code, dict_value, status FROM sys_dict WHERE dict_type='OPS_PARAM';`
+  已知受影响键：`sms.frequency.missed-dose-daily-cap`、`export.max-rows`、
+  `medication.missed-threshold-minutes`、`fulfillment.urge-cooldown-minutes`。
 - **生效方式**：读取点每次调用实时从进程内快照取当前值。
   管理端修改成功后，事务**提交后**立即刷新本实例缓存 → 下一次业务调用即生效，无需重启或发版。
 - **缓存 TTL**：默认 60 秒（`nianglin.operation-param.cache-ttl-ms`）。
