@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.config.SmsProperties;
 import org.company.nianglin.constant.MessageType;
+import org.company.nianglin.constant.OperationParam;
 import org.company.nianglin.constant.SmsScene;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.MedicationTask;
@@ -17,9 +18,11 @@ import org.company.nianglin.mapper.MedicationTaskMapper;
 import org.company.nianglin.mapper.NotificationPreferenceMapper;
 import org.company.nianglin.mapper.SmsSendLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
+import org.company.nianglin.service.OperationParamService;
 import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.util.MessageTemplateUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -98,6 +101,13 @@ public class SmsReminderService {
     private final Clock clock;
 
     /**
+     * 运营参数服务（V4 · P2-3）；纯单测未注入时为 {@code null}，
+     * 回落 {@link SmsProperties} 的 {@code missed-dose-daily-cap}。
+     */
+    @Autowired(required = false)
+    private OperationParamService operationParamService;
+
+    /**
      * 把一条漏服任务的站外短信入队。
      *
      * <p>由 {@code InternalMessageReminderDispatcher#notifyFamily} 在站内信发送之后调用；
@@ -137,7 +147,7 @@ public class SmsReminderService {
                 }
                 if (isDailyCapReached(familyId, now)) {
                     log.info("家属当日漏服短信已达上限，跳过 | taskId={} | familyId={} | cap={}",
-                            task.getId(), familyId, properties.getFrequency().getMissedDoseDailyCap());
+                            task.getId(), familyId, effectiveMissedDoseDailyCap());
                     continue;
                 }
                 SmsSendLog row = buildPendingRow(task, familyId, dedupKey, now);
@@ -239,7 +249,14 @@ public class SmsReminderService {
                         .eq(SmsSendLog::getUserId, familyId)
                         .eq(SmsSendLog::getScene, SmsScene.MISSED_DOSE.getKey())
                         .ge(SmsSendLog::getCreateTime, now.toLocalDate().atStartOfDay()));
-        return todayCount >= properties.getFrequency().getMissedDoseDailyCap();
+        return todayCount >= effectiveMissedDoseDailyCap();
+    }
+
+    /** 运营参数优先；纯单测无 Spring 注入时回落 SmsProperties */
+    private int effectiveMissedDoseDailyCap() {
+        return operationParamService == null
+                ? properties.getFrequency().getMissedDoseDailyCap()
+                : operationParamService.getInt(OperationParam.SMS_MISSED_DOSE_DAILY_CAP);
     }
 
     private SmsSendLog buildPendingRow(MedicationTask task, Long familyId, String dedupKey, LocalDateTime now) {

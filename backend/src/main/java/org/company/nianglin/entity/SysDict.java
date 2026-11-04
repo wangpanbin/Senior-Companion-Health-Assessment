@@ -24,9 +24,10 @@ import org.company.nianglin.common.BaseEntity;
 public class SysDict extends BaseEntity {
 
     /**
-     * 字典类型：HOSPITAL-医院 / DEPARTMENT-科室 / SERVICE_TYPE-陪诊服务类型 / COMPLAINT_TYPE-投诉类型
+     * 字典类型：HOSPITAL-医院 / DEPARTMENT-科室 / SERVICE_TYPE-陪诊服务类型 /
+     * COMPLAINT_TYPE-投诉类型 / OPS_PARAM-运营参数
      */
-    @Schema(description = "字典类型：HOSPITAL-医院 / DEPARTMENT-科室 / SERVICE_TYPE-陪诊服务类型 / COMPLAINT_TYPE-投诉类型")
+    @Schema(description = "字典类型：HOSPITAL-医院 / DEPARTMENT-科室 / SERVICE_TYPE-陪诊服务类型 / COMPLAINT_TYPE-投诉类型 / OPS_PARAM-运营参数")
     private String dictType;
 
     /**

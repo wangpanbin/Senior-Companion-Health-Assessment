@@ -91,6 +91,12 @@ knife4j:
 # 业务自定义配置
 # ==========================================================================
 nianglin:
+  # 运营参数（V4 · P2-3）
+  # 可在线调整的 4 个阈值存放在 sys_dict（dict_type=OPS_PARAM），
+  # 下面对应配置项是「读取失败时的回落默认值」，不要在 Java 里再存一份副本。
+  # 管理端修改成功后本实例事务提交即刷新缓存；其他实例最多等待 cache-ttl-ms 收敛。
+  operation-param:
+    cache-ttl-ms: 60000
   # JWT（M2 实现）。签名密钥一律由环境变量 JWT_SECRET 注入，缺失即启动失败；
   # 开发环境的兜底值只在 application-dev.yml 里给，绝不出现在共享配置中。
   jwt:
@@ -120,7 +126,9 @@ nianglin:
     urgent-minutes: 30
     # 升为 MANUAL_REQUIRED（需管理员人工介入，出现在履约风险中心红区）
     manual-required-minutes: 120
-    # 家属两次催单之间的最小间隔（分钟），防止把陪诊员刷到关接单
+    # 家属两次催单之间的最小间隔（分钟），防止把陪诊员刷到关接单。
+    # 可被 sys_dict（OPS_PARAM: fulfillment.urge-cooldown-minutes）在线覆盖；
+    # 这里的值只在字典缺失 / 读取失败时使用。
     urge-cooldown-minutes: 10
     # 单笔订单允许的催单次数上限
     urge-max-times: 3
@@ -232,7 +240,9 @@ nianglin:
     # 漏服扫描的首次延迟（毫秒）。给一个非 0 的初始延迟，
     # 避免应用刚启动（还在跑 Flyway / 预热）时就立刻打一轮全表扫描
     missed-scan-initial-delay-ms: 300000
-    # 超过服药时间多少分钟后判定为漏服
+    # 超过服药时间多少分钟后判定为漏服。
+    # 可被 sys_dict（OPS_PARAM: medication.missed-threshold-minutes）在线覆盖；
+    # 这里的值只在字典缺失 / 读取失败时使用。
     missed-threshold-minutes: 60
     # 单轮漏服扫描最多处理多少条，防止积压时一次拉爆内存
     miss-scan-batch: 200
@@ -268,7 +278,9 @@ nianglin:
       scan-interval-ms: 60000
       # 单轮扫描上限
       batch-size: 100
-    # 频控：单用户单日漏服短信上限（多种药同时漏服时防止轰炸；站内信不受此限）
+    # 频控：单用户单日漏服短信上限（多种药同时漏服时防止轰炸；站内信不受此限）。
+    # 可被 sys_dict（OPS_PARAM: sms.frequency.missed-dose-daily-cap）在线覆盖；
+    # 这里的值只在字典缺失 / 读取失败时使用。
     frequency:
       missed-dose-daily-cap: 3
 

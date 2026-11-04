@@ -37,15 +37,15 @@ public class AdminOperLog extends BaseEntity {
     private String operatorName;
 
     /**
-     * 操作类型：AUDIT_COMPANION-审核资质 / DISABLE_USER-封禁 / ENABLE_USER-解封 / RESET_PASSWORD-重置密码 / ARBITRATE_ORDER-订单纠纷 / HANDLE_COMPLAINT-处理投诉 / PUBLISH_NOTICE-发布公告
+     * 操作类型：AUDIT_COMPANION-审核资质 / DISABLE_USER-封禁 / ENABLE_USER-解封 / RESET_PASSWORD-重置密码 / ARBITRATE_ORDER-订单纠纷 / REASSIGN_ORDER-订单改派 / HANDLE_COMPLAINT-处理投诉 / REVIEW_RULING-评价裁定 / SETTLE_ORDER-结算核定 / UPDATE_OPERATION_PARAM-修改运营参数 / PUBLISH_NOTICE-发布公告
      */
-    @Schema(description = "操作类型：AUDIT_COMPANION-审核资质 / DISABLE_USER-封禁 / ENABLE_USER-解封 / RESET_PASSWORD-重置密码 / ARBITRATE_ORDER-订单纠纷 / HANDLE_COMPLAINT-处理投诉 / PUBLISH_NOTICE-发布公告")
+    @Schema(description = "操作类型：AUDIT_COMPANION-审核资质 / DISABLE_USER-封禁 / ENABLE_USER-解封 / RESET_PASSWORD-重置密码 / ARBITRATE_ORDER-订单纠纷 / REASSIGN_ORDER-订单改派 / HANDLE_COMPLAINT-处理投诉 / REVIEW_RULING-评价裁定 / SETTLE_ORDER-结算核定 / UPDATE_OPERATION_PARAM-修改运营参数 / PUBLISH_NOTICE-发布公告")
     private String operType;
 
     /**
-     * 目标类型：USER-用户 / ORDER-订单 / COMPANION-陪诊员 / COMPLAINT-投诉
+     * 目标类型：USER-用户 / ORDER-订单 / COMPANION-陪诊员 / COMPLAINT-投诉 / REVIEW-评价 / OPERATION_PARAM-运营参数
      */
-    @Schema(description = "目标类型：USER-用户 / ORDER-订单 / COMPANION-陪诊员 / COMPLAINT-投诉")
+    @Schema(description = "目标类型：USER-用户 / ORDER-订单 / COMPANION-陪诊员 / COMPLAINT-投诉 / REVIEW-评价 / OPERATION_PARAM-运营参数")
     private String targetType;
 
     /**

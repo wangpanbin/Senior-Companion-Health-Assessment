@@ -13,6 +13,7 @@ import org.company.nianglin.constant.DosageForm;
 import org.company.nianglin.constant.MealRelation;
 import org.company.nianglin.constant.MedicationPlanStatus;
 import org.company.nianglin.constant.MedicationTaskStatus;
+import org.company.nianglin.constant.OperationParam;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RedisKeyConstants;
 import org.company.nianglin.constant.RoleConstants;
@@ -40,6 +41,7 @@ import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.ElderService;
 import org.company.nianglin.service.MedicationService;
+import org.company.nianglin.service.OperationParamService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.support.medication.ReminderDispatcher;
 import org.company.nianglin.util.ComplianceCheckUtil;
@@ -50,6 +52,7 @@ import org.company.nianglin.vo.MedicationPlanDraftVO;
 import org.company.nianglin.vo.MedicationPlanVO;
 import org.company.nianglin.vo.MedicationTaskVO;
 import org.company.nianglin.vo.MedicineVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -124,7 +127,17 @@ public class MedicationServiceImpl implements MedicationService {
     /** 订单转草稿的「一单一转」判重标记 */
     private final StringRedisTemplate stringRedisTemplate;
 
-    /** 超过计划时间多少分钟仍未确认即判定漏服 */
+    /**
+     * 运营参数服务（V4 · P2-3）。
+     *
+     * <p>用可选注入而不是构造器参数，是为了让既有纯 Mockito 单测继续按原构造器装配：
+     * 单测里该字段为 {@code null}，回落下面的 {@code @Value} 默认值；
+     * 生产环境由 Spring 注入，读取点热生效。</p>
+     */
+    @Autowired(required = false)
+    private OperationParamService operationParamService;
+
+    /** 超过计划时间多少分钟仍未确认即判定漏服（字典缺失 / 读取失败时的默认值） */
     @Value("${nianglin.medication.missed-threshold-minutes:60}")
     private int missThresholdMinutes;
 
@@ -588,7 +601,8 @@ public class MedicationServiceImpl implements MedicationService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int scanMissedTasks() {
-        LocalDateTime deadline = LocalDateTime.now().minusMinutes(missThresholdMinutes);
+        int thresholdMinutes = effectiveMissedThresholdMinutes();
+        LocalDateTime deadline = LocalDateTime.now().minusMinutes(thresholdMinutes);
 
         List<MedicationTask> overdue = taskMapper.selectPage(new Page<>(1, missScanBatch),
                 Wrappers.<MedicationTask>lambdaQuery()
@@ -615,8 +629,15 @@ public class MedicationServiceImpl implements MedicationService {
             dispatchMissedReminder(task);
         }
 
-        log.info("漏服扫描完成 | 阈值={} 分钟 | 判定漏服={} 条", missThresholdMinutes, missed);
+        log.info("漏服扫描完成 | 阈值={} 分钟 | 判定漏服={} 条", thresholdMinutes, missed);
         return missed;
+    }
+
+    /** 运营参数优先；纯单测无 Spring 注入时回落 @Value 默认值 */
+    private int effectiveMissedThresholdMinutes() {
+        return operationParamService == null
+                ? missThresholdMinutes
+                : operationParamService.getInt(OperationParam.MEDICATION_MISSED_THRESHOLD_MINUTES);
     }
 
     /* ================================================================== */

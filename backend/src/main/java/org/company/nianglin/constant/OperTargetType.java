@@ -33,6 +33,13 @@ public enum OperTargetType {
      * 时不需要再联合 order_review 与 companion_order。</p>
      */
     REVIEW("评价"),
+    /**
+     * 运营参数（V4 · P2-3）。
+     *
+     * <p>目标是 {@code sys_dict} 中的一条 OPS_PARAM 配置，而不是某个用户或订单；
+     * 单独一类便于按「参数键」检索变更历史。</p>
+     */
+    OPERATION_PARAM("运营参数"),
     ;
 
     private final String label;

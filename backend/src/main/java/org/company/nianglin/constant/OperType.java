@@ -52,6 +52,13 @@ public enum OperType {
      * 与 {@link #ARBITRATE_ORDER}（改订单状态）、{@link #REASSIGN_ORDER}（改归属）互不替代。</p>
      */
     SETTLE_ORDER("订单结算核定"),
+    /**
+     * 运营参数修改（V4 · P2-3）。
+     *
+     * <p>管理员在「参数配置」页调整 {@code sys_dict.OPS_PARAM} 下的运营阈值。
+     * 与其它类型一样，每改一次落一条日志，记录键、旧值、新值与操作人。</p>
+     */
+    UPDATE_OPERATION_PARAM("修改运营参数"),
     PUBLISH_NOTICE("发布系统公告"),
     ;
 

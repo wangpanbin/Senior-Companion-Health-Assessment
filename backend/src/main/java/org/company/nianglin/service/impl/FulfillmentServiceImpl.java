@@ -9,6 +9,7 @@ import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.FulfillmentEventType;
 import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.MessageType;
+import org.company.nianglin.constant.OperationParam;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.constant.TriggerSource;
@@ -23,6 +24,7 @@ import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.mapper.OrderFulfillmentEventMapper;
 import org.company.nianglin.service.FulfillmentService;
 import org.company.nianglin.service.MessageService;
+import org.company.nianglin.service.OperationParamService;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.support.FulfillmentRiskEvaluator;
@@ -31,6 +33,7 @@ import org.company.nianglin.util.TimeUtil;
 import org.company.nianglin.vo.OrderFulfillmentEventVO;
 import org.company.nianglin.vo.OrderFulfillmentVO;
 import org.company.nianglin.vo.OrderUrgeResultVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -68,6 +71,13 @@ public class FulfillmentServiceImpl implements FulfillmentService {
     private final CompanionProfileMapper companionProfileMapper;
     private final MessageService messageService;
     private final FulfillmentProperties properties;
+
+    /**
+     * 运营参数服务（V4 · P2-3）；纯单测未注入时为 {@code null}，回落
+     * {@link FulfillmentProperties#getUrgeCooldownMinutes()}。
+     */
+    @Autowired(required = false)
+    private OperationParamService operationParamService;
 
     /* ================================================================== */
     /* 定时任务入口                                                        */
@@ -188,7 +198,8 @@ public class FulfillmentServiceImpl implements FulfillmentService {
 
         String remark = normalizeRemark(dto == null ? null : dto.getRemark());
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime cooldownBoundary = now.minusMinutes(properties.getUrgeCooldownMinutes());
+        int cooldownMinutes = effectiveUrgeCooldownMinutes();
+        LocalDateTime cooldownBoundary = now.minusMinutes(cooldownMinutes);
         int maxTimes = properties.getUrgeMaxTimes();
 
         // ⚠️ 这里是整个 T3 的并发核心：自增 + 全部资格判定合并成一条 UPDATE。
@@ -222,7 +233,7 @@ public class FulfillmentServiceImpl implements FulfillmentService {
                 TriggerSource.USER, me.userId(), RoleConstants.FAMILY, remark);
         notifyAvailableCompanions(order);
 
-        LocalDateTime next = newCount >= maxTimes ? null : now.plusMinutes(properties.getUrgeCooldownMinutes());
+        LocalDateTime next = newCount >= maxTimes ? null : now.plusMinutes(cooldownMinutes);
         log.info("家属已催单 | orderId={} | familyId={} | 累计={}/{}",
                 orderId, me.userId(), newCount, maxTimes);
         return OrderUrgeResultVO.of(orderId, newCount, now, next);
@@ -285,7 +296,14 @@ public class FulfillmentServiceImpl implements FulfillmentService {
         if (order.getLastUrgeAt() == null) {
             return null;
         }
-        return order.getLastUrgeAt().plusMinutes(properties.getUrgeCooldownMinutes());
+        return order.getLastUrgeAt().plusMinutes(effectiveUrgeCooldownMinutes());
+    }
+
+    /** 运营参数优先；纯单测无 Spring 注入时回落 FulfillmentProperties */
+    private int effectiveUrgeCooldownMinutes() {
+        return operationParamService == null
+                ? properties.getUrgeCooldownMinutes()
+                : operationParamService.getInt(OperationParam.URGE_COOLDOWN_MINUTES);
     }
 
     private static int waitMinutesOf(CompanionOrder order) {

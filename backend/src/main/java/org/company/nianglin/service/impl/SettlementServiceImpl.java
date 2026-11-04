@@ -10,6 +10,7 @@ import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.OperTargetType;
 import org.company.nianglin.constant.OperType;
+import org.company.nianglin.constant.OperationParam;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
 import org.company.nianglin.dto.AdminSettlementQuery;
@@ -20,6 +21,7 @@ import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
 import org.company.nianglin.service.ExportService;
+import org.company.nianglin.service.OperationParamService;
 import org.company.nianglin.service.SettlementService;
 import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.UserNameResolver;
@@ -29,6 +31,7 @@ import org.company.nianglin.vo.SettlementBatchItemVO;
 import org.company.nianglin.vo.SettlementConfirmVO;
 import org.company.nianglin.vo.SettlementExportVO;
 import org.company.nianglin.vo.SettlementOrderVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -92,7 +95,14 @@ public class SettlementServiceImpl implements SettlementService {
     private final OperLogRecorder operLogRecorder;
     private final ExportService exportService;
 
-    /** 导出单次行数上限，与既有订单 / 用户导出共用同一配置 */
+    /**
+     * 运营参数服务（V4 · P2-3）；纯单测未注入时为 {@code null}，
+     * 回落下面的 {@code @Value} 默认值。
+     */
+    @Autowired(required = false)
+    private OperationParamService operationParamService;
+
+    /** 导出单次行数上限（字典缺失 / 读取失败时的默认值），与订单 / 用户导出共用 */
     @Value("${nianglin.export.max-rows:10000}")
     private int maxExportRows;
 
@@ -229,11 +239,12 @@ public class SettlementServiceImpl implements SettlementService {
     @Override
     public void export(AdminSettlementQuery query, HttpServletResponse response) {
         // 多查一行用于判断是否超限，避免再跑一次 count
+        int limit = effectiveMaxExportRows();
         List<CompanionOrder> orders = companionOrderMapper.selectList(
-                listWrapper(query).last("LIMIT " + (maxExportRows + 1)));
-        if (orders.size() > maxExportRows) {
+                listWrapper(query).last("LIMIT " + (limit + 1)));
+        if (orders.size() > limit) {
             throw new BusinessException(ResultCode.EXPORT_LIMIT_EXCEEDED,
-                    "本次筛选结果超过 " + maxExportRows + " 行，请缩小筛选范围后再导出");
+                    "本次筛选结果超过 " + limit + " 行，请缩小筛选范围后再导出");
         }
 
         List<SettlementOrderVO> vos = toOrderVos(orders);
@@ -389,5 +400,12 @@ public class SettlementServiceImpl implements SettlementService {
 
     private static String formatTime(LocalDateTime time) {
         return time == null ? null : time.format(TIME_FORMAT);
+    }
+
+    /** 运营参数优先；纯单测无 Spring 注入时回落 @Value 默认值 */
+    private int effectiveMaxExportRows() {
+        return operationParamService == null
+                ? maxExportRows
+                : operationParamService.getInt(OperationParam.EXPORT_MAX_ROWS);
     }
 }

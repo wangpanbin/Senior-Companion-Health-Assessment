@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.DateRange;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.CompanionRankMetric;
+import org.company.nianglin.constant.OperationParam;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
 import org.company.nianglin.constant.StatisticsGranularity;
@@ -22,6 +23,7 @@ import org.company.nianglin.mapper.OrderReadMapper;
 import org.company.nianglin.mapper.StatisticsMapper;
 import org.company.nianglin.service.AdminService;
 import org.company.nianglin.service.ExportService;
+import org.company.nianglin.service.OperationParamService;
 import org.company.nianglin.service.StatisticsService;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.MaskUtil;
@@ -33,6 +35,7 @@ import org.company.nianglin.vo.OrderExportVO;
 import org.company.nianglin.vo.OrderStatusStatVO;
 import org.company.nianglin.vo.StatisticsOverviewVO;
 import org.company.nianglin.vo.UserExportVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -81,7 +84,14 @@ public class StatisticsServiceImpl implements StatisticsService {
     private final ExportService exportService;
     private final UserNameResolver userNameResolver;
 
-    /** 导出单次行数上限，防止误点导致 OOM（文档 §6 要求必须有上限） */
+    /**
+     * 运营参数服务（V4 · P2-3）；纯单测未注入时为 {@code null}，
+     * 回落下面的 {@code @Value} 默认值。
+     */
+    @Autowired(required = false)
+    private OperationParamService operationParamService;
+
+    /** 导出单次行数上限（字典缺失 / 读取失败时的默认值），防止误点导致 OOM */
     @Value("${nianglin.export.max-rows:10000}")
     private int maxExportRows;
 
@@ -387,10 +397,11 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public void exportOrders(AdminOrderQuery query, HttpServletResponse response) {
-        List<CompanionOrder> orders = adminService.queryOrdersForExport(query, maxExportRows);
-        if (orders.size() > maxExportRows) {
+        int limit = effectiveMaxExportRows();
+        List<CompanionOrder> orders = adminService.queryOrdersForExport(query, limit);
+        if (orders.size() > limit) {
             throw new BusinessException(ResultCode.EXPORT_LIMIT_EXCEEDED,
-                    "本次筛选结果超过 " + maxExportRows + " 行，请缩小筛选范围后再导出");
+                    "本次筛选结果超过 " + limit + " 行，请缩小筛选范围后再导出");
         }
 
         List<OrderExportVO> rows = toOrderExportRows(orders);
@@ -399,10 +410,11 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public void exportUsers(AdminUserQuery query, HttpServletResponse response) {
-        List<SysUser> users = adminService.queryUsersForExport(query, maxExportRows);
-        if (users.size() > maxExportRows) {
+        int limit = effectiveMaxExportRows();
+        List<SysUser> users = adminService.queryUsersForExport(query, limit);
+        if (users.size() > limit) {
             throw new BusinessException(ResultCode.EXPORT_LIMIT_EXCEEDED,
-                    "本次筛选结果超过 " + maxExportRows + " 行，请缩小筛选范围后再导出");
+                    "本次筛选结果超过 " + limit + " 行，请缩小筛选范围后再导出");
         }
 
         Map<Long, Integer> orderCounts = new HashMap<>();
@@ -538,6 +550,13 @@ public class StatisticsServiceImpl implements StatisticsService {
             return DEFAULT_RANK_LIMIT;
         }
         return Math.min(limit, MAX_RANK_LIMIT);
+    }
+
+    /** 运营参数优先；纯单测无 Spring 注入时回落 @Value 默认值 */
+    private int effectiveMaxExportRows() {
+        return operationParamService == null
+                ? maxExportRows
+                : operationParamService.getInt(OperationParam.EXPORT_MAX_ROWS);
     }
 
     /**

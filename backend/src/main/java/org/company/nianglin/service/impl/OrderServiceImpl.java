@@ -19,6 +19,7 @@ import org.company.nianglin.config.MatchingProperties;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.MessageType;
+import org.company.nianglin.constant.OperationParam;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
 import org.company.nianglin.constant.RedisKeyConstants;
@@ -50,6 +51,7 @@ import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.ElderService;
 import org.company.nianglin.service.FulfillmentService;
 import org.company.nianglin.service.MessageService;
+import org.company.nianglin.service.OperationParamService;
 import org.company.nianglin.service.OrderFeeItemService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.util.ComplianceCheckUtil;
@@ -63,6 +65,7 @@ import org.company.nianglin.vo.OrderFlowResultVO;
 import org.company.nianglin.vo.OrderRecommendVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -168,6 +171,13 @@ public class OrderServiceImpl implements OrderService {
     private final FulfillmentService fulfillmentService;
     /** 履约保障配置（V3.1 · T1）——大厅缺省排序键取自 nianglin.fulfillment.hall-default-sort */
     private final FulfillmentProperties fulfillmentProperties;
+
+    /**
+     * 运营参数服务（V4 · P2-3）；纯单测未注入时为 {@code null}，
+     * 回落 {@link FulfillmentProperties#getUrgeCooldownMinutes()}。
+     */
+    @Autowired(required = false)
+    private OperationParamService operationParamService;
     /** 智能调度（V3.4）——大厅五维加权排序与候选推荐 */
     private final MatchingService matchingService;
     /** 智能调度配置（V3.4 · T3）——大厅候选集上限等 */
@@ -979,8 +989,10 @@ public class OrderServiceImpl implements OrderService {
 
     /** 催单门槛：两个阈值都来自 {@code nianglin.fulfillment.urge-*}，装配时读一次即可 */
     private OrderVO.UrgeGate urgeGate() {
-        return new OrderVO.UrgeGate(fulfillmentProperties.getUrgeMaxTimes(),
-                fulfillmentProperties.getUrgeCooldownMinutes());
+        int cooldownMinutes = operationParamService == null
+                ? fulfillmentProperties.getUrgeCooldownMinutes()
+                : operationParamService.getInt(OperationParam.URGE_COOLDOWN_MINUTES);
+        return new OrderVO.UrgeGate(fulfillmentProperties.getUrgeMaxTimes(), cooldownMinutes);
     }
 
     /**
