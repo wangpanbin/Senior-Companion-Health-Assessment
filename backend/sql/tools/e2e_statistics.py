@@ -16,7 +16,7 @@
   D 状态分布（6 种状态齐全、count 对拍、percent 求和 100%、空区间全 0）
   E 陪诊员排行（只含已通过审核者、orderCount 与 SQL 对拍、降序、limit 边界、
     metric=SCORE、姓名脱敏）
-  F 漏服率（was_missed 口径、summary 与序列自洽、elderId 过滤）
+  F 漏服率（漏服口径 = status='MISSED' 或 was_missed=1、summary 与序列自洽、elderId 过滤）
   G 导出（Content-Type / RFC 5987 中文文件名 / xlsx 可解析 / 列定义与顺序 /
     行数与页面筛选一致 / **不含密码·身份证·完整手机号** / 姓名脱敏）
 
@@ -273,7 +273,7 @@ def sql_medication(start, end, elder_id=None):
     row = mysql_value(
         "SELECT CONCAT(COUNT(*),'|',"
         "IFNULL(SUM(CASE WHEN `status`='TAKEN' THEN 1 ELSE 0 END),0),'|',"
-        "IFNULL(SUM(CASE WHEN `was_missed`=1 THEN 1 ELSE 0 END),0)) "
+        "IFNULL(SUM(CASE WHEN (`was_missed`=1 OR `status`='MISSED') THEN 1 ELSE 0 END),0)) "
         "FROM `medication_task` WHERE `deleted`=0%s "
         "AND `plan_time` BETWEEN '%s' AND '%s';" % (extra, sod(start), eod(end)))
     if not row:
@@ -353,6 +353,21 @@ def main():
           "start=%s end=%s（期望 %s ~ %s）" % (ov.get("startDate"), ov.get("endDate"),
                                               isodate(default_start), isodate(default_end)))
 
+    # 时间炸弹：种子订单固定在 2026-08~09，跑得越晚「最近 30 天」越可能完全为空
+    # （2026-11-04 实测默认窗口订单为 0，B16 / D5 / E1 / E8 等依赖数据的断言必红）。
+    # 若默认窗口无订单，只把**后续**统计窗口锚定到「种子最近订单日」往前 29 天；
+    # B1/B2 仍用无参响应验证默认区间，B3+ 重新取带参响应，保证 API 与 SQL 对拍的是同一窗口。
+    if sql_order_count(default_start, default_end) == 0:
+        anchor = mysql_value("SELECT DATE(MAX(`create_time`)) FROM `companion_order` WHERE `deleted`=0;")
+        if anchor:
+            default_end = dt.date.fromisoformat(str(anchor))
+            default_start = default_end - dt.timedelta(days=29)
+            print("[提示] 默认 30 天窗口无订单，后续统计窗口锚定到种子最近订单日：%s ~ %s"
+                  % (isodate(default_start), isodate(default_end)))
+            status, body = call("GET", "/statistics/overview?startDate=%s&endDate=%s"
+                                % (isodate(default_start), isodate(default_end)), None, admin)
+            ov = body.get("data") or {}
+
     order = ov.get("order") or {}
     db_total = sql_order_count(default_start, default_end)
     db_completed = sql_order_count(default_start, default_end, ["COMPLETED", "REVIEWED"])
@@ -422,7 +437,7 @@ def main():
 
     medication = ov.get("medication") or {}
     m_total, m_taken, m_missed = sql_medication(default_start, default_end)
-    check("B15 用药四项与 SQL 对拍（漏服口径 was_missed=1，不是 status=MISSED）",
+    check("B15 用药四项与 SQL 对拍（漏服口径 = status='MISSED' 或 was_missed=1）",
           medication.get("taskTotalCount") == m_total
           and medication.get("takenCount") == m_taken
           and medication.get("missedCount") == m_missed

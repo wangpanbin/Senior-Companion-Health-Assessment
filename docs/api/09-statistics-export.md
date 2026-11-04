@@ -260,8 +260,10 @@
   是最容易被截图当成 bug 的那类问题。
 - `summary` 的口径与 `chart` 严格自洽：`summary.taskTotalCount` = 「任务总数」序列求和，
   以此类推。改任一侧都必须同时改另一侧。
-- 漏服口径为 `was_missed = 1`（**含漏服后补记**），与 `/api/medication/calendar` 一致。
-  按 `status = 'MISSED'` 统计会让「列表里一条漏服都没有」而「漏服率不为 0」，数字与列表互相矛盾。
+- 漏服口径 = `was_missed = 1` **或** `status = 'MISSED'`（含漏服后补记，以
+  `MedicationBucket` 为唯一真源），与 `/api/medication/calendar` 一致。
+  只按 `was_missed = 1` 统计会漏掉「扫描判定但尚未补记」的任务，出现
+  「列表里明明有漏服、漏服率却偏低」；只按 `status = 'MISSED'` 统计则会漏掉补记过的任务。
 - `elderId` 只影响本接口，用于「这位老人的用药依从性如何」的单人视角。
 
 ### 用途
