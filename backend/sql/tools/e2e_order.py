@@ -180,8 +180,9 @@ def create_order(token, elder_id=ELDER_OWN, visit=None, hospital="海南省人�
 def cleanup():
     if created_order_ids:
         ids = ",".join(str(i) for i in created_order_ids)
-        mysql_value("DELETE FROM `order_status_log` WHERE `order_id` IN (%s);" % ids)
-        mysql_value("DELETE FROM `order_reject_log` WHERE `order_id` IN (%s);" % ids)
+        for table in ("order_status_log", "order_reject_log",
+                      "order_fee_item", "order_fulfillment_event"):
+            mysql_value("DELETE FROM `%s` WHERE `order_id` IN (%s);" % (table, ids))
         mysql_value("DELETE FROM `companion_order` WHERE `id` IN (%s);" % ids)
     # 刻意【不删】order:seq:{今天}。
     # 订单号由「Redis 当日序列 INCR」发放，清掉计数器会让同一天的下一条订单

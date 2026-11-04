@@ -199,7 +199,8 @@ def cleanup():
     if created_order_ids:
         ids = ",".join(str(i) for i in created_order_ids)
         for table in ("order_checkin", "companion_track", "order_status_log",
-                      "order_reject_log", "order_review", "complaint"):
+                      "order_reject_log", "order_review", "complaint",
+                      "order_fee_item", "order_fulfillment_event"):
             mysql_raw("DELETE FROM `%s` WHERE `order_id` IN (%s);" % (table, ids))
         mysql_raw("DELETE FROM `companion_order` WHERE `id` IN (%s);" % ids)
         print("[清理] 已删除测试订单 %s" % ids)
@@ -267,7 +268,8 @@ def main():
                         % SEED_ORDER_MAX_ID)
     if stale and stale != "NULL":
         for table in ("order_checkin", "companion_track", "order_status_log",
-                      "order_reject_log", "order_review", "complaint"):
+                      "order_reject_log", "order_review", "complaint",
+                      "order_fee_item", "order_fulfillment_event"):
             mysql_raw("DELETE FROM `%s` WHERE `order_id` IN (%s);" % (table, stale))
         mysql_raw("DELETE FROM `companion_order` WHERE `id` IN (%s);" % stale)
         print("[清扫] 删除上次中断残留的测试订单：%s" % stale)

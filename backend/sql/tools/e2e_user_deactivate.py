@@ -145,8 +145,9 @@ def cleanup():
     # 测试订单（11001 闸门用的那一单）按 e2e_order 同一手法物理删
     if created_order_ids:
         ids = ",".join(str(i) for i in created_order_ids)
-        mysql_value("DELETE FROM `order_status_log` WHERE `order_id` IN (%s);" % ids)
-        mysql_value("DELETE FROM `order_reject_log` WHERE `order_id` IN (%s);" % ids)
+        for table in ("order_status_log", "order_reject_log",
+                      "order_fee_item", "order_fulfillment_event"):
+            mysql_value("DELETE FROM `%s` WHERE `order_id` IN (%s);" % (table, ids))
         mysql_value("DELETE FROM `companion_order` WHERE `id` IN (%s);" % ids)
 
     # 当轮注册的临时账号（注销只是逻辑删 + 更新，行还在，按基线物理删）

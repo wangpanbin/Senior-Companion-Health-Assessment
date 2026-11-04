@@ -95,6 +95,7 @@ def cleanup():
         redis_del(DRAFT_KEY_TEMPLATE % oid)
     if created_order_ids:
         mysql_value("DELETE FROM `order_fee_item` WHERE `order_id` IN (%s);" % ids)
+        mysql_value("DELETE FROM `order_fulfillment_event` WHERE `order_id` IN (%s);" % ids)
         mysql_value("DELETE FROM `order_status_log` WHERE `order_id` IN (%s);" % ids)
         mysql_value("DELETE FROM `order_reject_log` WHERE `order_id` IN (%s);" % ids)
         mysql_value("DELETE FROM `companion_order` WHERE `id` IN (%s);" % ids)
