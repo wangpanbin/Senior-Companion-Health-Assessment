@@ -238,12 +238,18 @@ def main():
     check("C3 伪造令牌 → HTTP 401", status == 401, "http=%s" % status)
 
     # ---------------- D. 权限矩阵（4 角色 × 3 类接口） ----------------
+    # 2026-11-04：原 `/common/perm-probe/**` 权限探针已在 038723a（T2.3「权限探针整体退场」）
+    # 随业务模块落地一并删除，这里改用真实端点保住矩阵语义：
+    #   READ  = /auth/me                登录即可读
+    #   ADMIN = /admin/user             类级 @PreAuthorize(hasRole('ADMIN'))
+    #   WRITE = /admin/user/999999/disable  ADMIN 专属写；非管理员在过滤链就被 403，不会执行业务
+    # 老人写只读单独用 /user/elder（D12），「只读」提示语断言不变。
     admin_token = login_ok(ACC_ADMIN)["accessToken"]
     elder_token = login_ok(ACC_ELDER)["accessToken"]
     comp_token = login_ok(ACC_COMPANION)["accessToken"]
-    READ = "/common/perm-probe/authenticated"
-    ADMIN = "/common/perm-probe/admin"
-    WRITE = "/common/perm-probe/elder-write"
+    READ = "/auth/me"
+    ADMIN = "/admin/user"
+    WRITE = "/admin/user/999999/disable"
 
     for name, method, path, token, expect in [
         ("D1  只读接口 · ELDER → 200", "GET", READ, elder_token, 200),
@@ -256,12 +262,12 @@ def main():
         ("D8  管理接口 · COMPANION → 403", "GET", ADMIN, comp_token, 403),
         ("D9  写接口 · COMPANION → 403", "POST", WRITE, comp_token, 403),
         ("D10 写接口 · FAMILY → 403", "POST", WRITE, fam_token, 403),
-        ("D11 写接口 · ADMIN → 403", "POST", WRITE, admin_token, 403),
+        ("D11 写接口 · ELDER → 403", "POST", WRITE, elder_token, 403),
     ]:
         status, body = call(method, path, None, token)
         check(name, status == expect, "http=%s code=%s" % (status, body.get("code")))
 
-    status, body = call("POST", WRITE, None, elder_token)
+    status, body = call("POST", "/user/elder", None, elder_token)
     check("D12 写接口 · ELDER → 403 且提示「只读」（服务端拦截，非前端隐藏按钮）",
           status == 403 and "只读" in (body.get("message") or ""),
           "http=%s message=%s" % (status, body.get("message")))
