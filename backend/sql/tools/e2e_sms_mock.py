@@ -45,6 +45,7 @@ STATE = {
     "task_ids": [],
     "plan_ids": [],
     "message_baseline": 0,
+    "log_baseline": 0,
     "rel_id": None,
     "rel_owned": False,
     "rel_status_before": None,
@@ -158,6 +159,8 @@ def do_cleanup():
             % ",".join(str(i) for i in plan_ids))
     if STATE["message_baseline"] > 0:
         cleanup_util.delete_since("internal_message", STATE["message_baseline"], "本次漏服站内信")
+    if STATE["log_baseline"] > 0:
+        cleanup_util.delete_since("sys_login_log", STATE["log_baseline"], "sys_login_log")
     cleanup_util.flush_unread_cache()
 
     rel_id = STATE["rel_id"]
@@ -235,6 +238,7 @@ def pref_snapshot(user_id):
 
 
 def main():
+    STATE["log_baseline"] = cleanup_util.max_id("sys_login_log")
     token = med.login_ok(med.ACC_FAMILY)
     token2 = med.login_ok(med.ACC_FAMILY_OTHER)
     message_baseline = cleanup_util.max_id("internal_message")

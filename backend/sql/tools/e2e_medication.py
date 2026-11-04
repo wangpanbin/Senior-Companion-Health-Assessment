@@ -207,10 +207,17 @@ def cleanup():
         print("[清理] 已删除 B5 setup 临时订单 id=%d" % b5_order_id)
     if created_plan_ids:
         ids = ",".join(str(i) for i in created_plan_ids)
+        # 漏服扫描会给家属写 sms_send_log（quiet hours 下是 PENDING）。必须在删任务
+        # 之前按 plan→task 反查回执再删，否则这些孤儿回执会占用家属当日频控额度，
+        # 让 e2e_sms_mock 的频控断言假红。
+        mysql_raw("DELETE FROM `sms_send_log` WHERE `scene`='missed-dose' AND `biz_id` IN "
+                  "(SELECT `id` FROM `medication_task` WHERE `plan_id` IN (%s));" % ids)
         mysql_raw("DELETE FROM `medication_task` WHERE `plan_id` IN (%s);" % ids)
         mysql_raw("DELETE FROM `medication_plan` WHERE `id` IN (%s);" % ids)
         print("[清理] 已删除测试用药计划 %s 及其服药任务" % ids)
     if scan_task_id:
+        mysql_raw("DELETE FROM `sms_send_log` WHERE `scene`='missed-dose' AND `biz_id`=%d;"
+                  % scan_task_id)
         mysql_raw("DELETE FROM `medication_task` WHERE `id`=%d;" % scan_task_id)
         print("[清理] 已删除扫描测试任务 id=%d" % scan_task_id)
     if message_id_start:
