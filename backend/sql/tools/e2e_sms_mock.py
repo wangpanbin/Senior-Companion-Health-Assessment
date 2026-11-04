@@ -13,12 +13,15 @@
     - 为了让 30 分钟一轮的漏服扫描在脚本里可等，启动时应额外覆盖：
         $env:NIANGLIN_MEDICATION_MISSED_SCAN_INITIAL_DELAY_MS="5000"
         $env:NIANGLIN_MEDICATION_MISSED_SCAN_INTERVAL_MS="10000"
-    - 频控阶段断言 cap=2，启动时还必须覆盖：
-        $env:NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP="2"
-      （都只是运行期参数覆盖，不改调度代码与生产默认节奏 / 默认阈值）
+      （只是运行期参数覆盖，不改调度代码与生产默认节奏）
+    - 频控上限不再用环境变量断言：P2-3 起运营参数（sys_dict 的
+      sms.frequency.missed-dose-daily-cap）优先于 SmsProperties，
+      NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP 只在 sys_dict 无启用行时兜底。
+      脚本改为运行时读取 sys_dict 的实际值，并按「当日剩余额度」断言。
 
 红线：脚本只操作自己造的数据；不打印完整手机号；不写任何真实密钥。
 """
+import atexit
 import os
 import sys
 import time
@@ -34,7 +37,20 @@ FULL_PHONE_1 = "13800100001"  # 只用于断言「未落库」，不打印
 FULL_PHONE_2 = "13800100002"
 MASKED_PHONE_1 = "138****0001"
 MASKED_PHONE_2 = "138****0002"
-E2E_CAP = 2  # 必须与启动时的 NIANGLIN_SMS_FREQUENCY_MISSEDDOSEDAILYCAP 一致
+DEFAULT_CAP = 3  # application.yml 默认值：sys_dict 无启用行时才用它
+
+# 收尾状态：异常（含中断）时由 atexit 统一清理。半截运行留在库里的任务 / 回执
+# 会占用当日频控额度，让后续回归出现「明明没发过却已满额」的假红。
+STATE = {
+    "task_ids": [],
+    "plan_ids": [],
+    "message_baseline": 0,
+    "rel_id": None,
+    "rel_owned": False,
+    "rel_status_before": None,
+    "prefs": (),
+    "done": False,
+}
 
 results = []
 
@@ -83,6 +99,93 @@ def sms_count(task_ids, user_id):
     return int(cleanup_util.mysql_value(
         "SELECT COUNT(*) FROM `sms_send_log` WHERE `biz_id` IN (%s) AND `user_id`=%d;"
         % (ids, user_id)) or 0)
+
+
+def effective_cap():
+    """频控上限的权威来源是 sys_dict 运营参数（P2-3 起优先于 SmsProperties）。
+
+    启动环境变量只在 sys_dict 没有启用行时才是默认值来源，所以断言不能绑死它。
+    """
+    raw = cleanup_util.mysql_value(
+        "SELECT `dict_value` FROM `sys_dict` WHERE `dict_type`='OPS_PARAM' "
+        "AND `dict_code`='sms.frequency.missed-dose-daily-cap' AND `status`=1 LIMIT 1;")
+    try:
+        return int(raw)
+    except ValueError:
+        return DEFAULT_CAP
+
+
+def today_sms_count(user_id):
+    return int(cleanup_util.mysql_value(
+        "SELECT COUNT(*) FROM `sms_send_log` WHERE `scene`='missed-dose' "
+        "AND `user_id`=%d AND `create_time`>=CURDATE();" % user_id) or 0)
+
+
+def purge_orphan_rows():
+    """清掉历史失败运行留下的孤儿回执（biz_id 已无对应任务）。
+
+    这类行仍占用当日频控额度，但已无法对应任何业务任务；不清掉的话
+    「从 0 开始计数」的前提不成立（实测残留 3 条就让 101 直接满额）。
+    """
+    where = ("FROM `sms_send_log` s WHERE s.`scene`='missed-dose' "
+             "AND s.`user_id` IN (%d,%d) AND s.`create_time`>=CURDATE() "
+             "AND NOT EXISTS (SELECT 1 FROM `medication_task` t WHERE t.`id`=s.`biz_id`)"
+             % (FAMILY_ID, FAMILY_ID_2))
+    removed = int(cleanup_util.mysql_value("SELECT COUNT(*) " + where) or 0)
+    if removed:
+        cleanup_util.mysql_raw("DELETE s " + where + ";")
+        print("[提示] 清掉 %d 条孤儿漏服回执（历史失败运行残留，占用当日额度）" % removed)
+    return removed
+
+
+def do_cleanup():
+    """脚本自身数据的统一收尾；幂等，正常结束与异常退出都调用一次。
+
+    先删任务再删回执：扫描器若在「删回执」与「删任务」之间写入新回执，
+    先删任务能让这类写入落空，避免再次留下孤儿回执行。
+    """
+    if STATE["done"]:
+        return
+    STATE["done"] = True
+    task_ids, plan_ids = STATE["task_ids"], STATE["plan_ids"]
+    if task_ids:
+        ids = ",".join(str(i) for i in task_ids)
+        cleanup_util.mysql_raw("DELETE FROM `medication_task` WHERE `id` IN (%s);" % ids)
+        cleanup_util.mysql_raw("DELETE FROM `sms_send_log` WHERE `biz_id` IN (%s);" % ids)
+    if plan_ids:
+        cleanup_util.mysql_raw(
+            "DELETE FROM `medication_plan` WHERE `id` IN (%s);"
+            % ",".join(str(i) for i in plan_ids))
+    if STATE["message_baseline"] > 0:
+        cleanup_util.delete_since("internal_message", STATE["message_baseline"], "本次漏服站内信")
+    cleanup_util.flush_unread_cache()
+
+    rel_id = STATE["rel_id"]
+    if rel_id is not None:
+        if STATE["rel_owned"]:
+            cleanup_util.mysql_raw("DELETE FROM `family_elder_relation` WHERE `id`=%d;" % rel_id)
+            print("[清理] 已删除临时家属绑定关系 %d" % rel_id)
+        elif STATE["rel_status_before"] is not None:
+            cleanup_util.mysql_raw(
+                "UPDATE `family_elder_relation` SET `status`='%s' WHERE `id`=%d;"
+                % (STATE["rel_status_before"], rel_id))
+            print("[清理] 绑定关系 %d 服务端原本就存在，恢复为 %s"
+                  % (rel_id, STATE["rel_status_before"]))
+
+    for uid, before in STATE["prefs"]:
+        if before:
+            sms_flag, quiet_flag = before.split("|")
+            cleanup_util.mysql_raw(
+                "UPDATE `notification_preference` SET `sms_missed_enabled`=%s, `quiet_hours_enabled`=%s "
+                "WHERE `user_id`=%d;" % (sms_flag, quiet_flag, uid))
+            print("[清理] 通知偏好 %d 已恢复为 %s" % (uid, before))
+        else:
+            cleanup_util.mysql_raw(
+                "DELETE FROM `notification_preference` WHERE `user_id`=%d;" % uid)
+            print("[清理] 通知偏好 %d：删除脚本新增行（原本不存在）" % uid)
+
+
+atexit.register(do_cleanup)
 
 
 def make_overdue_task(plan_id, task_id):
@@ -135,13 +238,23 @@ def main():
     token = med.login_ok(med.ACC_FAMILY)
     token2 = med.login_ok(med.ACC_FAMILY_OTHER)
     message_baseline = cleanup_util.max_id("internal_message")
+    STATE["message_baseline"] = message_baseline
 
     pref_before_1 = pref_snapshot(FAMILY_ID)
     pref_before_2 = pref_snapshot(FAMILY_ID_2)
+    STATE["prefs"] = ((FAMILY_ID, pref_before_1), (FAMILY_ID_2, pref_before_2))
     rel_id, rel_owned, rel_status_before = bind_second_family()
+    STATE["rel_id"] = rel_id
+    STATE["rel_owned"] = rel_owned
+    STATE["rel_status_before"] = rel_status_before
 
     task_ids = []
     plan_ids = []
+    STATE["task_ids"] = task_ids
+    STATE["plan_ids"] = plan_ids
+
+    # 先清孤儿回执：否则它们会在 C 段就占满 101 的当日额度（频控不分 biz_id）
+    purge_orphan_rows()
 
     status, body = med.call("GET", "/message/notification-preference", token=token)
     check("A1 家属读取通知偏好", status == 200 and body.get("code") == 200,
@@ -204,13 +317,20 @@ def main():
               and FULL_PHONE_1 not in rows and FULL_PHONE_2 not in rows,
               "sms=%s" % rows)
 
-    # 阶段 D：单用户日频控（启动时 cap=2）。先删掉本脚本此前所有回执行，让计数从 0 开始
-    # （B 阶段 102 已收到 1 条，若不清掉会占用其当日额度，导致 D1 计数不公平）
+    # 阶段 D：单用户日频控。上限取 sys_dict 运营参数（P2-3 起优先于环境变量），
+    # 并按「当日剩余额度」断言，避免历史残留回执把起点直接顶满。
+    # 先删掉本脚本此前所有回执行（B 阶段 102 已收到 1 条，不清掉会占用其额度）。
     cleanup_util.mysql_raw(
         "DELETE FROM `sms_send_log` WHERE `biz_id` IN (%s);"
         % ",".join(str(i) for i in task_ids))
+    cap = effective_cap()
+    base_1 = today_sms_count(FAMILY_ID)
+    base_2 = today_sms_count(FAMILY_ID_2)
+    allowed_1 = max(0, cap - base_1)
+    allowed_2 = max(0, cap - base_2)
+    print("[提示] 频控上限=%d；本次起点 101=%d 102=%d" % (cap, base_1, base_2))
     cap_tasks = []
-    for _ in range(E2E_CAP + 1):
+    for _ in range(cap + 1):
         tid = cleanup_util.max_id("medication_task") + 1
         pid = cleanup_util.max_id("medication_plan") + 1
         make_overdue_task(pid, tid)
@@ -220,19 +340,24 @@ def main():
 
     scanned = all(wait_scanned(tid) for tid in cap_tasks)
     if scanned:
-        # 前 cap 个任务：每位家属各 1 条；第 cap+1 个任务：两人都超限，零回执
-        wait_sent(cap_tasks[0], 2)
-        wait_sent(cap_tasks[1], 2)
-        time.sleep(5)  # 给扫描器处理第 cap+1 个任务的时间
+        # 额度内最后一条任务用于等发送完成；之后的第 cap+1 条应被频控拦下
+        wait_index = min(len(cap_tasks), max(allowed_1, allowed_2)) - 1
+        if wait_index >= 0:
+            wait_sent(cap_tasks[wait_index], 2)
+        time.sleep(5)  # 给扫描器处理被拦下的那条任务的时间
         cnt_1 = sms_count(cap_tasks, FAMILY_ID)
         cnt_2 = sms_count(cap_tasks, FAMILY_ID_2)
-        check("D1 频控内每位家属各 %d 条（每个任务各 1 条）" % E2E_CAP,
-              cnt_1 == E2E_CAP and cnt_2 == E2E_CAP,
-              "101=%d 102=%d" % (cnt_1, cnt_2))
-        # 三条任务里应恰好有一条「两位家属都没有回执」——即超限后被拦的那条
+        expect_1 = min(len(cap_tasks), allowed_1)
+        expect_2 = min(len(cap_tasks), allowed_2)
+        check("D1 频控内每位家属按剩余额度各收到一条（上限 %d，起点 101=%d 102=%d）"
+              % (cap, base_1, base_2),
+              cnt_1 == expect_1 and cnt_2 == expect_2,
+              "101=%d(期望%d) 102=%d(期望%d)" % (cnt_1, expect_1, cnt_2, expect_2))
+        # 两位家属都超限的那些任务应零回执
+        empty_expected = max(0, len(cap_tasks) - max(allowed_1, allowed_2))
         empty_tasks = [t for t in cap_tasks if sms_rows(t) == ""]
-        check("D2 同人同日超限的新任务被拦（两位家属都不产生回执）",
-              len(empty_tasks) == 1,
+        check("D2 同人同日超限的新任务被拦（%d 条任务两位家属都无回执）" % empty_expected,
+              len(empty_tasks) == empty_expected,
               "空回执任务=%s" % (empty_tasks or "(无)"))
 
     # 阶段 E：PUT 后 GET 读回一致
@@ -243,39 +368,8 @@ def main():
               and (body.get("data") or {}).get("quietHoursEnabled") is False,
               str(body.get("data")))
 
-    # 清理：只删本脚本 biz_id 对应的回执；计划 / 任务按显式 id 删；站内信按基线删
-    cleanup_util.mysql_raw(
-        "DELETE FROM `sms_send_log` WHERE `biz_id` IN (%s);"
-        % ",".join(str(i) for i in task_ids))
-    cleanup_util.mysql_raw(
-        "DELETE FROM `medication_task` WHERE `id` IN (%s);"
-        % ",".join(str(i) for i in task_ids))
-    cleanup_util.mysql_raw(
-        "DELETE FROM `medication_plan` WHERE `id` IN (%s);"
-        % ",".join(str(i) for i in plan_ids))
-    cleanup_util.delete_since("internal_message", message_baseline, "本次漏服站内信")
-    cleanup_util.flush_unread_cache()
-
-    if rel_owned:
-        cleanup_util.mysql_raw("DELETE FROM `family_elder_relation` WHERE `id`=%d;" % rel_id)
-        print("[清理] 已删除临时家属绑定关系 %d" % rel_id)
-    else:
-        cleanup_util.mysql_raw(
-            "UPDATE `family_elder_relation` SET `status`='%s' WHERE `id`=%d;"
-            % (rel_status_before, rel_id))
-        print("[清理] 绑定关系 %d 服务端原本就存在，恢复为 %s" % (rel_id, rel_status_before))
-
-    for uid, before in ((FAMILY_ID, pref_before_1), (FAMILY_ID_2, pref_before_2)):
-        if before:
-            sms_flag, quiet_flag = before.split("|")
-            cleanup_util.mysql_raw(
-                "UPDATE `notification_preference` SET `sms_missed_enabled`=%s, `quiet_hours_enabled`=%s "
-                "WHERE `user_id`=%d;" % (sms_flag, quiet_flag, uid))
-            print("[清理] 通知偏好 %d 已恢复为 %s" % (uid, before))
-        else:
-            cleanup_util.mysql_raw(
-                "DELETE FROM `notification_preference` WHERE `user_id`=%d;" % uid)
-            print("[清理] 通知偏好 %d：删除脚本新增行（原本不存在）" % uid)
+    # 收尾：统一走 do_cleanup（与 atexit 同一份实现，异常退出也会执行）
+    do_cleanup()
 
     failed = [r for r in results if not r[1]]
     print("\n===== e2e_sms_mock 结果：%d/%d 通过 =====" % (len(results) - len(failed), len(results)))
@@ -286,5 +380,6 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as exc:  # noqa: BLE001
+        do_cleanup()
         print("[FATAL] %s" % exc)
         sys.exit(2)
