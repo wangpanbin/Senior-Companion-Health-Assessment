@@ -27,7 +27,7 @@ import { getOrder, startService, completeService } from '@/api/order'
 import {
   getProgress, listCheckins, checkin, uploadExecutionPhoto, connectProgressSocket
 } from '@/api/execution'
-import { withdrawCompanionVital } from '@/api/vitalSign'
+import { getCompanionVitals, withdrawCompanionVital } from '@/api/vitalSign'
 import { formatVisitTime, formatMoney, formatTime, formatDateTime } from '@/utils/format'
 
 const route = useRoute()
@@ -67,15 +67,19 @@ const photoUrls = ref([])
 const uploading = ref(false)
 
 /**
- * 本次打开页面期间录入的体征（V4 · P2-2）。
+ * 本单已录入的体征（V4 · P2-2）。
  *
- * 规格只给了陪诊员「录 + 撤回」两个写端点，没有给订单维度的体征查询端点，
- * 因此这里只回显本次会话内刚录入的记录，刷新页面即清空；
- * 完整记录在老人 / 家属端的时间线中查看。是否补「陪诊员查询本单体征」端点，
- * 已作为待拍板项记录，不擅自加接口。
+ * 服务端按订单维度提供查询（GET /api/execution/{orderId}/vitals），
+ * 首屏与刷新都会回显；录入成功后把服务端返回的记录就地插入，
+ * 撤回成功后从列表移除，不额外整表重拉。
+ *
+ * 可读边界与服务端一致：服务中 / 已完成 / 已评价可读；
+ * 可写边界更窄 —— 只有服务中能录入与撤回。
  */
-const submittedVitals = ref([])
+const orderVitals = ref([])
+const vitalsLoading = ref(false)
 const withdrawingVital = ref(null)
+const READABLE_STATUSES = ['IN_SERVICE', 'COMPLETED', 'REVIEWED']
 
 /** 设备定位（来自 geolocation，仅用于距离校验） */
 const location = ref({ lng: '', lat: '', addr: '', getting: false })
@@ -86,6 +90,10 @@ const orderStatus = computed(
 const subable = computed(
   () => orderStatus.value === 'ACCEPTED' || orderStatus.value === 'IN_SERVICE'
 )
+/** 本单体征可读（服务中 / 已完成 / 已评价） */
+const canReadVitals = computed(() => READABLE_STATUSES.includes(orderStatus.value))
+/** 本单体征可写（仅服务中） */
+const canWriteVitals = computed(() => orderStatus.value === 'IN_SERVICE')
 
 /** 各节点完成时间（来自打卡记录） */
 const checkinTimeMap = computed(() => {
@@ -165,10 +173,34 @@ async function reloadProgress() {
 
 /* ===================== 体征代录（V4 · P2-2） ===================== */
 
-/** 录入成功：把服务端返回的这条记录就地加进本次会话列表 */
+/**
+ * 拉取本单已录入的体征。
+ *
+ * 状态不可读时不发请求（服务端也会返回 3002，但没必要让用户看到一次红色提示）；
+ * 响应回来时 URL 可能已换成另一单，按订单 id 比对后丢弃过期响应。
+ */
+async function loadVitals() {
+  const target = orderId.value
+  if (!canReadVitals.value) {
+    orderVitals.value = []
+    return
+  }
+  vitalsLoading.value = true
+  try {
+    const res = await getCompanionVitals(target, { size: 100 })
+    if (String(target) !== String(orderId.value)) return
+    orderVitals.value = res?.records || []
+  } catch {
+    if (String(target) === String(orderId.value)) orderVitals.value = []
+  } finally {
+    if (String(target) === String(orderId.value)) vitalsLoading.value = false
+  }
+}
+
+/** 录入成功：把服务端返回的这条记录就地加进本单列表 */
 function handleVitalCreated(record) {
   if (record && record.id != null) {
-    submittedVitals.value = [record, ...submittedVitals.value]
+    orderVitals.value = [record, ...orderVitals.value]
   }
 }
 
@@ -187,7 +219,7 @@ async function handleWithdrawVital(record) {
   try {
     await withdrawCompanionVital(orderId.value, record.id)
     ElMessage.success('记录已撤回')
-    submittedVitals.value = submittedVitals.value.filter((item) => item.id !== record.id)
+    orderVitals.value = orderVitals.value.filter((item) => item.id !== record.id)
   } finally {
     withdrawingVital.value = null
   }
@@ -394,6 +426,7 @@ function maybeCloseSocket() {
 
 onMounted(async () => {
   await loadAll()
+  await loadVitals()
   if (subable.value) setupSocket()
   refreshLocation()
 })
@@ -402,8 +435,9 @@ onMounted(async () => {
 // 换订单必须先断开旧订阅再按新订单重连，否则会出现「推送的是 A、页面看的是 B」。
 watch(orderId, async () => {
   closeSocket()
-  submittedVitals.value = []
+  orderVitals.value = []
   await loadAll()
+  await loadVitals()
   if (subable.value) setupSocket()
 })
 
@@ -479,15 +513,32 @@ onBeforeUnmount(() => {
         </NlTimeline>
       </NlCard>
 
-      <!-- 服务中代录体征（V4 · P2-2）：仅服务中显示，其它状态整卡隐藏 -->
-      <NlCard v-if="orderStatus === 'IN_SERVICE'" title="服务中代录体征">
+      <!-- 本单体征（V4 · P2-2）：服务中可代录，已完成 / 已评价只读回看 -->
+      <NlCard v-if="canReadVitals" title="本单体征记录">
         <p class="nl-caption nl-text-muted node-hint">
-          记录会进入这位老人的体征时间线，家属与老人端可查看；本页只显示本次录入的记录
+          <template v-if="canWriteVitals">
+            记录会进入这位老人的体征时间线，家属与老人端可查看；本单已录入的记录在下方列出
+          </template>
+          <template v-else>
+            订单已结束，仅可回看本单已录入的体征记录，不可再录入或撤回
+          </template>
         </p>
-        <VitalSignForm mode="companion" :order-id="orderId" @created="handleVitalCreated" />
 
-        <ul v-if="submittedVitals.length" class="vlist">
-          <li v-for="v in submittedVitals" :key="v.id" class="vrow">
+        <VitalSignForm
+          v-if="canWriteVitals"
+          mode="companion"
+          :order-id="orderId"
+          @created="handleVitalCreated"
+        />
+
+        <p v-if="vitalsLoading" class="nl-caption nl-text-muted vitals-loading">正在加载本单记录…</p>
+        <NlEmpty
+          v-else-if="!orderVitals.length"
+          title="本单暂无体征记录"
+          :description="canWriteVitals ? '可在上方录入血压、血糖或体重' : '本单没有代录过体征记录'"
+        />
+        <ul v-else class="vlist">
+          <li v-for="v in orderVitals" :key="v.id" class="vrow">
             <div class="vrow__main">
               <span class="nl-h3">{{ v.vitalTypeLabel }}</span>
               <span class="vrow__value is-num">{{ v.valueText }}</span>
@@ -495,6 +546,7 @@ onBeforeUnmount(() => {
             <div class="vrow__meta">
               <span class="nl-caption nl-text-muted is-num">{{ formatDateTime(v.measuredAt) }}</span>
               <el-button
+                v-if="canWriteVitals"
                 link
                 type="danger"
                 size="small"
@@ -760,6 +812,11 @@ onBeforeUnmount(() => {
 }
 
 /* ---------- 服务中代录体征（V4 · P2-2） ---------- */
+
+.vitals-loading {
+  margin: var(--nl-space-3) 0 0;
+  text-align: center;
+}
 
 .vlist {
   padding: 0;

@@ -77,6 +77,15 @@ export function createCompanionVital(orderId, data) {
 }
 
 /**
+ * 陪诊员按订单查询本单已录入的体征（刷新后回显）
+ * @param {number|string} orderId 订单 ID
+ * @param {{vitalType?: string, startDate?: string, endDate?: string, page?: number, size?: number}} [params]
+ */
+export function getCompanionVitals(orderId, params) {
+  return request({ url: `/execution/${orderId}/vitals`, method: 'get', params })
+}
+
+/**
  * 撤回本单在服务中代录的体征
  * @param {number|string} orderId 订单 ID
  * @param {number|string} recordId 体征记录 ID
