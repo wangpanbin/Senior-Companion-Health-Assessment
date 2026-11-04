@@ -4,9 +4,12 @@
 #
 # ⚠️ 2026-11-04：原来只靠 Get-NetTCPConnection 取 pid，本机会间歇性返回空表
 #    （甚至给出 PID=0 Idle，Stop-Process 报「拒绝访问」后仍宣称已停止）。
-#    改为 netstat 为主、进程命令行兜底，并过滤 pid 0/4 这类系统伪进程。
+#    改为 netstat 为主、进程命令行兜底，并且**只停 java/javaw**：
+#    兜底曾把命令行里带 NIANGLIN_* 环境变量的 pwsh 一并杀掉（脚本把自己停了）。
 
 $ErrorActionPreference = 'Continue'
+
+$JavaNames = @('java', 'javaw')
 
 function Get-BackendPids {
   $found = @()
@@ -16,13 +19,18 @@ function Get-BackendPids {
       $parts = ($l.ToString() -split '\s+') | Where-Object { $_ }
       if ($parts.Length -ge 5) { $found += [int]$parts[-1] }
     }
-    $found = $found | Where-Object { $_ -gt 4 } | Sort-Object -Unique
+    $found = $found | Where-Object {
+      $_ -gt 4 -and (Get-Process -Id $_ -ErrorAction SilentlyContinue).ProcessName -in $JavaNames
+    } | Sort-Object -Unique
     if ($found.Count -gt 0) { return $found }
     Start-Sleep -Milliseconds 500
   }
   # 兜底：端口枚举不可信时，按命令行找本项目后端（含 surefire 的测试 fork 不算）
   return Get-CimInstance Win32_Process |
-    Where-Object { $_.CommandLine -and $_.CommandLine -match 'nianglin' -and $_.CommandLine -notmatch 'surefire' } |
+    Where-Object {
+      $_.Name -in @('java.exe', 'javaw.exe') -and $_.CommandLine -and
+      $_.CommandLine -match 'nianglin' -and $_.CommandLine -notmatch 'surefire'
+    } |
     Select-Object -ExpandProperty ProcessId
 }
 
