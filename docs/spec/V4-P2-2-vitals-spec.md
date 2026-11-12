@@ -570,16 +570,16 @@ python tools/check_secrets.py
 
 ## 十二、验收标准
 
-- [ ] 家属可对绑定老人录入三类体征；非绑定老人 `2006`。
-- [ ] 陪诊员仅能在本单 `IN_SERVICE` 时录入；其它情况 `3002` / `3004`。
-- [ ] 老人端只能读自己的记录，写请求 `403` / `405`（语义见 `docs/api/12-elder-health.md` §10）。
-- [ ] 同一分钟同类记录重复 → `2008`；撤回后可重录。
-- [ ] 时间线倒序、趋势升序、分页不重不漏、500 点截断如实告知。
-- [ ] 页面与接口无任何解释性文案或区间字段。
-- [ ] 表结构无自由文本字段。
-- [ ] `mvn -B verify`、`pnpm lint:check`、`pnpm test`、e2e 全绿。
-- [ ] `docs/api/12-elder-health.md`、`docs/api/README.md`、`docs/db/*` 同步。
-- [ ] V9 可回滚（单表 DROP），V1–V8 未改。
+- [x] 家属可对绑定老人录入三类体征；非绑定老人 `2006`。（`FamilyHealthController` + `ElderHealthServiceTest` / `VitalSignServiceImplTest`；本轮 `mvn -B verify` 绿）
+- [x] 陪诊员仅能在本单 `IN_SERVICE` 时录入；其它情况 `3002` / `3004`。（`ExecutionController` + `VitalSignSecurityTest`）
+- [x] 老人端只能读自己的记录，写请求 `403` / `405`（语义见 `docs/api/12-elder-health.md` §10）。（`ElderHealthAccessTest` / `ElderReadOnlyInterceptorTest`）
+- [x] 同一分钟同类记录重复 → `2008`；撤回后可重录。（`dedup_key` 生成列 + 逻辑删除释放唯一槽位，`VitalSignServiceImplTest`）
+- [x] 时间线倒序、趋势升序、分页不重不漏、500 点截断如实告知。（`VitalSignServiceImplTest` / `ElderHealthServiceTest`）
+- [x] 页面与接口无任何解释性文案或区间字段。（`V9` DDL 只存测量数值 + `ComplianceCheckUtilTest`；体征仅新增 `2008/2009/2010` 三个数据类错误码，见 `api/README.md:263-271`，无任何解释/区间类字段或文案）
+- [x] 表结构无自由文本字段。（`V9__vital_sign_record.sql` 无备注类列，头部硬约束③明示）
+- [x] `mvn -B verify`、`pnpm lint:check`、`pnpm test`、e2e 全绿。（2026-11-12 实跑：后端 1520 绿；`lint:check` 0 警告；`test` 251 绿；`e2e_vital_sign.py` **37/37 PASS** 且清理后表回基线；全量 Playwright 272 绿）
+- [x] `docs/api/12-elder-health.md`、`docs/api/README.md`、`docs/db/*` 同步。（三文件均含体征契约 / 端点；`docs/db/02-数据字典.md` §28 `vital_sign_record`；V10 为 `sys_dict` 种子行、无表结构变更，无需重跑 `gen_db_docs.py`）
+- [x] V9 可回滚（单表 DROP），V1–V8 未改。（V9 头部含回滚说明；V1–V8 `git log -1` 均为各自创建提交）
 
 ---
 

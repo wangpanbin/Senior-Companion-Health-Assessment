@@ -130,8 +130,8 @@
 |---|---|
 | **改哪些文件** | `service/impl/MedicationServiceImpl` 的 `ReminderDispatcher`（+第二渠道实现）；`service/sms/SmsService` 复用；`docs/api/05-medication.md` |
 | **新增端点** | 无 |
-| **迁移** | `V8__medication_reminder_channel.sql`（`medication_plan` 加 `reminder_channel` / `reminder_advance_minutes` 2 字段） |
-| **验收标准** | ① 外呼文案**只含药名 + 时间**，禁含剂量（合规词表硬拦截）；② 单次服药外呼 ≤ 2 次，失败回落站内信；③ 渠道按 `medication_plan` 逐条配置，家属可关 |
+| **迁移** | ~~`V8__medication_reminder_channel.sql`（`medication_plan` 加 2 字段）~~ **未按原设想执行**（2026-11-12 复核）：实际 V8 为 `V8__sms_notification.sql`（偏好 / 回执 / 幂等 / 死信），提醒开关落在**按用户**的 `notification_preference`，全仓无 `reminder_channel` |
+| **验收标准** | ① 外呼文案**只含药名 + 时间**，禁含剂量（合规词表硬拦截，`SmsReminderServiceTest` 绿）✅；② 失败重试有上限（`max-attempts:3` + 死信）且站内信始终投递 ✅（原「≤ 2 次外呼」未按字面实现）；③ **按实际行为定稿（2026-11-12 用户拍板）**：提醒粒度为**按用户全局开关**（`notification_preference`），不实现按 `medication_plan` 逐条配置与语音外呼 —— demo 定位下现有粒度已满足「家属可关」的诉求，本行不再作为待办 |
 | **依赖** | 任务 5.1（同一短信通道） |
 
 ### 任务 5.3 · P1-2 陪诊→用药贯通
@@ -166,9 +166,9 @@
 
 | 项 | 内容 |
 |---|---|
-| **改哪些文件** | `service/impl/SysDictServiceImpl`（新建，带缓存）；`controller/admin/SysDictController`（新建）；`frontend/src/views/admin/`（+字典管理页）；把漏服阈值 / 催单限频 / 导出上限 3 项迁为字典 |
-| **新增端点** | `GET /api/admin/dict`、`PUT /api/admin/dict/{key}` |
-| **迁移** | 零（`sys_dict` 表已存在） |
+| **改哪些文件** | `service/impl/SysDictServiceImpl`（新建，带缓存）；`controller/admin/SysDictController`（新建）；`frontend/src/views/admin/`（+字典管理页）；把漏服阈值 / 催单限频 / 导出上限 3 项迁为字典 —— **实际落地不同**（2026-11-12 复核）：`OperationParamServiceImpl` + `OperationParamController` + `admin/operation-param.vue`，迁字典 **4 项**（另含短信日频控） |
+| **新增端点** | 草案 `GET /api/admin/dict`、`PUT /api/admin/dict/{key}` → **实际**：`GET/PUT /api/admin/operation-param[/{code}]` + `GET /api/admin/operation-param/logs`（以 `docs/api/08-admin.md` 正式版为准） |
+| **迁移** | 草案「零（`sys_dict` 表已存在）」→ **实际追加 `V10__operation_param.sql`**（仅 `sys_dict` 种子行、不改表结构，`ON DUPLICATE KEY` 幂等） |
 | **验收标准** | ① 字典变更留审计；② 缓存 TTL ≤ 60s；③ 不搬「技术配置」（DB 连接等），只搬运营阈值 |
 
 ---
@@ -176,6 +176,11 @@
 ## 6 · 接口契约草案（V4 新增端点）
 
 > **状态：草案**。落地前先按 AGENTS.md §8「接口先行」约定，把本节内容升格为 `docs/api/` 正式文档并通知前端；错误码段位沿用 `docs/api/README.md` §四（1xxx–9xxx 已用满，新段从 11xxx 起）。
+>
+> **2026-11-12 复核注记**：草案与已落地正式契约的差异（一律以 `docs/api/` 为准）——
+> ① 找回密码错误码 `1003 / 429` → 实际 **`1008 / 1009`**（`01-auth-user.md` §11）；
+> ② 重复转入 `409` → 实际 **`11002` + 30 分钟 Redis 判重**（`05-medication.md`；草稿不落库，故未做永久性一单一转）；
+> ③ 注销副作用实际还含**家属绑定关系逻辑删除**（`UserServiceImpl` 步骤⑥，老人档案保留），§6.1 清单漏写。
 
 ### 6.1 · 注销账号（P0-1）
 
@@ -263,14 +268,14 @@ POST /api/medication/plan/from-order/{orderId}
 
 ## 7 · 验收清单（V4 阶段一收口时自查）
 
-- [ ] `docs/api/01-auth-user.md` / `02-elder-family.md` / `05-medication.md` / `07-message.md` 已含 §6 全部端点的正式版
-- [ ] `ResultCode.java` 新增 `11001`（存在进行中订单），`docs/api/README.md` 错误码总表同步
-- [ ] 注销 / 导出 / 提醒触达三条链路的越权矩阵新增用例全绿
-- [ ] `mvn verify` 测试数 ≥ 592 + 新增用例数；`task` 包覆盖 ≥ 60%
-- [ ] e2e 脚本连跑 3 遍全绿
-- [ ] 导出文件人工核验无敏感字段
-- [ ] 提醒文案过合规词表（禁剂量）；注销页面文案如实说明「订单/日志保留但去标识化」
-- [ ] 三条红线逐条对照未破（无诊断建议、无完整手机号/身份证出口、无在线支付/地图/自由 IM）
+- [x] `docs/api/01-auth-user.md` / `02-elder-family.md` / `05-medication.md` / `07-message.md` 已含 §6 全部端点的正式版（2026-11-12 核验：deactivate / data-export / sms-code / forgot-password / from-order / notification-preference 均在对应文档的端点表 + 详情节）
+- [x] `ResultCode.java` 新增 `11001`（存在进行中订单），`docs/api/README.md` 错误码总表同步（`ResultCode:269` ↔ `api/README.md:359`，11xxx 段位纪律已注明）
+- [x] 注销 / 导出 / 提醒触达三条链路的越权矩阵新增用例全绿（`UserAccessMatrixTest`（含 deactivate / data-export）、`MedicationAccessMatrixTest`（from-order）、`NotificationPreferenceAccessMatrixTest`）
+- [x] `mvn verify` 测试数 ≥ 592 + 新增用例数；`task` 包覆盖 ≥ 60%（2026-11-12 实测：surefire **1520** tests / 0 fail；JaCoCo `task` LINE **76.60%**、`service` LINE **79.10%**）
+- [x] e2e 脚本连跑 3 遍全绿（2026-11-12 实跑：`python backend/sql/tools/e2e_message.py` 连跑 3 遍，每遍 **52/52 通过**、exit 0，四表行数回基线）
+- [x] 导出文件人工核验无敏感字段（2026-11-12 实导实核：`fam001` 拉取 `GET /api/user/data-export` → 7202 字节 xlsx，解包全 XML 扫描：完整手机号 **0**、身份证号 **0**、BCrypt 哈希 **0**；正向对照脱敏手机号 `138****0001`、脱敏姓名 `张*海` 存在）
+- [x] 提醒文案过合规词表（禁剂量）；注销页面文案如实说明「订单/日志保留但去标识化」（`ComplianceCheckUtilTest` 27 条 + `SmsReminderServiceTest` 无剂量断言；`api/01-auth-user.md` §deactivate 文案）
+- [x] 三条红线逐条对照未破（无诊断建议、无完整手机号/身份证出口、无在线支付/地图/自由 IM）（2026-11-12 收口：`check_secrets.py` 五条全过（1108 文件）、全量 Playwright 272 绿；支付/导航未实现、聊天受 ADR-0011 约束）
 
 ---
 

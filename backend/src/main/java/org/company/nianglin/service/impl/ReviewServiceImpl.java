@@ -18,10 +18,9 @@ import org.company.nianglin.dto.ReviewQuery;
 import org.company.nianglin.dto.ReviewReplyDTO;
 import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.entity.CompanionOrder;
-import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.exception.BusinessException;
-import org.company.nianglin.mapper.CompanionProfileMapper;
+import org.company.nianglin.mapper.CompanionScoreSnapshotMapper;
 import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.ReviewReadMapper;
 import org.company.nianglin.security.LoginUser;
@@ -89,7 +88,7 @@ public class ReviewServiceImpl implements ReviewService {
 
     private final OrderReviewMapper reviewMapper;
     private final ReviewReadMapper reviewReadMapper;
-    private final CompanionProfileMapper companionProfileMapper;
+    private final CompanionScoreSnapshotMapper scoreSnapshotMapper;
     private final OrderService orderService;
     private final UserNameResolver userNameResolver;
     private final StringRedisTemplate redisTemplate;
@@ -292,13 +291,13 @@ public class ReviewServiceImpl implements ReviewService {
      * 陪诊员的资料页会长期显示旧分数，且没有任何补偿机制。</p>
      *
      * <p>Redis 删除失败不影响事务：缓存有自己的 TTL，最坏 10 分钟后自愈。</p>
+     *
+     * <p><b>原子性（BUG_LIST L2）</b>：单条 {@code UPDATE} 为何能消除丢失更新、
+     * 口径为何是 {@code is_valid = 1 AND deleted = 0} —— 见 {@link CompanionScoreSnapshotMapper} 类注释，
+     * 此处不重复。</p>
      */
     private void refreshCompanionScore(Long companionId) {
-        CompanionScoreVO score = aggregate(companionId);
-        companionProfileMapper.update(null, Wrappers.<CompanionProfile>lambdaUpdate()
-                .eq(CompanionProfile::getUserId, companionId)
-                .set(CompanionProfile::getScore, new BigDecimal(score.getAverageScore()))
-                .set(CompanionProfile::getReviewCount, score.getTotalCount()));
+        scoreSnapshotMapper.refreshByCompanion(companionId);
 
         try {
             redisTemplate.delete(RedisKeyConstants.companionScore(companionId));

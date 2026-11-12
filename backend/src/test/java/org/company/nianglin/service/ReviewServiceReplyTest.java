@@ -7,7 +7,7 @@ import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.ReviewReplyDTO;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.exception.BusinessException;
-import org.company.nianglin.mapper.CompanionProfileMapper;
+import org.company.nianglin.mapper.CompanionScoreSnapshotMapper;
 import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.ReviewReadMapper;
 import org.company.nianglin.security.LoginUser;
@@ -81,7 +81,7 @@ class ReviewServiceReplyTest {
     private ReviewReadMapper reviewReadMapper;
 
     @Mock
-    private CompanionProfileMapper companionProfileMapper;
+    private CompanionScoreSnapshotMapper scoreSnapshotMapper;
 
     @Mock
     private OrderService orderService;
@@ -103,7 +103,7 @@ class ReviewServiceReplyTest {
     @BeforeEach
     void setUp() {
         MybatisLambdaCache.warmUp();
-        service = new ReviewServiceImpl(reviewMapper, reviewReadMapper, companionProfileMapper,
+        service = new ReviewServiceImpl(reviewMapper, reviewReadMapper, scoreSnapshotMapper,
                 orderService, userNameResolver, redisTemplate, new ObjectMapper(), messageService,
                 operLogRecorder);
         loginAs(RoleConstants.COMPANION, COMPANION_ID);
@@ -145,7 +145,7 @@ class ReviewServiceReplyTest {
 
         // 关键：回复不参与聚合，不能调 refreshCompanionScore
         verify(reviewReadMapper, never()).selectAverageScore(any());
-        verify(companionProfileMapper, never()).update(any(), any());
+        verify(scoreSnapshotMapper, never()).refreshByCompanion(any());
     }
 
     /* ================================================================== */

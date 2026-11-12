@@ -267,7 +267,7 @@ const { isSm, isMd, isLg, isXsPhone, isLandscapePhone } = useResponsive()
 - [x] pnpm test 全绿(31/31)
 - [x] pnpm lint 0 警告
 - [x] pnpm exec playwright test syntax check(12-admin-responsive + 13-client-mobile 通过 node --check)
-- [ ] pnpm exec playwright test specs/12-admin-responsive.spec.js(待 CI / 本地全跑)
-- [ ] pnpm exec playwright test specs/13-client-mobile.spec.js(待 CI / 本地全跑)
-- [ ] pnpm exec playwright test specs/01-auth.spec.js(回归,待跑)
-- [ ] 浏览器手测 1024 / 1280 / 1920 admin 8 路由 + 5 client view + NlPhoneShell 横屏模式
+- [x] pnpm exec playwright test specs/12-admin-responsive.spec.js(2026-11-12 本地全量 e2e 实跑，272 passed 中含本 spec)
+- [x] pnpm exec playwright test specs/13-client-mobile.spec.js(同上，全量套件含本 spec)
+- [x] pnpm exec playwright test specs/01-auth.spec.js(回归，同上全量套件实跑绿)
+- [ ] 浏览器手测 1024 / 1280 / 1920 admin 8 路由 + 5 client view + NlPhoneShell 横屏模式（**未做人工手测**；断点断言已由 `12-admin-responsive` / `13-client-mobile` / `10-form-factor` 三个 spec 程序化覆盖，人工走查留待演示前彩排）

@@ -1,7 +1,7 @@
 # 银龄伴诊 · CI
 #
-# 存在的理由：仓库里本来就有 1319 条后端测试（surefire `Tests run` 实跑口径）、
-# 230 条前端单测（vitest passed，21 个文件）、ESLint 与 Prettier 配置，
+# 存在的理由：仓库里本来就有 1520 条后端测试（surefire `Tests run` 实跑口径）、
+# 251 条前端单测（vitest passed，23 个文件）、ESLint 与 Prettier 配置，
 # 但**没有任何入口会自动跑它们** —— 唯一的质量防线是「谁记得跑」。
 # 本文件把那套已经存在的检查接上电。
 #
@@ -9,16 +9,16 @@
 #   · 指标字典人读面↔机器面一致性（metric-dict job）—— V3.6 收口时新增
 #   · 密钥体检（secrets job）—— 规则本体已收敛到 tools/check_secrets.py
 #
-# 为什么需要 service 容器：backend/src/test 下**有** @SpringBootTest（97 个测试类中
-# 26 处）—— 它们会拉起完整 Spring 上下文、Flyway 连库
+# 为什么需要 service 容器：backend/src/test 下**有** @SpringBootTest（113 个 *Test.java 中
+# 28 处 —— `repo_metrics.py` 字符串口径 29，含 `MybatisLambdaCache` javadoc 1 处）—— 它们会拉起完整 Spring 上下文、Flyway 连库
 # 建表灌种子，所以 CI 必须起 MySQL / Redis。本机全绿靠的是常驻服务，runner 上没有，必须显式起容器。
 # 其余测试类是纯 Mockito 单测（没有用 @Testcontainers）。
 # 别按「纯单测流水线、几十秒跑完」的预期去调 timeout。
 #
-# ⚠️ 后端测试条数有三套口径，别混用（2026-10-25 验收实测）：
-#   · 源码 @Test 方法数 1031 —— 汇报/影片口径
-#   · 测试注解总数 1104 —— @Test 1031 + @ParameterizedTest 73
-#   · surefire `Tests run` 1319 —— @ParameterizedTest 展开后的实跑数，本文件一律用这套
+# ⚠️ 后端测试条数有三套口径，别混用（2026-11-12 验收实测，取数 `python tools/repo_metrics.py`，Git 增量基线 ref=v3.0）：
+#   · 源码 @Test 方法数 1183 —— 汇报/影片口径
+#   · 测试注解总数 1273 —— @Test 1183 + @ParameterizedTest 90
+#   · surefire `Tests run` 1520 —— @ParameterizedTest 展开后的实跑数，本文件一律用这套
 #
 # 改本文件前先读 AGENTS.md §0.2：不要在这里引入 pom.xml / package.json 之外的依赖。
 
@@ -44,15 +44,15 @@ concurrency:
 
 jobs:
   # ------------------------------------------------------------------ #
-  # 后端：编译 + 1319 条测试（surefire `Tests run`）+ JaCoCo 覆盖率报告
+  # 后端：编译 + 1520 条测试（surefire `Tests run`）+ JaCoCo 覆盖率报告
   # 跑 mvn verify 而非 mvn test：verify 才会触发 jacoco:report
   #
-  # ⚠️ 97 个测试类中有 **26 处 @SpringBootTest**（各 *AccessMatrixTest /
+  # ⚠️ 113 个 *Test.java 中有 **28 处 @SpringBootTest**（各 *AccessMatrixTest /
   #    ElderOwnershipMatrixTest / OrderFeeItemTest / FileUploadEndpointTest /
   #    JacksonDateTimeFormatTest 等），它们会拉起完整 Spring 上下文 → Flyway 连库
   #    建表灌种子。其余是纯 Mockito 单测。
   #    口径：surefire `Tests run`（@ParameterizedTest 展开后的实跑数）—— 源码里的
-  #    @Test 方法数是 1031，比它小，差额就是参数化展开（三套口径见文件头注释）。
+  #    源码 @Test 方法数比它小，差额是参数化展开（三套口径与取数命令见文件头注释，不要在这里重抄数字）。
   #    本机全绿是因为有常驻 MySQL/Redis；GitHub runner 上没有，所以必须起 service 容器。
   #
   # 不需要改任何 yml：application-dev.yml 的连接串全走环境变量

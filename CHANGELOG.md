@@ -10,6 +10,35 @@
 
 ## [Unreleased] · 文档收敛
 
+### Fixed · 代码欠账收口（2026-11-12 · `feature/plan-gap-closure`）
+
+- **BUG_LIST L2**：陪诊员评分快照改为**单条原子 `UPDATE`**（新增 `CompanionScoreSnapshotMapper`，
+  `AVG`/`COUNT` 子查询与写入同语句，口径 `is_valid=1 AND deleted=0`），消除「先读后写」丢失更新窗口；
+  评价三个测试类断言同步迁移（commit `7889b68`）。
+- **BUG_LIST L3**：`application.yml` 显式声明 `nianglin.export.max-rows: 10000`，与三处 `@Value` 回落值对齐
+  并注明 OPS_PARAM 在线优先（commit `13ba01f`）。
+- **BUG_LIST L6**：解除 —— 2026-11-12 实测 `service/**` LINE **79.10%**、`task` **76.60%**（门禁 60%）。
+
+### Added · 计划书交付物（缺口轮）
+
+- **`docs/user-guide.md`** —— 用户手册：家属 / 陪诊员 / 老人 / 管理员四角色操作步骤 + 现有截图，
+  含合规声明与 FAQ（计划书迭代三/五交付物，此前全仓缺失）。
+- **`docs/deployment.md`** —— 部署文档：本机 dev 五进程启动 / prod fail-closed 配置 / 备份恢复 / 排障表
+  （计划书迭代五交付物）；Docker 一键部署经确认**不交付**，如实列为二期展望。
+
+### Changed · 文档状态与验收收口（2026-11-12）
+
+- `docs/prd/功能拓展规划.md` 附录 A RTM 逐条对代码核验：**8 条全部已落地**（v1.1，含 G4/G7 解锁）。
+- `docs/plan/iteration-plan-v4.md` §7、`V4-P2-1` / `V4-P2-2` spec 验收清单逐项核验勾选（证据入注）。
+- `docs/spec/desktop-adapt-v2.md` 三个待跑 playwright spec 实跑勾选；人工手测项如实标注未做。
+- `.github/workflows/ci.yml` 注释口径对齐当前实测（surefire **1520** / vitest **251·23 文件** /
+  `@SpringBootTest` **29 处** / **113** 个 `*Test.java`）。
+- 根目录 `验收报告.md` 刷新复核轮：硬门禁全绿（L0 10/10、Playwright 272、越权矩阵 100 次 0 违规、
+  导出文件敏感字段扫描 0 命中），结论升为**通过**（影片/PPT 相关项标注范围外）。
+- `docs/README.md` 索引新增 user-guide / deployment 两行。
+
+> 注：计划书迭代一交付物「活动图」经用户裁定**本轮不交付**，不计入缺口。
+
 把散落在仓库各处的文档收敛到 **根目录三入口 + `docs/` 分区** 的结构。
 
 ### Changed · 文档归档
