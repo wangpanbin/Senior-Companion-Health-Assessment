@@ -18,10 +18,9 @@ import org.company.nianglin.dto.ReviewQuery;
 import org.company.nianglin.dto.ReviewReplyDTO;
 import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.entity.CompanionOrder;
-import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.exception.BusinessException;
-import org.company.nianglin.mapper.CompanionProfileMapper;
+import org.company.nianglin.mapper.CompanionScoreSnapshotMapper;
 import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.ReviewReadMapper;
 import org.company.nianglin.security.LoginUser;
@@ -89,7 +88,7 @@ public class ReviewServiceImpl implements ReviewService {
 
     private final OrderReviewMapper reviewMapper;
     private final ReviewReadMapper reviewReadMapper;
-    private final CompanionProfileMapper companionProfileMapper;
+    private final CompanionScoreSnapshotMapper scoreSnapshotMapper;
     private final OrderService orderService;
     private final UserNameResolver userNameResolver;
     private final StringRedisTemplate redisTemplate;
@@ -292,13 +291,15 @@ public class ReviewServiceImpl implements ReviewService {
      * 陪诊员的资料页会长期显示旧分数，且没有任何补偿机制。</p>
      *
      * <p>Redis 删除失败不影响事务：缓存有自己的 TTL，最坏 10 分钟后自愈。</p>
+     *
+     * <p><b>原子性（BUG_LIST L2）</b>：早先的实现是「先 {@code AVG} 查出再写回」两条语句，
+     * 读写窗口内并发提交的评价会被覆盖（丢失更新）。现在换成
+     * {@link CompanionScoreSnapshotMapper#refreshByCompanion} 的<b>单条</b> {@code UPDATE}，
+     * 算与写之间不存在可插入并发写的窗口；口径（{@code is_valid = 1 AND deleted = 0}）
+     * 仍与 {@link #aggregate} 一致。</p>
      */
     private void refreshCompanionScore(Long companionId) {
-        CompanionScoreVO score = aggregate(companionId);
-        companionProfileMapper.update(null, Wrappers.<CompanionProfile>lambdaUpdate()
-                .eq(CompanionProfile::getUserId, companionId)
-                .set(CompanionProfile::getScore, new BigDecimal(score.getAverageScore()))
-                .set(CompanionProfile::getReviewCount, score.getTotalCount()));
+        scoreSnapshotMapper.refreshByCompanion(companionId);
 
         try {
             redisTemplate.delete(RedisKeyConstants.companionScore(companionId));

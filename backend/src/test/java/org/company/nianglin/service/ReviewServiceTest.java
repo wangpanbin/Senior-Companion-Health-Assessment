@@ -8,7 +8,7 @@ import org.company.nianglin.dto.ReviewCreateDTO;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.exception.BusinessException;
-import org.company.nianglin.mapper.CompanionProfileMapper;
+import org.company.nianglin.mapper.CompanionScoreSnapshotMapper;
 import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.ReviewReadMapper;
 import org.company.nianglin.security.LoginUser;
@@ -78,7 +78,7 @@ class ReviewServiceTest {
     private ReviewReadMapper reviewReadMapper;
 
     @Mock
-    private CompanionProfileMapper companionProfileMapper;
+    private CompanionScoreSnapshotMapper scoreSnapshotMapper;
 
     @Mock
     private OrderService orderService;
@@ -100,7 +100,7 @@ class ReviewServiceTest {
     @BeforeEach
     void setUp() {
         MybatisLambdaCache.warmUp();
-        service = new ReviewServiceImpl(reviewMapper, reviewReadMapper, companionProfileMapper,
+        service = new ReviewServiceImpl(reviewMapper, reviewReadMapper, scoreSnapshotMapper,
                 orderService, userNameResolver, redisTemplate, new ObjectMapper(), messageService,
                 operLogRecorder);
         loginAs(RoleConstants.FAMILY, FAMILY_ID);
@@ -215,9 +215,6 @@ class ReviewServiceTest {
         given(orderService.requireInvolved(ORDER_ID)).willReturn(order(OrderStatus.COMPLETED));
         given(reviewMapper.selectCount(any())).willReturn(0L);
         given(reviewMapper.insert(any(OrderReview.class))).willReturn(1);
-        given(reviewReadMapper.selectAverageScore(COMPANION_ID)).willReturn(new BigDecimal("4.50"));
-        given(reviewReadMapper.selectScoreDistribution(COMPANION_ID)).willReturn(
-                List.of(Map.of("score", 5, "cnt", 3L), Map.of("score", 4, "cnt", 1L)));
 
         ReviewCreateDTO dto = reviewDto(5, "小李很耐心，全程陪着老人");
         dto.setTags(List.of("准时", "耐心", "耐心"));
@@ -236,8 +233,8 @@ class ReviewServiceTest {
 
         // 订单状态由订单模块自己改：评价模块只发出「请推进」的信号
         verify(orderService).markReviewed(ORDER_ID);
-        // 评分快照与评价记录在同一事务里刷新
-        verify(companionProfileMapper).update(any(), any());
+        // 评分快照与评价记录在同一事务里刷新；快照刷新是单条原子 UPDATE（BUG_LIST L2）
+        verify(scoreSnapshotMapper).refreshByCompanion(COMPANION_ID);
     }
 
     /* ================================================================== */

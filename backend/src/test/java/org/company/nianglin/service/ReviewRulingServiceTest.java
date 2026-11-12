@@ -10,7 +10,7 @@ import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.exception.BusinessException;
-import org.company.nianglin.mapper.CompanionProfileMapper;
+import org.company.nianglin.mapper.CompanionScoreSnapshotMapper;
 import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.ReviewReadMapper;
 import org.company.nianglin.security.LoginUser;
@@ -30,9 +30,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -80,7 +78,7 @@ class ReviewRulingServiceTest {
     @Mock
     private ReviewReadMapper reviewReadMapper;
     @Mock
-    private CompanionProfileMapper companionProfileMapper;
+    private CompanionScoreSnapshotMapper scoreSnapshotMapper;
     @Mock
     private OrderService orderService;
     @Mock
@@ -99,7 +97,7 @@ class ReviewRulingServiceTest {
     @BeforeEach
     void setUp() {
         MybatisLambdaCache.warmUp();
-        service = new ReviewServiceImpl(orderReviewMapper, reviewReadMapper, companionProfileMapper,
+        service = new ReviewServiceImpl(orderReviewMapper, reviewReadMapper, scoreSnapshotMapper,
                 orderService, userNameResolver, redisTemplate, objectMapper, messageService, operLogRecorder);
         loginAs(RoleConstants.ADMIN, ADMIN_ID);
     }
@@ -119,8 +117,6 @@ class ReviewRulingServiceTest {
         OrderReview review = validReview();
         given(orderReviewMapper.selectById(REVIEW_ID)).willReturn(review);
         given(orderReviewMapper.update(any(), any())).willReturn(1);
-        given(reviewReadMapper.selectAverageScore(COMPANION_ID)).willReturn(new BigDecimal("4.50"));
-        given(reviewReadMapper.selectScoreDistribution(COMPANION_ID)).willReturn(List.of());
 
         service.reviewValidity(REVIEW_ID, rulingDto(false,
                 "家属描述与打卡记录明显不符，证据充分，裁定为无效评价"));
@@ -139,7 +135,8 @@ class ReviewRulingServiceTest {
         assertEquals(true, sqlSet.contains("is_valid="),
                 "SET 子句必须包含 is_valid=（置位，无空格）");
 
-        verify(companionProfileMapper).update(eq(null), any());
+        // 单条原子 UPDATE 重算快照（BUG_LIST L2）
+        verify(scoreSnapshotMapper).refreshByCompanion(COMPANION_ID);
         verify(redisTemplate).delete(any(String.class));
         verify(operLogRecorder).record(eq(OperType.REVIEW_RULING), eq(OperTargetType.REVIEW),
                 eq(REVIEW_ID), eq("评价 #" + REVIEW_ID), eq("IS_VALID:1"), eq("IS_VALID:0"),
@@ -168,8 +165,6 @@ class ReviewRulingServiceTest {
         OrderReview review = validReview();
         given(orderReviewMapper.selectById(REVIEW_ID)).willReturn(review);
         given(orderReviewMapper.update(any(), any())).willReturn(1);
-        given(reviewReadMapper.selectAverageScore(COMPANION_ID)).willReturn(new BigDecimal("4.50"));
-        given(reviewReadMapper.selectScoreDistribution(COMPANION_ID)).willReturn(List.of());
         willThrow(new IllegalStateException("message store unavailable"))
                 .given(messageService).send(any(), eq(MessageType.REVIEW_INVALIDATED), eq(ORDER_ID), any());
 
@@ -204,7 +199,7 @@ class ReviewRulingServiceTest {
                 () -> service.reviewValidity(REVIEW_ID, rulingDto(false, "理由足够长足够长足够长足够长")));
         assertEquals(ResultCode.REVIEW_NOT_FOUND.getCode(), ex.getCode());
         verify(orderReviewMapper, never()).update(any(), any());
-        verify(companionProfileMapper, never()).update(any(), any());
+        verify(scoreSnapshotMapper, never()).refreshByCompanion(any());
         verify(operLogRecorder, never()).record(any(), any(), any(), any(), any(), any(), any());
         verify(messageService, never()).send(any(), any(), any(), any());
     }
@@ -251,7 +246,7 @@ class ReviewRulingServiceTest {
                 () -> service.reviewValidity(REVIEW_ID, rulingDto(false, "理由足够长足够长足够长足够长")));
         assertEquals(ResultCode.CONFLICT.getCode(), ex.getCode());
         // 关键：并发穿透时不应触发重算与通知 —— 否则会出现「数据库没改但评分已重算 + 用户收到通知」的鬼故事
-        verify(companionProfileMapper, never()).update(any(), any());
+        verify(scoreSnapshotMapper, never()).refreshByCompanion(any());
         verify(operLogRecorder, never()).record(any(), any(), any(), any(), any(), any(), any());
         verify(messageService, never()).send(any(), any(), any(), any());
     }
