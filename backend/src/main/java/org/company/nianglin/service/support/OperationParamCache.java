@@ -103,9 +103,4 @@ public class OperationParamCache {
         snapshot = Collections.emptyMap();
         loadedAtMillis = Long.MIN_VALUE;
     }
-
-    /** 仅用于日志输出 TTL，避免测试断言依赖内部常量 */
-    public long getTtlMillis() {
-        return ttlMillis;
-    }
 }

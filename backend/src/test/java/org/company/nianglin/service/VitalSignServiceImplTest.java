@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.times;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
@@ -153,9 +154,8 @@ class VitalSignServiceImplTest {
         service.createForFamily(ELDER_ID, weightDto(new BigDecimal("62.5"), measuredAt));
 
         ArgumentCaptor<VitalSignRecord> captor = ArgumentCaptor.forClass(VitalSignRecord.class);
-        verify(vitalSignRecordMapper, org.mockito.Mockito.times(2)).insert(captor.capture());
-        assertEquals(2, captor.getAllValues().size());
-        assertTrue(captor.getAllValues().get(1).getVitalType().equals("WEIGHT"));
+        verify(vitalSignRecordMapper, times(2)).insert(captor.capture());
+        assertEquals("WEIGHT", captor.getAllValues().get(1).getVitalType());
     }
 
     @Test
