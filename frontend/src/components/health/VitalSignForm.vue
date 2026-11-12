@@ -7,7 +7,7 @@
  *
  * 合规红线：
  *   1. 只有数值、时间、测量场景，没有备注输入框 —— 不给判断性描述留入口；
- *   2. 不在界面上展示任何上下限 / 区间 / 判定标尺，避免被读成判断标准；
+ *   2. 不把上下限做成固定展示区间或判定标尺 —— 只在输入校验失败的错误提示里出现具体范围，避免被读成判断标准；
  *   3. 错误文案只说「填错了」，不说「数值好不好」。
  */
 import { computed, ref } from 'vue'
@@ -140,8 +140,10 @@ async function submit() {
     // 2008 是「同一分钟同类记录已存在」—— 就地提示，避免用户以为没保存上
     if (error?.code === 2008) {
       inlineError.value = '这一分钟已有同类记录，请调整测量时间，或先撤回原记录'
-    } else if (error?.code === 400 || error?.message) {
-      inlineError.value = error.message || '请求参数有误'
+    } else if (typeof error?.code === 'number') {
+      // 业务错误（拦截器已 toast 同一句中文）就地复述；
+      // 网络 / 超时等传输错误没有业务 code —— 拦截器已 toast 中文提示，不把 axios 英文原文塞给用户
+      inlineError.value = error.message
     }
   } finally {
     submitting.value = false

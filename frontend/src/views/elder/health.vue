@@ -642,9 +642,4 @@ onMounted(() => {
   color: var(--nl-text-3);
 }
 
-/* 图表内的刻度文字随老人模式放大 */
-:deep(.vital-chart__ticks text),
-:deep(.vital-chart__dates text) {
-  font-size: 12px;
-}
 </style>

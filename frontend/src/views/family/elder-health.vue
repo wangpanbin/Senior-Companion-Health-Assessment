@@ -27,6 +27,7 @@ import {
   completionRateText,
   eventTimeText
 } from '@/utils/elderHealth'
+import { confirmThen } from '@/utils/confirm'
 
 const route = useRoute()
 const router = useRouter()
@@ -58,7 +59,6 @@ const vitalRecords = ref([])
 const vitalsLoading = ref(false)
 const vitalsError = ref('')
 const vitalsHasMore = ref(false)
-const vitalsTruncated = ref(false)
 const withdrawingVitalId = ref(null)
 
 /** 趋势一次只看一种体征，默认血压 */
@@ -83,7 +83,6 @@ async function loadVitals(page = 1) {
     const records = data?.records || []
     vitalRecords.value = page === 1 ? records : [...vitalRecords.value, ...records]
     vitalsHasMore.value = (data?.pages ?? 0) > page
-    vitalsTruncated.value = false
     vitalsError.value = ''
   } catch (error) {
     if (page === 1) {
@@ -127,15 +126,14 @@ function canWithdrawVital(record) {
 
 /** 撤回需二次确认：撤回后行不留展示，但可重新录入 */
 async function handleWithdrawVital(record) {
-  try {
-    await ElMessageBox.confirm(
+  const ok = await confirmThen(() =>
+    ElMessageBox.confirm(
       '撤回后这条记录将不再显示，可重新录入。确认撤回？',
       '撤回体征记录',
       { confirmButtonText: '撤回', cancelButtonText: '取消', type: 'warning' }
     )
-  } catch {
-    return
-  }
+  )
+  if (!ok) return
   withdrawingVitalId.value = record.id
   try {
     await withdrawElderVital(record.id)
@@ -338,7 +336,6 @@ watch(elderId, () => {
             :loading="vitalsLoading"
             :error="vitalsError"
             :has-more="vitalsHasMore"
-            :truncated="vitalsTruncated"
             :withdrawable="canWithdrawVital"
             :withdrawing-id="withdrawingVitalId"
             @load-more="loadMoreVitals"

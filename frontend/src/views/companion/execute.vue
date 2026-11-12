@@ -29,6 +29,7 @@ import {
 } from '@/api/execution'
 import { getCompanionVitals, withdrawCompanionVital } from '@/api/vitalSign'
 import { formatVisitTime, formatMoney, formatTime, formatDateTime } from '@/utils/format'
+import { confirmThen } from '@/utils/confirm'
 
 const route = useRoute()
 /**
@@ -218,15 +219,14 @@ function handleVitalCreated(record) {
 
 /** 撤回本人本单的记录：服务端会再校验一次「订单仍在服务中」 */
 async function handleWithdrawVital(record) {
-  try {
-    await ElMessageBox.confirm('撤回后这条记录将不再显示，可重新录入。确认撤回？', '撤回体征记录', {
+  const ok = await confirmThen(() =>
+    ElMessageBox.confirm('撤回后这条记录将不再显示，可重新录入。确认撤回？', '撤回体征记录', {
       confirmButtonText: '撤回',
       cancelButtonText: '取消',
       type: 'warning'
     })
-  } catch {
-    return
-  }
+  )
+  if (!ok) return
   withdrawingVital.value = record.id
   try {
     await withdrawCompanionVital(orderId.value, record.id)

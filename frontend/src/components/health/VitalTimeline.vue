@@ -18,8 +18,6 @@ const props = defineProps({
   error: { type: String, default: '' },
   /** 是否还有下一页 */
   hasMore: { type: Boolean, default: false },
-  /** 区间记录过多、只展示最近 500 条时为 true */
-  truncated: { type: Boolean, default: false },
   /** (record) => boolean，决定该条是否显示撤回 */
   withdrawable: { type: Function, default: null },
   /** 正在撤回的记录 ID，用于按钮 loading */
@@ -174,8 +172,6 @@ function typeClass(record) {
         </ul>
       </section>
 
-      <p v-if="truncated" class="vital-timeline__note">区间内记录较多，这里只展示最近的部分</p>
-
       <div v-if="hasMore" class="vital-timeline__more">
         <el-button plain round :loading="loading" @click="emit('load-more')">查看更多</el-button>
       </div>
@@ -286,12 +282,6 @@ function typeClass(record) {
 
   &__withdraw {
     flex: none;
-    font-size: var(--nl-font-caption);
-  }
-
-  &__note {
-    margin: 0;
-    color: var(--nl-text-3);
     font-size: var(--nl-font-caption);
   }
 

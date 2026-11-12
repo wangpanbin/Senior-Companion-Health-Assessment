@@ -128,7 +128,7 @@ onMounted(() => {
   <NlCard title="参数配置" plain>
     <p class="nl-caption nl-text-muted">
       仅管理员可修改。保存后写入数据字典并落操作日志，本实例下一次业务调用即生效，无需重启或发版；
-      其余实例最多 60 秒收敛。字典缺失或读取失败时按 application.yml 默认值运行。
+      其余实例最多等待一个缓存周期（默认 60 秒）收敛。字典缺失或读取失败时按 application.yml 默认值运行。
     </p>
 
     <NlSkeleton v-if="loading" :count="4" />
