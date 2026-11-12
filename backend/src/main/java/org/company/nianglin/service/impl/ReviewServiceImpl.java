@@ -292,11 +292,9 @@ public class ReviewServiceImpl implements ReviewService {
      *
      * <p>Redis 删除失败不影响事务：缓存有自己的 TTL，最坏 10 分钟后自愈。</p>
      *
-     * <p><b>原子性（BUG_LIST L2）</b>：早先的实现是「先 {@code AVG} 查出再写回」两条语句，
-     * 读写窗口内并发提交的评价会被覆盖（丢失更新）。现在换成
-     * {@link CompanionScoreSnapshotMapper#refreshByCompanion} 的<b>单条</b> {@code UPDATE}，
-     * 算与写之间不存在可插入并发写的窗口；口径（{@code is_valid = 1 AND deleted = 0}）
-     * 仍与 {@link #aggregate} 一致。</p>
+     * <p><b>原子性（BUG_LIST L2）</b>：单条 {@code UPDATE} 为何能消除丢失更新、
+     * 口径为何是 {@code is_valid = 1 AND deleted = 0} —— 见 {@link CompanionScoreSnapshotMapper} 类注释，
+     * 此处不重复。</p>
      */
     private void refreshCompanionScore(Long companionId) {
         scoreSnapshotMapper.refreshByCompanion(companionId);

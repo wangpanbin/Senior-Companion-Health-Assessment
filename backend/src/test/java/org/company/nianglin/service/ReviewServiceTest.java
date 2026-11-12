@@ -233,7 +233,7 @@ class ReviewServiceTest {
 
         // 订单状态由订单模块自己改：评价模块只发出「请推进」的信号
         verify(orderService).markReviewed(ORDER_ID);
-        // 评分快照与评价记录在同一事务里刷新；快照刷新是单条原子 UPDATE（BUG_LIST L2）
+        // 评分快照与评价记录在同一事务里刷新（mock 只锁调用；原子 SQL 的真实库路径由 e2e_review.py D5 锁定）
         verify(scoreSnapshotMapper).refreshByCompanion(COMPANION_ID);
     }
 
