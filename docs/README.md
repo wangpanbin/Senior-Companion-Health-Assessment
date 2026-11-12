@@ -20,12 +20,16 @@
 | `review/` | 评审 | 逐版本评审记录 | [`review/`](review/) |
 | `security/` | 安全 | 安全评估报告（脱敏 / 越权 / 上传 / 配置） | [`security/`](security/) |
 | `diagrams/` | 图示 | 架构图 / 用例图 / 原型图（含 PNG） | [`diagrams/`](diagrams/) |
+| `user-guide.md` | 用户 | 四角色操作手册（步骤 + 截图，计划书迭代三/五交付物） | [`user-guide.md`](user-guide.md) |
+| `deployment.md` | 运维 | 部署文档（本机 dev / prod fail-closed / 排障表，计划书迭代五交付物） | [`deployment.md`](deployment.md) |
 
 ## 阅读路径
 
 | 你要做的事 | 先读 |
 |---|---|
 | 第一次接触项目 | [`../README.md`](../README.md) → [`prd/PRD.md`](prd/PRD.md) |
+| 给最终用户 / 演示讲解人讲「怎么用」 | [`user-guide.md`](user-guide.md) |
+| 部署 / 排查启动问题 | [`deployment.md`](deployment.md) |
 | 参与开发 | [`../AGENTS.md`](../AGENTS.md)（规范） → [`api/README.md`](api/README.md)（契约） → [`plan/plan.md`](plan/plan.md)（验收标准） |
 | 接手某个模块 | [`spec/`](spec/) 里对应版本的 spec + tickets → [`agents/FRONTEND_CONTRACT.md`](agents/FRONTEND_CONTRACT.md) |
 | 改前端界面 | [`design/design.md`](design/design.md) → [`../AGENTS.md`](../AGENTS.md) §3 |

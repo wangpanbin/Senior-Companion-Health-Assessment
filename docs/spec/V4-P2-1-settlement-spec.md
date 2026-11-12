@@ -268,16 +268,16 @@
 
 ## 八、验收判据
 
-- [ ] 三条接口与导出契约已先写入 `docs/api`，Knife4j 注解齐全
-- [ ] `payment_status` 有且仅有本模块一个 `SETTLED` 入口
-- [ ] 重复核定不产生第二条日志；批量逐项幂等
-- [ ] `CANCELLED/PENDING` 不能结算，返回 `8004`
-- [ ] 无新增迁移；`V1`–`V8` 未被修改
-- [ ] 导出金额全部服务端计算，接口无金额入参
-- [ ] 管理端页面仅 ADMIN 可见，文案无禁用词
-- [ ] 单测覆盖 9 项 + 越权 403；e2e 完整核定 + 重复核定
-- [ ] `mvn verify`、前端 lint/test 全绿，覆盖率报告含 `SettlementServiceImpl`
-- [ ] 单独提交、不 push
+- [x] 三条接口与导出契约已先写入 `docs/api`，Knife4j 注解齐全（2026-11-12 核验：`08-admin.md` + `api/README.md` 含结算契约；`AdminController` 三个 `@Operation`（结算核对列表 / 单条核定 / 批量核定））
+- [x] `payment_status` 有且仅有本模块一个 `SETTLED` 入口（全仓扫描：写入方仅 `SettlementServiceImpl`，其余为读取 / 枚举定义）
+- [x] 重复核定不产生第二条日志；批量逐项幂等（`SettlementServiceImplTest` + commit `c4551e4`；本轮 `mvn -B verify` 绿）
+- [x] `CANCELLED/PENDING` 不能结算，返回 `8004`（同上测试覆盖）
+- [x] 无新增迁移；`V1`–`V8` 未被修改（逐文件 `git log -1`：V1–V8 最后一次变更均为各自创建提交；结算零迁移）
+- [x] 导出金额全部服务端计算，接口无金额入参（`SettlementExportController` javadoc 明示 + 无金额 `@RequestParam`）
+- [x] 管理端页面仅 ADMIN 可见，文案无禁用词（`routes.js` settlement 路由 `roles:['ADMIN']`；`settlement.vue` 无 `提现|打款|到账|支付` 命中）
+- [x] 单测覆盖 9 项 + 越权 403；e2e 完整核定 + 重复核定（`SettlementServiceImplTest` + 越权矩阵绿；2026-11-12 实跑 `e2e_settlement.py` **49/49 PASS**，含重复核定只多 1 条日志与 teardown 还原）
+- [x] `mvn verify`、前端 lint/test 全绿，覆盖率报告含 `SettlementServiceImpl`（`mvn -B verify` ✅ 1520 绿、JaCoCo `SettlementServiceImpl` **LINE 159/178**；`pnpm lint:check` 0 警告、`pnpm test` 251 绿）
+- [x] 单独提交、不 push（`c67da19` / `36a1ed5` / `c4551e4` / `51640d4` / `e559f0a` 独立提交链；本轮亦未 push）
 
 ---
 
