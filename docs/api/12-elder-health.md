@@ -660,8 +660,8 @@ bucket = TAKEN    其余
 - [x] 老人端只读：写请求被 `ElderReadOnlyInterceptor` 拒绝，且无 `elderId` 入参
 - [x] 陪诊员代录走「订单存在 → 本单陪诊员 → 服务中」链路，错误码 `3001 / 3004 / 3002`
 - [x] 趋势按时间升序、超过 500 点以 `truncated=true` 如实告知
-- [x] 新增后端 / 前端文件禁用词扫描命中数为 0（证据见 `docs/spec/V4-P2-2-vitals-tickets.md` 的交付说明）
-- [x] e2e `backend/sql/tools/e2e_vital_sign.py` 31 项全过，清理后无残留
+- [x] 新增后端 / 前端文件禁用词扫描命中数为 0（禁用词口径见 `docs/spec/V4-P2-2-vitals-spec.md` §8.2）
+- [x] e2e `backend/sql/tools/e2e_vital_sign.py` 全量检查通过，清理后无残留（检查项数以脚本实跑输出为准，不手抄）
 
 ---
 

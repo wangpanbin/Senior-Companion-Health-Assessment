@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS `vital_sign_record` (
 | `operator_user_id` | 服务端从登录态写入，请求体不接受 |
 | `order_id` | 仅 `COMPANION_SERVICE` 写入，必须等于路径订单 |
 
-> 上述上下限写进 Service 常量与测试，仅用于输入合法性；**不通过接口返回、不在前端展示、不命名为任何区间**。
+> 上述上下限写进 Service 常量与测试，仅用于输入合法性：**不作为响应字段返回、不做成固定展示区间、不命名为任何参考区间**；仅在输入校验失败的错误提示（D8 认可的「防误录」文案，如「收缩压需为 50–300 之间的整数」）中出现具体范围。
 
 ---
 
@@ -277,7 +277,7 @@ CREATE TABLE IF NOT EXISTS `vital_sign_record` (
 
 - 无档案 → `2001`。
 - 老人端响应与家属端**完全同构**（不含家属关系、费用等无关字段）。
-- ELDER 的 `POST / DELETE` 由 `ElderReadOnlyInterceptor` 统一 403，不新增写端点。
+- ELDER 的 `POST / DELETE` 由 `ElderReadOnlyInterceptor` 拒绝为 `403`；未映射的写方法由 Spring 直接返回 `405`，两者均无业务入口（语义与取舍见 `docs/api/12-elder-health.md` §10），不新增写端点。
 
 ### 5.6 陪诊员端：服务中代录
 
@@ -538,7 +538,7 @@ VitalWithdrawVO withdrawByCompanion(Long orderId, Long recordId);
 2. 同分钟重录 → `2008`；
 3. 列表返回该条且按时间倒序；
 4. 趋势返回同一点且升序；
-5. ELDER 登录 → 能读自己的记录，POST → `403`；
+5. ELDER 登录 → 能读自己的记录，POST → `403`（该路径未映射 POST 时为 `405`，两者均不落库，见 `docs/api/12-elder-health.md` §10）；
 6. 另一位 FAMILY 读该老人 → `2006`；
 7. COMPANION 取一条 `IN_SERVICE` 订单代录 → 成功；换非本单订单 → `3004`；
 8. 清理：按记录 ID 撤回 / 直接逻辑删除，恢复基线；输出残留检查。
@@ -572,7 +572,7 @@ python tools/check_secrets.py
 
 - [ ] 家属可对绑定老人录入三类体征；非绑定老人 `2006`。
 - [ ] 陪诊员仅能在本单 `IN_SERVICE` 时录入；其它情况 `3002` / `3004`。
-- [ ] 老人端只能读自己的记录，写请求 `403`。
+- [ ] 老人端只能读自己的记录，写请求 `403` / `405`（语义见 `docs/api/12-elder-health.md` §10）。
 - [ ] 同一分钟同类记录重复 → `2008`；撤回后可重录。
 - [ ] 时间线倒序、趋势升序、分页不重不漏、500 点截断如实告知。
 - [ ] 页面与接口无任何解释性文案或区间字段。

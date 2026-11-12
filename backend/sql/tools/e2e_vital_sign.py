@@ -306,8 +306,8 @@ def section_elder_readonly(elder_token, bp_id):
 
     # 规格 §11.3 写的是「POST → 403」。实测：该路径没有 POST 映射，
     # Spring 在进入 ElderReadOnlyInterceptor 之前就返回 405（请求方法不支持），
-    # 安全语义一致（写不进去）。这里按「无写入口」断言 403/405 + 不落库，
-    # 偏差已在交付说明中列为待拍板项，不擅自改规格。
+    # 安全语义一致（写不进去）。这里按「无写入口」断言 403/405 + 不落库；
+    # 403/405 的取舍已定稿于 docs/api/12-elder-health.md §10，规格相应行已同步。
     before = mysql_int("SELECT COUNT(*) FROM `vital_sign_record` WHERE `deleted`=0 AND `elder_id`=%d;"
                        % ELDER_ID)
     http, body = call("POST", "/elder/vitals", bp_body(measured_at=T_EARLIER), elder_token)

@@ -125,7 +125,8 @@ def today_sms_count(user_id):
 def purge_orphan_rows():
     """清掉历史失败运行留下的孤儿回执（biz_id 已无对应任务）。
 
-    这类行仍占用当日频控额度，但已无法对应任何业务任务；不清掉的话
+    服务端频控已不再计孤儿行（任务删除即作废 + 计数只认有效任务），
+    但本脚本的 today_sms_count 按原始行数统计；不清掉的话
     「从 0 开始计数」的前提不成立（实测残留 3 条就让 101 直接满额）。
     """
     where = ("FROM `sms_send_log` s WHERE s.`scene`='missed-dose' "
