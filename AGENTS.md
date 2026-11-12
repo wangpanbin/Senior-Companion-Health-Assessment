@@ -96,7 +96,7 @@ Senior Companion Health Assessment/
 ├── README.md                        ← 项目基线（对外入口）
 ├── GLOSSARY.md                      ← 领域词汇表（唯一真源）
 ├── CHANGELOG.md                     ← 版本变更记录
-├── 银龄伴诊项目计划书.docx           ← 课程原始计划书（不要改）
+├── 银龄伴诊项目计划书.md            ← 课程原始计划书（markdown 版；原 docx 已删除，仓库仅保留此版）
 ├── docs/
 │   ├── api/                         ← 接口文档（先于代码）
 │   ├── prd/                         ← 产品需求（PRD 逐版）

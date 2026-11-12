@@ -14,7 +14,7 @@ Senior Companion Health Assessment/
 ├── AGENTS.md                        # AI 编码工具协作规范（机读版项目宪法）
 ├── GLOSSARY.md                      # 领域词汇表（唯一真源）
 ├── CHANGELOG.md                     # 版本变更记录
-├── 银龄伴诊项目计划书.docx           # 课程原始计划书
+├── 银龄伴诊项目计划书.md            # 课程原始计划书（markdown 版，原 docx 已删除）
 ├── docs/
 │   ├── api/                         # 接口契约（全局约定 + 13 个模块）
 │   ├── prd/                         # 产品需求（PRD 逐版 + 功能拓展规划）
