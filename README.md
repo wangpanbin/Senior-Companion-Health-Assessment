@@ -14,7 +14,6 @@ Senior Companion Health Assessment/
 ├── AGENTS.md                        # AI 编码工具协作规范（机读版项目宪法）
 ├── GLOSSARY.md                      # 领域词汇表（唯一真源）
 ├── CHANGELOG.md                     # 版本变更记录
-├── 银龄伴诊项目计划书.md            # 课程原始计划书（markdown 版，原 docx 已删除）
 ├── docs/
 │   ├── api/                         # 接口契约（全局约定 + 13 个模块）
 │   ├── prd/                         # 产品需求（PRD 逐版 + 功能拓展规划）
@@ -22,11 +21,11 @@ Senior Companion Health Assessment/
 │   ├── adr/                         # 架构决策记录（0020 止）
 │   ├── db/                          # ER 图 / 数据字典 / 索引 / 种子说明（脚本生成）
 │   ├── design/                      # 前端设计规范（视觉与交互唯一真源）
-│   ├── plan/                        # 项目计划书 + 迭代计划 + 存档
+│   ├── plan/                        # 课程原始计划书 + 模块拆分计划 + 迭代计划 + 存档
 │   ├── agents/                      # AI 协作契约（前后端契约 / 领域文档规则）
 │   ├── review/                      # 评审记录
 │   ├── security/                    # 安全评估报告
-│   └── reports/                     # 测试报告 / 验收基线 / 压测记录
+│   └── reports/                     # 测试报告 / 验收报告 / 压测记录
 ├── backend/                         # Spring Boot 3.x 后端工程
 │   ├── pom.xml
 │   └── src/main/java/org/company/nianglin/
@@ -309,19 +308,19 @@ V3.7 智能助手涉及的环境变量（**全部可留空**：留空即基础�
 ## 文档索引
 
 > 三个入口：**本文件**（对外基线）· [`AGENTS.md`](AGENTS.md)（AI 协作规范）· [`GLOSSARY.md`](GLOSSARY.md)（领域词汇表）。
-> 其余文档按用途归入 `docs/` 下的子目录。
+> 其余文档按用途归入 `docs/` 下的子目录（2026-11 文档收敛：原根目录的《银龄伴诊项目计划书》与《验收报告》已分别移入 `docs/plan/` 与 `docs/reports/`）。
 
 | 目录 | 视角 | 内容 |
 |---|---|---|
 | [`docs/prd/`](docs/prd/PRD.md) | 产品 | PRD 逐版（V3.1 – V3.7 + E4）+ 功能拓展规划。顶层入口 [`PRD.md`](docs/prd/PRD.md) |
-| [`docs/plan/`](docs/plan/plan.md) | 工程 | [`plan.md`](docs/plan/plan.md) 模块拆分与验收标准 · [`iteration-plan.md`](docs/plan/iteration-plan.md) V3.x 迭代规划 · 目录适配 / 收敛迭代存档 |
+| [`docs/plan/`](docs/plan/plan.md) | 工程 | 课程原始计划书 [`银龄伴诊项目计划书.md`](docs/plan/银龄伴诊项目计划书.md) · [`plan.md`](docs/plan/plan.md) 模块拆分与验收标准 · [`iteration-plan.md`](docs/plan/iteration-plan.md) V3.x 迭代规划 · 目录适配 / 收敛迭代存档 |
 | [`docs/api/`](docs/api/README.md) | 接口 | 全局约定 + 错误码 + 13 个模块接口明细（`13` = V3.7 家属智能助手） |
 | [`docs/spec/`](docs/spec/V3.x-roadmap-spec.md) | 契约 | 各版工程规格 + 工单 + [`metric-dictionary.md`](docs/spec/metric-dictionary.md) 指标字典（人读面） |
 | [`docs/adr/`](docs/adr/) | 架构 | 架构决策记录（0020 止），每条含背景 / 决策 / 后果 |
 | [`docs/design/`](docs/design/design.md) | 视觉 | 前端设计规范（设计令牌 / 组件 / 交互，视觉唯一真源） |
 | [`docs/db/`](docs/db/README.md) | 数据 | ER 图 / 数据字典 / 索引与 EXPLAIN / 种子说明（**由 `backend/sql/tools/gen_db_docs.py` 生成**） |
 | [`docs/agents/`](docs/agents/FRONTEND_CONTRACT.md) | 协作 | 前后端联调契约 + AI 领域文档消费规则 + 遗留 Bug 清单 |
-| [`docs/reports/`](docs/reports/) | 验证 | 联调全功能测试报告 · 各迭代测试报告 · 验收基线 / 收尾复核 · 压测记录 |
+| [`docs/reports/`](docs/reports/) | 验证 | 验收报告 [`验收报告.md`](docs/reports/验收报告.md) · 联调全功能测试报告 · 各迭代测试报告 · 验收基线 / 收尾复核 · 压测记录 |
 | [`docs/review/`](docs/review/) | 评审 | 逐版本评审记录 |
 | [`docs/security/`](docs/security/) | 安全 | 安全评估报告（脱敏 / 越权 / 上传 / 配置） |
 

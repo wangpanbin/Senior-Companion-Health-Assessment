@@ -6,7 +6,7 @@
 >
 > **Docker 一键部署说明**：计划书 §14 把「Docker + docker-compose + deploy.sh」列为技术亮点，
 > 但本机（Windows 11）未安装 Docker，**未经实跑验证的 compose 交付物在验收现场第一次
-> `up` 大概率翻车**，因此本轮**刻意不交付** Docker 资产（决策记录见根目录 `验收报告.md` §3.0 与 `CHANGELOG.md`），
+> `up` 大概率翻车**，因此本轮**刻意不交付** Docker 资产（决策记录见 `docs/reports/验收报告.md` §3.0 与 `CHANGELOG.md`），
 > 如需容器化建议列入二期并配套实测验证。
 
 ---

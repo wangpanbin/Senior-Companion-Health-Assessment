@@ -3,20 +3,21 @@
 > 本目录是「银龄伴诊」的全部项目文档。**根目录只保留三个入口**：
 > [`README.md`](../README.md)（对外基线）· [`AGENTS.md`](../AGENTS.md)（AI 协作规范）· [`GLOSSARY.md`](../GLOSSARY.md)（领域词汇表）。
 > [`CHANGELOG.md`](../CHANGELOG.md)（版本变更记录）按通用惯例留在根目录。
+> 2026-11 文档收敛：原根目录的《银龄伴诊项目计划书》→ `plan/`，《验收报告》→ `reports/`。
 
 ## 按用途分区
 
 | 目录 | 视角 | 内容 | 入口 |
 |---|---|---|---|
 | `prd/` | 产品 | PRD 逐版（V3.1 – V3.7 + E4）+ 功能拓展规划 | [`PRD.md`](prd/PRD.md) |
-| `plan/` | 工程 | 项目计划书（模块拆分 + 验收标准）· 迭代规划 · 目录适配 / 收敛迭代存档 | [`plan.md`](plan/plan.md) |
+| `plan/` | 工程 | 课程原始计划书（[`银龄伴诊项目计划书.md`](plan/银龄伴诊项目计划书.md)）· 模块拆分计划（[`plan.md`](plan/plan.md)）· 迭代规划 · 目录适配 / 收敛迭代存档 | [`plan.md`](plan/plan.md) |
 | `api/` | 接口 | 全局约定 + 错误码表 + 13 个模块接口明细 | [`api/README.md`](api/README.md) |
 | `spec/` | 契约 | 各版工程规格 + 工单 + 指标字典（人读面） | [`V3.x-roadmap-spec.md`](spec/V3.x-roadmap-spec.md) |
 | `adr/` | 架构 | 架构决策记录（0020 止）· 背景 / 决策 / 后果 | [`adr/`](adr/) |
 | `design/` | 视觉 | 前端设计规范（设计令牌 / 组件 / 交互，视觉唯一真源） | [`design.md`](design/design.md) |
 | `db/` | 数据 | ER 图 / 数据字典 / 索引与 EXPLAIN / 种子说明 | [`db/README.md`](db/README.md) |
 | `agents/` | 协作 | 前后端联调契约 · AI 领域文档消费规则 · 遗留 Bug 清单 · 模块设计评审 | [`FRONTEND_CONTRACT.md`](agents/FRONTEND_CONTRACT.md) |
-| `reports/` | 验证 | 联调全功能测试报告 · 各迭代测试报告 · 验收基线 / 收尾复核 · 压测记录 | [`TEST_REPORT.md`](reports/TEST_REPORT.md) |
+| `reports/` | 验证 | 验收报告（[`验收报告.md`](reports/验收报告.md)）· 联调全功能测试报告 · 各迭代测试报告 · 验收基线 / 收尾复核 · 压测记录 | [`TEST_REPORT.md`](reports/TEST_REPORT.md) |
 | `review/` | 评审 | 逐版本评审记录 | [`review/`](review/) |
 | `security/` | 安全 | 安全评估报告（脱敏 / 越权 / 上传 / 配置） | [`security/`](security/) |
 | `diagrams/` | 图示 | 架构图 / 用例图 / 原型图（含 PNG） | [`diagrams/`](diagrams/) |

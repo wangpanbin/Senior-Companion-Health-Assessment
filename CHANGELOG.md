@@ -10,6 +10,14 @@
 
 ## [Unreleased] · 文档收敛
 
+### Changed · 根目录文档收敛（2026-11-12）
+
+- **根目录只保留四个文件**：`README.md` · `AGENTS.md` · `GLOSSARY.md` · `CHANGELOG.md`。其余文档收敛进 `docs/`：
+  `银龄伴诊项目计划书.md`（含 `_files/` 配图）→ `docs/plan/`、`验收报告.md` → `docs/reports/`、
+  `PLAN.md` → `docs/plan/gap-closure-2026-11.md`、`script.md`（本地汇报脚本）→ `docs/reports/script.md`。
+- 同步修正引用与索引：`AGENTS.md` / `README.md` 目录树、`docs/README.md`、`docs/plan/plan.md`、
+  `docs/deployment.md`、验收报告自引用、`presentation/` 本地脚本引用。
+
 ### Fixed · 代码欠账收口（2026-11-12 · `feature/plan-gap-closure`）
 
 - **BUG_LIST L2**：陪诊员评分快照改为**单条原子 `UPDATE`**（新增 `CompanionScoreSnapshotMapper`，
@@ -33,7 +41,7 @@
 - `docs/spec/desktop-adapt-v2.md` 三个待跑 playwright spec 实跑勾选；人工手测项如实标注未做。
 - `.github/workflows/ci.yml` 注释口径对齐当前实测（surefire **1520** / vitest **251·23 文件** /
   `@SpringBootTest` **29 处** / **113** 个 `*Test.java`）。
-- 根目录 `验收报告.md` 刷新复核轮：硬门禁全绿（L0 10/10、Playwright 272、越权矩阵 100 次 0 违规、
+- 验收报告（当时在根目录，现 `docs/reports/验收报告.md`）刷新复核轮：硬门禁全绿（L0 10/10、Playwright 272、越权矩阵 100 次 0 违规、
   导出文件敏感字段扫描 0 命中），结论升为**通过**（影片/PPT 相关项标注范围外）。
 - `docs/README.md` 索引新增 user-guide / deployment 两行。
 

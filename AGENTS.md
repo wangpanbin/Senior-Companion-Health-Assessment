@@ -96,7 +96,6 @@ Senior Companion Health Assessment/
 ├── README.md                        ← 项目基线（对外入口）
 ├── GLOSSARY.md                      ← 领域词汇表（唯一真源）
 ├── CHANGELOG.md                     ← 版本变更记录
-├── 银龄伴诊项目计划书.md            ← 课程原始计划书（markdown 版；原 docx 已删除，仓库仅保留此版）
 ├── docs/
 │   ├── api/                         ← 接口文档（先于代码）
 │   ├── prd/                         ← 产品需求（PRD 逐版）
@@ -104,11 +103,11 @@ Senior Companion Health Assessment/
 │   ├── adr/                         ← 架构决策记录
 │   ├── db/                          ← 数据字典 / ER 图 / 索引（由脚本生成）
 │   ├── design/                      ← 前端设计规范
-│   ├── plan/                        ← 项目计划书 + 迭代计划
+│   ├── plan/                        ← 课程原始计划书 + 模块拆分计划 + 迭代计划
 │   ├── agents/                      ← AI 协作契约（前端契约 / 领域文档规则）
 │   ├── review/                      ← 评审记录
 │   ├── security/                    ← 安全评估
-│   └── reports/                     ← 测试报告 / 验收基线 / 压测
+│   └── reports/                     ← 测试报告 / 验收报告 / 验收基线 / 压测
 ├── backend/
 │   ├── pom.xml
 │   ├── sql/                          ← Flyway 脚本唯一真源
