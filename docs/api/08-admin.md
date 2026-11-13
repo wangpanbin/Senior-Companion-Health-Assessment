@@ -691,8 +691,9 @@
 | ③ | `status == PENDING` 且 `companionId IS NULL` | `3010` |
 | ④ | 目标陪诊员存在 | `2007` |
 | ⑤ | 目标 `auditStatus == APPROVED` | `2003` |
-| ⑥ | 目标 `workStatus == AVAILABLE` | `3010` |
-| ⑦ | 目标未拒过该单 | `3010` |
+| ⑥ | 目标健康证未过期（`health_cert_expire ≥ 今天`，未补录放行） | `2011` |
+| ⑦ | 目标 `workStatus == AVAILABLE` | `3010` |
+| ⑧ | 目标未拒过该单 | `3010` |
 
 ### 边界（改动前必读）
 

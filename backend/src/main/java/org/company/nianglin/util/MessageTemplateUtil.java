@@ -59,6 +59,7 @@ public final class MessageTemplateUtil {
             case FULFILLMENT_URGENT -> "订单需要尽快安排陪诊员";
             case ORDER_URGED -> "有订单在等待陪诊员";
             case ORDER_REASSIGNED -> "订单已改派陪诊员";
+            case HEALTH_CERT_EXPIRING -> "健康证到期提醒";
             case SYSTEM_NOTICE -> "系统公告";
         };
     }
@@ -147,6 +148,17 @@ public final class MessageTemplateUtil {
                 };
             }
             case SYSTEM_NOTICE -> value(p, "content");
+            case HEALTH_CERT_EXPIRING -> {
+                // audience 区分两侧：本人看到的是「你该怎么办」，
+                // 管理员看到的是「谁的证到期了」（姓名已由调用方脱敏）
+                String audience = value(p, "audience");
+                String expireDate = value(p, "expireDate");
+                yield "ADMIN".equals(audience)
+                        ? "陪诊员 %s 的健康证有效期至 %s，请关注其证件更新情况。"
+                                .formatted(value(p, "companionName"), expireDate)
+                        : "您的健康证有效期至 %s，到期后将无法接单，请及时更新证件并重新提交资质材料。"
+                                .formatted(expireDate);
+            }
         };
     }
 
@@ -185,6 +197,9 @@ public final class MessageTemplateUtil {
             // 订单执行路由（routes.js: companion/execute/:id，M5）
             case MEDICATION_MISSED -> "/companion/execute/" + bizId;
             case COMPLAINT_SUBMITTED, REVIEW_APPEAL_SUBMITTED -> "/admin?complaintId=" + bizId;
+            // 到期提醒的两侧接收方统一落在陪诊员资质页（AUDIT_RESULT 同一路由）：
+            // 本人在该页重新提交材料，管理员从消息中心进入（MessageDetail 不走 linkUrl）
+            case HEALTH_CERT_EXPIRING -> "/profile/companion";
             case COMPLAINT_HANDLED -> "/complaint/" + bizId;
             case SYSTEM_NOTICE -> null;
         };

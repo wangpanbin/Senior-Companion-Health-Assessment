@@ -916,13 +916,20 @@ public class OrderServiceImpl implements OrderService {
      * 陪诊员资质校验（大厅 / 接单 / 拒单 / 开始 / 完成都要过）。
      *
      * <p>角色是 {@code COMPANION} 只说明「这个账号被定义成陪诊员」，
-     * 不说明「他的资质已经审过了」。未审核或无快照一律 {@code 2003}。</p>
+     * 不说明「他的资质已经审过了」。未审核或无快照一律 {@code 2003}；
+     * 审过但健康证已过期一律 {@code 2011}（到期日为空的存量档案放行，V5 · C1）。</p>
      */
     private CompanionProfile requireApprovedCompanion(Long userId) {
         CompanionProfile profile = findCompanionProfile(userId);
         AuditStatus status = profile == null ? null : AuditStatus.of(profile.getAuditStatus());
         if (status == null || !status.isApproved()) {
             throw new BusinessException(ResultCode.COMPANION_NOT_AUDITED);
+        }
+        // 「审过了」不等于「证还有效」：只拦明确过期的，到期日为空的存量档案
+        // 放行（尚未补录，见 V5 · C1）。与 2003 同一入口，五个调用点一次性生效
+        LocalDate certExpire = profile.getHealthCertExpire();
+        if (certExpire != null && certExpire.isBefore(LocalDate.now())) {
+            throw new BusinessException(ResultCode.HEALTH_CERT_EXPIRED);
         }
         return profile;
     }

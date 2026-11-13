@@ -56,6 +56,13 @@ public final class RedisKeyConstants {
      */
     public static final String MEDICATION_DRAFT_FROM_ORDER_PREFIX = "medication:draft:from-order:";
 
+    /**
+     * 健康证到期提醒的幂等标记：{@code cert:expire:remind:{profileId}:{expireDate}} → 1，TTL 30 天。
+     *
+     * <p>V5 · C1：同一份到期日只提醒一次；换证后到期日变化 → 键变化 → 允许再提醒一轮。</p>
+     */
+    public static final String CERT_EXPIRE_REMIND_PREFIX = "cert:expire:remind:";
+
     /* ---------- V4 · P1-1 自助找回密码短信 ---------- */
 
     /** 找回密码验证码：{@code sms:reset:{phone}} → 6 位数字，TTL 5 分钟 */

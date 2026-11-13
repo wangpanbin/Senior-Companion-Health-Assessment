@@ -582,6 +582,37 @@ class OrderServiceTest {
         verify(orderMapper, never()).updateById(any(CompanionOrder.class));
     }
 
+    @Test
+    @DisplayName("接单：健康证已过期返回 2011 —— 审过了不等于证还有效")
+    void acceptShouldRejectExpiredHealthCert() {
+        loginAs(RoleConstants.COMPANION, COMPANION_ID);
+        CompanionProfile profile = companionProfile(AuditStatus.APPROVED);
+        profile.setHealthCertExpire(LocalDate.now().minusDays(1));
+        given(companionProfileMapper.selectList(any())).willReturn(List.of(profile));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> orderService.accept(ORDER_ID));
+
+        assertEquals(ResultCode.HEALTH_CERT_EXPIRED.getCode(), ex.getCode());
+        verify(orderMapper, never()).updateById(any(CompanionOrder.class));
+    }
+
+    @Test
+    @DisplayName("大厅：健康证未到期照常放行 —— 到期校验只拦过期，不误伤在册陪诊员")
+    void hallShouldAllowFutureHealthCert() {
+        loginAs(RoleConstants.COMPANION, COMPANION_ID);
+        CompanionProfile profile = companionProfile(AuditStatus.APPROVED);
+        profile.setHealthCertExpire(LocalDate.now().plusMonths(6));
+        given(companionProfileMapper.selectList(any()))
+                .willReturn(List.of(profile));
+        given(rejectLogMapper.selectList(any())).willReturn(List.of(rejectLog(9999L)));
+        given(orderMapper.selectList(any())).willReturn(List.of(pendingOrder()));
+        given(orderReadMapper.selectEldersIgnoringLogicDelete(any())).willReturn(List.of(elderProfile()));
+
+        PageResult<OrderVO> result = orderService.hall(new OrderHallQuery());
+
+        assertFalse(result.getRecords().isEmpty(), "未到期的健康证不应拦住大厅查询");
+    }
+
     /* ================================================================== */
     /* 5. 取消订单                                                         */
     /* ================================================================== */

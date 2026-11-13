@@ -48,7 +48,7 @@ const relatedTarget = computed(() => {
     return ''
   }
 
-  if (type === 'AUDIT_RESULT') {
+  if (type === 'AUDIT_RESULT' || type === 'HEALTH_CERT_EXPIRING') {
     if (userStore.isCompanion) return '/companion/entry'
     if (userStore.isAdmin) return '/admin/companion-audit'
     return ''

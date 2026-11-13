@@ -223,6 +223,7 @@ M2 解决的是「**你是什么角色**」，本模块真正要解决的是「*
 | `serviceArea` | String | ✓ | ≤ 100 字符 | 服务区域 |
 | `availableTime` | String | ✓ | ≤ 100 字符 | 可服务时段 |
 | `certificates` | Array | ✓ | **至少 1 项，每项 `name` 与 `url` 均校验** | 证件材料 `[{ name, url }]` |
+| `healthCertExpire` | String | 否 | 日期 `YYYY-MM-DD`，不得早于今天（`@FutureOrPresent`） | 健康证有效期（V5 · C1）：过期后接单链路返回 `2011`；留空表示未补录，校验对空值放行 |
 | `remark` | String | 否 | ≤ 200 字符 | 补充说明 |
 
 ### 响应

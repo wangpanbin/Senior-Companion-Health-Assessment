@@ -87,7 +87,7 @@ public class OrderController {
     }
 
     @Operation(summary = "待接单订单大厅",
-            description = "仅 COMPANION 角色且资质已通过审核（否则 2003）。"
+            description = "仅 COMPANION 角色且资质已通过审核（否则 2003）、健康证未过期（否则 2011）。"
                     + "只返回未过期的待接单订单，并排除自己已拒过的单。与「我的订单」不同，"
                     + "大厅会返回医院地址 —— 陪诊员需要先知道去哪儿")
     @PreAuthorize("hasRole('" + RoleConstants.COMPANION + "')")
@@ -183,7 +183,7 @@ public class OrderController {
 
     @Operation(summary = "接单",
             description = "乐观锁防超卖：多人同时接同一单时只有一人成功，"
-                    + "被抢先返回 3003。资质未通过审核返回 2003")
+                    + "被抢先返回 3003。资质未通过审核返回 2003，健康证过期返回 2011")
     @PreAuthorize("hasRole('" + RoleConstants.COMPANION + "')")
     @PostMapping("/{id}/accept")
     public Result<OrderAcceptResultVO> accept(

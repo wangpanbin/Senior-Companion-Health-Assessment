@@ -232,6 +232,8 @@ public class CompanionServiceImpl implements CompanionService {
             created.setAuditStatus(AuditStatus.PENDING.name());
             // 还没通过审核，语义上就是「不接单」，而不是库默认的 AVAILABLE
             created.setWorkStatus(WorkStatus.REST.name());
+            // 健康证到期日随本次申请落库（V5 · C1）；未填则为 null，校验侧对空值放行
+            created.setHealthCertExpire(dto.getHealthCertExpire());
             created.setScore(BigDecimal.ZERO);
             created.setReviewCount(0);
             created.setOrderCount(0);
@@ -248,6 +250,9 @@ public class CompanionServiceImpl implements CompanionService {
                 .set(CompanionProfile::getAvailableTime, dto.getAvailableTime().trim())
                 .set(CompanionProfile::getAuditStatus, AuditStatus.PENDING.name())
                 .set(CompanionProfile::getWorkStatus, WorkStatus.REST.name())
+                // 重提申请 = 用本次填写覆盖上次快照（与其他字段同口径）；
+                // 未重填则清空 —— 校验侧对空值放行，不会因此误拦
+                .set(CompanionProfile::getHealthCertExpire, dto.getHealthCertExpire())
                 .set(CompanionProfile::getRejectReason, null)
                 .set(CompanionProfile::getAuditAdminId, null)
                 .set(CompanionProfile::getAuditTime, null);

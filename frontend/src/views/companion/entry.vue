@@ -44,6 +44,9 @@ const form = ref({
   serviceArea: '',
   periods: [],
   certificates: [{ name: '健康证', url: '' }],
+  // 健康证有效期（选填，V5 · C1）：落 companion_profile.health_cert_expire，
+  // 过期后接单链路返回 2011；留空 = 存量未补录，后端对空值放行
+  healthCertExpire: '',
   remark: ''
 })
 
@@ -137,6 +140,14 @@ function revalidateCerts() {
 }
 
 /**
+ * 日期选择禁用今天之前的日期：过期证件就算选上，提交后也会在接单时被
+ * 2011 拦下（后端 @FutureOrPresent 是第二道闸）——前端先拦一道，少一次来回。
+ */
+function notBeforeToday(date) {
+  return date.getTime() < new Date().setHours(0, 0, 0, 0)
+}
+
+/**
  * 选服务区域：区域是自绘药丸，也不是 el-form 控件，
  * 选完手动校一次，让「请选择服务区域」的错误立刻消失。
  */
@@ -215,6 +226,7 @@ async function submit() {
         .map((k) => periodOptions.find((p) => p.key === k)?.label || k)
         .join('；'),
       certificates: certs,
+      healthCertExpire: f.healthCertExpire || undefined,
       remark: f.remark ? f.remark.trim() : undefined
     }
 
@@ -372,6 +384,19 @@ onMounted(loadApplication)
               </li>
             </ul>
             <el-button text type="primary" size="small" @click="addCert">+ 添加证件</el-button>
+          </el-form-item>
+          <el-form-item label="健康证有效期" prop="healthCertExpire">
+            <el-date-picker
+              v-model="form.healthCertExpire"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="选填：选择健康证有效期"
+              :disabled-date="notBeforeToday"
+              style="width: 100%"
+            />
+            <p class="nl-caption nl-text-weak cert-tip">
+              过期后将无法接单；留空表示暂未补录，可在重新提交资质时填写。
+            </p>
           </el-form-item>
         </NlCard>
 

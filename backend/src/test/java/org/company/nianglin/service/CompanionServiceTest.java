@@ -33,8 +33,13 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
+
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -164,6 +169,38 @@ class CompanionServiceTest {
         assertEquals(WorkStatus.REST.name(), created.getWorkStatus());
         assertEquals(BigDecimal.ZERO, created.getScore());
         assertEquals(0, created.getOrderCount());
+    }
+
+    @Test
+    @DisplayName("提交：健康证到期日随申请写入快照（V5 · C1）")
+    void applyShouldPersistHealthCertExpire() {
+        loginAs(RoleConstants.FAMILY, USER_ID);
+        given(auditRecordMapper.selectCount(any())).willReturn(0L);
+        given(companionProfileMapper.selectList(any())).willReturn(List.of());
+
+        LocalDate expire = LocalDate.now().plusYears(1);
+        companionService.apply(applyDto().setHealthCertExpire(expire));
+
+        ArgumentCaptor<CompanionProfile> captor = ArgumentCaptor.forClass(CompanionProfile.class);
+        verify(companionProfileMapper).insert(captor.capture());
+        assertEquals(expire, captor.getValue().getHealthCertExpire(),
+                "健康证到期日必须写入快照，否则接单资格校验无从拦截");
+    }
+
+    @Test
+    @DisplayName("提交：健康证到期日早于今天被校验拒绝 —— 不让过期证件混进审核队列")
+    void applyShouldRejectPastHealthCertExpire() {
+        CompanionApplyDTO dto = applyDto().setHealthCertExpire(LocalDate.now().minusDays(1));
+
+        Set<ConstraintViolation<CompanionApplyDTO>> violations = Validation
+                .buildDefaultValidatorFactory()
+                .getValidator()
+                .validate(dto);
+
+        assertFalse(violations.isEmpty(), "过去日期必须触发 @FutureOrPresent 校验");
+        assertTrue(violations.stream().anyMatch(v ->
+                        "healthCertExpire".equals(v.getPropertyPath().toString())),
+                "违规应落在 healthCertExpire 字段上");
     }
 
     @Test

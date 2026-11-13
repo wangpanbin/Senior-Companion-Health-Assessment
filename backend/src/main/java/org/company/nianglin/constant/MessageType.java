@@ -90,6 +90,14 @@ public enum MessageType {
      * {@code bizId=orderId}。三类接收方用同一模板，靠占位符区分措辞。</p>
      */
     ORDER_REASSIGNED("订单已改派陪诊员", MessageBizType.ORDER),
+    /**
+     * 健康证即将到期或已过期（V5 · C1）。
+     *
+     * <p>接收人是<b>本人 + 全部管理员</b>，{@code bizId=companionProfileId}；
+     * 两侧用同一模板靠 {@code audience} 占位符分流措辞（与 {@link #ORDER_REASSIGNED} 同法）。
+     * 文案只陈述到期事实与后果（无法接单），不含任何医疗判断。</p>
+     */
+    HEALTH_CERT_EXPIRING("健康证到期提醒", MessageBizType.AUDIT),
     SYSTEM_NOTICE("系统公告", MessageBizType.SYSTEM),
     ;
 
