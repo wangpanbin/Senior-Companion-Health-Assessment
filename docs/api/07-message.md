@@ -40,6 +40,7 @@
 | `AUDIT_RESULT` | 资质审核结果 | 管理员审核（M9） | 申请人 |
 | `MEDICATION_REMIND` | 用药提醒 | 漏服扫描（M6） | 全部绑定家属 |
 | `MEDICATION_MISSED` | 漏服提醒 | 漏服扫描（V4 · E1a） | 该老人**当天** `ACCEPTED` / `IN_SERVICE` 陪诊订单的接单陪诊员 |
+| `MEDICATION_ESCALATED` | 漏服升级提醒 | 漏服三级升级的 L3：判漏服 24 小时仍无 `confirm`（V5 · A2） | **全部管理员**（仅站内信，不入短信队列） |
 | `COMPLAINT_SUBMITTED` | 新投诉待处理 | 家属提交投诉（M7） | **全部管理员** + 被投诉方 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 管理员处理（M9） | 投诉双方 |
 | `REVIEW_REPLIED` | 评价被回复 | 陪诊员回复评价（E4） | 评价人（家属） |
@@ -439,6 +440,7 @@ dedup_key = "medication-missed:" + taskId + ":" + userId + ":" + yyyy-MM-dd
 | `AUDIT_RESULT` | 资质审核结果 | 您的陪诊员资质申请{result}。{rejectReason} |
 | `MEDICATION_REMIND` | 用药提醒 | {elderName} 的「{medicineName}」在 {planTime} 未确认服用，请及时关注。 |
 | `MEDICATION_MISSED` | 漏服提醒 | 您正在陪诊的 {elderName} 在 {planTime} 未确认服用「{medicineName}」，请留意。 |
+| `MEDICATION_ESCALATED` | 漏服升级提醒 | {elderName} 的「{medicineName}」在 {planTime} 已超过 24 小时未确认服用，请关注。（动态参数发送前过 `ComplianceCheckUtil` 词表） |
 | `COMPLAINT_SUBMITTED` | 新投诉待处理 | {submitterName} 就订单 {orderNo} 提交了投诉（{typeLabel}），请及时处理。 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 您提交的投诉（{orderNo}）已处理完成：{handleResult} |
 | `SYSTEM_NOTICE` | 系统公告 | {content} |
@@ -489,3 +491,4 @@ dedup_key = "medication-missed:" + taskId + ":" + userId + ":" + yyyy-MM-dd
 | v1.2.2 | 2026-11-03 | §9.3：`dedup_key` 加入 `userId`（同一任务每位家属各一条，唯一索引不变）；新增单用户单日频控 `nianglin.sms.frequency.missed-dose-daily-cap`（默认 3） | — |
 | v1.3.0 | 2026-11-03 | V4 · P1-3：新增通知偏好接口（仅 FAMILY）与「短信站外提醒编排」章节；模板配置改为按场景路由（`verification` / `missed-dose`），生产新增两个模板 Code 环境变量 | — |
 | v1.4.0 | 2026-11-14 | V5 · C1：新增 `HEALTH_CERT_EXPIRING` 健康证到期提醒类型（本人 + 全部管理员，`linkUrl` 指向 `/profile/companion`，幂等键 `cert:expire:remind:{profileId}:{expireDate}`） | — |
+| v1.5.0 | 2026-11-14 | V5 · A2：新增 `MEDICATION_ESCALATED` 漏服三级升级 L3 类型（接收人=全部管理员，仅站内信，`linkUrl=null` 无落地页）；漏服触达口径改为三级阶梯（详见 05 §2.1） | — |
