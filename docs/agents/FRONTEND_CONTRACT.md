@@ -529,7 +529,7 @@ onBeforeUnmount(() => polling?.stop())
 
 `id` / `plan_id` / `elder_id` / `medicine_id` / `medicine_name` / `dosage` / `meal_relation` /
 `plan_date`(**date**) / `plan_time`(**datetime**) / `status` / `was_missed` / `confirm_time` / `confirm_by` /
-**`confirm_remark`**（⚠️ **不是 `remark`**）/ `notify_sent` / `notify_time`
+**`confirm_remark`**（⚠️ **不是 `remark`**）/ `notify_sent` / `notify_time` / **`notify_level`**（V5 · A2：0=未通知，1=L1 家属，2=L2 陪诊员，3=L3 管理员；**不随接口返回**，仅表结构）
 
 取值：`status` ∈ `PENDING`/`TAKEN`/`MISSED`；`meal_relation` ∈ `BEFORE_MEAL`/`AFTER_MEAL`/`ANY`。
 

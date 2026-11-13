@@ -25,7 +25,7 @@ import java.time.LocalDate;
  *       <td>可能产生重复行 —— 靠唯一索引挡住</td></tr>
  *   <tr><td>漏服扫描</td><td>每 30 分钟</td>
  *       <td>晚半小时通知家属 —— 可接受，下一次扫描会补上</td>
- *       <td>可能重复推送提醒 —— 靠 {@code notify_sent} 挡住</td></tr>
+ *       <td>可能重复推送提醒 —— 靠 {@code notify_level} 挡住（同级只派发一次）</td></tr>
  * </table>
  *
  * <p>两类任务对「重复」的容忍度都远高于「丢失」，这也是

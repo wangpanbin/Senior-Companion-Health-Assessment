@@ -15,6 +15,7 @@ import org.company.nianglin.mapper.MedicationTaskMapper;
 import org.company.nianglin.mapper.NotificationPreferenceMapper;
 import org.company.nianglin.mapper.SmsSendLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
+import org.company.nianglin.service.support.medication.ReminderLevelPolicy;
 import org.company.nianglin.support.MybatisLambdaCache;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -213,6 +214,21 @@ class SmsReminderServiceTest {
     }
 
     @Test
+    @DisplayName("V5 · A3：同任务同日不同级别各发一次 —— dedup 键含 level")
+    void shouldEnqueueOncePerLevelForSameTask() {
+        service.enqueueMissedDose(task, List.of(FAMILY_ID));
+        service.enqueueMissedDose(task, List.of(FAMILY_ID), ReminderLevelPolicy.LEVEL_COMPANION);
+
+        ArgumentCaptor<SmsSendLog> inserted = ArgumentCaptor.forClass(SmsSendLog.class);
+        verify(smsSendLogMapper, times(2)).insert(inserted.capture());
+        assertEquals("medication-missed:" + TASK_ID + ":1:" + FAMILY_ID + ":2026-11-03",
+                inserted.getAllValues().get(0).getDedupKey(), "L1 键必须带 level=1");
+        assertEquals("medication-missed:" + TASK_ID + ":2:" + FAMILY_ID + ":2026-11-03",
+                inserted.getAllValues().get(1).getDedupKey(), "L2 键必须带 level=2，否则被 L1 的键去重掉");
+        verify(smsSender, times(2)).send(eq(PHONE), eq(TEMPLATE_CODE), any());
+    }
+
+    @Test
     @DisplayName("同一 task 两位开启短信的家属 → 各收到一条，幂等键含 userId")
     void shouldSendOnePerFamilyForSameTask() {
         service.enqueueMissedDose(task, List.of(FAMILY_ID, FAMILY_ID_2));
@@ -222,8 +238,8 @@ class SmsReminderServiceTest {
         List<SmsSendLog> rows = inserted.getAllValues();
         assertEquals(FAMILY_ID, rows.get(0).getUserId());
         assertEquals(FAMILY_ID_2, rows.get(1).getUserId());
-        assertEquals("medication-missed:" + TASK_ID + ":101:2026-11-03", rows.get(0).getDedupKey());
-        assertEquals("medication-missed:" + TASK_ID + ":102:2026-11-03", rows.get(1).getDedupKey());
+        assertEquals("medication-missed:" + TASK_ID + ":1:" + FAMILY_ID + ":2026-11-03", rows.get(0).getDedupKey());
+        assertEquals("medication-missed:" + TASK_ID + ":1:" + FAMILY_ID_2 + ":2026-11-03", rows.get(1).getDedupKey());
         assertEquals(MASKED_PHONE, rows.get(0).getPhoneMasked());
         assertEquals(MASKED_PHONE_2, rows.get(1).getPhoneMasked());
 
@@ -232,11 +248,14 @@ class SmsReminderServiceTest {
     }
 
     @Test
-    @DisplayName("同一家属当日已达频控上限 → 后续任务不再入队、不发送")
+    @DisplayName("同一家属当日已达频控上限 → 后续任务不再入队、不发送（V4 旧键按 L1 计）")
     void shouldBlockWhenDailyCapReached() {
         properties.getFrequency().setMissedDoseDailyCap(2);
-        // 第一次：当日 0 条 → 正常入队；第二次：当日已 2 条（= 上限）→ 拦截
-        when(smsSendLogMapper.selectCount(any())).thenReturn(0L, 2L);
+        // 第一次：当日 0 条 → 正常入队；第二次：当日已 2 条 level=1（= 上限）→ 拦截。
+        // 行用 V4 旧键格式（无 level 段）——迁移当天的历史回执必须继续占 L1 额度
+        SmsSendLog legacyA = receipt("medication-missed:20001:101:2026-11-03");
+        SmsSendLog legacyB = receipt("medication-missed:20003:101:2026-11-03");
+        when(smsSendLogMapper.selectList(any())).thenReturn(List.of(), List.of(legacyA, legacyB));
 
         service.enqueueMissedDose(task, List.of(FAMILY_ID));
 
@@ -252,17 +271,33 @@ class SmsReminderServiceTest {
     }
 
     @Test
+    @DisplayName("V5 · A3：每级每收件人独立日上限 —— L1 打满不影响 L2")
+    void shouldCountDailyCapPerLevel() {
+        properties.getFrequency().setMissedDoseDailyCap(2);
+        // 当日已有 2 条 level=1 回执（L1 打满），level=2 为 0 条
+        SmsSendLog level1A = receipt("medication-missed:20001:1:101:2026-11-03");
+        SmsSendLog level1B = receipt("medication-missed:20003:1:101:2026-11-03");
+        when(smsSendLogMapper.selectList(any())).thenReturn(List.of(level1A, level1B));
+
+        service.enqueueMissedDose(task, List.of(FAMILY_ID)); // L1 → 打满，拦
+        service.enqueueMissedDose(task, List.of(FAMILY_ID), ReminderLevelPolicy.LEVEL_COMPANION); // L2 → 放行
+
+        verify(smsSendLogMapper, times(1)).insert(any(SmsSendLog.class));
+        verify(smsSender, times(1)).send(eq(PHONE), eq(TEMPLATE_CODE), any());
+    }
+
+    @Test
     @DisplayName("频控只计有效任务：历史孤儿行不再阻塞发送（排除 VOIDED 且限定任务仍存在）")
     void dailyCapShouldIgnoreOrphanAndVoidedRows() {
         properties.getFrequency().setMissedDoseDailyCap(1);
-        // 孤儿行不会被这条 SQL 计入，因此 selectCount 返回 0 → 正常发送
-        when(smsSendLogMapper.selectCount(any())).thenReturn(0L);
+        // 孤儿行不会被这条 SQL 计入，因此 selectList 返回空 → 正常发送
+        when(smsSendLogMapper.selectList(any())).thenReturn(List.of());
 
         service.enqueueMissedDose(task, List.of(FAMILY_ID));
 
         @SuppressWarnings({"unchecked", "rawtypes"})
         ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
-        verify(smsSendLogMapper).selectCount(captor.capture());
+        verify(smsSendLogMapper).selectList(captor.capture());
         String sql = captor.getValue().getSqlSegment().replaceAll("\\s+", " ");
         assertTrue(sql.contains("status <> "), "作废回执必须排除: " + sql);
         assertTrue(sql.contains("biz_id IN (SELECT id FROM medication_task WHERE deleted = 0)"),
@@ -408,6 +443,13 @@ class SmsReminderServiceTest {
     }
 
     /* ------------------------------------------------------------------ */
+
+    /** 一条当日漏服短信回执（只带频控需要的 dedup_key） */
+    private SmsSendLog receipt(String dedupKey) {
+        SmsSendLog row = new SmsSendLog();
+        row.setDedupKey(dedupKey);
+        return row;
+    }
 
     private SmsReminderService serviceWithClock(LocalDateTime now) {
         return new SmsReminderService(preferenceMapper, smsSendLogMapper, sysUserMapper,

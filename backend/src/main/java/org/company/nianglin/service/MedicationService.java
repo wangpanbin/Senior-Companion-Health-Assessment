@@ -108,12 +108,13 @@ public interface MedicationService {
     int generateDailyTasks(LocalDate date);
 
     /**
-     * 扫描超时未确认的任务，置为漏服并推送家属站内信。
+     * 扫描超时未确认的任务置为漏服，并按升级级别派发提醒（V5 多级升级）。
      *
-     * <p>幂等靠 {@code notify_sent} 标记：同一条任务只推一次，
-     * 否则每 30 分钟一轮，家属会被同一条漏服消息刷屏。</p>
+     * <p>幂等两层：认领（PENDING→MISSED 条件更新）保证判定不重复；
+     * {@code notify_level} 保证同一级别对同一条任务只派发一次，
+     * 否则每 30 分钟一轮，收件人会被同一条漏服消息刷屏。</p>
      *
-     * @return 本轮新判定为漏服的任务条数
+     * @return 本轮新判定为漏服的任务条数（升级派发单独记日志，不计入）
      */
     int scanMissedTasks();
 }

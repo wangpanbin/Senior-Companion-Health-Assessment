@@ -39,6 +39,16 @@ public enum MessageType {
      * 禁含剂量（发送前过 {@code ComplianceCheckUtil} 词表）。</p>
      */
     MEDICATION_MISSED("漏服提醒", MessageBizType.MEDICATION),
+    /**
+     * 漏服三级升级的 L3（V5）：发给<b>全部管理员</b>，{@code bizId=elderId}，
+     * 仅站内信不入短信队列。
+     *
+     * <p>与 {@link #MEDICATION_MISSED} 分开成独立类型：接收人完全不同
+     * （管理员不是当事人），文案要陈述的是「24 小时无人确认」这个升级事实，
+     * 挤在一个类型里会让管理员的消息筛选失效。文案只含药名与时间，
+     * 禁含剂量（发送前过 {@code ComplianceCheckUtil} 词表）。</p>
+     */
+    MEDICATION_ESCALATED("漏服升级提醒", MessageBizType.MEDICATION),
     COMPLAINT_SUBMITTED("新投诉待处理", MessageBizType.COMPLAINT),
     COMPLAINT_HANDLED("投诉处理结果", MessageBizType.COMPLAINT),
     /**

@@ -18,6 +18,7 @@ import org.company.nianglin.mapper.MedicationTaskMapper;
 import org.company.nianglin.mapper.NotificationPreferenceMapper;
 import org.company.nianglin.mapper.SmsSendLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
+import org.company.nianglin.service.support.medication.ReminderLevelPolicy;
 import org.company.nianglin.service.OperationParamService;
 import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MaskUtil;
@@ -112,49 +113,70 @@ public class SmsReminderService {
     private OperationParamService operationParamService;
 
     /**
-     * 把一条漏服任务的站外短信入队。
+     * 把一条漏服任务的站外短信入队（V4 入口：等价 L1 家属级）。
      *
      * <p>由 {@code InternalMessageReminderDispatcher#notifyFamily} 在站内信发送之后调用；
-     * 本方法<b>不抛出异常</b>，任何单个家属失败都只影响他自己那条短信。</p>
+     * 本方法<b>不抛出异常</b>，任何单个收件人失败都只影响他自己那条短信。</p>
      *
      * @param task      已判定为漏服的服药任务
      * @param familyIds 有效绑定家属 ID（调用方已过滤空值与去重）
      */
     public void enqueueMissedDose(MedicationTask task, List<Long> familyIds) {
-        if (task == null || task.getId() == null || familyIds == null || familyIds.isEmpty()) {
+        enqueueMissedDose(task, familyIds, ReminderLevelPolicy.LEVEL_FAMILY);
+    }
+
+    /**
+     * 按升级级别把漏服短信入队（V5 · A3）。
+     *
+     * <p>级别真实生效的两处：<b>① dedup 键含 level</b> —— 同任务同日的 L1/L2 各发一次，
+     * 不会互相去重；<b>② 日上限按「收件人 + 场景 + 级别」独立计数</b> ——
+     * L1 打满不拦 L2。级别之外的编排（偏好 / 合规 / 静默 / 退避 / 死信）与 L1 完全一致。</p>
+     *
+     * <p>本方法<b>不抛出异常</b>，任何单个收件人失败都只影响他自己那条短信。</p>
+     *
+     * @param task       已判定为漏服的服药任务
+     * @param recipients 收件人 ID（家属或当天陪诊员，调用方已过滤空值与去重）
+     * @param level      升级级别（1=L1 家属 / 2=L2 陪诊员；L3 不发短信）
+     */
+    public void enqueueMissedDose(MedicationTask task, List<Long> recipients, int level) {
+        if (task == null || task.getId() == null || recipients == null || recipients.isEmpty()) {
             return;
         }
         LocalDateTime now = LocalDateTime.now(clock);
         LocalDate today = now.toLocalDate();
         Map<String, Object> params = buildContentParams(task);
-        String content = MessageTemplateUtil.content(MessageType.MEDICATION_REMIND, params);
+        // 合规代理文案按级别取模板：L2 收件人是陪诊员，用 MEDICATION_MISSED 句式做词表扫描
+        MessageType contentTemplate = level >= ReminderLevelPolicy.LEVEL_COMPANION
+                ? MessageType.MEDICATION_MISSED : MessageType.MEDICATION_REMIND;
+        String content = MessageTemplateUtil.content(contentTemplate, params);
         String complianceHit = ComplianceCheckUtil.firstHit(content);
 
-        for (Long familyId : familyIds) {
-            if (familyId == null) {
+        for (Long recipientId : recipients) {
+            if (recipientId == null) {
                 continue;
             }
-            // 幂等键按「任务 + 家属 + 日期」生成：同一任务下每位家属各发一条
-            String dedupKey = buildDedupKey(task.getId(), familyId, today);
+            // 幂等键按「任务 + 级别 + 收件人 + 日期」生成：同任务同日各发一次，但 L1/L2 不互相吞
+            String dedupKey = buildDedupKey(task.getId(), recipientId, level, today);
             try {
-                NotificationPreference preference = loadPreference(familyId);
+                NotificationPreference preference = loadPreference(recipientId);
                 if (isSmsDisabled(preference)) {
-                    log.info("家属已关闭漏服站外短信，跳过发送 | taskId={} | familyId={}", task.getId(), familyId);
+                    log.info("收件人已关闭漏服站外短信，跳过发送 | taskId={} | recipientId={}",
+                            task.getId(), recipientId);
                     continue;
                 }
                 if (complianceHit != null) {
-                    if (insertComplianceDead(task, familyId, dedupKey, complianceHit, now)) {
-                        log.error("漏服短信文案命中合规词「{}」，已进入死信 | taskId={} | familyId={}",
-                                complianceHit, task.getId(), familyId);
+                    if (insertComplianceDead(task, recipientId, dedupKey, complianceHit, now)) {
+                        log.error("漏服短信文案命中合规词「{}」，已进入死信 | taskId={} | recipientId={}",
+                                complianceHit, task.getId(), recipientId);
                     }
                     continue;
                 }
-                if (isDailyCapReached(familyId, now)) {
-                    log.info("家属当日漏服短信已达上限，跳过 | taskId={} | familyId={} | cap={}",
-                            task.getId(), familyId, effectiveMissedDoseDailyCap());
+                if (isDailyCapReached(recipientId, now, level)) {
+                    log.info("收件人当日该级别漏服短信已达上限，跳过 | taskId={} | recipientId={} | level={} | cap={}",
+                            task.getId(), recipientId, level, effectiveMissedDoseDailyCap());
                     continue;
                 }
-                SmsSendLog row = buildPendingRow(task, familyId, dedupKey, now);
+                SmsSendLog row = buildPendingRow(task, recipientId, dedupKey, now);
                 if (!insertIgnoreDuplicate(row)) {
                     log.info("漏服短信已入队（幂等键冲突），跳过重复发送 | taskId={} | dedupKey={}",
                             task.getId(), dedupKey);
@@ -163,15 +185,15 @@ public class SmsReminderService {
                 if (isQuietHours(now, isQuietEnabled(preference))) {
                     row.setNextRetryAt(nextQuietEnd(now));
                     persist(row);
-                    log.info("处于静默时段，漏服短信顺延 | taskId={} | familyId={} | nextRetryAt={}",
-                            task.getId(), familyId, row.getNextRetryAt());
+                    log.info("处于静默时段，漏服短信顺延 | taskId={} | recipientId={} | nextRetryAt={}",
+                            task.getId(), recipientId, row.getNextRetryAt());
                     continue;
                 }
                 attemptSend(row, params);
             } catch (Exception e) {
-                // 单家属失败不能影响其它家属，更不能影响已完成的站内信
-                log.warn("漏服短信编排失败（已隔离） | taskId={} | familyId={} | {}",
-                        task.getId(), familyId, e.getMessage());
+                // 单收件人失败不能影响其它收件人，更不能影响已完成的站内信
+                log.warn("漏服短信编排失败（已隔离） | taskId={} | recipientId={} | {}",
+                        task.getId(), recipientId, e.getMessage());
             }
         }
     }
@@ -273,28 +295,61 @@ public class SmsReminderService {
     }
 
     /**
-     * 单用户单日频控：当日该场景仍有效任务的回执行数达到上限即拦截。
+     * 单收件人单日<b>按级</b>频控：当日该场景该级别仍有效任务的回执行数达到上限即拦截。
      *
      * <p>计数口径是「行」而不是「发送成功数」——静默顺延与失败的短信同样占额度，
-     * 否则夜间排队 + 次日补偿会把 N 条上限瞬间放大成 2N 条。站内信不受此限。</p>
+     * 否则夜间排队 + 次日补偿会把 N 条上限瞬间放大成 2N 条。站内信不受此限。
+     * L1 打满不拦 L2 —— 每级各自一份额度（V5 · A3）。</p>
      *
      * <p><b>只计有效任务</b>（V4 缺陷修复）：任务被删除 / 停用后，其回执即使仍是
      * {@code PENDING} / {@code FAILED} 也不再占额度。两道保险：
      * ① 删除路径会把未发送回执置 {@code VOIDED}；
      * ② 这里再用 {@code biz_id IN (SELECT id FROM medication_task WHERE deleted = 0)}
      * 兜底，历史孤儿行（任务已不存在）不会再阻塞后续发送。</p>
+     *
+     * <p>级别在 Java 侧从 {@code dedup_key} 解析而不是加列：当日行数 = 上限 × 级别数
+     * （个位数），不值得为此开一次迁移（功能拓展规划 §2.1「零迁移成本更低」）。</p>
      */
-    private boolean isDailyCapReached(Long familyId, LocalDateTime now) {
-        long todayCount = smsSendLogMapper.selectCount(
+    private boolean isDailyCapReached(Long recipientId, LocalDateTime now, int level) {
+        List<SmsSendLog> todayRows = smsSendLogMapper.selectList(
                 Wrappers.<SmsSendLog>lambdaQuery()
-                        .eq(SmsSendLog::getUserId, familyId)
+                        .eq(SmsSendLog::getUserId, recipientId)
                         .eq(SmsSendLog::getScene, SmsScene.MISSED_DOSE.getKey())
                         .ne(SmsSendLog::getStatus, STATUS_VOIDED)
                         .ge(SmsSendLog::getCreateTime, now.toLocalDate().atStartOfDay())
                         // 只计仍存在（未逻辑删除）的用药任务回执
                         .inSql(SmsSendLog::getBizId,
-                                "SELECT id FROM medication_task WHERE deleted = 0"));
-        return todayCount >= effectiveMissedDoseDailyCap();
+                                "SELECT id FROM medication_task WHERE deleted = 0")
+                        .select(SmsSendLog::getDedupKey));
+        long levelCount = todayRows.stream()
+                .filter(row -> levelOf(row.getDedupKey()) == level)
+                .count();
+        return levelCount >= effectiveMissedDoseDailyCap();
+    }
+
+    /**
+     * 从 {@code dedup_key} 解析升级级别。
+     *
+     * <p>V5 新键 {@code medication-missed:{taskId}:{level}:{userId}:{date}} 取第 3 段；
+     * V4 旧键（4 段、无 level）按 L1 计 —— 迁移当天的历史回执必须继续占 L1 额度，
+     * 否则上线瞬间 L1 额度会被清零重发。</p>
+     */
+    private static int levelOf(String dedupKey) {
+        if (dedupKey == null) {
+            return ReminderLevelPolicy.LEVEL_NONE;
+        }
+        String[] parts = dedupKey.split(":");
+        if (parts.length == 4) {
+            return ReminderLevelPolicy.LEVEL_FAMILY;
+        }
+        if (parts.length < 5) {
+            return ReminderLevelPolicy.LEVEL_NONE;
+        }
+        try {
+            return Integer.parseInt(parts[2]);
+        } catch (NumberFormatException e) {
+            return ReminderLevelPolicy.LEVEL_NONE;
+        }
     }
 
     /** 运营参数优先；纯单测无 Spring 注入时回落 SmsProperties */
@@ -486,8 +541,9 @@ public class SmsReminderService {
         return value == null ? "" : value.toString();
     }
 
-    private static String buildDedupKey(Long taskId, Long familyId, LocalDate date) {
-        return "medication-missed:" + taskId + ":" + familyId + ":"
+    /** V5 · A3：键含 level —— 同任务同日不同级别各一条；level 段缺失的 V4 旧键按 L1 计（levelOf） */
+    private static String buildDedupKey(Long taskId, Long recipientId, int level, LocalDate date) {
+        return "medication-missed:" + taskId + ":" + level + ":" + recipientId + ":"
                 + date.format(DateTimeFormatter.ISO_LOCAL_DATE);
     }
 

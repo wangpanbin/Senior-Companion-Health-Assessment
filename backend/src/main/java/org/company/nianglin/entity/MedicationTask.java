@@ -110,6 +110,12 @@ public class MedicationTask extends BaseEntity {
     private Integer notifySent;
 
     /**
+     * 升级级别（V5 多级升级）：0=未通知 1=L1家属 2=L2陪诊员 3=L3管理员
+     */
+    @Schema(description = "升级级别：0=未通知 1=L1家属 2=L2陪诊员 3=L3管理员")
+    private Integer notifyLevel;
+
+    /**
      * 提醒推送时间
      */
     @Schema(description = "提醒推送时间")
