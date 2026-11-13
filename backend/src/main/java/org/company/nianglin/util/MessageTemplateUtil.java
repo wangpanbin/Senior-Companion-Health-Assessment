@@ -50,6 +50,7 @@ public final class MessageTemplateUtil {
             case AUDIT_RESULT -> "资质审核结果";
             case MEDICATION_REMIND -> "用药提醒";
             case MEDICATION_MISSED -> "漏服提醒";
+            case MEDICATION_ESCALATED -> "漏服升级提醒";
             case COMPLAINT_SUBMITTED -> "新投诉待处理";
             case COMPLAINT_HANDLED -> "投诉处理结果";
             case REVIEW_REPLIED -> "评价被回复";
@@ -107,6 +108,9 @@ public final class MessageTemplateUtil {
                     value(p, "elderName"), value(p, "medicineName"), value(p, "planTime"));
             case MEDICATION_MISSED -> "您正在陪诊的 %s 在 %s 未确认服用「%s」，请留意。".formatted(
                     value(p, "elderName"), value(p, "planTime"), value(p, "medicineName"));
+            // L3 的事实陈述：只说「24 小时无人确认」，不做任何判断或建议（红线-1）
+            case MEDICATION_ESCALATED -> "%s 的「%s」在 %s 已超过 24 小时未确认服用，请关注。".formatted(
+                    value(p, "elderName"), value(p, "medicineName"), value(p, "planTime"));
             case COMPLAINT_SUBMITTED -> "%s 就订单 %s 提交了投诉（%s），请及时处理。".formatted(
                     value(p, "submitterName"), value(p, "orderNo"), value(p, "typeLabel"));
             case COMPLAINT_HANDLED -> "您提交的投诉（%s）已处理完成：%s".formatted(
@@ -201,7 +205,7 @@ public final class MessageTemplateUtil {
             // 本人在该页重新提交材料，管理员从消息中心进入（MessageDetail 不走 linkUrl）
             case HEALTH_CERT_EXPIRING -> "/profile/companion";
             case COMPLAINT_HANDLED -> "/complaint/" + bizId;
-            case SYSTEM_NOTICE -> null;
+            case SYSTEM_NOTICE, MEDICATION_ESCALATED -> null;
         };
     }
 

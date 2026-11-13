@@ -1,12 +1,15 @@
 package org.company.nianglin.service.support.medication;
 
 import org.company.nianglin.constant.MessageType;
+import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.FamilyElderRelation;
 import org.company.nianglin.entity.MedicationTask;
+import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.ElderProfileMapper;
 import org.company.nianglin.mapper.FamilyElderRelationMapper;
+import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.sms.SmsReminderService;
 import org.company.nianglin.support.MybatisLambdaCache;
@@ -23,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -45,6 +49,9 @@ class InternalMessageReminderDispatcherTest {
     private static final long ELDER_ID = 401L;
     private static final long TASK_ID = 20002L;
     private static final long FAMILY_ID = 101L;
+    private static final long COMPANION_ID = 301L;
+    private static final long ORDER_ID = 2001L;
+    private static final long ADMIN_ID = 901L;
 
     @Mock
     private MessageService messageService;
@@ -56,6 +63,8 @@ class InternalMessageReminderDispatcherTest {
     private CompanionOrderMapper orderMapper;
     @Mock
     private SmsReminderService smsReminderService;
+    @Mock
+    private SysUserMapper sysUserMapper;
 
     private InternalMessageReminderDispatcher dispatcher;
 
@@ -64,7 +73,7 @@ class InternalMessageReminderDispatcherTest {
         // 纯 Mockito 单测不起 Spring 容器，lambda 列名缓存是空的
         MybatisLambdaCache.warmUp();
         dispatcher = new InternalMessageReminderDispatcher(
-                messageService, elderMapper, relationMapper, orderMapper, smsReminderService);
+                messageService, elderMapper, relationMapper, orderMapper, smsReminderService, sysUserMapper);
 
         ElderProfile elder = new ElderProfile();
         elder.setId(ELDER_ID);
@@ -97,7 +106,7 @@ class InternalMessageReminderDispatcherTest {
                 .when(messageService).sendBatch(anyList(), eq(MessageType.MEDICATION_REMIND),
                         eq(ELDER_ID), any());
 
-        dispatcher.dispatchMissedReminder(task);
+        dispatcher.dispatchMissedReminder(task, ReminderLevelPolicy.LEVEL_FAMILY);
 
         verify(smsReminderService).enqueueMissedDose(eq(task), eq(List.of(FAMILY_ID)));
     }
@@ -109,7 +118,7 @@ class InternalMessageReminderDispatcherTest {
         doThrow(new IllegalStateException("短信模板未配置"))
                 .when(smsReminderService).enqueueMissedDose(any(), anyList());
 
-        dispatcher.dispatchMissedReminder(task);
+        dispatcher.dispatchMissedReminder(task, ReminderLevelPolicy.LEVEL_FAMILY);
 
         verify(messageService).sendBatch(eq(List.of(FAMILY_ID)), eq(MessageType.MEDICATION_REMIND),
                 eq(ELDER_ID), any());
@@ -121,9 +130,55 @@ class InternalMessageReminderDispatcherTest {
         MedicationTask task = task();
         when(relationMapper.selectList(any())).thenThrow(new RuntimeException("关系表查询失败"));
 
-        dispatcher.dispatchMissedReminder(task);
+        dispatcher.dispatchMissedReminder(task, ReminderLevelPolicy.LEVEL_FAMILY);
 
         verify(messageService, never()).sendBatch(anyList(), any(), any(), any());
         verify(smsReminderService, never()).enqueueMissedDose(any(), anyList());
+    }
+
+    @Test
+    @DisplayName("L2 只触达当天陪诊员：站内信 + 短信（level=2），家属通道不开")
+    void level2DispatchesToOnDutyCompanionOnly() {
+        MedicationTask task = task();
+        CompanionOrder order = new CompanionOrder();
+        order.setId(ORDER_ID);
+        order.setCompanionId(COMPANION_ID);
+        order.setStatus("ACCEPTED");
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+
+        dispatcher.dispatchMissedReminder(task, ReminderLevelPolicy.LEVEL_COMPANION);
+
+        verify(messageService).send(eq(COMPANION_ID), eq(MessageType.MEDICATION_MISSED), eq(ORDER_ID), any());
+        verify(messageService, never()).sendBatch(anyList(), any(), any(), any());
+        verify(smsReminderService).enqueueMissedDose(eq(task), eq(List.of(COMPANION_ID)),
+                eq(ReminderLevelPolicy.LEVEL_COMPANION));
+    }
+
+    @Test
+    @DisplayName("L3 只触达全部管理员：仅站内信，短信队列不开、家属通道不开")
+    void level3DispatchesToAdminsOnlyWithoutSms() {
+        MedicationTask task = task();
+        SysUser admin = new SysUser();
+        admin.setId(ADMIN_ID);
+        when(sysUserMapper.selectList(any())).thenReturn(List.of(admin));
+
+        dispatcher.dispatchMissedReminder(task, ReminderLevelPolicy.LEVEL_ADMIN);
+
+        verify(messageService).sendBatch(eq(List.of(ADMIN_ID)), eq(MessageType.MEDICATION_ESCALATED),
+                eq(ELDER_ID), any());
+        verify(messageService, never()).sendBatch(anyList(), eq(MessageType.MEDICATION_REMIND), any(), any());
+        verify(smsReminderService, never()).enqueueMissedDose(any(), anyList());
+        verify(smsReminderService, never()).enqueueMissedDose(any(), anyList(), anyInt());
+    }
+
+    @Test
+    @DisplayName("L3 系统无管理员账号 → 不发不炸")
+    void level3ToleratesNoAdminAccounts() {
+        MedicationTask task = task();
+        when(sysUserMapper.selectList(any())).thenReturn(List.of());
+
+        dispatcher.dispatchMissedReminder(task, ReminderLevelPolicy.LEVEL_ADMIN);
+
+        verify(messageService, never()).sendBatch(anyList(), any(), any(), any());
     }
 }

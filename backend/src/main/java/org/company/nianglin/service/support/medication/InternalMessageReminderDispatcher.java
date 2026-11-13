@@ -6,13 +6,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.constant.BindStatus;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OrderStatus;
+import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.FamilyElderRelation;
 import org.company.nianglin.entity.MedicationTask;
+import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.ElderProfileMapper;
 import org.company.nianglin.mapper.FamilyElderRelationMapper;
+import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.sms.SmsReminderService;
 import org.company.nianglin.util.ComplianceCheckUtil;
@@ -30,17 +33,18 @@ import java.util.Objects;
 /**
  * 漏服提醒的站内信实现（{@link ReminderDispatcher} 的默认渠道）。
  *
- * <h3>触达规则（docs/api/05-medication.md §2.1）</h3>
+ * <h3>触达规则（docs/api/05-medication.md §2.1 · V5 多级升级）</h3>
  *
- * <ol>
- *   <li><b>家属</b>：全部有效绑定家属都推（{@code MEDICATION_REMIND}），
- *       逻辑与 M6 原 {@code notifyFamily} 一致 —— 多推几条的代价远小于谁都没看到。</li>
- *   <li><b>陪诊员</b>（V4 · E1a 新增）：老人<b>当天</b>（按 {@code visit_time}
- *       落在当日区间判定）有 {@code ACCEPTED} / {@code IN_SERVICE} 订单时，
- *       向该单接单陪诊员推 {@code MEDICATION_MISSED}，{@code bizId=orderId}，
- *       点击跳陪诊员订单执行页。{@code PENDING} 订单不算 —— 还没接单，
- *       提醒一个「可能根本不会出现的人」没有意义。</li>
- * </ol>
+ * <ul>
+ *   <li><b>L1 家属</b>：全部有效绑定家属推 {@code MEDICATION_REMIND} + 短信
+ *       —— 逻辑与 M6 原 {@code notifyFamily} 一致，多推几条的代价远小于谁都没看到；</li>
+ *   <li><b>L2 陪诊员</b>：老人<b>当天</b>（按 {@code visit_time} 落在当日区间判定）有
+ *       {@code ACCEPTED} / {@code IN_SERVICE} 订单时，向该单接单陪诊员推
+ *       {@code MEDICATION_MISSED} + 短信，{@code bizId=orderId}，点击跳陪诊员订单执行页。
+ *       {@code PENDING} 订单不算 —— 还没接单，提醒一个「可能根本不会出现的人」没有意义；</li>
+ *   <li><b>L3 管理员</b>：全部管理员推 {@code MEDICATION_ESCALATED}，<b>仅站内信</b>
+ *       —— 管理员的入口是后台处置而不是短信，把升级当短信发只会变成噪音。</li>
+ * </ul>
  *
  * <h3>文案合规闸</h3>
  *
@@ -66,9 +70,10 @@ public class InternalMessageReminderDispatcher implements ReminderDispatcher {
     private final FamilyElderRelationMapper relationMapper;
     private final CompanionOrderMapper orderMapper;
     private final SmsReminderService smsReminderService;
+    private final SysUserMapper sysUserMapper;
 
     @Override
-    public void dispatchMissedReminder(MedicationTask task) {
+    public void dispatchMissedReminder(MedicationTask task, int level) {
         ElderProfile elder = elderMapper.selectById(task.getElderId());
 
         Map<String, Object> params = new HashMap<>(4);
@@ -79,19 +84,24 @@ public class InternalMessageReminderDispatcher implements ReminderDispatcher {
         params.put("planTime", task.getPlanTime() == null ? null
                 : task.getPlanTime().format(DateTimeFormatter.ofPattern("MM-dd HH:mm")));
 
-        List<Long> familyIds = notifyFamily(task, params);
-        notifyOnDutyCompanion(task, params, familyIds);
+        // 按级路由：每级只触达该级收件人，不重复抄送前级（V5 · §2.1）
+        switch (level) {
+            case ReminderLevelPolicy.LEVEL_FAMILY -> notifyFamily(task, params);
+            case ReminderLevelPolicy.LEVEL_COMPANION ->
+                    notifyOnDutyCompanion(task, params, queryFamilyIds(task));
+            case ReminderLevelPolicy.LEVEL_ADMIN -> notifyAdmins(task, params);
+            default -> log.warn("未知的漏服升级级别，跳过触达 | taskId={} | level={}", task.getId(), level);
+        }
     }
 
     /**
-     * 给该老人所有有效绑定的家属推送漏服提醒（原 M6 逻辑迁入）。
+     * 查询该老人全部有效绑定家属（L1 收件人与 L2 的排除名单同源）。
      *
-     * @return 实际触达（意图发送）的家属 ID 列表，供陪诊员侧排除重复接收人
+     * <p>查询失败返回空列表：收件人拿不到时宁可不发，也不猜人。</p>
      */
-    private List<Long> notifyFamily(MedicationTask task, Map<String, Object> params) {
-        List<Long> familyIds;
+    private List<Long> queryFamilyIds(MedicationTask task) {
         try {
-            familyIds = relationMapper.selectList(Wrappers.<FamilyElderRelation>lambdaQuery()
+            return relationMapper.selectList(Wrappers.<FamilyElderRelation>lambdaQuery()
                             .eq(FamilyElderRelation::getElderId, task.getElderId())
                             .eq(FamilyElderRelation::getStatus, BindStatus.BOUND.name())
                             // 只取需要推送的列，避免把整行（含关系备注等）读进内存
@@ -105,11 +115,17 @@ public class InternalMessageReminderDispatcher implements ReminderDispatcher {
             log.warn("漏服提醒收件人查询失败（不影响漏服判定） | taskId={} | {}", task.getId(), e.getMessage());
             return List.of();
         }
+    }
 
+    /**
+     * L1：给该老人所有有效绑定的家属推送漏服提醒（原 M6 逻辑迁入）。
+     */
+    private void notifyFamily(MedicationTask task, Map<String, Object> params) {
+        List<Long> familyIds = queryFamilyIds(task);
         if (familyIds.isEmpty()) {
             log.warn("漏服提醒无家属接收人（该老人已无绑定家属） | taskId={} | elderId={}",
                     task.getId(), task.getElderId());
-            return List.of();
+            return;
         }
 
         // 站内信与站外短信各自 try/catch：任一渠道失败都不该让另一渠道跟着不发
@@ -122,7 +138,6 @@ public class InternalMessageReminderDispatcher implements ReminderDispatcher {
                     task.getId(), e.getMessage());
         }
         enqueueSmsQuietly(task, familyIds);
-        return familyIds;
     }
 
     /**
@@ -134,6 +149,16 @@ public class InternalMessageReminderDispatcher implements ReminderDispatcher {
     private void enqueueSmsQuietly(MedicationTask task, List<Long> familyIds) {
         try {
             smsReminderService.enqueueMissedDose(task, familyIds);
+        } catch (Exception e) {
+            log.warn("漏服短信编排失败（不影响站内信与漏服判定） | taskId={} | {}",
+                    task.getId(), e.getMessage());
+        }
+    }
+
+    /** L2 陪诊员侧的短信入队（带升级级别，V5） */
+    private void enqueueSmsQuietly(MedicationTask task, List<Long> recipients, int level) {
+        try {
+            smsReminderService.enqueueMissedDose(task, recipients, level);
         } catch (Exception e) {
             log.warn("漏服短信编排失败（不影响站内信与漏服判定） | taskId={} | {}",
                     task.getId(), e.getMessage());
@@ -178,10 +203,43 @@ public class InternalMessageReminderDispatcher implements ReminderDispatcher {
                     continue;
                 }
                 messageService.send(companionId, MessageType.MEDICATION_MISSED, order.getId(), params);
+                // V5 · L2：站外短信与站内信同批出站（级别进 dedup/日上限，V5 · A3 收敛）
+                enqueueSmsQuietly(task, List.of(companionId), ReminderLevelPolicy.LEVEL_COMPANION);
                 log.info("漏服提醒已同步陪诊员 | taskId={} | orderId={}", task.getId(), order.getId());
             }
         } catch (Exception e) {
             log.warn("漏服提醒（陪诊员侧）推送失败（不影响漏服判定） | taskId={} | {}", task.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * L3：把 24 小时未确认的漏服升级给全部管理员（仅站内信，V5）。
+     *
+     * <p>管理员账号在系统里数量极少（一期就几个），群发成本可忽略 ——
+     * 与投诉通知同法。不入短信队列：管理员的处置入口是后台而不是短信。</p>
+     */
+    private void notifyAdmins(MedicationTask task, Map<String, Object> params) {
+        try {
+            List<Long> adminIds = sysUserMapper.selectList(Wrappers.<SysUser>lambdaQuery()
+                            .eq(SysUser::getRole, RoleConstants.ADMIN)
+                            .select(SysUser::getId))
+                    .stream().map(SysUser::getId).toList();
+            if (adminIds.isEmpty()) {
+                log.warn("漏服升级提醒无管理员接收人 | taskId={}", task.getId());
+                return;
+            }
+            // 合规闸：管理员侧文案同样是动态拼接（药名 + 时间），出站前过词表（红线-1）
+            String hit = ComplianceCheckUtil.firstHit(
+                    MessageTemplateUtil.content(MessageType.MEDICATION_ESCALATED, params));
+            if (hit != null) {
+                log.error("漏服升级提醒文案命中合规词「{}」，已拦截 | taskId={}", hit, task.getId());
+                return;
+            }
+            // bizId 传 elderId：与家属侧同域（消息中心统一走详情页，不按 linkUrl 导航）
+            messageService.sendBatch(adminIds, MessageType.MEDICATION_ESCALATED, task.getElderId(), params);
+            log.info("漏服提醒已升级至管理员 | taskId={} | 管理员数={}", task.getId(), adminIds.size());
+        } catch (Exception e) {
+            log.warn("漏服升级提醒推送失败（不影响漏服判定） | taskId={} | {}", task.getId(), e.getMessage());
         }
     }
 }

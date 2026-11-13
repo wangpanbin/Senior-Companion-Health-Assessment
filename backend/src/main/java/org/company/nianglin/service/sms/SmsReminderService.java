@@ -112,6 +112,19 @@ public class SmsReminderService {
     private OperationParamService operationParamService;
 
     /**
+     * 带升级级别的入队入口（V5 · L2 陪诊员短信）。
+     *
+     * <p><b>级别已透传、行为暂同 L1</b>：dedup 键按级别拆分与「每收件人每级日上限」
+     * 在 V5 · A3 收敛（本方法先保证编译与调用面就位，避免两个任务互相卡住）。</p>
+     *
+     * @param recipients 收件人 ID（家属或当天陪诊员，调用方已过滤空值与去重）
+     * @param level      升级级别（1=L1 家属 / 2=L2 陪诊员）
+     */
+    public void enqueueMissedDose(MedicationTask task, List<Long> recipients, int level) {
+        enqueueMissedDose(task, recipients);
+    }
+
+    /**
      * 把一条漏服任务的站外短信入队。
      *
      * <p>由 {@code InternalMessageReminderDispatcher#notifyFamily} 在站内信发送之后调用；

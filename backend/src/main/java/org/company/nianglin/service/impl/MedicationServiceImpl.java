@@ -45,6 +45,8 @@ import org.company.nianglin.service.OperationParamService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.sms.SmsReminderService;
 import org.company.nianglin.service.support.medication.ReminderDispatcher;
+import org.company.nianglin.service.support.medication.ReminderLevelPolicy;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MessageTemplateUtil;
 import org.company.nianglin.vo.MedicationCalendarVO;
@@ -621,17 +623,16 @@ public class MedicationServiceImpl implements MedicationService {
     @Transactional(rollbackFor = Exception.class)
     public int scanMissedTasks() {
         int thresholdMinutes = effectiveMissedThresholdMinutes();
-        LocalDateTime deadline = LocalDateTime.now().minusMinutes(thresholdMinutes);
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime deadline = now.minusMinutes(thresholdMinutes);
 
+        // ① 认领：PENDING 超时 → MISSED（V4 原语义）。认领本身不再直接派发 ——
+        //    该触达哪一级由下面的升级判定按「判漏服后经过的时长」统一决定（V5）
         List<MedicationTask> overdue = taskMapper.selectPage(new Page<>(1, missScanBatch),
                 Wrappers.<MedicationTask>lambdaQuery()
                         .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
                         .lt(MedicationTask::getPlanTime, deadline)
                         .orderByAsc(MedicationTask::getPlanTime)).getRecords();
-
-        if (overdue.isEmpty()) {
-            return 0;
-        }
 
         int missed = 0;
         for (MedicationTask task : overdue) {
@@ -641,14 +642,33 @@ public class MedicationServiceImpl implements MedicationService {
                     .eq(MedicationTask::getId, task.getId())
                     .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
                     .set(MedicationTask::getStatus, MedicationTaskStatus.MISSED.name()));
-            if (rows == 0) {
-                continue;
+            if (rows > 0) {
+                missed++;
             }
-            missed++;
-            dispatchMissedReminder(task);
         }
 
-        log.info("漏服扫描完成 | 阈值={} 分钟 | 判定漏服={} 条", thresholdMinutes, missed);
+        // ② 升级（V5 多级升级）：已 MISSED、未到顶的任务每轮重查 —— confirm 会把状态
+        //    改成 TAKEN，自然离开本集合；notify_level 到 3 后不再进集合，扫描成本收敛
+        List<MedicationTask> escalating = taskMapper.selectPage(new Page<>(1, missScanBatch),
+                Wrappers.<MedicationTask>lambdaQuery()
+                        .eq(MedicationTask::getStatus, MedicationTaskStatus.MISSED.name())
+                        .lt(MedicationTask::getNotifyLevel, ReminderLevelPolicy.LEVEL_ADMIN)
+                        .orderByAsc(MedicationTask::getPlanTime)).getRecords();
+
+        int dispatched = 0;
+        for (MedicationTask task : escalating) {
+            int due = ReminderLevelPolicy.dueLevel(task.getPlanTime(), thresholdMinutes, now);
+            int current = task.getNotifyLevel() == null
+                    ? ReminderLevelPolicy.LEVEL_NONE : task.getNotifyLevel();
+            if (due > current) {
+                // 单轮连升到应达级别（与 V3.1 履约风险同款口径）：历史任务不逐级补发
+                dispatchMissedReminder(task, due);
+                dispatched++;
+            }
+        }
+
+        log.info("漏服扫描完成 | 阈值={} 分钟 | 判定漏服={} 条 | 升级派发={} 条",
+                thresholdMinutes, missed, dispatched);
         return missed;
     }
 
@@ -716,6 +736,8 @@ public class MedicationServiceImpl implements MedicationService {
             task.setStatus(MedicationTaskStatus.PENDING.name());
             task.setWasMissed(0);
             task.setNotifySent(0);
+            // V5 多级升级：0=未通知，由扫描按级别推进
+            task.setNotifyLevel(0);
 
             try {
                 taskMapper.insert(task);
@@ -738,23 +760,35 @@ public class MedicationServiceImpl implements MedicationService {
     }
 
     /**
-     * 漏服提醒触达（V4 · E1a）：渠道细节下沉到 {@link ReminderDispatcher}
-     * （家属 + 当天在途订单的陪诊员，见 docs/api/05-medication.md §2.1）。
+     * 漏服提醒触达（V5 多级升级）：渠道细节下沉到 {@link ReminderDispatcher}
+     * （按级别触达，见 docs/api/05-medication.md §2.1）。
      *
-     * <p>这里只做两件事：调触达策略、写 {@code notify_sent} 标记。
+     * <p>这里只做三件事：调触达策略、把 {@code notify_level} 提到本次级别、
+     * 首级派发时补写 {@code notify_sent} / {@code notify_time}。
      * 推送失败不影响状态变更 —— 任务已经被判为漏服是事实，
-     * 不能因为一条站内信发不出去就把这个判定回滚。</p>
+     * 不能因为一条站内信发不出去就把这个判定回滚；失败时标记不写，
+     * 下一轮扫描按同一级别重试（至少一次）。</p>
      */
-    private void dispatchMissedReminder(MedicationTask task) {
+    private void dispatchMissedReminder(MedicationTask task, int level) {
         try {
-            reminderDispatcher.dispatchMissedReminder(task);
+            reminderDispatcher.dispatchMissedReminder(task, level);
 
-            taskMapper.update(null, Wrappers.<MedicationTask>lambdaUpdate()
+            int current = task.getNotifyLevel() == null
+                    ? ReminderLevelPolicy.LEVEL_NONE : task.getNotifyLevel();
+            LambdaUpdateWrapper<MedicationTask> mark = Wrappers.<MedicationTask>lambdaUpdate()
                     .eq(MedicationTask::getId, task.getId())
-                    .set(MedicationTask::getNotifySent, 1)
-                    .set(MedicationTask::getNotifyTime, LocalDateTime.now()));
+                    // 认领式：仍低于本次级别才写 —— 跨轮 / 跨实例天然幂等
+                    .lt(MedicationTask::getNotifyLevel, level)
+                    .set(MedicationTask::getNotifyLevel, level);
+            if (current == ReminderLevelPolicy.LEVEL_NONE) {
+                // notify_sent / notify_time 保持 V4 语义：只记首次提醒
+                mark.set(MedicationTask::getNotifySent, 1)
+                        .set(MedicationTask::getNotifyTime, LocalDateTime.now());
+            }
+            taskMapper.update(null, mark);
         } catch (Exception e) {
-            log.warn("漏服提醒推送失败（不影响漏服判定） | taskId={} | {}", task.getId(), e.getMessage());
+            log.warn("漏服提醒推送失败（不影响漏服判定） | taskId={} | level={} | {}",
+                    task.getId(), level, e.getMessage());
         }
     }
 

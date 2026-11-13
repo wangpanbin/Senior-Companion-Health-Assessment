@@ -1,5 +1,6 @@
 package org.company.nianglin.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,6 +29,7 @@ import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.impl.MedicationServiceImpl;
 import org.company.nianglin.service.support.medication.InternalMessageReminderDispatcher;
+import org.company.nianglin.service.support.medication.ReminderLevelPolicy;
 import org.company.nianglin.service.sms.SmsReminderService;
 import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.util.ComplianceCheckUtil;
@@ -57,6 +59,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -100,6 +104,7 @@ class MedicationServiceTest {
     private static final Long TASK_ID = 20002L;
     private static final Long MEDICINE_ID = 801L;
     private static final Long ORDER_ID = 1001L;
+    private static final Long ADMIN_ID = 901L;
 
     @Mock
     private MedicineDictMapper medicineMapper;
@@ -145,7 +150,7 @@ class MedicationServiceTest {
         // 是本测试要锁死的行为，mock 掉等于没测
         InternalMessageReminderDispatcher reminderDispatcher =
                 new InternalMessageReminderDispatcher(messageService, elderMapper, relationMapper, orderMapper,
-                        smsReminderService);
+                        smsReminderService, sysUserMapper);
         service = new MedicationServiceImpl(medicineMapper, planMapper, taskMapper, elderMapper,
                 orderMapper, sysUserMapper, elderService, reminderDispatcher,
                 new ObjectMapper(), orderService, stringRedisTemplate, smsReminderService);
@@ -474,7 +479,8 @@ class MedicationServiceTest {
         Page<MedicationTask> page = new Page<>();
         page.setRecords(List.of(overdueTask));
 
-        given(taskMapper.selectPage(any(), any())).willReturn(page);
+        // 第二次 selectPage 是升级查询：认领失败的任务仍是 PENDING，不该进升级集合
+        given(taskMapper.selectPage(any(), any())).willReturn(page, new Page<>());
         given(taskMapper.update(any(), any())).willReturn(0);
 
         assertEquals(0, service.scanMissedTasks(),
@@ -490,9 +496,10 @@ class MedicationServiceTest {
         Page<MedicationTask> page = new Page<>();
         page.setRecords(List.of(overdueTask));
 
-        given(taskMapper.selectPage(any(), any())).willReturn(page);
+        // 第二次 selectPage 是升级查询：本用例只验认领，升级集合给空页，
+        // 让「第一次 update = 认领」的断言不被 notify_level 标记的第二次 update 打乱
+        given(taskMapper.selectPage(any(), any())).willReturn(page, new Page<>());
         given(taskMapper.update(any(), any())).willReturn(1);
-        given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
 
         assertEquals(1, service.scanMissedTasks());
 
@@ -501,79 +508,125 @@ class MedicationServiceTest {
     }
 
     /* ================================================================== */
-    /* 4.1 · 漏服提醒触达闭环（V4 · E1a）：家属 + 当天在途订单的陪诊员            */
+    /* 4.1 · 漏服多级升级（V5）：L1 家属 → L2 陪诊员 → L3 管理员            */
     /* ================================================================== */
 
     @Test
-    @DisplayName("漏服触达 · 当天有 ACCEPTED 订单 → 家属与陪诊员各收一条，陪诊员侧 bizId=orderId")
-    void scanShouldNotifyCompanionWhenTodayOrderAccepted() {
+    @DisplayName("漏服升级 · L1 到点 → 只发家属（站内信 + 短信）；陪诊员未到 L2 时点不打扰")
+    void scanShouldDispatchLevel1ToFamilyWhenDue() {
         MedicationTask overdueTask = task("PENDING", ELDER_ID);
         overdueTask.setId(TASK_ID);
+        // 判漏服已 40 分钟（阈值 60 分钟）→ 落在 L1 窗口（≥ 30 分钟）
+        overdueTask.setPlanTime(LocalDateTime.now().minusMinutes(100));
         Page<MedicationTask> page = new Page<>();
         page.setRecords(List.of(overdueTask));
 
         given(taskMapper.selectPage(any(), any())).willReturn(page);
         given(taskMapper.update(any(), any())).willReturn(1);
+        given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
+        given(relationMapper.selectList(any())).willReturn(List.of(relation(FAMILY_ID)));
+
+        assertEquals(1, service.scanMissedTasks());
+
+        verify(messageService).sendBatch(anyList(), eq(MessageType.MEDICATION_REMIND), eq(ELDER_ID), any());
+        verify(messageService, never()).send(any(), eq(MessageType.MEDICATION_MISSED), any(), any());
+        verify(smsReminderService).enqueueMissedDose(any(), eq(List.of(FAMILY_ID)));
+    }
+
+    @Test
+    @DisplayName("漏服升级 · L2 到点 → 只发当天陪诊员（站内信 + 短信 level=2），家属不重复打扰")
+    void scanShouldDispatchLevel2ToCompanionWhenDue() {
+        MedicationTask missed = task("MISSED", ELDER_ID);
+        missed.setId(TASK_ID);
+        missed.setNotifyLevel(ReminderLevelPolicy.LEVEL_FAMILY); // L1 已发过
+        missed.setPlanTime(LocalDateTime.now().minusHours(3));   // 判漏服满 2 小时 → L2
+        Page<MedicationTask> claimPage = new Page<>();
+        Page<MedicationTask> escPage = new Page<>();
+        escPage.setRecords(List.of(missed));
+
+        given(taskMapper.selectPage(any(), any())).willReturn(claimPage, escPage);
         given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
         given(relationMapper.selectList(any())).willReturn(List.of(relation(FAMILY_ID)));
         given(orderMapper.selectList(any())).willReturn(List.of(order("ACCEPTED")));
 
-        assertEquals(1, service.scanMissedTasks());
+        assertEquals(0, service.scanMissedTasks(), "本轮没有新判定，只有升级");
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Long>> familyCaptor = ArgumentCaptor.forClass(List.class);
-        verify(messageService).sendBatch(familyCaptor.capture(), eq(MessageType.MEDICATION_REMIND),
+        verify(messageService).send(eq(COMPANION_ID), eq(MessageType.MEDICATION_MISSED), eq(ORDER_ID), any());
+        verify(messageService, never()).sendBatch(anyList(), eq(MessageType.MEDICATION_REMIND), any(), any());
+        verify(smsReminderService).enqueueMissedDose(any(), eq(List.of(COMPANION_ID)),
+                eq(ReminderLevelPolicy.LEVEL_COMPANION));
+    }
+
+    @Test
+    @DisplayName("漏服升级 · L3 到点 → 只发全部管理员（仅站内信），家属/陪诊员不重复、短信不入队")
+    void scanShouldDispatchLevel3ToAdminsOnlyWhenDue() {
+        MedicationTask missed = task("MISSED", ELDER_ID);
+        missed.setId(TASK_ID);
+        missed.setNotifyLevel(ReminderLevelPolicy.LEVEL_COMPANION); // L1/L2 已发过
+        missed.setPlanTime(LocalDateTime.now().minusHours(30));      // 判漏服满 24 小时 → L3
+        Page<MedicationTask> claimPage = new Page<>();
+        Page<MedicationTask> escPage = new Page<>();
+        escPage.setRecords(List.of(missed));
+
+        given(taskMapper.selectPage(any(), any())).willReturn(claimPage, escPage);
+        given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
+        given(sysUserMapper.selectList(any())).willReturn(List.of(admin(ADMIN_ID)));
+
+        assertEquals(0, service.scanMissedTasks());
+
+        verify(messageService).sendBatch(eq(List.of(ADMIN_ID)), eq(MessageType.MEDICATION_ESCALATED),
                 eq(ELDER_ID), any());
-        assertEquals(List.of(FAMILY_ID), familyCaptor.getValue());
-
-        // 陪诊员侧走单独的类型与跳转（MEDICATION_MISSED，bizId=orderId），
-        // 与家属侧（MEDICATION_REMIND，bizId=elderId）在 internal_message 行上区分
-        verify(messageService).send(eq(COMPANION_ID), eq(MessageType.MEDICATION_MISSED),
-                eq(ORDER_ID), any());
-    }
-
-    @Test
-    @DisplayName("漏服触达 · 无当天在途订单 → 只发家属，行为与现状一致")
-    void scanShouldOnlyNotifyFamilyWhenNoOngoingOrder() {
-        MedicationTask overdueTask = task("PENDING", ELDER_ID);
-        overdueTask.setId(TASK_ID);
-        Page<MedicationTask> page = new Page<>();
-        page.setRecords(List.of(overdueTask));
-
-        given(taskMapper.selectPage(any(), any())).willReturn(page);
-        given(taskMapper.update(any(), any())).willReturn(1);
-        given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
-        given(relationMapper.selectList(any())).willReturn(List.of(relation(FAMILY_ID)));
-        given(orderMapper.selectList(any())).willReturn(List.of());
-
-        assertEquals(1, service.scanMissedTasks());
-
-        verify(messageService).sendBatch(any(), eq(MessageType.MEDICATION_REMIND), eq(ELDER_ID), any());
+        verify(messageService, never()).sendBatch(anyList(), eq(MessageType.MEDICATION_REMIND), any(), any());
         verify(messageService, never()).send(any(), eq(MessageType.MEDICATION_MISSED), any(), any());
+        verify(smsReminderService, never()).enqueueMissedDose(any(), anyList());
+        verify(smsReminderService, never()).enqueueMissedDose(any(), anyList(), anyInt());
     }
 
     @Test
-    @DisplayName("漏服触达 · 重复扫描不重复发（认领语义兜底）")
-    void scanShouldNotNotifyTwiceOnRescan() {
-        MedicationTask overdueTask = task("PENDING", ELDER_ID);
-        overdueTask.setId(TASK_ID);
-        Page<MedicationTask> page = new Page<>();
-        page.setRecords(List.of(overdueTask));
+    @DisplayName("漏服升级 · 同级不重发：notify_level 已到应达级别时再次扫描零触达")
+    void scanShouldNotDispatchSameLevelTwice() {
+        MedicationTask firstRound = task("MISSED", ELDER_ID);
+        firstRound.setId(TASK_ID);
+        firstRound.setNotifyLevel(ReminderLevelPolicy.LEVEL_NONE);
+        firstRound.setPlanTime(LocalDateTime.now().minusMinutes(100)); // 应达 L1
+        MedicationTask secondRound = task("MISSED", ELDER_ID);
+        secondRound.setId(TASK_ID);
+        secondRound.setNotifyLevel(ReminderLevelPolicy.LEVEL_FAMILY);  // L1 已发过
+        secondRound.setPlanTime(LocalDateTime.now().minusMinutes(100)); // 应达仍是 L1
 
-        given(taskMapper.selectPage(any(), any())).willReturn(page);
-        // 第一轮认领成功，第二轮已是 MISSED（或被人确认），条件更新影响 0 行 → 跳过
-        given(taskMapper.update(any(), any())).willReturn(1, 0);
+        Page<MedicationTask> claimPage = new Page<>();
+        Page<MedicationTask> round1 = new Page<>();
+        round1.setRecords(List.of(firstRound));
+        Page<MedicationTask> round2 = new Page<>();
+        round2.setRecords(List.of(secondRound));
+
+        given(taskMapper.selectPage(any(), any())).willReturn(claimPage, round1, claimPage, round2);
         given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
         given(relationMapper.selectList(any())).willReturn(List.of(relation(FAMILY_ID)));
-        given(orderMapper.selectList(any())).willReturn(List.of(order("IN_SERVICE")));
 
-        assertEquals(1, service.scanMissedTasks(), "第一轮判定 1 条漏服");
-        assertEquals(0, service.scanMissedTasks(), "第二轮认领失败，不产生新漏服");
+        service.scanMissedTasks();
+        service.scanMissedTasks();
 
-        verify(messageService, times(1))
-                .sendBatch(any(), eq(MessageType.MEDICATION_REMIND), any(), any());
-        verify(messageService, times(1))
-                .send(eq(COMPANION_ID), eq(MessageType.MEDICATION_MISSED), eq(ORDER_ID), any());
+        verify(messageService, times(1)).sendBatch(anyList(), eq(MessageType.MEDICATION_REMIND), any(), any());
+    }
+
+    @Test
+    @DisplayName("漏服升级 · 升级查询只取 MISSED 且未到顶（confirm 转 TAKEN 自然离场）")
+    void scanShouldQueryEscalationByMissedAndLevel() {
+        given(taskMapper.selectPage(any(), any())).willReturn(new Page<>(), new Page<>());
+
+        service.scanMissedTasks();
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<LambdaQueryWrapper> wrapperCaptor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(taskMapper, times(2)).selectPage(any(), wrapperCaptor.capture());
+        LambdaQueryWrapper<?> escalation = wrapperCaptor.getAllValues().get(1);
+        String sql = escalation.getSqlSegment();
+        assertTrue(sql.contains("status"), "按状态过滤：" + sql);
+        assertTrue(sql.contains("notify_level") && sql.contains("<"), "未到顶才升级：" + sql);
+        assertTrue(escalation.getParamNameValuePairs().containsValue("MISSED"), "只取 MISSED");
+        assertTrue(escalation.getParamNameValuePairs().containsValue(ReminderLevelPolicy.LEVEL_ADMIN),
+                "到顶（L3）后不再扫描");
     }
 
     @Test
@@ -586,12 +639,15 @@ class MedicationServiceTest {
 
         String familyContent = MessageTemplateUtil.content(MessageType.MEDICATION_REMIND, params);
         String companionContent = MessageTemplateUtil.content(MessageType.MEDICATION_MISSED, params);
+        String escalatedContent = MessageTemplateUtil.content(MessageType.MEDICATION_ESCALATED, params);
 
         // 红线-1：提醒文案只含药名 + 时间 + 中性措辞，禁含剂量与任何用药建议
         assertNull(ComplianceCheckUtil.firstHit(familyContent),
                 "家属侧文案不应命中合规词表：" + familyContent);
         assertNull(ComplianceCheckUtil.firstHit(companionContent),
                 "陪诊员侧文案不应命中合规词表：" + companionContent);
+        assertNull(ComplianceCheckUtil.firstHit(escalatedContent),
+                "升级侧文案不应命中合规词表：" + escalatedContent);
     }
 
     /* ================================================================== */
@@ -665,6 +721,14 @@ class MedicationServiceTest {
         relation.setFamilyId(familyId);
         relation.setElderId(ELDER_ID);
         return relation;
+    }
+
+    /** 一个管理员账号（L3 升级提醒的接收人来源） */
+    private SysUser admin(Long id) {
+        SysUser user = new SysUser();
+        user.setId(id);
+        user.setRole(RoleConstants.ADMIN);
+        return user;
     }
 
     /** 当天在途陪诊订单（陪诊员侧提醒的判定来源） */
