@@ -99,6 +99,16 @@ public enum ResultCode {
     VITAL_SIGN_NOT_FOUND(2009, "体征记录不存在或已撤回"),
     /** 该体征记录不可撤回：来源为陪诊员代录，或不是本人录入（V4 · P2-2） */
     VITAL_SIGN_NOT_WITHDRAWABLE(2010, "该体征记录不可撤回"),
+    /**
+     * 健康证已过期（V5 · C1）。
+     *
+     * <p>{@code companion_profile.health_cert_expire} 早于今天时抛出，拦在
+     * 大厅 / 接单 / 拒单 / 开始 / 完成与管理端改派的资格校验处 ——
+     * 与 {@link #COMPANION_NOT_AUDITED} 走同一入口（{@code requireApprovedCompanion}）：
+     * 「审过了」不等于「证还有效」。到期日为空的存量档案放行（尚未补录），
+     * 补录入口在陪诊员入驻申请表单（V5 · C1）。</p>
+     */
+    HEALTH_CERT_EXPIRED(2011, "健康证已过期，请更新证件后重新提交资质申请"),
 
     /* ==================== 3xxx 陪诊订单 ==================== */
     ORDER_NOT_FOUND(3001, "订单不存在"),

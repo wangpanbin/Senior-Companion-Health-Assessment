@@ -2,6 +2,7 @@ package org.company.nianglin.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Pattern;
@@ -10,6 +11,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 import org.company.nianglin.constant.ValidationPatterns;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -68,4 +70,18 @@ public class CompanionApplyDTO {
     @Schema(description = "补充说明", example = "有 3 年陪诊经验，熟悉省医院各科室")
     @Size(max = 200, message = "补充说明不能超过 200 字")
     private String remark;
+
+    /**
+     * 健康证有效期（V5 · C1，选填）。
+     *
+     * <p>落在 {@code companion_profile.health_cert_expire}，由接单资格校验
+     * （{@code requireApprovedCompanion}）在过期后拦截大厅 / 接单 / 拒单 / 开始 / 完成。
+     * 留空表示存量数据尚未补录 —— 校验对空值放行，不误伤在册陪诊员。</p>
+     *
+     * <p>{@code @FutureOrPresent}：过期证件不该混进审核队列 —— 管理员通过后
+     * 立刻被 2011 拦住，比提交时就拒绝更令人困惑。</p>
+     */
+    @Schema(description = "健康证有效期（选填；过期后将无法接单）", example = "2027-06-30")
+    @FutureOrPresent(message = "健康证有效期不能早于今天")
+    private LocalDate healthCertExpire;
 }

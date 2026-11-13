@@ -804,7 +804,7 @@ public class AdminServiceImpl implements AdminService {
      *
      * @throws org.company.nianglin.exception.BusinessException
      *         3001 订单不存在 · 3010 不可改派（含并发失败）· 2007 目标不存在
-     *         · 2003 目标资质未过 · 6003 理由命中医疗建议词表（CONTENT_SENSITIVE）
+     *         · 2003 目标资质未过 · 2011 目标健康证已过期 · 6003 理由命中医疗建议词表（CONTENT_SENSITIVE）
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -895,6 +895,11 @@ public class AdminServiceImpl implements AdminService {
             // 资质没过审的账号不能被强行指派：这是绕过审核流程的后门。
             // 档案缺资质字段（null）同样不放行，与 requireApprovedCompanion 同一口径
             throw new BusinessException(ResultCode.COMPANION_NOT_AUDITED);
+        }
+        // 同口径的第二道闸：审过了但健康证已过期，一样不能被改派（V5 · C1）
+        LocalDate certExpire = target.getHealthCertExpire();
+        if (certExpire != null && certExpire.isBefore(LocalDate.now())) {
+            throw new BusinessException(ResultCode.HEALTH_CERT_EXPIRED, "目标陪诊员健康证已过期");
         }
         // 接单资格走 isAccepting() 这个唯一判定入口，不写 "AVAILABLE".equals(...) 的裸比较：
         // 将来再加一个「忙但可接」的状态，散落的字符串比较会漏掉它。
