@@ -100,6 +100,7 @@ classpath 的 `db/migration/`：
 | V9 | `V9__vital_sign_record.sql` | 体征记录表（V4 · P2-2） | 纯增量建表 |
 | V10 | `V10__operation_param.sql` | `sys_dict` 新增 `OPS_PARAM` 运营参数种子（V4 · P2-3） | 纯增量种子；`ON DUPLICATE KEY UPDATE` 不覆盖已调值 |
 | V11 | `V11__medication_notify_level.sql` | `medication_task` 增 `notify_level` 升级级别列（V5 漏服多级升级） | 裸 `ALTER TABLE`（Flyway 每版本只跑一次，不加守卫） |
+| V12 | `V12__exam_prep_dict.sql` | `sys_dict` 新增 `EXAM_PREP` 检查准备字典 6 条（V5 · B） | 纯增量种子；`ON DUPLICATE KEY UPDATE` 不覆盖已调值 |
 
 > **已执行的脚本不得再改**：`validate-on-migrate: true` 会校验 checksum，
 > 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5、V6…）。
