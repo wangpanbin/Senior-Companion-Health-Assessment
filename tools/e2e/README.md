@@ -33,13 +33,18 @@
 
 ## 「能进 CI」的判据
 
-只有 `check_api_imports.py` 满足，其余全部排除，原因各不相同：
+只有 `check_api_imports.py` 与 `test_restore_clean_baseline.py` 满足判据（后者本轮刻意不接 CI，见下），其余全部排除，原因各不相同：
 
 - **需要 MySQL / Redis / 后端进程** —— `fixture.py`、`restore_clean_baseline.py`、五个 `probe_*`、
   `l0_identity_gate.py`、两个 `*.ps1` 都是本机联调脚本，CI 环境没有这些常驻服务，跑必失败
 - **写库** —— `fixture.py` 与 `restore_clean_baseline.py` 会 `DELETE` / `REPLACE INTO`，
   CI 上跑等于破坏共享环境
 - **有副作用但无判据** —— `start/stop-services.ps1` 只管进程生命周期，没有退出码语义可判
+
+⚠️ **符合判据但本轮刻意不接 CI** —— `test_restore_clean_baseline.py` 纯 stdlib、不连库、
+有退出码判据，符合全部判据；接 CI 只需在 workflow 补一步
+`python -m unittest tools.e2e.test_restore_clean_baseline`。本轮（2026-11-13 收口提交 79044a8
+「本轮不接 CI」）**刻意不接**，是下方「新增就补 step」规则记录在案的例外，现属本机手动门禁。
 
 ⚠️ **闸门为什么也不进 CI**：`l0_identity_gate.py` 判的是「8080 / 8081 / 5141 上跑的**是不是本项目的进程**」，
 前提是那三个端口已经被本机起起来了。CI 里没有这套常驻服务（后端 job 只起 MySQL / Redis 容器），
@@ -54,7 +59,7 @@ step，并在这里改「能进 CI」列。**
 
 ## 单脚本细节
 
-### `check_api_imports.py`（唯一可直接在任意环境跑）
+### `check_api_imports.py`（可直接在任意环境跑）
 
 静态扫 `frontend/src/**/*.vue` 与 `*.js`，核对每个 `@/api/xxx` 引用都真实存在。
 本机实测：73 条引用，全通，exit 0。**无外部依赖**，纯 AST 解析。
