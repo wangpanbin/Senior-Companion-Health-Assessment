@@ -1635,5 +1635,80 @@
       "数据来源",
       "用药统计"
     ]
+  },
+  {
+    "question": "检查前需要空腹吗",
+    "expectId": "faq-exam-prep-01",
+    "keywords": ["空腹", "抽血", "体检"]
+  },
+  {
+    "question": "做检查要不要空腹",
+    "expectId": "faq-exam-prep-01",
+    "keywords": ["空腹"]
+  },
+  {
+    "question": "抽血前能吃东西吗",
+    "expectId": "faq-exam-prep-01",
+    "keywords": ["抽血", "吃东西"]
+  },
+  {
+    "question": "明天体检今晚能吃饭吗",
+    "expectId": "faq-exam-prep-01",
+    "keywords": ["体检"]
+  },
+  {
+    "question": "空腹检查要饿多久",
+    "expectId": "faq-exam-prep-01",
+    "keywords": ["空腹", "饿多久"]
+  },
+  {
+    "question": "去做检查要带什么",
+    "expectId": "faq-exam-prep-02",
+    "keywords": ["检查要带", "带什么"]
+  },
+  {
+    "question": "检查需要准备什么材料",
+    "expectId": "faq-exam-prep-02",
+    "keywords": ["材料", "准备什么"]
+  },
+  {
+    "question": "去医院检查要带哪些东西",
+    "expectId": "faq-exam-prep-02",
+    "keywords": ["检查要带"]
+  },
+  {
+    "question": "检查要不要带以前的报告",
+    "expectId": "faq-exam-prep-02",
+    "keywords": ["以前的报告"]
+  },
+  {
+    "question": "第一次做检查要准备什么",
+    "expectId": "faq-exam-prep-02",
+    "keywords": ["准备什么"]
+  },
+  {
+    "question": "检查前能喝水吗",
+    "expectId": "faq-exam-prep-03",
+    "keywords": ["喝水", "能喝"]
+  },
+  {
+    "question": "做检查之前可以喝水吗",
+    "expectId": "faq-exam-prep-03",
+    "keywords": ["喝水"]
+  },
+  {
+    "question": "早上检查前能喝白开水吗",
+    "expectId": "faq-exam-prep-03",
+    "keywords": ["白开水", "能喝"]
+  },
+  {
+    "question": "检查前喝水有影响吗",
+    "expectId": "faq-exam-prep-03",
+    "keywords": ["喝水", "喝水有影响"]
+  },
+  {
+    "question": "检查当天早上能喝水吗",
+    "expectId": "faq-exam-prep-03",
+    "keywords": ["喝水", "能喝"]
   }
 ]
