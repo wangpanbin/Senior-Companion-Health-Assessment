@@ -64,7 +64,7 @@ python tools/e2e/check_api_imports.py
 
 ### `restore_clean_baseline.py`
 
-**破坏性。** 基线从 `backend/sql/V*.sql` 解析真实种子水位，**不再用 `MAX(id)-100` 猜**。
+**破坏性。** 基线真源：`fixture.py` 影子表水位（`reports/e2e/fixture/state*.json`）与手工确认表 `SEED_MAX_IDS` **取高者**，种子 SQL（`backend/sql/V*.sql`）解析只作第三层兜底 —— 解析可能**低于**真实基线（验收报告 §3 P2：`sys_user` 解析 330 / 实际 331，`admin_oper_log` 60037 / 60038），生效水位**永不低于已确认基线**，dry-run 会逐条列出对账明细。**不再用 `MAX(id)-100` 猜**。
 
 > 历史教训：旧 `.sh` / `.ps1` 版对 16 张表统一减 100，实测会误删 **629 行种子数据**
 > （`companion_order` 64 行种子订单整表清空）。已删除，勿再写回那种逻辑。
