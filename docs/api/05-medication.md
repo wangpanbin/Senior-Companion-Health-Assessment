@@ -86,21 +86,27 @@ key   : nianglin:lock:medication:daily
 **幂等保证**：`medication_task` 上加唯一索引 `uk_plan_date_time (plan_id, plan_time)`，
 即使定时任务被重复触发也不会产生重复行。
 
-### 2.1 漏服提醒触达规则（V4 · E1a）
+### 2.1 漏服提醒触达规则（V4 · E1a；V5 多级升级改写）
 
-任务被判为 `MISSED` 后，提醒按以下规则触达（实现：`ReminderDispatcher` 策略接口，站内信为默认实现）：
+任务被判为 `MISSED` 且**未被确认**后，提醒按三级阶梯逐级触达（实现：`ReminderDispatcher` 策略接口，站内信为默认实现）：
 
-| 接收人 | 判定条件 | 消息类型 | `bizId` / 跳转 |
-|---|---|---|---|
-| 全部绑定家属 | 恒触发 | `MEDICATION_REMIND` | `bizId=elderId` → `/family?elderId=` |
-| 当天陪诊订单的接单陪诊员 | 该老人**当天**（按 `visit_time` 落在当日区间判定）存在 `ACCEPTED` / `IN_SERVICE` 订单 | `MEDICATION_MISSED` | `bizId=orderId` → `/companion/execute/{orderId}` |
+| 级别 | 触发（自判定 MISSED 起） | 接收人 | 渠道 | 消息类型 | `bizId` / 跳转 |
+|---|---|---|---|---|---|
+| L1 | ≥ 30 分钟 | 全部绑定家属 | 站内信 + 短信 | `MEDICATION_REMIND` | `bizId=elderId` → `/family?elderId=` |
+| L2 | ≥ 2 小时 | 该老人**当天**（按 `visit_time` 落在当日区间判定）存在 `ACCEPTED` / `IN_SERVICE` 订单的接单陪诊员 | 站内信 + 短信 | `MEDICATION_MISSED` | `bizId=orderId` → `/companion/execute/{orderId}` |
+| L3 | ≥ 24 小时 | 全部管理员 | **仅站内信**（不入短信队列） | `MEDICATION_ESCALATED` | `bizId=elderId`（消息中心查看，无专属落地页） |
 
-- **去重**：同一条任务只触发一轮提醒，靠「认领式状态推进（PENDING→MISSED 条件更新）+ `notify_sent` 标记」双重保证；
-  接收者区分落在 `internal_message` 行（家属与陪诊员各收各的类型），**不改 `medication_task` 结构**。
-- **文案合规（红线-1）**：两侧文案**只含药名 + 计划时间 + 中性措辞**，禁含剂量与任何用药建议；
-  陪诊员侧文案发送前过 `ComplianceCheckUtil` 词表，命中即拦截（宁可不发）。
+- **触发与解除**：唯一触发条件是「任务仍处 `MISSED` 且无 `confirm` 回执」——`confirm()` 确认 `TAKEN` 即天然停止后续升级；
+  站内信已读**不**解除升级。每级**只触达该级收件人**，不重复抄送前级。
+- **状态与去重**：`medication_task` 新增 `notify_level`（0=未通知，1/2/3=已到达级别）；同一级别对同一条任务只派发一次
+  （`notify_level` 条件更新认领），跨到下一级才再次派发。**本条取代 V4「同一条任务只触发一轮」与「不改 `medication_task` 结构」两条口径**
+  （V5 决策解除，见 `V11__medication_notify_level.sql`）；`notify_sent` 保留（首级派发后置 1，兼容旧语义）。
+- **频控**：短信按「收件人 + 场景 + 级别」独立日上限（`sms_send_log` 行数口径，`OperationParam` 在线可调）；站内信不限量；
+  静默时段 22:00–08:00 仅约束短信、顺延不变。
+- **文案合规（红线-1）**：各级文案**只含药名 + 计划时间 + 中性措辞**，禁含剂量与任何用药建议；
+  陪诊员侧与管理员侧（动态参数）发送前过 `ComplianceCheckUtil` 词表，命中即拦截（宁可不发）；家属侧为 M6 既定模板，不含动态医疗表述。
 - **触达失败不回滚漏服判定**：提醒是通知动作，漏服是事实判定，两者解耦。
-- **扫描节奏与锁粒度不变**：30 分钟一轮、`nianglin:lock:medication:*` 的 Redis 锁口径与 M6 一致，既有压测结论不失效。
+- **扫描节奏与锁粒度不变**：30 分钟一轮、`nianglin:lock:medication:*` 的 Redis 锁口径与 M6 一致；升级派发并入同一轮扫描，既有压测结论不失效。
 
 ---
 
@@ -622,3 +628,6 @@ key   : nianglin:lock:medication:daily
 - [ ] ELDER 角色调用新增计划 / 确认服药 → `403`
 - [ ] 陪诊员读「无 ACTIVE 订单」的老人计划 → `2006`（不限 COMPLETED / REVIEWED / CANCELLED 状态）
 - [ ] V4 · P1-2：下单家属对 `COMPLETED` 或 `REVIEWED` 且有服务小结的订单转草稿成功，响应**不含** `dosage`；非本人 / 服务未完成 / 取消 / 重复转入 / 命中合规词的拒绝码符合 §10
+- [ ] V5 多级升级：MISSED 后 30 分钟仅家属收到 L1；2 小时未确认升级当天陪诊员（L2）；24 小时升级管理员（L3，仅站内信）
+- [ ] 任一级被 `confirm()` 确认后不再升级；同一级别对同一条任务不重复派发（`notify_level` 条件更新认领）
+- [ ] 升级短信按「收件人 + 场景 + 级别」独立日上限，超限跳过且不影响站内信；L3 不入短信队列
