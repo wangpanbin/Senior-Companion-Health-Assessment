@@ -49,6 +49,7 @@
 | `FULFILLMENT_URGENT` | 订单需要尽快安排陪诊员 | 风险升为「履约风险较高」（V3.1） | 下单家属 |
 | `ORDER_URGED` | 有订单在等待陪诊员 | 家属催单（V3.1） | 全部资质已过审且处于接单中的陪诊员 |
 | `ORDER_REASSIGNED` | 订单已改派陪诊员 | 管理员改派（V3.1） | 下单家属 + 目标陪诊员 + 原陪诊员（若有） |
+| `HEALTH_CERT_EXPIRING` | 健康证到期提醒 | 每日 09:00 到期扫描，到期前 7 天内或已过期（V5 · C1） | 本人 + **全部管理员**（同一模板靠 `audience` 分流措辞，管理员侧姓名已脱敏） |
 | `SYSTEM_NOTICE` | 系统公告 | 管理员手动发布 | 全部用户 |
 
 ---
@@ -441,6 +442,7 @@ dedup_key = "medication-missed:" + taskId + ":" + userId + ":" + yyyy-MM-dd
 | `COMPLAINT_SUBMITTED` | 新投诉待处理 | {submitterName} 就订单 {orderNo} 提交了投诉（{typeLabel}），请及时处理。 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 您提交的投诉（{orderNo}）已处理完成：{handleResult} |
 | `SYSTEM_NOTICE` | 系统公告 | {content} |
+| `HEALTH_CERT_EXPIRING` | 健康证到期提醒 | `audience=COMPANION`：您的健康证有效期至 {expireDate}，到期后将无法接单，请及时更新证件并重新提交资质材料。<br>`audience=ADMIN`：陪诊员 {companionName} 的健康证有效期至 {expireDate}，请关注其证件更新情况。（姓名已脱敏） |
 
 > 模板占位符由后端填充并脱敏，**前端只负责展示**。
 >
@@ -486,3 +488,4 @@ dedup_key = "medication-missed:" + taskId + ":" + userId + ":" + yyyy-MM-dd
 | v1.2.1 | 2026-11-03 | 补写 §7「鉴权失败的行为」既定契约：无令牌/无效令牌返回 **200 + 立即关闭空 emitter**、不下发任何事件；客户端以收到 `CONNECTED` 为订阅成功判据（文档补记，行为未改） | — |
 | v1.2.2 | 2026-11-03 | §9.3：`dedup_key` 加入 `userId`（同一任务每位家属各一条，唯一索引不变）；新增单用户单日频控 `nianglin.sms.frequency.missed-dose-daily-cap`（默认 3） | — |
 | v1.3.0 | 2026-11-03 | V4 · P1-3：新增通知偏好接口（仅 FAMILY）与「短信站外提醒编排」章节；模板配置改为按场景路由（`verification` / `missed-dose`），生产新增两个模板 Code 环境变量 | — |
+| v1.4.0 | 2026-11-14 | V5 · C1：新增 `HEALTH_CERT_EXPIRING` 健康证到期提醒类型（本人 + 全部管理员，`linkUrl` 指向 `/profile/companion`，幂等键 `cert:expire:remind:{profileId}:{expireDate}`） | — |
