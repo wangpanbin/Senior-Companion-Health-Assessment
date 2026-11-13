@@ -21,6 +21,7 @@
 | `stop-services.ps1` | 停 8080 的 Java 进程 | — | — | — |
 | `fixture.py` | 写路径 E2E 夹具：`snapshot` / `restore` / `verify`，让库回到跑之前 | ✅ | ✅ | — |
 | `restore_clean_baseline.py` | 把库与 Redis 恢复到种子基线（删写路径新增行） | ✅ | ✅ | — |
+| `test_restore_clean_baseline.py` | `restore_clean_baseline` 水位对账回归测试（纯 stdlib 单测，不连库） | — | — | — |
 | `probe_api.py` | 接口冒烟探测（与 Playwright 独立） | — | ✅ | — |
 | `probe_access_matrix.py` | **A-1 越权矩阵**（25 端点 × 4 角色 = 100 次真实 HTTP，0 违规判据，见 TEST_REPORT §6.1） | — | ✅ | — |
 | `probe_backend_gaps.py` | 后端功能缺口探测 | — | ✅ | — |
@@ -64,7 +65,13 @@ python tools/e2e/check_api_imports.py
 
 ### `restore_clean_baseline.py`
 
-**破坏性。** 基线真源：`fixture.py` 影子表水位（`reports/e2e/fixture/state*.json`）与手工确认表 `SEED_MAX_IDS` **取高者**，种子 SQL（`backend/sql/V*.sql`）解析只作第三层兜底 —— 解析可能**低于**真实基线（验收报告 §3 P2：`sys_user` 解析 330 / 实际 331，`admin_oper_log` 60037 / 60038），生效水位**永不低于已确认基线**，dry-run 会逐条列出对账明细。**不再用 `MAX(id)-100` 猜**。
+**破坏性。** 基线三层对账（详见脚本模块 docstring「水位真源与对账」）：
+
+1. `fixture.py` 影子表水位 —— **只读** `reports/e2e/fixture/state.json` / `state.done.json`（snapshot 写前者、restore 后改名后者）；`state.PRE-RUN-BASELINE.json`（污染期水位：sys_user 5030、internal_message 40233）**刻意不读**，不要把代码改成去读它。
+2. 手工确认表 `SEED_MAX_IDS` —— 与影子表**取高者**（`internal_message` 40075 / `sys_login_log` 48572 / `sys_user` 331 / `admin_oper_log` 60038）。
+3. 种子 SQL（`backend/sql/V*.sql`）解析 —— 只作第三层兜底，解析可能**低于**真实基线（验收报告 §3 P2：`sys_user` 解析 330 / 实际 331，`admin_oper_log` 60037 / 60038）。
+
+**不变量只对有真源的表成立**：生效水位 ≥ 已确认基线，这些表 `--execute` 不会碰到基线行；仅解析定案的表**没有已确认基线**、可能低于未确认的真实基线，dry-run 对这类候选表单独标 ⚠（仅提示，不改变删除行为）。dry-run 另会逐条列出对账明细。**不再用 `MAX(id)-100` 猜**。
 
 > 历史教训：旧 `.sh` / `.ps1` 版对 16 张表统一减 100，实测会误删 **629 行种子数据**
 > （`companion_order` 64 行种子订单整表清空）。已删除，勿再写回那种逻辑。
@@ -74,6 +81,7 @@ python tools/e2e/restore_clean_baseline.py                      # dry-run，看�
 python tools/e2e/restore_clean_baseline.py --execute            # 真删（二次确认）
 python tools/e2e/restore_clean_baseline.py --tables internal_message,companion_order
 python tools/e2e/restore_clean_baseline.py --execute --yes --force   # 跳过确认 + 越过阈值守卫
+python -m unittest tools.e2e.test_restore_clean_baseline        # 水位对账回归测试（纯 stdlib，不连库；等价写法：python tools/e2e/test_restore_clean_baseline.py）
 ```
 
 `--force` 用于「单表待删超 30% 或 500 行」的守卫 —— 超阈值说明基线判断可能错了。

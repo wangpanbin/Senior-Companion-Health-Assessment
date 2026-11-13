@@ -48,14 +48,22 @@ Redis 客户端按 `REDIS_CLI` > 本机默认路径 > `PATH` 解析。
 --------------------------------------------------------------------------
 水位真源与对账（docs/reports/验收报告.md §3 · P2）
 --------------------------------------------------------------------------
-**不变量：生效水位 ≥ 已确认的真实基线** —— 因此 `--execute` 的
-`DELETE ... WHERE id > <水位>` 永远不会碰到基线行。
+**不变量：凡有真源（影子表 / SEED_MAX_IDS 手工值）的表，生效水位 ≥ 已确认的
+真实基线** —— 这些表上 `--execute` 的 `DELETE ... WHERE id > <水位>` 不会碰到
+基线行。⚠ 退回第三层（仅种子 SQL 解析）的表**没有已确认的真实基线**，解析值
+可能仍低于未确认的真实基线；dry-run 会对这类仅解析定案的候选表单独标 ⚠
+（只提示，不改变删除行为）。
 
 生效水位按三层取值（前两层为真源，同时存在时**取高者**互为兜底；
 第三层仅在前两层都缺该表时使用）：
 
-  1. `fixture.py` 影子表水位 —— `reports/e2e/fixture/state*.json` 中
-     snapshot 记录的跑前 `MAX(id)`（验收报告指定的真源）；
+  1. `fixture.py` 影子表水位 —— **只读** `reports/e2e/fixture/state.json` /
+     `state.done.json`（snapshot 写前者，restore 后改名后者）中记录的跑前
+     `MAX(id)`。验收报告 §3 对它的措辞是**建议**而非钦定：「建议后续以
+     `fixture.py` 影子表水位为唯一真源**或补全解析**」—— 本脚本把它当
+     三层中的第一层，不是唯一真源。`state.PRE-RUN-BASELINE.json`
+     （污染期水位：sys_user 5030、internal_message 40233）**刻意不读** ——
+     读了会把污染期虚高值当基线、清理永远删不干净；不要把代码改成去读它。
   2. `SEED_MAX_IDS` 手工确认值；
   3. 种子 SQL（`V2`/`V3`/`V4`）解析值。
 
@@ -121,22 +129,37 @@ DB_USER = "root"
 SEED_SQL_FILES = ["V2__seed_data.sql", "V3__seed_boundary.sql", "V4__order_fee_item.sql"]
 
 # 手工确认过的基线（与 fixture 影子表水位取高者，优先于解析）。
-# internal_message 的 40072 同时见于：
-#   - FRONTEND_CONTRACT.md §10.7/§10.8
-#   - backend/sql/tools/README.md 的历史记录
-#   - 2026-09-29 审计报告
+# internal_message = 40075（72 行 vs 75 行之争，以 Flyway 种子为准）：
+#   V2__seed_data.sql 止于 40072（72 行），V3__seed_boundary.sql:134-141
+#   另补 40073/40074/40075 三条 → 全新迁移库 75 行 / MAX = 40075。
+#   本机 dev 库与 fixture 快照停在 72 行（FIXTURE_ROLLBACK_PLAN 时代的漂移）：
+#     - docs/agents/FIXTURE_ROLLBACK_PLAN.md:78「种子是 40001–40072」
+#     - docs/db/04-种子数据说明.md:36「72 条 + V3 补 3 条」
+#     - docs/reports/CLOSEOUT_2026-09-29.md:230「DELETE FROM internal_message
+#       WHERE id > 40072」
+#   取 40075 在两种形态上都安全：72 行 dev 库上 id > 40075 删不到任何行，
+#   全新库上保护 V3 三条不被误删。**已接受的代价**：fixture restore 把
+#   AUTO_INCREMENT 重置到 max_id+1 = 40073（fixture.py:305），此后落在
+#   40073–40075 的污染行会躲过清理 —— 换取全新库不误删种子。
+# sys_login_log = 48572：docs/reports/验收报告.md §7.2（2026-11-12 实测基线
+#   292 行 / MAX 48572）；种子 SQL 只解析到 43040（V2__seed_data.sql:189），
+#   低于已确认基线 —— 缺这个值时 --execute --force 会删掉 252 行已验收基线
+#   （292 − 40 条种子）。行号 > 48572 的污染（本轮 +140）仍照删。
 # sys_user 331 / admin_oper_log 60038 见 docs/reports/验收报告.md §3（P2）：
 #   解析只到 330 / 60037，真实基线各多 1 行 —— 注册页手建账号 user1
 #   （2026-09-19 创建，docs/reports/TEST_REPORT.md 判定保留）及其
 #   RESET_PASSWORD 审计行；缺这两个值时 --execute 会误删基线行。
 SEED_MAX_IDS = {
-    "internal_message": 40072,
+    "internal_message": 40075,
     "sys_user": 331,
     "admin_oper_log": 60038,
+    "sys_login_log": 48572,
 }
 
 # fixture.py 落盘的水位状态文件（snapshot 写出 state.json，restore 后改名
 # state.done.json）。两份都是「跑前干净基线」的 MAX(id)，按此顺序取先到者。
+# ⚠ state.PRE-RUN-BASELINE.json（污染期水位）**刻意不在此名单**，永远不读 ——
+#   读了会把污染期虚高值（sys_user 5030、internal_message 40233）当基线。
 FIXTURE_STATE_FILES = ["state.json", "state.done.json"]
 
 # 删除行数超过这个比例 / 绝对数时中止，除非 --force。
@@ -299,11 +322,14 @@ def parse_seed_max_ids(repo_root):
 
 
 def load_fixture_watermarks(repo_root):
-    """读 fixture.py 落盘的影子表水位（`reports/e2e/fixture/state*.json`）。
+    """读 fixture.py 落盘的影子表水位（只读 `state.json` / `state.done.json`）。
 
     fixture.py 的 snapshot 把每张被写表跑前的 `MAX(id)` 记进 state.json，
-    是验收报告 §3 指定的水位真源。文件不存在（干净 clone）或损坏时返回
-    `{}`，由 SEED_MAX_IDS / 解析层兜底 —— 永远不会因为缺文件而降低水位。
+    restore 后改名 state.done.json。验收报告 §3 **建议**以它为水位真源
+    （或补全解析），本脚本把它作为三层真源中的第一层，与 SEED_MAX_IDS
+    取高者。`state.PRE-RUN-BASELINE.json`（污染期水位）不在读取名单里，
+    **刻意不读**。文件不存在（干净 clone）或损坏时返回 `{}`，由 SEED_MAX_IDS
+    / 解析层兜底 —— 永远不会因为缺文件而降低水位。
     """
     out_dir = repo_root / "reports" / "e2e" / "fixture"
     for name in FIXTURE_STATE_FILES:
@@ -325,14 +351,15 @@ def load_fixture_watermarks(repo_root):
 
 
 def resolve_baselines(parsed, manual, fixture_wm):
-    """合成生效水位，落实不变量「生效水位 ≥ 已确认的真实基线」。
+    """合成生效水位，对有真源的表落实不变量「生效水位 ≥ 已确认的真实基线」。
 
     取值规则（详见模块 docstring「水位真源与对账」）：
 
     - 有真源（fixture 影子表水位 / SEED_MAX_IDS 手工值）的表：取真源高者，
       解析值只用于对账提示 —— 解析可能**低于**真实基线（验收报告 §3 P2），
       永不单独定案；
-    - 无真源的表：退回种子 SQL 解析值（与旧行为一致）。
+    - 无真源的表：退回种子 SQL 解析值（与旧行为一致）—— 没有已确认基线，
+      可能仍低于未确认的真实基线，dry-run 对这类表单独标 ⚠。
 
     返回 `(baselines, sources, notes)`：`sources` 是每表取值来源标签，
     `notes` 是解析值与生效值不一致的对账明细（供 dry-run 打印）。
@@ -417,7 +444,7 @@ def run_count(mysql, table, baseline):
 # 输出
 # ---------------------------------------------------------------------------
 
-def print_plan(plan, skipped, source):
+def print_plan(plan, skipped, source, sources):
     print("== 恢复基线 · 计划 ==")
     print("数据库: %s:%s / %s" % (DB_HOST, DB_PORT, DB_NAME))
     print("基线来源: %s" % source)
@@ -431,6 +458,12 @@ def print_plan(plan, skipped, source):
             "将删除" if p["to_delete"] > 0 else "无变化"))
     for table, why in skipped:
         print("%-26s %12s %12s %12s  ⏭ %s" % (table, "-", "-", "-", why))
+    # 仅解析定案（无真源）的候选表：显示层 ⚠ 提示，不改变任何删除行为。
+    parse_only = [p["table"] for p in plan if sources.get(p["table"]) == "种子SQL解析"]
+    if parse_only:
+        print("⚠ 仅种子 SQL 解析水位（无影子表/手工真源）：可能低于未确认的真实基线 —— 仅提示，不改变删除行为")
+        for t in parse_only:
+            print("  ⚠ %s" % t)
     print("")
 
 
@@ -564,7 +597,7 @@ def main():
 
     wanted = [t.strip() for t in args.tables.split(",") if t.strip()] or None
     plan, skipped = build_plan(mysql, baselines, wanted)
-    print_plan(plan, skipped, source)
+    print_plan(plan, skipped, source, sources)
     if notes:
         print("水位对账（真源与解析不一致 → 按真源取值）：")
         for n in notes:
