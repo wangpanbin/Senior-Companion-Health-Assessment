@@ -96,9 +96,14 @@ service.interceptors.response.use(
     }
 
     // 业务错误：统一提示，交由调用方决定是否额外处理
+    // ⚠️ data 必须随错误一起 reject —— 11001 等少数业务码靠 data 携带
+    // 结构化信息（如 pendingOrderCount），丢掉它前端就只能拿到 code/message，
+    // 模板里的数字占位会渲染成空白（V4V5 联调 DEF-2）
     ElMessage.closeAll()
     ElMessage.error(body.message || '操作失败')
-    return Promise.reject(Object.assign(new Error(body.message || '操作失败'), { code: body.code }))
+    return Promise.reject(
+      Object.assign(new Error(body.message || '操作失败'), { code: body.code, data: body.data ?? null })
+    )
   },
   async (error) => {
     const { response, config } = error
@@ -187,8 +192,20 @@ function httpStatusMessage(status) {
   return map[status] || `请求失败（${status}）`
 }
 
+/**
+ * 会话失效对话框是否已弹出（V4V5 联调 DEF-3）。
+ *
+ * <p>不加这个标志时：第一个 401 调 handleLogout → clearAuth() 清掉
+ * refreshToken → 并发的其余 401 各自走「无 refreshToken」分支再弹一个
+ * 对话框 —— 现场实测堆叠了几十个。对话框关闭/跳转后复位，保证
+ * 下一次真的会话失效仍能提示。</p>
+ */
+let logoutPromptOpen = false
+
 function handleLogout(message) {
   clearAuth()
+  if (logoutPromptOpen) return
+  logoutPromptOpen = true
   ElMessageBox.alert(message || '登录状态已失效，请重新登录', '提示', {
     type: 'warning',
     confirmButtonText: '去登录',
@@ -200,7 +217,11 @@ function handleLogout(message) {
         ? '/login'
         : `/login?redirect=${encodeURIComponent(current)}`
     }
-  }).catch(() => {})
+  })
+    .catch(() => {
+      // 用户手动关闭（未跳转）：复位，否则本会话后续的会话失效再也不会提示
+      logoutPromptOpen = false
+    })
 }
 
 export default service

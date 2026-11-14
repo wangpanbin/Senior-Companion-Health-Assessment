@@ -127,6 +127,10 @@ let socket = null
 async function loadAll() {
   // 记下本次请求针对的订单：请求在途时 URL 可能又换了订单，回来时要能判断响应是否过期
   const target = orderId.value
+  // 路由离开时 params.id 会先变 undefined（组件尚未卸载），实时推送的事件回调
+  // 也可能在这时进�� —— 无 id 不发请求，否则会打出
+  // /api/execution/undefined/checkins 这类废请求（V4V5 联调 DEF-1）
+  if (!target) return
   try {
     // 四个请求互不依赖，并发拉取，减少首屏等待
     const [detail, logs, checks, rev] = await Promise.all([
@@ -482,6 +486,9 @@ async function submitDraft() {
  * 否则会出现「推送的是 A、页面看的是 B」。
  */
 async function loadAndConnect() {
+  // 路由离开（params.id → undefined）时组件还没卸载，watch 会先于卸载触发：
+  // 此时既不重拉也不重连（V4V5 联调 DEF-1）
+  if (!orderId.value) return
   closeSocket()
   // 换订单时重新点亮骨架：旧订单的内容不能继续挂在新的 URL 下
   loading.value = true

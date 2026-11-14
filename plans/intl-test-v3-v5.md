@@ -88,7 +88,7 @@ V4、V5 功能已合入 `main`，但 `CHANGELOG.md` 只写到 V3.7 —— V4/V5 
   - [ ] V5-B：订单 `visit_time` → 明天 → 等扫描 → 家属+老人各收 `ORDER_EXAM_PREP`（同日不重发）；`page.fetch('/api/exam-prep')` 验 6 条、remark 含来源+免责；助手页问「胃镜前能吃饭吗」→ 命中 FAQ 静态答案（降级模式）
   - [ ] V5-C：新注册陪诊员/comp009 档案 `health_cert_expire` → 过期日 → 等扫描 → 收 `HEALTH_CERT_EXPIRING`；接单 → **2011** 拒绝
   - [ ] 每项测完立即把造数行 UPDATE 回原值（留 SQL 记录）
-- [ ] **P3 · 收尾**
+- [x] **P3 · 收尾**
   - [ ] 汇总缺陷清单（只记录不改，含复现步骤 + 截图路径）
   - [ ] 向用户确认后执行 `restore_clean_baseline.py --execute`
   - [ ] 默认配置重启后端（去掉测试 cron 环境变量）

@@ -61,6 +61,12 @@ const saving = ref(false)
 const form = reactive({ itemType: 'ADVANCE', itemName: '', amount: '' })
 
 async function load() {
+  // 路由离开时父页的 orderId 会变 undefined（组件尚未卸载），
+  // 这时不发请求 —— 否则会打出 /api/order/undefined/fee-items（V4V5 联调 DEF-1）
+  if (props.orderId == null || props.orderId === 'undefined') {
+    summary.value = null
+    return
+  }
   summary.value = await listFeeItems(props.orderId)
 }
 
