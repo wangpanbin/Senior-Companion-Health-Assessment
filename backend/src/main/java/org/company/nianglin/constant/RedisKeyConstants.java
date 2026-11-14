@@ -63,6 +63,13 @@ public final class RedisKeyConstants {
      */
     public static final String CERT_EXPIRE_REMIND_PREFIX = "cert:expire:remind:";
 
+    /**
+     * 检查准备提醒的幂等标记：{@code exam-prep:remind:{orderId}:{visitDate}} → 1，TTL 48 小时。
+     *
+     * <p>V5 · B：同订单同就诊日只提醒一次；改期后 visitDate 变化 → 键变化 → 允许再提醒。</p>
+     */
+    public static final String EXAM_PREP_REMIND_PREFIX = "exam-prep:remind:";
+
     /* ---------- V4 · P1-1 自助找回密码短信 ---------- */
 
     /** 找回密码验证码：{@code sms:reset:{phone}} → 6 位数字，TTL 5 分钟 */

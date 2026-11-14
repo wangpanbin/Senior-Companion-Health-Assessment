@@ -60,6 +60,7 @@ public final class MessageTemplateUtil {
             case FULFILLMENT_URGENT -> "订单需要尽快安排陪诊员";
             case ORDER_URGED -> "有订单在等待陪诊员";
             case ORDER_REASSIGNED -> "订单已改派陪诊员";
+            case ORDER_EXAM_PREP -> "检查准备提醒";
             case HEALTH_CERT_EXPIRING -> "健康证到期提醒";
             case SYSTEM_NOTICE -> "系统公告";
         };
@@ -151,6 +152,17 @@ public final class MessageTemplateUtil {
                     default -> "订单 %s 已由平台安排陪诊员，请留意。".formatted(orderNo);
                 };
             }
+            // V5 · B：只陈述「明天有就诊安排」这个事实；准备要求本身去查静态字典 / FAQ，
+            // 不在消息里生成任何医疗内容（红线-1）
+            case ORDER_EXAM_PREP -> {
+                String visitDate = value(p, "visitDate");
+                String hospital = value(p, "hospital");
+                String department = emptyIfMissing(p, "department");
+                String tail = "。出门前请按医院检查须知核对空腹、携带材料等准备，可在智能助手中查询「检查准备」。";
+                yield department.isEmpty()
+                        ? "明天（%s）%s有就诊安排".formatted(visitDate, hospital) + tail
+                        : "明天（%s）%s（%s）有就诊安排".formatted(visitDate, hospital, department) + tail;
+            }
             case SYSTEM_NOTICE -> value(p, "content");
             case HEALTH_CERT_EXPIRING -> {
                 // audience 区分两侧：本人看到的是「你该怎么办」，
@@ -192,7 +204,7 @@ public final class MessageTemplateUtil {
             // 单一静态路径无法按接收方分流，此处按「家属是主要责任方」取订单详情；
             // 陪诊员侧目前从消息中心进入（message.vue 统一走 MessageDetail，
             // 不按 linkUrl 导航），详见该文件 openItem 的注释。
-            case FULFILLMENT_WARNING, FULFILLMENT_URGENT, ORDER_REASSIGNED ->
+            case FULFILLMENT_WARNING, FULFILLMENT_URGENT, ORDER_REASSIGNED, ORDER_EXAM_PREP ->
                     "/family/order/" + bizId;
             case ORDER_URGED -> "/companion/order";
             case AUDIT_RESULT -> "/profile/companion";

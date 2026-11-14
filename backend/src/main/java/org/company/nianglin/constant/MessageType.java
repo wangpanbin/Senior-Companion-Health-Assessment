@@ -101,6 +101,15 @@ public enum MessageType {
      */
     ORDER_REASSIGNED("订单已改派陪诊员", MessageBizType.ORDER),
     /**
+     * 就诊前一天的检查准备提醒（V5 · B）。
+     *
+     * <p>接收人是<b>下单家属 + 就诊老人本人</b>，{@code bizId=orderId}。
+     * 消息只陈述「明天有就诊安排 + 医院 + 科室」这个事实；准备要求本身
+     * 去查静态字典（{@code GET /api/exam-prep}）或助手 FAQ，不由本消息生成
+     * （红线-1）。发送前过 {@code ComplianceCheckUtil} 词表。</p>
+     */
+    ORDER_EXAM_PREP("检查准备提醒", MessageBizType.ORDER),
+    /**
      * 健康证即将到期或已过期（V5 · C1）。
      *
      * <p>接收人是<b>本人 + 全部管理员</b>，{@code bizId=companionProfileId}；

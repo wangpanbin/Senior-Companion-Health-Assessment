@@ -253,6 +253,13 @@ nianglin:
     miss-scan-batch: 200
     # 服药日历允许查询的最大天数
     max-calendar-days: 31
+  # 检查准备提醒（V5 · B，docs/api/14-exam-prep.md §2）
+  exam-prep:
+    # 定时任务总开关（与 nianglin.medication.scheduler-enabled 同口径，
+    # 关掉后 @Scheduled 不注册，便于压测 / 排障时不让后台任务干扰）
+    scheduler-enabled: true
+    # 每天扫描「明天有就诊安排」订单的时刻（早于出门时间，留出准备余量）
+    remind-cron: "0 0 9 * * ?"
   # 短信通道（V4 · P1-1 自助找回密码）
   #
   # 这里只放与环境无关的默认值；凭证与签名 / 模板一律在 profile 或环境变量里，
