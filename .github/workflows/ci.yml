@@ -250,7 +250,7 @@ jobs:
       #    本 job 设了 defaults.working-directory: ai-service，
       #    而 setup-python 读 lockfile 指纹时是从 workflow 根目录找的。
       - name: 装 Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: 'pip'
