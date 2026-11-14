@@ -264,6 +264,8 @@ async function submitDeactivate() {
       // 存在进行中订单：如实告诉用户还差几笔，关掉弹窗去处理订单
       const count = err?.data?.pendingOrderCount
       deactVisible.value = false
+      // 撤掉拦截器的全局 toast，只留这条带笔数的（同下方字段级错误的处理）
+      ElMessage.closeAll()
       ElMessage.error(
         `您还有 ${count ?? ''} 笔进行中的订单，请先完成或取消后再注销`.replace('  笔', ' 笔')
       )
