@@ -49,15 +49,23 @@
 
 ## 2. 就诊前一天站内信提醒（定时任务，非 HTTP）
 
-- **触发**：每天 09:00 扫描（`ExamPrepScheduler`，沿用 `MedicationScheduler` 三件套：
+- **触发**：**每小时**扫描（`ExamPrepScheduler`，沿用 `MedicationScheduler` 三件套：
   `@Scheduled` cron + `RedisLockUtil` 分布式锁 + `@ConditionalOnProperty` 开关 + 方法内吞异常）。
+  评审定案：不用「每天 09:00」—— 09:00 后当天下单、次日就诊的单永远进不了每日一次的窗口，
+  发送失败也需要同日重试机会；幂等键保证高频重扫不重发（扫描走 `status + visit_time` 索引，成本可忽略）。
 - **对象**：`visit_time` 落在**明天**的订单（`ACCEPTED` / `IN_SERVICE` / `PENDING` 均算 ——
   还没接单的单也要提醒家属做准备）。
 - **收件人**：下单家属 + 就诊老人本人（ELDER 账号）；`bizId=orderId`。
-- **内容**：`明天有就诊安排 + 该医院/科室 + 一句准备提示摘要（取自静态字典的通用条目）+ 页面入口`，
-  文案过 `ComplianceCheckUtil` 词表（命中即拦截，宁可不发）。
-- **幂等**：Redis `exam-prep:remind:{orderId}:{visitDate}` SET NX（TTL 48 小时），
-  同一订单同一就诊日只提醒一次；站内信**不受静默时段约束**（静默只管短信，本模块不发短信）。
+- **内容（按 audience 分流）**：固定事实句「明天（{visitDate}）{hospital}（{department}）有就诊安排」
+  + 尾句 —— **家属侧**含「可在智能助手中查询「检查准备」」（助手仅 FAMILY 可用），
+  **老人侧**落「具体以就诊医院要求为准」（不给老人一个进不去的入口）。
+  模板出站前两侧各自过 `ComplianceCheckUtil` 词表（命中即拦截，宁可不发）。
+  ⚠️ 本规格原稿承诺的「字典摘要 + 页面入口」随评审收敛为现状口径：
+  当前无页面消费 `listExamPrep()`，入口为后续迭代（api 模块已就位）。
+- **幂等与补偿**：Redis `exam-prep:remind:{orderId}:{visitDate}` SET NX（TTL 48 小时），
+  同一订单同一就诊日只提醒一次；**键先占后发，发送失败立即释放** ——
+  否则一次 DB 抖动就让这一单在当天窗口内永久丢失，释放后下一轮重扫即可补发。
+  站内信**不受静默时段约束**（静默只管短信，本模块不发短信）。
 - **失败隔离**：单订单发送失败只记日志，不中断扫描。
 
 ---

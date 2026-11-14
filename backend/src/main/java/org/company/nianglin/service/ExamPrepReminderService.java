@@ -1,7 +1,6 @@
 package org.company.nianglin.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.constant.MessageType;
@@ -38,13 +37,17 @@ import java.util.Map;
  *
  * <p>Redis {@code SET NX}：{@code exam-prep:remind:{orderId}:{visitDate}}，
  * TTL 48 小时 —— 同一订单同一就诊日只提醒一次，换就诊日（改期）键自然变化。
- * 逐单 try/catch：一单失败不中断整批，下一轮（或改期后的新键）补上。</p>
+ * <b>键先占后发，发送失败立即释放</b>：否则一次 DB 抖动就让这一单在当天窗口内
+ * 永久丢失（窗口只匹配「明天」一次）。配合<b>每小时</b>重扫，失败后下一轮即可补发 ——
+ * at-least-once，重复风险由 NX 键 + 扫描分布式锁兜住。逐单 try/catch：一单失败不中断整批。</p>
  *
  * <h3>内容边界</h3>
  *
  * <p>消息只陈述「明天有就诊安排 + 医院 + 科室」这个事实，准备要求本身
  * 去查静态字典（{@code GET /api/exam-prep}）或助手 FAQ ——
- * 任何医疗准备内容都不由本服务生成（红线-1）。文案出站前过
+ * 任何医疗准备内容都不由本服务生成（红线-1）。文案按 audience 分流：
+ * 家属侧含「去智能助手查」指引（助手仅 FAMILY 可用），老人侧落到
+ * 「以就诊医院要求为准」—— 不给老人一个进不去的入口。两侧文案各自过
  * {@link ComplianceCheckUtil} 词表，命中即拦截（宁可不发）。</p>
  *
  * @author 银龄伴诊团队
@@ -78,7 +81,7 @@ public class ExamPrepReminderService {
         LocalDateTime windowStart = tomorrow.atStartOfDay();
         LocalDateTime windowEnd = windowStart.plusDays(1);
 
-        List<CompanionOrder> orders = orderMapper.selectPage(new Page<>(1, SCAN_BATCH),
+        List<CompanionOrder> orders = orderMapper.selectList(
                 Wrappers.<CompanionOrder>lambdaQuery()
                         .in(CompanionOrder::getStatus,
                                 OrderStatus.PENDING.name(),
@@ -86,7 +89,10 @@ public class ExamPrepReminderService {
                                 OrderStatus.IN_SERVICE.name())
                         .ge(CompanionOrder::getVisitTime, windowStart)
                         .lt(CompanionOrder::getVisitTime, windowEnd)
-                        .orderByAsc(CompanionOrder::getVisitTime)).getRecords();
+                        .orderByAsc(CompanionOrder::getVisitTime)
+                        // 显式 LIMIT：分页插件 maxLimit=100 会把 selectPage 静默截断（MybatisPlusConfig），
+                        // 而本任务每天（每小时）只扫一次，截断 = 超出部分静默丢失。参数是常量，无注入面
+                        .last("LIMIT " + SCAN_BATCH));
         if (orders.isEmpty()) {
             return 0;
         }
@@ -113,24 +119,40 @@ public class ExamPrepReminderService {
             return false;
         }
 
-        Map<String, Object> params = new HashMap<>(4);
-        params.put("visitDate", visitDate.format(VISIT_DATE_FORMAT));
-        params.put("hospital", order.getHospital());
-        params.put("department", order.getDepartment());
+        Map<String, Object> base = new HashMap<>(4);
+        base.put("visitDate", visitDate.format(VISIT_DATE_FORMAT));
+        base.put("hospital", order.getHospital());
+        base.put("department", order.getDepartment());
 
-        // 合规闸：文案含医院名等动态参数，出站前过词表（红线-1：不做诊断、不开药方）
-        String hit = ComplianceCheckUtil.firstHit(
-                MessageTemplateUtil.content(MessageType.ORDER_EXAM_PREP, params));
-        if (hit != null) {
-            log.error("检查准备提醒文案命中合规词「{}」，已拦截 | orderId={}", hit, order.getId());
+        // audience 分流：家属侧含助手指引（助手仅 FAMILY），老人侧落到医院须知
+        Map<String, Object> familyParams = new HashMap<>(base);
+        familyParams.put("audience", "FAMILY");
+        Map<String, Object> elderParams = new HashMap<>(base);
+        elderParams.put("audience", "ELDER");
+
+        // 合规闸：两侧尾句不同，各自渲染后过词表（红线-1：不做诊断、不开药方）
+        String familyHit = ComplianceCheckUtil.firstHit(
+                MessageTemplateUtil.content(MessageType.ORDER_EXAM_PREP, familyParams));
+        String elderHit = ComplianceCheckUtil.firstHit(
+                MessageTemplateUtil.content(MessageType.ORDER_EXAM_PREP, elderParams));
+        if (familyHit != null || elderHit != null) {
+            log.error("检查准备提醒文案命中合规词「{}」，已拦截 | orderId={}",
+                    familyHit != null ? familyHit : elderHit, order.getId());
             return false;
         }
 
-        messageService.send(order.getFamilyId(), MessageType.ORDER_EXAM_PREP, order.getId(), params);
-        ElderProfile elder = elderMapper.selectById(order.getElderId());
-        // 老人无账号（userId 为 null）时 send 静默跳过，家属侧照发
-        messageService.send(elder == null ? null : elder.getUserId(),
-                MessageType.ORDER_EXAM_PREP, order.getId(), params);
+        try {
+            messageService.send(order.getFamilyId(), MessageType.ORDER_EXAM_PREP, order.getId(), familyParams);
+            ElderProfile elder = elderMapper.selectById(order.getElderId());
+            // 老人无账号（userId 为 null）时 send 静默跳过，家属侧照发
+            messageService.send(elder == null ? null : elder.getUserId(),
+                    MessageType.ORDER_EXAM_PREP, order.getId(), elderParams);
+        } catch (Exception e) {
+            // 键先占后发：失败必须释放，否则这一单在当天窗口内永久丢失
+            // （窗口只匹配「明天」一次）。释放后，每小时重扫的下一轮可补发
+            redisTemplate.delete(key);
+            throw e;
+        }
         log.info("检查准备提醒已发送 | orderId={} | visitDate={}", order.getId(), visitDate);
         return true;
     }

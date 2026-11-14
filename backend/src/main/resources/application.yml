@@ -258,8 +258,10 @@ nianglin:
     # 定时任务总开关（与 nianglin.medication.scheduler-enabled 同口径，
     # 关掉后 @Scheduled 不注册，便于压测 / 排障时不让后台任务干扰）
     scheduler-enabled: true
-    # 每天扫描「明天有就诊安排」订单的时刻（早于出门时间，留出准备余量）
-    remind-cron: "0 0 9 * * ?"
+    # 每小时扫描「明天有就诊安排」订单的时刻（评审修复 #2/#4：
+    # 09:00 后新下单的次日就诊单、以及发送失败待补发的单，都要有同日重试机会；
+    # 幂等键 exam-prep:remind:{orderId}:{visitDate} 保证高频重扫不重发）
+    remind-cron: "0 0 * * * ?"
   # 短信通道（V4 · P1-1 自助找回密码）
   #
   # 这里只放与环境无关的默认值；凭证与签名 / 模板一律在 profile 或环境变量里，

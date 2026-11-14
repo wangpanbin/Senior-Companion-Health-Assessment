@@ -1,7 +1,6 @@
 package org.company.nianglin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.ElderProfile;
@@ -21,6 +20,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -82,9 +82,9 @@ class ExamPrepReminderServiceTest {
     }
 
     @Test
-    @DisplayName("明天有订单 → 家属与就诊老人各收一条（bizId=orderId），且窗口只含明天")
+    @DisplayName("明天有订单 → 家属与就诊老人各收一条（bizId=orderId），窗口只含明天且上限显式下推")
     void scanShouldNotifyFamilyAndElderForTomorrowOrder() {
-        given(orderMapper.selectPage(any(), any())).willReturn(page(tomorrowOrder(ORDER_ID)));
+        given(orderMapper.selectList(any())).willReturn(List.of(tomorrowOrder(ORDER_ID)));
         given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).willReturn(true);
@@ -99,13 +99,15 @@ class ExamPrepReminderServiceTest {
         assertEquals("海南省人民医院", params.getValue().get("hospital"));
         assertTrue(String.valueOf(params.getValue().get("visitDate")).contains("月"), "visitDate 应为人读格式");
 
-        // 窗口口径：visit_time 落在明天 0 点到后天 0 点之间，且只取在途状态
+        // 窗口口径：visit_time 落在明天 0 点到后天 0 点之间，且只取在途状态；
+        // 上限必须显式下推 —— 分页插件 maxLimit=100 会把 selectPage 静默截断
         @SuppressWarnings({"unchecked", "rawtypes"})
         ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
-        verify(orderMapper).selectPage(any(), captor.capture());
+        verify(orderMapper).selectList(captor.capture());
         String sql = captor.getValue().getSqlSegment().replaceAll("\\s+", " ");
         assertTrue(sql.contains("visit_time"), "按就诊时间过滤：" + sql);
         assertTrue(sql.contains("status"), "按状态过滤：" + sql);
+        assertTrue(sql.contains("LIMIT 500"), "扫描上限必须显式 LIMIT（否则被插件截断为 100）：" + sql);
         assertTrue(captor.getValue().getParamNameValuePairs().containsValue("ACCEPTED"), "含已接单");
         assertTrue(captor.getValue().getParamNameValuePairs().containsValue("PENDING"), "含待接单（还没接单也要提醒）");
     }
@@ -113,7 +115,7 @@ class ExamPrepReminderServiceTest {
     @Test
     @DisplayName("幂等：同订单同就诊日已提醒过（SET NX 未抢到）→ 零发送")
     void scanShouldSkipAlreadyRemindedOrder() {
-        given(orderMapper.selectPage(any(), any())).willReturn(page(tomorrowOrder(ORDER_ID)));
+        given(orderMapper.selectList(any())).willReturn(List.of(tomorrowOrder(ORDER_ID)));
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).willReturn(false);
 
@@ -126,7 +128,7 @@ class ExamPrepReminderServiceTest {
     @Test
     @DisplayName("无明天订单 → 零发送，且不碰 Redis")
     void scanShouldDoNothingWhenNoTomorrowOrders() {
-        given(orderMapper.selectPage(any(), any())).willReturn(new Page<>());
+        given(orderMapper.selectList(any())).willReturn(List.of());
 
         int sent = service.scanTomorrowOrders();
 
@@ -138,8 +140,8 @@ class ExamPrepReminderServiceTest {
     @Test
     @DisplayName("隔离：第一单发送抛异常，第二单照发，扫描不中断")
     void scanShouldIsolateSingleOrderFailure() {
-        given(orderMapper.selectPage(any(), any()))
-                .willReturn(page(tomorrowOrder(ORDER_ID), tomorrowOrder(OTHER_ORDER_ID)));
+        given(orderMapper.selectList(any()))
+                .willReturn(List.of(tomorrowOrder(ORDER_ID), tomorrowOrder(OTHER_ORDER_ID)));
         given(elderMapper.selectById(ELDER_ID)).willReturn(elder());
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).willReturn(true);
@@ -152,6 +154,42 @@ class ExamPrepReminderServiceTest {
 
         assertEquals(1, sent, "失败的那单不该计入，成功的那单必须发出去");
         verify(messageService).send(eq(FAMILY_ID), eq(MessageType.ORDER_EXAM_PREP), eq(OTHER_ORDER_ID), any());
+    }
+
+    @Test
+    @DisplayName("发送失败必须释放幂等键 —— 键先占后发，失败不释放 = 当天永久丢失")
+    void scanShouldReleaseKeyWhenSendFails() {
+        given(orderMapper.selectList(any())).willReturn(List.of(tomorrowOrder(ORDER_ID)));
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).willReturn(true);
+        when(messageService.send(anyLong(), any(MessageType.class), anyLong(), any()))
+                .thenThrow(new RuntimeException("站内信写库失败"));
+
+        int sent = service.scanTomorrowOrders();
+
+        assertEquals(0, sent);
+        // 释放后，同窗口的下一轮重扫（每小时）才能补发这一单
+        verify(redisTemplate).delete("exam-prep:remind:" + ORDER_ID + ":" + LocalDate.now().plusDays(1));
+    }
+
+    @Test
+    @DisplayName("文案分流：家属侧含助手查询指引；老人侧无助手死胡同（助手仅 FAMILY 可用）")
+    void reminderContentShouldSplitByAudience() {
+        Map<String, Object> base = Map.of(
+                "visitDate", "11月15日",
+                "hospital", "海南省人民医院",
+                "department", "心内科");
+        Map<String, Object> family = new java.util.HashMap<>(base);
+        family.put("audience", "FAMILY");
+        Map<String, Object> elder = new java.util.HashMap<>(base);
+        elder.put("audience", "ELDER");
+
+        String familyContent = MessageTemplateUtil.content(MessageType.ORDER_EXAM_PREP, family);
+        String elderContent = MessageTemplateUtil.content(MessageType.ORDER_EXAM_PREP, elder);
+
+        assertTrue(familyContent.contains("智能助手"), "家属侧可以去助手查：" + familyContent);
+        assertTrue(!elderContent.contains("智能助手"), "老人侧没有助手入口，不得给死胡同：" + elderContent);
+        assertTrue(elderContent.contains("以就诊医院要求为准"), "老人侧落到医院须知：" + elderContent);
     }
 
     @Test
@@ -168,12 +206,6 @@ class ExamPrepReminderServiceTest {
     }
 
     /* ------------------------------------------------------------------ */
-
-    private Page<CompanionOrder> page(CompanionOrder... orders) {
-        Page<CompanionOrder> page = new Page<>();
-        page.setRecords(List.of(orders));
-        return page;
-    }
 
     /** 就诊时间固定在明天 10:00（窗口断言依赖这个相对值） */
     private CompanionOrder tomorrowOrder(Long id) {

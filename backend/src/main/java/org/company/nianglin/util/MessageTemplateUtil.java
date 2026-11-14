@@ -153,15 +153,20 @@ public final class MessageTemplateUtil {
                 };
             }
             // V5 · B：只陈述「明天有就诊安排」这个事实；准备要求本身去查静态字典 / FAQ，
-            // 不在消息里生成任何医疗内容（红线-1）
+            // 不在消息里生成任何医疗内容（红线-1）。按 audience 分流：
+            // 家属侧可以去助手查（助手仅 FAMILY 可用）；老人侧没有助手入口，
+            // 指引落到「以就诊医院要求为准」，不给进不去的入口
             case ORDER_EXAM_PREP -> {
                 String visitDate = value(p, "visitDate");
                 String hospital = value(p, "hospital");
                 String department = emptyIfMissing(p, "department");
-                String tail = "。出门前请按医院检查须知核对空腹、携带材料等准备，可在智能助手中查询「检查准备」。";
-                yield department.isEmpty()
-                        ? "明天（%s）%s有就诊安排".formatted(visitDate, hospital) + tail
-                        : "明天（%s）%s（%s）有就诊安排".formatted(visitDate, hospital, department) + tail;
+                String head = department.isEmpty()
+                        ? "明天（%s）%s有就诊安排".formatted(visitDate, hospital)
+                        : "明天（%s）%s（%s）有就诊安排".formatted(visitDate, hospital, department);
+                String audience = value(p, "audience");
+                yield head + ("ELDER".equals(audience)
+                        ? "。出门前请按医院检查须知核对空腹、携带材料等准备，具体以就诊医院要求为准。"
+                        : "。出门前请按医院检查须知核对空腹、携带材料等准备，可在智能助手中查询「检查准备」。");
             }
             case SYSTEM_NOTICE -> value(p, "content");
             case HEALTH_CERT_EXPIRING -> {
