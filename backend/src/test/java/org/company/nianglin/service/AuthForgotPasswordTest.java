@@ -1,6 +1,7 @@
 package org.company.nianglin.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.company.nianglin.constant.AccountStatus;
 import org.company.nianglin.constant.RedisKeyConstants;
@@ -35,10 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -65,7 +63,7 @@ class AuthForgotPasswordTest {
 
     private static final String OLD_PASSWORD = "OldPass123";
     private static final String NEW_PASSWORD = "NewPass456";
-    private static final String SMS_SENT_MESSAGE = "若该手机号已注册，验证码将发送至该号码";
+    private static final String SMS_CODE_MESSAGE = "验证码已生成";
     private static final String PASSWORD_RESET_MESSAGE = "密码已重置，请重新登录";
 
     @Autowired
@@ -126,27 +124,29 @@ class AuthForgotPasswordTest {
     /* ================================================================== */
 
     @Test
-    @DisplayName("① 已注册手机号发码：200 同构响应，Redis 有 6 位码且 TTL 为正")
+    @DisplayName("① 发码：200 + data 为 6 位码，与 Redis 一致且 TTL 为正，绝不调短信通道")
     void shouldStoreCodeForRegisteredPhone() throws Exception {
         mockMvc.perform(post("/api/auth/sms-code")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(smsBody(phone)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.message").value(SMS_SENT_MESSAGE));
+                .andExpect(jsonPath("$.message").value(SMS_CODE_MESSAGE))
+                .andExpect(jsonPath("$.data").isString())
+                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.matchesPattern("\\d{6}")));
 
         String code = redisTemplate.opsForValue().get(RedisKeyConstants.smsResetCode(phone));
-        assertNotNull(code, "已注册手机号必须生成验证码");
+        assertNotNull(code, "发码后 Redis 必须存在验证码");
         assertTrue(code.matches("\\d{6}"), "验证码必须是 6 位数字");
         assertTrue(redisTemplate.getExpire(RedisKeyConstants.smsResetCode(phone)) > 0L,
                 "验证码必须带 TTL");
 
-        verify(smsSender, times(1)).send(eq(phone), any(),
-                argThat((Map<String, String> params) -> code.equals(params.get("code"))));
+        // 回归护栏：找回密码已去短信化（ADR-0021），绝不能再调用短信通道
+        verify(smsSender, never()).send(any(), any(), any());
     }
 
     @Test
-    @DisplayName("② 未注册手机号发码：响应与已注册字节级同构，且不调用短信通道")
+    @DisplayName("② 未注册手机号发码：与已注册结构同构（同 200/同文案/各自 6 位 data），且不调短信通道")
     void shouldReturnIdenticalBodyForUnregisteredPhone() throws Exception {
         String ghostPhone = freshPhone();
         MvcResult registered = mockMvc.perform(post("/api/auth/sms-code")
@@ -160,12 +160,18 @@ class AuthForgotPasswordTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        assertEquals(registered.getResponse().getContentAsString(),
-                unregistered.getResponse().getContentAsString(),
-                "未注册手机号的响应体必须与已注册完全一致（防枚举）");
+        // data 里是随机码，两次响应不可能字节级相等 —— 比结构：同 code、同 message、
+        // 双方 data 都是 6 位数字（防枚举靠「人人都拿得到码」自动成立）
+        JsonNode reg = objectMapper.readTree(registered.getResponse().getContentAsString());
+        JsonNode ghost = objectMapper.readTree(unregistered.getResponse().getContentAsString());
+        assertEquals(reg.get("code").asInt(), ghost.get("code").asInt(),
+                "已注册 / 未注册的业务码必须一致");
+        assertEquals(reg.get("message").asText(), ghost.get("message").asText(),
+                "已注册 / 未注册的文案必须一致（防枚举）");
+        assertTrue(reg.get("data").asText().matches("\\d{6}"), "已注册响应 data 必须是 6 位码");
+        assertTrue(ghost.get("data").asText().matches("\\d{6}"), "未注册响应 data 必须是 6 位码");
 
-        verify(smsSender, times(1)).send(eq(phone), any(), any());
-        verify(smsSender, never()).send(eq(ghostPhone), any(), any());
+        verify(smsSender, never()).send(any(), any(), any());
     }
 
     @Test
@@ -182,7 +188,7 @@ class AuthForgotPasswordTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(1009));
 
-        verify(smsSender, times(1)).send(eq(phone), any(), any());
+        verify(smsSender, never()).send(any(), any(), any());
     }
 
     @Test
@@ -203,7 +209,7 @@ class AuthForgotPasswordTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(1009));
 
-        verify(smsSender, times(10)).send(eq(phone), any(), any());
+        verify(smsSender, never()).send(any(), any(), any());
     }
 
     /* ================================================================== */
@@ -402,13 +408,17 @@ class AuthForgotPasswordTest {
     /* ================================================================== */
 
     private String sendAndReadCode(String targetPhone) throws Exception {
-        mockMvc.perform(post("/api/auth/sms-code")
+        // 直接读响应里的 data —— 顺带验证「验证码回传」契约（ADR-0021）
+        MvcResult result = mockMvc.perform(post("/api/auth/sms-code")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(smsBody(targetPhone)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200));
-        String code = redisTemplate.opsForValue().get(RedisKeyConstants.smsResetCode(targetPhone));
-        assertNotNull(code, "发码后 Redis 必须存在验证码");
+                .andExpect(jsonPath("$.code").value(200))
+                .andReturn();
+        JsonNode data = objectMapper.readTree(result.getResponse().getContentAsString()).get("data");
+        assertNotNull(data, "发码响应的 data 必须携带验证码");
+        String code = data.asText();
+        assertTrue(code.matches("\\d{6}"), "响应 data 必须是 6 位数字验证码");
         return code;
     }
 

@@ -413,10 +413,12 @@ dedup_key = "medication-missed:" + taskId + ":" + level + ":" + userId + ":" + y
 
 | 场景 | Spring 配置键 | 生产环境变量 | dev 假值 |
 |---|---|---|---|
-| 找回密码 | `nianglin.sms.templates.verification` | `ALIYUN_SMS_TEMPLATE_CODE_VERIFICATION` | `SMS_DEV_VERIFICATION` |
 | 漏服提醒 | `nianglin.sms.templates.missed-dose` | `ALIYUN_SMS_TEMPLATE_CODE_MISSED_DOSE` | `SMS_DEV_MISSED_DOSE` |
 
-> `provider=aliyun` 时两个模板 Code 都必须非空，缺任一即**启动失败**（`SmsProperties#validate`）。
+> 原「找回密码」场景（`templates.verification` / `ALIYUN_SMS_TEMPLATE_CODE_VERIFICATION`）
+> 已随**找回密码去短信化**删除（验证码直接回传，见 [ADR-0021](../adr/0021-forgot-password-code-direct-return.md)）。
+>
+> `provider=aliyun` 时 missed-dose 模板 Code 必须非空，否则**启动失败**（`SmsProperties#validate`）。
 > 不再保留单 `templateCode` 字段，也不提供兼容层。
 
 | 配置项 | 默认 | 说明 |

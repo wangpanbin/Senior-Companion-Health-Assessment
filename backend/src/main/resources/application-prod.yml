@@ -70,10 +70,9 @@ nianglin:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://nianglin.example.com}
 
   # ------------------------------------------------------------------
-  # 短信通道（V4 · P1-1 / P1-3）：生产默认 aliyun。
-  # 凭证 / 签名 / 两个场景模板全部走环境变量，空默认值意味着「未注入即启动失败」
+  # 短信通道（V4 · P1-3 漏服提醒；找回密码已去短信化，见 ADR-0021）：生产默认 aliyun。
+  # 凭证 / 签名 / missed-dose 模板全部走环境变量，空默认值意味着「未注入即启动失败」
   # （SmsProperties#validate 抛 IllegalStateException），不允许静默降级为 mock。
-  # ⚠️ verification 与 missed-dose 必须分别配置：缺任一即拒绝启动。
   # ------------------------------------------------------------------
   sms:
     provider: ${SMS_PROVIDER:aliyun}
@@ -81,5 +80,4 @@ nianglin:
     access-key-secret: ${ALIYUN_SMS_ACCESS_SECRET:}
     sign-name: ${ALIYUN_SMS_SIGN_NAME:}
     templates:
-      verification: ${ALIYUN_SMS_TEMPLATE_CODE_VERIFICATION:}
       missed-dose: ${ALIYUN_SMS_TEMPLATE_CODE_MISSED_DOSE:}

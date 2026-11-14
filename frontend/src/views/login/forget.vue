@@ -1,16 +1,16 @@
 <script setup>
 /**
- * 找回密码（V4 · P1-1 自助找回）
+ * 找回密码（V4 · P1-1 自助找回，去短信化见 ADR-0021）
  *
  * 契约：docs/api/01-auth-user.md §10 – §11
  *
- * - 手机号 → 获取短信验证码（60 秒倒计时）
+ * - 手机号 → 获取验证码（后端直接回传，**自动填入**下方输入框；60 秒倒计时）
  * - 验证码 + 新密码 → 提交
  * - 成功提示「密码已重置，请重新登录」并跳 /login
  *
- * ⚠️ 防枚举是后端刻意设计：手机号未注册时也会返回同样的成功响应。
- * 因此这里**不能**在成功后用返回内容区分「账号是否存在」，
- * 文案统一为「密码已重置，请重新登录」。
+ * ⚠️ 不再有短信通道：验证码由 POST /auth/sms-code 在 data 中明文回传，
+ * 任何知道手机号的人都能重置密码 —— 这是刻意的取舍（课程演示环境，
+ * 无短信服务商预算），仅靠三层频控节流，见 ADR-0021。
  *
  * ⚠️ 错误码（1008 验证码错误 / 过期 / 已用；1009 频控）由 axios 拦截器
  * 直接展示后端文案，本页只做「清空验证码」「启动倒计时」这类状态联动。
@@ -47,7 +47,7 @@ const rules = {
     { pattern: PHONE_RE, message: PHONE_MSG, trigger: 'blur' }
   ],
   smsCode: [
-    { required: true, message: '请输入短信验证码', trigger: 'blur' },
+    { required: true, message: '请先获取验证码', trigger: 'blur' },
     { pattern: SMS_CODE_RE, message: '验证码为 6 位数字', trigger: 'blur' }
   ],
   newPassword: [
@@ -75,7 +75,7 @@ function stopCountdown() {
 
 onBeforeUnmount(stopCountdown)
 
-/** 只校验手机号，再去请求验证码 */
+/** 只校验手机号，再去要验证码；后端回传后自动填入输入框 */
 async function sendCode() {
   if (sending.value || countdown.value > 0) return
   sending.value = true
@@ -86,11 +86,13 @@ async function sendCode() {
       .catch(() => false)
     if (!valid) return
 
-    await sendSmsCode({ phone: form.value.phone })
-    ElMessage.success('若该手机号已注册，验证码已发送至该号码')
+    // 拦截器已拆好 envelope：data 就是 6 位验证码字符串
+    const smsCode = await sendSmsCode({ phone: form.value.phone })
+    form.value.smsCode = smsCode || ''
+    ElMessage.success('验证码已自动填充')
     startCountdown()
   } catch (e) {
-    // 1009 频控：即便这次没发出去，也启动倒计时，避免用户连续点击
+    // 1009 频控：即便这次没拿到码，也启动倒计时，避免用户连续点击
     if (e?.code === 1009) startCountdown()
   } finally {
     sending.value = false
@@ -124,7 +126,7 @@ async function submit() {
 <template>
   <NlPageShell title="找回密码">
     <NlNoticeBar tone="info">
-      验证码只发送到注册时填写的手机号，仅用于确认本人身份。
+      验证码由系统生成并自动填充，仅用于确认本人身份。
     </NlNoticeBar>
 
     <NlCard title="填写信息">
@@ -147,12 +149,12 @@ async function submit() {
           />
         </el-form-item>
 
-        <el-form-item label="短信验证码" prop="smsCode">
+        <el-form-item label="验证码" prop="smsCode">
           <div class="sms">
             <el-input
               v-model="form.smsCode"
               inputmode="numeric"
-              placeholder="6 位数字"
+              placeholder="点击右侧按钮自动填充"
               maxlength="6"
               size="large"
             />
@@ -199,7 +201,7 @@ async function submit() {
 
     <NlCard title="还有其他办法吗">
       <p class="nl-caption nl-text-muted fallback">
-        收不到验证码、或手机号已停用？也可以联系平台管理员，说明注册时使用的用户名或手机号，
+        验证码没有自动填入、或手机号已停用？也可以联系平台管理员，说明注册时使用的用户名或手机号，
         由管理员在后台核实后协助重置。
       </p>
     </NlCard>

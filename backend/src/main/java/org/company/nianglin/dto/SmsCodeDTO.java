@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 /**
- * 发送找回密码短信验证码请求（V4 · P1-1）。
+ * 获取找回密码验证码请求（V4 · P1-1；去短信化见 ADR-0021）。
  *
  * <p>对应文档：{@code docs/api/01-auth-user.md} §10。</p>
  *
@@ -14,7 +14,7 @@ import lombok.Data;
  * @since V4 · P1-1
  */
 @Data
-@Schema(description = "发送找回密码短信验证码请求")
+@Schema(description = "获取找回密码验证码请求")
 public class SmsCodeDTO {
 
     @Schema(description = "手机号，11 位", example = "13800000000", requiredMode = Schema.RequiredMode.REQUIRED)

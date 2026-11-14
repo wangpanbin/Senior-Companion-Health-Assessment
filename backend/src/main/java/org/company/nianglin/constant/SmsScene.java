@@ -6,17 +6,14 @@ import lombok.Getter;
  * 短信模板场景（V4 · P1-3）。
  *
  * <p>一个场景对应一个模板 Code，配置键与配置项键一一对应：
- * {@code VERIFICATION → nianglin.sms.templates.verification}，
- * {@code MISSED_DOSE → nianglin.sms.templates.missed-dose}。</p>
+ * {@code MISSED_DOSE → nianglin.sms.templates.missed-dose}。
+ * 原 {@code VERIFICATION}（找回密码验证码）场景已随去短信化删除，见 ADR-0021。</p>
  *
  * @author 银龄伴诊团队
  * @since V4 · P1-3
  */
 @Getter
 public enum SmsScene {
-
-    /** 自助找回密码验证码 */
-    VERIFICATION("verification", "ALIYUN_SMS_TEMPLATE_CODE_VERIFICATION"),
 
     /** 漏服站外提醒（只含中性变量，不含剂量 / 诊断 / 建议） */
     MISSED_DOSE("missed-dose", "ALIYUN_SMS_TEMPLATE_CODE_MISSED_DOSE");

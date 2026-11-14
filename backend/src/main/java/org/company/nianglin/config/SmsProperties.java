@@ -20,13 +20,13 @@ import java.util.Map;
  * 凭证只允许来自环境变量（{@code application-prod.yml} 里的
  * {@code ${ALIYUN_SMS_ACCESS_KEY:}} 一类占位），<b>任何真实密钥都不得入库</b>。</p>
  *
- * <p>模板按场景分开配置：{@code templates.verification} 与 {@code templates.missed-dose}。
- * 找回密码与漏服提醒使用完全不同的模板正文，混用会让用户收到错误文案。</p>
+ * <p>模板按场景分开配置：目前只有 {@code templates.missed-dose}（漏服提醒）。
+ * 原 {@code templates.verification}（找回密码验证码）已随去短信化删除，见 ADR-0021。</p>
  *
  * <p><b>启动期校验</b>：{@code provider=aliyun} 时若任一凭证或任一场景模板为空，直接抛
  * {@link IllegalStateException} 让进程启动失败 —— 不允许「配置漏了但静默降级成 mock」，
  * 否则线上会出现「用户点了发送、系统返回成功、短信永远不来」的哑故障。
- * {@code provider=mock} 不校验凭证（开发 / 测试 / e2e 用），但 dev 配置仍会给两个
+ * {@code provider=mock} 不校验凭证（开发 / 测试 / e2e 用），但 dev 配置仍会给
  * 假模板 Code，避免 mock 通道下模板为空。</p>
  *
  * @author 银龄伴诊团队
@@ -60,7 +60,7 @@ public class SmsProperties {
     private String signName;
 
     /**
-     * 模板 Code 路由表：键为 {@link SmsScene#getKey()}（verification / missed-dose）。
+     * 模板 Code 路由表：键为 {@link SmsScene#getKey()}（当前仅 missed-dose）。
      *
      * <p>不再保留单 {@code templateCode} 字段，也不做兼容层 —— 一处配置只表达一件事，
      * 避免「验证码模板被拿去发漏服提醒」这类静默错配。</p>

@@ -19,15 +19,16 @@ import org.company.nianglin.vo.UserInfoVO;
 public interface AuthService {
 
     /**
-     * 发送找回密码短信验证码（V4 · P1-1）。
+     * 生成找回密码验证码并直接回传（V4 · P1-1，去短信化见 ADR-0021）。
      *
-     * <p>无论手机号是否注册、通道是否发送成功，调用方都应返回**同一个**成功响应；
-     * 未注册手机号不调用 {@link org.company.nianglin.service.sms.SmsSender}。</p>
+     * <p>不再经过任何短信通道：验证码写入 Redis 后原样返回给调用方。
+     * 无论手机号是否注册，响应形态完全一致（同构自动成立）。</p>
      *
      * @param phone    11 位手机号
      * @param clientIp 请求方 IP，用于「同 IP 每小时 20 次」频控；为空时跳过该窗口
+     * @return 6 位数字验证码（明文回传，仅受三层频控约束）
      */
-    void sendSmsCode(String phone, String clientIp);
+    String sendSmsCode(String phone, String clientIp);
 
     /**
      * 凭手机号 + 短信验证码自助找回密码（V4 · P1-1）。
