@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-银龄伴诊 —— V4 P1-1 自助找回密码（短信通道）端到端实测脚本
+银龄伴诊 —— V4 P1-1 自助找回密码（去短信化：验证码直接回传，见 ADR-0021）端到端实测脚本
 
 用真实 HTTP 请求打真实后端，逐条验证 docs/api/01-auth-user.md §10 / §11：
-- 发码：已注册 / 未注册手机号响应完全同构；60 秒内第二次 1009；参数错误 400
+- 发码：验证码在 data 中直接回传（6 位数字）；已注册 / 未注册响应结构同构；
+  60 秒内第二次 1009；参数错误 400
 - 找回：验证码错误 1008；正确码 200；旧令牌 401（pwd:version 踢全端）；
   旧密码登录 1001、新密码登录 200；验证码复用 1008
 - 未注册手机号忘记密码：与成功完全同构，且不产生任何用户
 
 前提：
-- 后端以 dev profile 启动（`nianglin.sms.provider=mock`，验证码不落日志）
-- 本脚本从 Redis `sms:reset:{phone}` 读验证码（mock 通道唯一的测试旁路）
+- 后端以 dev profile 启动
+- 验证码优先读响应 `data`（契约为 6 位字符串），同时与 Redis `sms:reset:{phone}` 交叉核对
 - MySQL / Redis 可用；redis-cli 与 mysql.exe 路径见下（与 cleanup_util 一致）
 
 安全边界：
@@ -36,7 +37,7 @@ REDIS_CLI = r"D:\develop\Redis-8.8.0\redis-cli.exe"
 MYSQL = r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe"
 DB = "nianglin"
 
-SMS_SENT_MESSAGE = "若该手机号已注册，验证码将发送至该号码"
+SMS_CODE_MESSAGE = "验证码已生成"
 PASSWORD_RESET_MESSAGE = "密码已重置，请重新登录"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -179,21 +180,27 @@ def main():
           "code=%s userId=%s" % (body.get("code"), new_user_id))
     old_token = login_ok(ACC_NEW)["accessToken"]
 
-    # ---------------- B. 发码：同构 / 频控 / 参数 ----------------
+    # ---------------- B. 发码：data 回传 / 同构 / 频控 / 参数 ----------------
     status, body = sms(PHONE_NEW)
+    resp_code = (body.get("data") or "")
     code = redis_get("sms:reset:" + PHONE_NEW)
-    check("B1 已注册手机号发码 → 200 同构 + Redis 6 位码 + 5 分钟 TTL",
+    check("B1 发码 → 200 + data 为 6 位码且与 Redis 一致 + 5 分钟 TTL",
           status == 200 and body.get("code") == 200
-          and body.get("message") == SMS_SENT_MESSAGE
+          and body.get("message") == SMS_CODE_MESSAGE
+          and len(resp_code) == 6 and resp_code.isdigit()
+          and resp_code == code
           and len(code) == 6 and code.isdigit() and redis_ttl("sms:reset:" + PHONE_NEW) > 0,
-          "http=%s code=%s sms=%s ttl=%s"
-          % (status, body.get("code"), code, redis_ttl("sms:reset:" + PHONE_NEW)))
+          "http=%s code=%s data=%s redis=%s ttl=%s"
+          % (status, body.get("code"), resp_code, code, redis_ttl("sms:reset:" + PHONE_NEW)))
 
     status, ghost_sms = sms(PHONE_GHOST)
-    check("B2 未注册手机号发码 → 响应与已注册完全同构（防枚举）",
+    ghost_resp_code = (ghost_sms.get("data") or "")
+    check("B2 未注册手机号发码 → 与已注册结构同构（同文案 + 各自 6 位 data，防枚举）",
           status == 200 and ghost_sms.get("code") == 200
-          and ghost_sms.get("message") == SMS_SENT_MESSAGE,
-          "http=%s body=%s" % (status, ghost_sms))
+          and ghost_sms.get("message") == SMS_CODE_MESSAGE
+          and len(ghost_resp_code) == 6 and ghost_resp_code.isdigit(),
+          "http=%s code=%s message=%s data=%s"
+          % (status, ghost_sms.get("code"), ghost_sms.get("message"), ghost_resp_code))
 
     status, again = sms(PHONE_NEW)
     check("B3 同手机号 60 秒内第二次 → 1009", again.get("code") == 1009,
@@ -241,6 +248,8 @@ def main():
 
     # ---------------- D. 未注册手机号忘记密码：同构 ----------------
     ghost_code = redis_get("sms:reset:" + PHONE_GHOST)
+    if not (len(ghost_code) == 6 and ghost_code.isdigit()):
+        ghost_code = ghost_resp_code
     status, body = forgot(PHONE_GHOST, ghost_code)
     check("D1 未注册手机号忘记密码 → 与成功完全同构（200 + 同一文案）",
           status == 200 and body.get("code") == 200

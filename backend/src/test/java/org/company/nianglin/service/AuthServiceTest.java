@@ -20,7 +20,6 @@ import org.company.nianglin.security.SecurityProperties;
 import org.company.nianglin.security.TokenPayload;
 import org.company.nianglin.security.TokenStore;
 import org.company.nianglin.service.impl.AuthServiceImpl;
-import org.company.nianglin.service.sms.SmsSender;
 import org.company.nianglin.vo.LoginVO;
 import org.company.nianglin.vo.TokenVO;
 import org.junit.jupiter.api.AfterEach;
@@ -92,18 +91,13 @@ class AuthServiceTest {
     @Mock
     private StringRedisTemplate redisTemplate;
 
-    @Mock
-    private SmsSender smsSender;
-
     private AuthServiceImpl authService;
 
     @BeforeEach
     void setUp() {
         authService = new AuthServiceImpl(sysUserMapper, sysLoginLogMapper, passwordEncoder,
                 captchaService, tokenProvider, new JwtProperties(), tokenStore, new SecurityProperties(),
-                elderService, redisTemplate, smsSender,
-                new org.company.nianglin.service.sms.SmsTemplateRouter(
-                        org.company.nianglin.support.TestSmsProperties.forMock()));
+                elderService, redisTemplate);
     }
 
     @AfterEach

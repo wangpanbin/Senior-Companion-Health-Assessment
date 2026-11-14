@@ -111,13 +111,12 @@ nianglin:
     default-password: ${DEFAULT_RESET_PASSWORD:Nl@123456}
 
   # ------------------------------------------------------------------
-  # 开发 / 测试 / e2e 固定走 mock 通道：只打脱敏手机号日志，验证码不落日志。
-  # e2e 需要验证码时直接读 Redis `sms:reset:{phone}`。
+  # 开发 / 测试 / e2e 固定走 mock 通道：只打脱敏手机号日志，不真实外发。
+  # （找回密码已去短信化，验证码直接回传，见 ADR-0021；此处模板仅供漏服提醒。）
   # ------------------------------------------------------------------
   sms:
     provider: mock
     # mock 下不会真实外发，但模板 Code 仍必须非空：
     # 一是让路由逻辑与生产同构，二是避免「mock 全绿、切 aliyun 才发现模板漏配」。
     templates:
-      verification: SMS_DEV_VERIFICATION
       missed-dose: SMS_DEV_MISSED_DOSE

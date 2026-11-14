@@ -48,7 +48,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "01-认证与账号", description = "验证码、注册、登录、刷新令牌、登出、当前用户、修改密码、自助找回密码")
 public class AuthController {
 
-    private static final String SMS_SENT_MESSAGE = "若该手机号已注册，验证码将发送至该号码";
+    private static final String SMS_CODE_MESSAGE = "验证码已生成";
     private static final String PASSWORD_RESET_MESSAGE = "密码已重置，请重新登录";
 
     private final AuthService authService;
@@ -101,23 +101,25 @@ public class AuthController {
     }
 
     /**
-     * 发送找回密码短信验证码。
+     * 生成找回密码验证码并直接回传。
      *
-     * <p><b>防枚举</b>：无论手机号是否注册、短信通道是否发送成功，响应与 HTTP 状态完全一致；
-     * 只有参数格式错误返回 400。频控：同手机号 60 秒 1 次 / 每天 10 次，同 IP 每小时 20 次。</p>
+     * <p><b>去短信化（ADR-0021）</b>：验证码不再经短信通道下发，而是在 {@code data} 中
+     * 明文回传，前端自动填充。三层频控（同手机号 60 秒 1 次 / 每天 10 次，同 IP 每小时
+     * 20 次）仍然生效，超限 1009；只有参数格式错误返回 400。</p>
      */
-    @Operation(summary = "发送找回密码短信验证码",
-            description = "公开接口。防枚举：无论手机号是否注册、短信通道是否发送成功，响应体与 HTTP 状态完全一致；"
-                    + "仅参数格式错误返回 400。频控：同手机号 60 秒 1 次、每天 10 次；同 IP 每小时 20 次（超限 1009）。")
+    @Operation(summary = "获取找回密码验证码（直接回传）",
+            description = "公开接口。验证码不再发送短信，而是在 data 中直接回传 6 位数字验证码（ADR-0021），"
+                    + "前端自动填充。频控：同手机号 60 秒 1 次、每天 10 次；同 IP 每小时 20 次（超限 1009）；"
+                    + "仅参数格式错误返回 400。")
     @AllowElderWrite("找回密码属于老人本人的账号恢复，必须允许老人账号发起")
     @PostMapping("/sms-code")
-    public Result<Void> sendSmsCode(@Valid @RequestBody SmsCodeDTO dto, HttpServletRequest request) {
-        authService.sendSmsCode(dto.getPhone(), WebUtil.ip(request));
-        return Result.<Void>success(SMS_SENT_MESSAGE, null);
+    public Result<String> sendSmsCode(@Valid @RequestBody SmsCodeDTO dto, HttpServletRequest request) {
+        String code = authService.sendSmsCode(dto.getPhone(), WebUtil.ip(request));
+        return Result.success(SMS_CODE_MESSAGE, code);
     }
 
     /**
-     * 凭手机号 + 短信验证码自助找回密码。
+     * 凭手机号 + 验证码自助找回密码。
      *
      * <p>手机号不存在时与成功路径返回完全同构、且不真正改密；验证码错误 / 过期 / 已用 /
      * 错满 5 次一律 1008。成功后 {@code pwd:version} 递增，该用户全部令牌立即失效。</p>

@@ -44,15 +44,16 @@ export function changePassword(data) {
 }
 
 /**
- * 发送找回密码短信验证码（V4 · P1-1）
- * → data 恒为 null；未注册手机号也返回成功（防枚举，见 docs/api/01-auth-user.md §10）
+ * 获取找回密码验证码（V4 · P1-1；去短信化见 ADR-0021）
+ * → data 为 6 位验证码字符串（后端直接回传，不经短信通道），前端自动填充
+ * 频控超限返回 1009（拦截器已弹文案）
  */
 export function sendSmsCode(data) {
   return request({ url: '/auth/sms-code', method: 'post', data, skipAuth: true })
 }
 
 /**
- * 凭手机号 + 短信验证码自助找回密码（V4 · P1-1）
+ * 凭手机号 + 验证码自助找回密码（V4 · P1-1）
  * → data 恒为 null；手机号不存在时响应与成功完全同构（见 docs/api/01-auth-user.md §11）
  */
 export function forgotPassword(data) {

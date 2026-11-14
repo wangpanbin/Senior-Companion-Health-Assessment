@@ -28,9 +28,6 @@ import org.company.nianglin.security.TokenPayload;
 import org.company.nianglin.service.AuthService;
 import org.company.nianglin.service.CaptchaService;
 import org.company.nianglin.service.ElderService;
-import org.company.nianglin.constant.SmsScene;
-import org.company.nianglin.service.sms.SmsSender;
-import org.company.nianglin.service.sms.SmsTemplateRouter;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.vo.LoginVO;
 import org.company.nianglin.vo.TokenVO;
@@ -46,7 +43,6 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -108,8 +104,6 @@ public class AuthServiceImpl implements AuthService {
     private final SecurityProperties securityProperties;
     private final ElderService elderService;
     private final StringRedisTemplate redisTemplate;
-    private final SmsSender smsSender;
-    private final SmsTemplateRouter smsTemplateRouter;
 
     /* ================================================================== */
     /* 注册                                                                */
@@ -383,31 +377,20 @@ public class AuthServiceImpl implements AuthService {
     /* ================================================================== */
 
     @Override
-    public void sendSmsCode(String phone, String clientIp) {
+    public String sendSmsCode(String phone, String clientIp) {
         String normalizedPhone = normalizePhone(phone);
         checkSendFrequency(normalizedPhone, clientIp);
 
-        // 无论手机号是否注册都生成并落 Redis：保持两条路径的 Redis 状态一致，
-        // 这是「未注册手机号也能走完同构响应」的前提，不要以省一次写入为由改掉
+        // 人人都生成、人人拿得到（ADR-0021 去短信化）：不再区分注册与否，
+        // 不再调用任何短信通道，同构响应自动成立。
+        // 验证码不落日志（合规红线），只写 Redis 供 forgot-password 消费。
         String code = generateSmsCode();
         redisTemplate.opsForValue()
                 .set(RedisKeyConstants.smsResetCode(normalizedPhone), code, SMS_CODE_TTL);
         redisTemplate.delete(RedisKeyConstants.smsResetFail(normalizedPhone));
 
-        SysUser user = findUserByPhone(normalizedPhone);
-        if (user == null) {
-            log.info("找回密码验证码：手机号未注册，已生成但不发送 | phone={}",
-                    MaskUtil.phone(normalizedPhone));
-            return;
-        }
-
-        try {
-            smsSender.send(normalizedPhone, smsTemplateRouter.resolve(SmsScene.VERIFICATION), Map.of("code", code));
-        } catch (Exception e) {
-            // 通道故障绝不能透出：发送成功 / 失败的差异就是账号存在性侧信道
-            log.error("找回密码短信发送失败，已按同构响应吞掉 | phone={} | err={}",
-                    MaskUtil.phone(normalizedPhone), e.toString());
-        }
+        log.info("找回密码验证码已生成并回传 | phone={}", MaskUtil.phone(normalizedPhone));
+        return code;
     }
 
     @Override
