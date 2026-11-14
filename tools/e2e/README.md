@@ -21,6 +21,7 @@
 | `stop-services.ps1` | 停 8080 的 Java 进程 | — | — | — |
 | `fixture.py` | 写路径 E2E 夹具：`snapshot` / `restore` / `verify`，让库回到跑之前 | ✅ | ✅ | — |
 | `restore_clean_baseline.py` | 把库与 Redis 恢复到种子基线（删写路径新增行） | ✅ | ✅ | — |
+| `test_restore_clean_baseline.py` | `restore_clean_baseline` 水位对账回归测试（纯 stdlib 单测，不连库） | — | — | — |
 | `probe_api.py` | 接口冒烟探测（与 Playwright 独立） | — | ✅ | — |
 | `probe_access_matrix.py` | **A-1 越权矩阵**（25 端点 × 4 角色 = 100 次真实 HTTP，0 违规判据，见 TEST_REPORT §6.1） | — | ✅ | — |
 | `probe_backend_gaps.py` | 后端功能缺口探测 | — | ✅ | — |
@@ -32,13 +33,18 @@
 
 ## 「能进 CI」的判据
 
-只有 `check_api_imports.py` 满足，其余全部排除，原因各不相同：
+只有 `check_api_imports.py` 与 `test_restore_clean_baseline.py` 满足判据（后者本轮刻意不接 CI，见下），其余全部排除，原因各不相同：
 
 - **需要 MySQL / Redis / 后端进程** —— `fixture.py`、`restore_clean_baseline.py`、五个 `probe_*`、
   `l0_identity_gate.py`、两个 `*.ps1` 都是本机联调脚本，CI 环境没有这些常驻服务，跑必失败
 - **写库** —— `fixture.py` 与 `restore_clean_baseline.py` 会 `DELETE` / `REPLACE INTO`，
   CI 上跑等于破坏共享环境
 - **有副作用但无判据** —— `start/stop-services.ps1` 只管进程生命周期，没有退出码语义可判
+
+⚠️ **符合判据但本轮刻意不接 CI** —— `test_restore_clean_baseline.py` 纯 stdlib、不连库、
+有退出码判据，符合全部判据；接 CI 只需在 workflow 补一步
+`python -m unittest tools.e2e.test_restore_clean_baseline`。本轮（2026-11-13 收口提交 79044a8
+「本轮不接 CI」）**刻意不接**，是下方「新增就补 step」规则记录在案的例外，现属本机手动门禁。
 
 ⚠️ **闸门为什么也不进 CI**：`l0_identity_gate.py` 判的是「8080 / 8081 / 5141 上跑的**是不是本项目的进程**」，
 前提是那三个端口已经被本机起起来了。CI 里没有这套常驻服务（后端 job 只起 MySQL / Redis 容器），
@@ -53,7 +59,7 @@ step，并在这里改「能进 CI」列。**
 
 ## 单脚本细节
 
-### `check_api_imports.py`（唯一可直接在任意环境跑）
+### `check_api_imports.py`（可直接在任意环境跑）
 
 静态扫 `frontend/src/**/*.vue` 与 `*.js`，核对每个 `@/api/xxx` 引用都真实存在。
 本机实测：73 条引用，全通，exit 0。**无外部依赖**，纯 AST 解析。
@@ -64,7 +70,13 @@ python tools/e2e/check_api_imports.py
 
 ### `restore_clean_baseline.py`
 
-**破坏性。** 基线从 `backend/sql/V*.sql` 解析真实种子水位，**不再用 `MAX(id)-100` 猜**。
+**破坏性。** 基线三层对账（详见脚本模块 docstring「水位真源与对账」）：
+
+1. `fixture.py` 影子表水位 —— **只读** `reports/e2e/fixture/state.json` / `state.done.json`（snapshot 写前者、restore 后改名后者）；`state.PRE-RUN-BASELINE.json`（污染期水位：sys_user 5030、internal_message 40233）**刻意不读**，不要把代码改成去读它。
+2. 手工确认表 `SEED_MAX_IDS` —— 与影子表**取高者**（`internal_message` 40075 / `sys_login_log` 48572 / `sys_user` 331 / `admin_oper_log` 60038）。
+3. 种子 SQL（`backend/sql/V*.sql`）解析 —— 只作第三层兜底，解析可能**低于**真实基线（验收报告 §3 P2：`sys_user` 解析 330 / 实际 331，`admin_oper_log` 60037 / 60038）。
+
+**不变量只对有真源的表成立**：生效水位 ≥ 已确认基线，这些表 `--execute` 不会碰到基线行；仅解析定案的表**没有已确认基线**、可能低于未确认的真实基线，dry-run 对这类候选表单独标 ⚠（仅提示，不改变删除行为）。dry-run 另会逐条列出对账明细。**不再用 `MAX(id)-100` 猜**。
 
 > 历史教训：旧 `.sh` / `.ps1` 版对 16 张表统一减 100，实测会误删 **629 行种子数据**
 > （`companion_order` 64 行种子订单整表清空）。已删除，勿再写回那种逻辑。
@@ -74,6 +86,7 @@ python tools/e2e/restore_clean_baseline.py                      # dry-run，看�
 python tools/e2e/restore_clean_baseline.py --execute            # 真删（二次确认）
 python tools/e2e/restore_clean_baseline.py --tables internal_message,companion_order
 python tools/e2e/restore_clean_baseline.py --execute --yes --force   # 跳过确认 + 越过阈值守卫
+python -m unittest tools.e2e.test_restore_clean_baseline        # 水位对账回归测试（纯 stdlib，不连库；等价写法：python tools/e2e/test_restore_clean_baseline.py）
 ```
 
 `--force` 用于「单表待删超 30% 或 500 行」的守卫 —— 超阈值说明基线判断可能错了。
