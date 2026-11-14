@@ -26,6 +26,7 @@
 | [11-order-chat.md](./11-order-chat.md) | 订单聊天：家属↔陪诊员（ELDER 只读 / ADMIN 仲裁只读） | M13（二期） |
 | [12-elder-health.md](./12-elder-health.md) | 老人健康协同：家庭健康首页 / 健康概览 / 健康时间线 / 老人端 | M3（V3.2） |
 | [13-assistant.md](./13-assistant.md) | 家属智能助手（问答 / 推荐解释 / 下单草稿回填） | M14 |
+| [14-exam-prep.md](./14-exam-prep.md) | 检查准备提醒（静态字典 + 就诊前一天站内信） | V5 · B |
 
 > **接口先行约定**：后端先按本文档出接口与 Mock 数据，前端用 Mock 开发，不等后端写完。
 > 接口一旦变更，必须在群内提前通知前端，并同步更新本文档与 Knife4j 注解。
