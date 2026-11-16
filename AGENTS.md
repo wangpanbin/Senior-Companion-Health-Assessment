@@ -55,7 +55,7 @@
 - **不要执行破坏性命令**：`rm -rf`、强制 `git push --force` 到 `main` / `develop`、直接 drop database、`mvn clean install -DskipTests` 之外的危险 Maven 目标。对 `git commit`、`git push`、`git reset`、`git clean`、重启服务、删容器等动作必须**先确认**。
 - **不要在仓库中留下明文密码 / 真实手机号 / 真实身份证号**。所有示例数据用合规占位串（如 `13800000000`、`110101199001010001`）。
 - **不要"自创"技术栈**：不得引入 README / pom.xml / package.json 之外的依赖。需要新增依赖时，在回复中明确说明理由，由人工确认后再写。（V3.7 的 Python 助手服务依赖清单是**已记录的例外**，见 §0.1。）
-- **提交前跑该跑的检查**。仓库已有 CI（`.github/workflows/ci.yml`，push / PR 到 `main` 时触发），覆盖后端 `mvn verify`、前端 `lint:check` + `vitest` + `build`、AI 助手服务 `pytest`、密钥体检、指标字典人读面↔机器面一致性。**改后端就跑 `mvn -B verify`，改 `frontend/` 就跑 `pnpm run lint:check` 与 `pnpm run test`** —— 与 CI 同命令，自己先红总比推送后红好。新增检查项时同步改 workflow。
+- **提交前跑该跑的检查**。仓库已有 CI（`.github/workflows/ci.yml`，push / PR 到 `main` 时触发），覆盖后端 `mvn verify`、前端 `lint:check` + `vitest` + `build`、AI 助手服务 `pytest`、密钥体检、指标字典人读面↔机器面一致性、静态门禁（错误码双向一致 + 文档三项校验）。**改后端就跑 `mvn -B verify`，改 `frontend/` 就跑 `pnpm run lint:check` 与 `pnpm run test`** —— 与 CI 同命令，自己先红总比推送后红好。新增检查项时同步改 workflow。
 - **改 `ai-service/` 就跑 `python -m pytest ai-service/tests -q`；改 FAQ 知识库（`ai-service/knowledge/faq.json`）就跑 `python tools/check_faq_anchors.py`。** 助手核心断言**不依赖 LLM 与网络**（没配模型时也要能跑绿）；CI 的 `ai-service` job 跑的是同一套测试（工作目录 `ai-service/`）。
 - **本地能复跑 CI 的两个静态门禁**（纯 Python 标准库，不需要装任何依赖）：
   - `python tools/check_secrets.py` —— 密钥体检五条（**CI secrets job 调的就是这一份**，规则本体只有一处）
@@ -82,6 +82,7 @@
 | §7 · Git 与协作 | [`docs/agents/git-workflow.md`](docs/agents/git-workflow.md) | 开分支、提交、合并前 |
 | §8 · 接口先行 | [`docs/agents/api-first.md`](docs/agents/api-first.md) | 新增或改动任何 HTTP 接口前 |
 | §9 · 文档同步清单 | [`docs/agents/doc-sync.md`](docs/agents/doc-sync.md) | 改完代码收尾时（哪些文档要同步） |
+| —（新增，非章节拆分） | [`docs/agents/daily-ai-workflow.md`](docs/agents/daily-ai-workflow.md) | 不知道某个重复活该不该交给我、怎么下指令时；四个环节的判据与交接方式 |
 
 **仓库其它文档里的 `AGENTS.md §N.N` 引用仍然有效** —— 查上表定位到文件后，看同名小节，
 小节编号一个没改（例：`AGENTS.md §4.1` → `docs/agents/business-rules.md` 的 §4.1）。

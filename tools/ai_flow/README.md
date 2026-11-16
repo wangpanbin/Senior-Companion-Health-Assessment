@@ -1,0 +1,112 @@
+# tools/ai_flow —— AI 日常工作流的工具层
+
+配套说明见 [docs/agents/daily-ai-workflow.md](../../docs/agents/daily-ai-workflow.md)。
+这里是**执行层**：把那条规程里的判定变成可运行的脚本。
+
+三个脚本，都只用 Python 标准库（仓库红线：不引入 pom.xml / package.json 之外的依赖）。
+
+---
+
+## impact_map.py —— 改动影响面 → 文档同步对账表
+
+把 [docs/agents/doc-sync.md](../../docs/agents/doc-sync.md) 的联动矩阵变成可执行的对账表。
+
+```bash
+# 工作区（含未跟踪文件）vs HEAD
+python tools/ai_flow/impact_map.py
+
+# 某个区间
+python tools/ai_flow/impact_map.py --base HEAD~1
+
+# 审计单个历史提交
+python tools/ai_flow/impact_map.py --base '051c4f5~1..051c4f5'
+
+# 机器可读输出
+python tools/ai_flow/impact_map.py --json
+```
+
+**输出四类结论**：
+
+| 标记 | 含义 |
+|---|---|
+| `[已覆盖]` | 目标文档里已经出现过本次的接口路径 |
+| `[真欠账]` | 有接口路径没被文档描述 —— 点名缺哪几条 |
+| `[抽查]` | 语义类，机器判不了，需要人扫一眼 |
+| `[未随本次改动更新]` | 本次没碰它，但不一定欠账（接口先行场景常见） |
+
+**为什么是契约级**：本仓库执行接口先行，文档常常在更早的提交里就写好了。
+若只比「目标文档有没有出现在本次 diff 里」，会把已写好的文档误报成欠账。
+本脚本改为**解析 Controller / 前端封装里的接口路径，去文档里查出现过没有**。
+
+退出码：`0` 无欠账 / `1` 有真欠账 / `2` 有需人工确认项（优先于 1）。
+
+### 维护
+
+新增 Controller 或新增前端封装模块时，**必须**登记到脚本顶部的
+`CONTROLLER_API_DOC` / `DOC_FRONTEND_API` 两张表 —— 否则会被列为「需人工确认」。
+
+---
+
+## gate_check.py —— 静态门禁统一入口
+
+```bash
+python tools/ai_flow/gate_check.py
+python tools/ai_flow/gate_check.py --skip-faq
+python tools/ai_flow/gate_check.py --base HEAD~1
+python tools/ai_flow/gate_check.py --strict-text
+```
+
+五项门禁：
+
+| # | 门禁 | 来源 |
+|---|---|---|
+| 1 | 密钥体检 | 复用 `tools/check_secrets.py` |
+| 2 | 指标字典人读面↔机器面 | 复用 `tools/check_metric_dict_parity.py` |
+| 3 | FAQ 锚点 | 复用 `tools/check_faq_anchors.py` |
+| 4 | **错误码双向一致** | 新增：`ResultCode.java` ↔ `docs/api/README.md` 码值集比对 |
+| 5 | **Markdown 三项校验** | 新增：代码围栏成对 / 引用路径真实存在 |
+
+第 1–3 项**只做编排**，规则本体仍在原脚本里（CI 调的是同一份，不复制第二份）。
+第 4 项比对的是**码值集**，不是含义文字 —— 文字口径历史上本就有出入，按文字判会产生假红。
+第 5 项只覆盖**本次改动**的 .md 文件（含尚未入库的新文件）。
+
+退出码：0 全过 / 1 有失败项。
+
+### 在 CI 里怎么用
+
+`.github/workflows/ci.yml` 的 `static-gates` job 只跑 CI 尚未覆盖的两项，
+与既有 job 分工不重叠（密钥体检 / FAQ 锚点 / 指标字典 parity 已在别的 job 里跑）：
+
+| 命令 | 口径 |
+|---|---|
+| `python3 tools/ai_flow/gate_check.py --only error-codes` | 全量，与 diff 无关 |
+| `python3 tools/ai_flow/gate_check.py --only md --base "$BASE..HEAD"` | 增量，只查本次改动碰过的 .md |
+
+`--only` 取值：`secrets` / `metric-dict` / `faq` / `error-codes` / `md`；
+`--skip` 同理（逗号分隔），`--skip-faq` 是 `--skip faq` 的别名。
+
+**BASE 的来源**（ci.yml 里逐级兜底）：`pull_request` 用 `base.sha` →
+`push` 用 `before`（新分支首次推送是全 0 SHA）→ 都没有则退到 `HEAD~1`。
+CI 用 `fetch-depth: 0` 保证 base 那个 commit 在本地。
+
+> 全量门禁（含 mvn / playwright / 覆盖率）仍走
+> [tools/verify_all.ps1](../verify_all.ps1) —— 需要 MySQL / Redis 常驻 + 前端 dev server。
+
+---
+
+## handoff.py —— 跨环节交接卡
+
+```bash
+python tools/ai_flow/handoff.py new --loop L1 \
+  --summary "补了 ExamPrep 接口文档" \
+  --verdict "gate_check 全绿，欠账 0" \
+  --next "跑 L2 门禁" \
+  --risks "R13 交互清单未抽查"
+
+python tools/ai_flow/handoff.py latest
+python tools/ai_flow/handoff.py list
+```
+
+`--loop` 取值：`L1` 文档同步环 / `L2` 门禁定位环 / `L3` 提交准备环 / `L4` 项目切换环。
+
+卡片落在 `.workbuddy/handoff/`，已被 .gitignore 忽略，不入库。

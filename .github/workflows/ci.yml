@@ -8,6 +8,9 @@
 # 后来新增的检查项（AGENTS.md §0.2 要求「新增检查项时同步改 workflow」）：
 #   · 指标字典人读面↔机器面一致性（metric-dict job）—— V3.6 收口时新增
 #   · 密钥体检（secrets job）—— 规则本体已收敛到 tools/check_secrets.py
+#   · 静态门禁（static-gates job）—— 错误码双向一致（ResultCode ↔ 接口文档总表）
+#     + 文档三项校验（代码围栏成对 / 引用路径真实存在）；规则本体在
+#     tools/ai_flow/gate_check.py，与本地跑的是同一份
 #
 # 为什么需要 service 容器：backend/src/test 下**有** @SpringBootTest（113 个 *Test.java 中
 # 28 处 —— `repo_metrics.py` 字符串口径 29，含 `MybatisLambdaCache` javadoc 1 处）—— 它们会拉起完整 Spring 上下文、Flyway 连库
@@ -289,4 +292,61 @@ jobs:
       # 而本文件顶部明写「不要引入 pom.xml / package.json 之外的依赖」。
       - name: 校验人读面与机器面一致
         run: python3 tools/check_metric_dict_parity.py
+
+  # ------------------------------------------------------------------ #
+  # 静态门禁 · 错误码一致 + 文档三项校验
+  #
+  # 为什么单开一个 job：这两项是现有五个 job（backend / frontend / secrets /
+  # ai-service / metric-dict）**尚未覆盖**的，分工不重叠 ——
+  # 密钥体检、FAQ 锚点、指标字典 parity 已经在别的 job 里跑，这里**不重复跑**。
+  #
+  # ⚠️ **规则本体在 tools/ai_flow/gate_check.py，不要在这里再抄一份。**
+  #    与 secrets job 同一纪律：本地与 CI 调同一份脚本，规则改一处就够。
+  #    抄两份必然漂移（2026-10-21 review 实测过：抄出来的两份在 Windows 上
+  #    白名单语义不同，本地绿、CI 也绿，但其中一份其实已经失效）。
+  #
+  # 错误码一致性是**全量**判定（ResultCode 枚举 ↔ docs/api/README.md 码值集），
+  # 与本次 diff 无关，任何时候都该成立 —— V4 曾漏同步 6005/6006 就是这么溜过去的
+  # （枚举里有、接口文档总表里没有，而 spec 里早就写明要补）。
+  #
+  # 文档三项校验（代码围栏成对 / 引用路径真实存在）走**增量**：
+  # 只查这次改动碰过的 .md。
+  # 为什么不全量 —— 仓库里的 spec 与归档计划天然引用「还没实现 / 已删除」的路径
+  # （那是它们的性质，不是错误），全量扫必然要开一堆豁免；豁免越多门禁越不可信。
+  # 门禁的价值是挡住**新引入**的问题，不是清算历史。
+  # ------------------------------------------------------------------ #
+  static-gates:
+    name: 静态门禁 · 错误码 + 文档
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 要 diff BASE..HEAD，必须拿到 base 那个 commit
+          fetch-depth: 0
+
+      # 脚本只用标准库，不装 setup-python（runner 自带 python3，
+      # 与 secrets job 同款做法）
+      - name: 错误码双向一致（ResultCode ↔ 接口文档总表）
+        run: python3 tools/ai_flow/gate_check.py --only error-codes
+
+      # BASE 的三种来源，逐级兜底：
+      #   ① pull_request 事件 → base.sha
+      #   ② push 事件        → before（新分支首次推送是全 0 SHA，必须兜底）
+      #   ③ workflow_dispatch → 都没有，退到 HEAD~1
+      - name: 文档三项校验（围栏成对 / 引用路径存在）
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="$(git rev-parse HEAD~1 2>/dev/null || true)"
+          fi
+          if [ -z "$BASE" ]; then
+            echo "::notice::拿不到 BASE ref，本轮跳过文档增量校验"
+            exit 0
+          fi
+          echo "校验范围：$BASE..HEAD"
+          python3 tools/ai_flow/gate_check.py --only md --base "$BASE..HEAD"
+
 
