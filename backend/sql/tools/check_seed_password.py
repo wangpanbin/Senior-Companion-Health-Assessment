@@ -36,6 +36,12 @@ ALLOWLIST = [
      "单测固定输入，不参与生产"),
     ("backend/src/test/java/org/company/nianglin/service/AuthServiceTest.java",
      "单测固定输入，不参与生产"),
+    ("backend/src/test/java/org/company/nianglin/security/UserAccessMatrixTest.java",
+     "单测固定输入：注销接口要传一个确定的种子口令才能走到断言分支（403/400 分支），"
+     "与 AdminServiceTest / AuthServiceTest 同性质，不参与生产"),
+    ("backend/src/test/java/org/company/nianglin/service/UserServiceTest.java",
+     "单测固定输入：注销接口要传一个确定的种子口令才能走到断言分支（确认文本不匹配分支），"
+     "与 AdminServiceTest / AuthServiceTest 同性质，不参与生产"),
     ("frontend/.env.development",
      "登录页演示预填；仅 dev 生效（import.meta.env.DEV），不进生产构建"),
     ("frontend/e2e/helpers/accounts.js",
