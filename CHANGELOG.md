@@ -8,7 +8,118 @@
 
 ---
 
-## [Unreleased] · 文档收敛
+## [Unreleased]
+
+_（当前无待发布变更）_
+
+---
+
+## [V4.0] · 2026-11-13 · 作品集化迭代：九项能力落地
+
+把 V3.x 时代被「禁止引入外部依赖」阻塞的三件事 —— **找回密码**、**站外提醒**、**注销与数据导出** —— 解开，
+并补上工程底色：测试欠账清零、漏服触达闭环、结算与体征、运营参数可调化。
+规划见 [V4 迭代规划](docs/plan/iteration-plan-v4.md)；本段按**实际落地**记，不按草案记。
+
+> 本段对应提交窗口 `v4.0..817a7c5`（131 个提交，2026-10-21 → 2026-11-13）。
+
+### Added · P0-1 账号注销与个人数据导出
+
+- `POST /api/user/deactivate` —— 家属 / 陪诊员；需**当前密码复验** + `confirmText` 固定串二次确认
+- `GET /api/user/data-export` —— EasyExcel 流式导出（资料 / 绑定老人 / 订单 / 评价 / 消息），全过 `MaskUtil`；
+  **仅本人**，userId 取自令牌，**禁止入参指定**
+- **有进行中订单时拒绝注销** —— 新错误码 `11001`，`data` 带 `pendingOrderCount`
+- 注销副作用：`sys_user.deleted=1` + `status=DISABLED`、`pwd:version` 递增（**旧 token 立即 401**）、
+  姓名 / 手机号 / 身份证去标识化、家属绑定关系逻辑删除（老人档案保留）
+- **实导实核**（2026-11-12）：`fam001` 导出 7202 字节 xlsx，解包全 XML 扫描 —— 完整手机号 **0**、
+  身份证号 **0**、BCrypt 哈希 **0**；正向对照脱敏手机号 `138****0001`、脱敏姓名 `张*海` 存在
+
+### Added · P0-2 漏服提醒触达闭环（E1a）
+
+- 抽 `ReminderDispatcher` 策略接口，`InternalMessageReminderDispatcher` 为默认实现（站内信）
+- `notifyFamily` 拆出 `notifyOnDutyCompanion` —— 当天有 `ACCEPTED / IN_SERVICE` 订单时，
+  漏服提醒**同时**投递该单陪诊员；无陪诊订单时行为与现状一致
+- 新消息类型 `MEDICATION_MISSED`，`link_url` 指向订单详情
+- 30 分钟扫描节奏与 Redis 锁粒度**不变**（既有压测结论不失效）；提醒文案过合规词表（禁含剂量）
+
+### Added · P0-3 测试欠账清零
+
+- 新增 `MedicationSchedulerTest` 补 `task` 包覆盖 —— 2026-11-12 实测 `task` LINE **76.60%**、
+  `service` LINE **79.10%**（门禁 60%）
+- e2e 脚本统一清理收尾 —— 修 `internal_message` 残留导致**连跑第 2 遍假失败**（BUG_LIST **L1**）
+- E10 乐观锁 `version` 断言口径漂移订正（BUG_LIST **L7** → 已修复 #14）
+
+### Added · P1-1 自助找回密码（短信通道接入）
+
+- `POST /api/auth/sms-code` + `POST /api/auth/forgot-password`
+- 新错误码 `1008`（验证码错误或已过期）/ `1009`（操作过于频繁）
+- 验证码存 Redis、**5 分钟过期**、连错 **5 次**作废；手机号不存在与存在**同响应**（防枚举）
+- 重置成功 → `pwd:version` 递增，旧 token 全失效
+- 通道抽象 `SmsSender`（`AliyunSmsSender` / `MockSmsSender`）+ `SmsTemplateRouter` 按场景路由；
+  `SmsProperties` **启动期校验**，模板配错即启动失败（不静默降级）
+
+### Added · P1-2 陪诊 → 用药贯通（就诊小结转用药计划草稿）
+
+- `POST /api/medication/plan/from-order/{orderId}` —— 仅本单下单家属（他人 `3004`）
+- 草稿**不含剂量**（红线-1）：只带药品名 + 频次 + 计划时间，剂量由家属在正式计划页手工录入
+- 草稿**不落 `medication_plan` 正式表**（复用前端 `orderDraft`），家属确认后才调 `POST /api/medication/plan`
+- 重复转入改用专用错误码 `11002` + Redis **30 分钟**判重（草稿不落库，故未做永久性一单一转）
+- 放开 `REVIEWED` 订单转入；小结含合规词时仍由 `3007` 拦截
+
+### Added · P1-3 站外提醒（短信）
+
+- `V8__sms_notification.sql` —— 偏好 / 发送回执 / 幂等 / 死信四表
+- 提醒开关落在**按用户**的 `notification_preference`（`GET` / `PUT /api/message/notification-preference`）——
+  经 2026-11-12 复核，粒度定为**按用户全局开关**，不实现按计划逐条配置与语音外呼
+- 短信编排：幂等键（含 userId）/ 静默时段 / 指数退避 / 死信 / 日频控；
+  **站内信发送失败不阻断站外短信**
+- 静默时段同时尊重家属个人开关（与全局开关取**与**）；`SmsRetryScheduler` 负责退避重试
+- 用药任务删除时作废未发送回执，频控只计有效任务
+
+### Added · P2-1 结算闭环收口
+
+- `GET /api/admin/settlement`（核对台账）· `POST /api/admin/settlement/{orderId}/confirm`（单条核定）·
+  `POST /api/admin/settlement/batch-confirm`（批量逐项）· `GET /api/settlement/export`（结算单导出）
+- 新错误码 `8004`（订单状态不可结算核对）；核定写 `admin_oper_log`（新增操作类型）
+- 导出列不含敏感字段；文案无「提现 / 支付」字样（**在线支付红线**不变）
+- 金额口径 `actual_fee` 缺失时回退 `fee`（已写进接口文档）
+- spec：[V4-P2-1 结算闭环](docs/spec/V4-P2-1-settlement-spec.md)
+
+### Added · P2-2 健康档案结构化（体征记录）
+
+- `V9__vital_sign_record.sql` —— 1 张表 + 去重唯一键
+- 家属 4 端点：`GET` / `POST /api/family/elder/{elderId}/vitals`、
+  `GET /api/family/elder/{elderId}/vitals/trend`、`DELETE /api/family/vitals/{recordId}`
+- 老人 2 端点（**只读**）：`GET /api/elder/vitals`、`GET /api/elder/vitals/trend`
+- 陪诊员 3 端点：`GET` / `POST /api/execution/{orderId}/vitals`、
+  `DELETE /api/execution/{orderId}/vitals/{recordId}`
+- 权限口径：ELDER 写请求 **403**、未映射写方法 **405**；
+  归属校验下沉 Service（家属 A 不能录家属 B 的老人）
+- **只做记录 + 趋势展示，无任何评估 / 预警文案**（红线-1）
+- 前端：`components/health/{VitalSignForm,VitalTimeline,VitalTrendChart}.vue` + 家属 / 老人 / 陪诊员三端入口；
+  静态设计稿 [p2-2-vitals-design](docs/design/p2-2-vitals-design.html) + 浏览器验收截图
+- spec：[V4-P2-2 体征](docs/spec/V4-P2-2-vitals-spec.md)
+
+### Added · P2-3 运营参数可调化
+
+- `V10__operation_param.sql` —— 只写 `sys_dict` 种子行，**不改表结构**（`ON DUPLICATE KEY` 幂等）
+- `GET /api/admin/operation-param` · `PUT /api/admin/operation-param/{code}` ·
+  `GET /api/admin/operation-param/logs`（留痕分页）
+- `OperationParamCache` 缓存 TTL **≤ 60s** 热生效；**优先于 `application.yml` 与环境变量**
+- 迁字典 **4 项**：漏服阈值 / 催单限频 / 导出上限 / 短信日频控
+- 只搬运营阈值，不搬技术配置（数据库连接等）；字典变更留审计
+
+### Changed · V3.7 之后的工程基建轮（2026-10-21 – 10-25）
+
+> 助手侧（`ai-service`）的评审修复与 FAQ 问法池已并入上方 **[V3.7]** 段落，此处不重复记账。
+
+- **UX 交互审计轮** —— 真实「记住我」、共享校验与二次确认助手（`utils/validation.js` / `confirm.js`）、
+  路由守卫与 keep-alive key + 导航徽标、家属下单流程、陪诊员大厅 / 执行 / 工作台、老人页三态与空态、
+  管理端列表分页与空态逻辑抽共享（`composables/usePagedList.js` / `utils/pagination.js`）；配套 Playwright 回归守卫
+- **e2e 工具化** —— L0 服务身份闸门、A-2 可达性脚本、A-1 越权矩阵探针、探针令牌过期识别、
+  ws 归因前置探测、captcha 竞态容忍
+- **`tools/repo_metrics.py`** —— 仓库规模指标一键取数（引用规模数字前先现取，勿手抄）
+- **`AGENTS.md` 拆分** —— 根目录只留红线 / 导航 / 底线 / 验收清单，细则落到 `docs/agents/`（11 份主题文件）
+- **安全修正** —— 管理员用户列表姓名脱敏（`AdminUserVO`）；密码重置结果如实回显（`ResetPasswordResultVO`），不吞失败
 
 ### Changed · 根目录文档收敛（2026-11-12）
 
