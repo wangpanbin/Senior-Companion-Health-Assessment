@@ -189,6 +189,100 @@ _（当前无待发布变更）_
 
 ---
 
+## [V5.0] · 2026-11-16 · 三阶段提醒闭环与工程工具链
+
+在 V4 的九项能力之上补三条**主动触达**链路 —— 漏服多级升级 / 检查准备提醒 / 健康证到期 ——
+并把「找回密码去短信化」这条 ADR 决策落地，最后接上 AI 日常工作流工具层与静态门禁。
+
+> 本段对应提交窗口 `817a7c5..d1d7f43`（37 个提交）。
+
+### Added · 阶段 A · F2 漏服多级升级（V5 · A1-A4）
+
+- `V11__medication_notify_level.sql` —— `medication_task` 增 `notify_level` 列
+- **三级阶梯**：30 分钟 → 家属 · 2 小时 → 陪诊员 · 24 小时 → 管理员
+- 新消息类型 `MEDICATION_ESCALATED`；升级级别从 Java 侧解析，**不开新列**
+- 短信**按级去重**：`dedup_key = medication-missed:{taskId}:{level}:{userId}:{yyyy-MM-dd}`
+- 每级日上限默认 **3**（每级各一份）；运营参数启用时**优先于**代码默认值
+- 门禁全绿 **1540 / 1540**
+
+### Added · 阶段 B · F1 检查准备提醒（V5 · B）
+
+- `V12__exam_prep_dict.sql` —— `EXAM_PREP` 静态字典种子 **6** 条
+- `GET /api/exam-prep` —— 契约见 [14-exam-prep](docs/api/14-exam-prep.md)
+- 新消息类型 `ORDER_EXAM_PREP`；就诊**前一天**站内信提醒（`ExamPrepScheduler`）
+- FAQ 补 **3** 条、问法池补 **15** 条（确定性检索验收全绿）
+- 评审修复轮：LIMIT 下推、失败释放幂等键、每小时重扫、按受众文案
+- 门禁全绿 **1550 / 1550**
+
+### Added · 阶段 C · F3 健康证到期校验与提醒（V5 · C1）
+
+- 新错误码 `2011`（健康证已过期）；陪诊员申请可录入到期日 `healthCertExpire`
+- 新消息类型 `HEALTH_CERT_EXPIRING` + `CompanionCertExpireScheduler` 到期前站内信提醒
+
+### Changed · 找回密码去短信化（ADR-0021）
+
+- 验证码由**后端直接回传**、前端自动填充 —— 流程不再依赖真实短信通道
+- 删除 `SmsScene.VERIFICATION` 与 `ALIYUN_SMS_TEMPLATE_CODE_VERIFICATION` 两处短信依赖
+- 验证码 TTL **5 分钟**、连错 **5 次**作废
+- 频控三层：同手机号 **60 秒 1 次** / 同 IP **1 小时 20 次** / 同手机号 **1 自然日 10 次**
+- 决策记录：[ADR-0021](docs/adr/0021-forgot-password-code-direct-return.md)（已接受 · 2026-11-13）
+- 门禁全绿 **1550 / 1550** + e2e **16 / 16**
+
+### Fixed · V4 + V5 联调三缺陷
+
+- **undefined 请求** · **注销笔数缺失** · **401 弹窗堆叠** —— 逐条修复并复验
+- ego-browser 实测 **11 项全通过**，3 缺陷记录在案：
+  [联调测试报告](docs/reports/intl-test-v4v5-2026-11-14.md)
+- 门禁全绿 **258 / 258** + lint + build
+
+### Added · 两份测试方案文档
+
+- [UI 测试方案](docs/reports/UI测试方案.md) · [功能测试方案](docs/reports/功能测试方案.md)
+
+### Added · AI 日常工作流工具层与 static-gates CI job
+
+- `tools/ai_flow/` —— `gate_check.py`（静态门禁）· `handoff.py`（交接）· `impact_map.py`（影响面）
+  + [README](tools/ai_flow/README.md)
+- `.github/workflows/ci.yml` 新增 `static-gates` job —— 错误码双向一致（`ResultCode` ↔ 接口文档总表）
+  + 文档三项校验（代码围栏成对 / 引用路径真实存在）
+- **规则本体只有一处**：CI 与本地跑的是**同一份** `tools/ai_flow/gate_check.py`
+- `restore_clean_baseline` 水位定案 **40075 / 48572** + 对账文案收口 + 回归测试
+- 种子口令白名单补 **2** 条
+
+### Changed · 依赖升级
+
+- `vue` 3.5.42 → **3.5.44**
+- `@playwright/test` 1.63.0 → **1.64.1**
+- `echarts` 5.6.0 → **6.1.0**
+- `actions/setup-python` 5 → **7**
+
+### Docs · 文档同步
+
+- 新增 `docs/api/14-exam-prep.md`；`docs/api/` 01 / 02 / 03 / 05 / 07 / 08 与 `README.md` 同步
+- 新增 [ADR-0021](docs/adr/0021-forgot-password-code-direct-return.md) 与
+  [AI 日常工作流契约](docs/agents/daily-ai-workflow.md)
+- `docs/db/**` 按真实库重新生成
+
+### 门禁与规模
+
+- 后端 surefire 实跑 **1550** 条全绿；前端 vitest **258** 条全绿 + lint + build
+- `python tools/check_secrets.py` · `python tools/check_metric_dict_parity.py` ·
+  `python tools/ai_flow/gate_check.py` 全绿
+- 规模数字取数：`python tools/repo_metrics.py --base v3.0`（基线 ref = **v3.0**）——
+  端点 **138** / 表 **29** / Controller **25** / 后端主代码 **484** / 前端路由 **54** /
+  E2E 用例实跑 **272**（23 个文件）
+
+### Known · 遗留（本轮未改）
+
+- `.github/workflows/ci.yml` 文件头注释仍写「1520 条后端测试 / 251 条前端单测 / 113 个 `*Test.java` /
+  28 处 `@SpringBootTest`」，而 V5 阶段实测已到 surefire **1550**、vitest **258**、
+  `*Test.java` **117**、`@SpringBootTest` **29**
+  （取数 `python tools/repo_metrics.py --base v3.0`）—— **CI 注释与真实口径漂移**，
+  属 CI 配置文件，本轮改动范围未含，留待单独一轮处理
+- `check_seed_password` 仍只在本地总闸门，**CI 未覆盖**
+
+---
+
 ## [V3.7] · 2026-10-21 · 家属智能助手
 
 让家属**用自然语言**问到平台规则，并看懂「为什么推荐这位陪诊员」。
