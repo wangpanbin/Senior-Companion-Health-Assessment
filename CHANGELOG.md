@@ -1,7 +1,14 @@
 # Changelog
 
 本文件记录每个版本的变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
-版本号对齐 `docs/plan/iteration-plan.md` 的 Vx.y 里程碑（不是 Git 标签）。
+版本号对齐 `docs/plan/iteration-plan.md` 的 Vx.y 里程碑（**不是 Git 标签**）。
+
+> **Git 标签 vs 本文件：**两者**是两套口径**，且历史上已经 off-by-one——
+> `git v4.0` = `[V3.7]`、`git v5.0` = `[V4.0]`、`git v6.0` = `[V5.0]`。
+> 完整映射表与口径声明在 [`docs/agents/git-workflow.md`](docs/agents/git-workflow.md) §7.4.4：
+> Git 标签是**代码快照锚点**，本文件是**产品版本口径**，两者**不要求同号**；
+> 引用版本数字时必须注明是哪一种口径（「Git 标签 v6.0」 vs 「CHANGELOG V5.0」）。
+> 自 2026-11-18 起 Git 标签改为**双层**：`vX.0` 里程碑 + `vX.Y`（Y ≥ 1）功能单元，从 `v6.1` 开始。
 
 > 与 `docs/api/README.md §变更记录` 的分工：那边只记**接口契约**的变更（端点、错误码、字段），
 > 本文件记**全部**变更，包括内部重构、测试与文档。两者可交叉引用，但本文件不替代接口变更记录。

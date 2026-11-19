@@ -28,3 +28,5 @@
 | 新增 / 修改共享合规词表 | `backend/src/main/resources/compliance/medical-advice-words.txt` + Java `ComplianceCheckUtilTest` + Python `test_guard.py`（**两侧快照必须逐字相同**） |
 | 新增 / 修改 `docs/db/*` | ⚠️ **改生成器 `backend/sql/tools/gen_db_docs.py`，不要直接改 `docs/db/` 下的生成物** —— 那些文件由脚本整篇覆盖，下次 render 会把手写内容冲掉 |
 | 新增 / 修改前端交互流程（跳转 / 表单 / 空态 / 按钮反馈） | 自查 [`interaction-checklist.md`](interaction-checklist.md)；**若引入了该清单未收录的新陷阱，补进清单**（写清「症状 / 根因 / 判据」三段 + 真实文件行号） |
+| 新增 / 修改 tag 命名或粒度 | [`git-workflow.md`](git-workflow.md) §7.4 + `CHANGELOG.md` 头部的标签口径说明与编号映射表；改粒度时同步告知全组（标签推送后不可改名） |
+| 收尾提交 | 按 [`git-workflow.md`](git-workflow.md) §7.4.2 判断本单元是否需要功能级标签 `vX.Y`；需要则**先把建议标签名与 message 报给用户确认**，再 `git tag -a` + `git push origin vX.Y` |
