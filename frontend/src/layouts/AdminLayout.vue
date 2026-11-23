@@ -9,7 +9,7 @@
  *
  * desktop-adapt-v2（T-03）：侧栏模式从硬编码 expanded → auto + 手动 + 持久化
  */
-import { computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useAppStore } from '@/store/modules/app'
@@ -19,11 +19,30 @@ import { resolveSidebarMode, toggleSidebarMode as computeNextMode } from '@/util
 import { confirmThen } from '@/utils/confirm'
 import { routes } from '@/router/routes'
 import { listAllOrders, listAuditApplications, listComplaints } from '@/api/admin'
+import { getAdminMobileHintClosed, setAdminMobileHintClosed } from '@/utils/auth'
 
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
+
+/**
+ * 窄屏提示条是否已被用户关闭（localStorage 记住，跨会话不再打扰）
+ *
+ * N3 决策（2026-11-23，见 docs/reports/UI快速走查与修复记录-2026-11-23.md §7）：
+ * 管理端是**桌面优先**场景 —— 手机形态只保证「不破版 + 可用」：
+ *   · 不硬拦截：管理员在门诊现场用手机处理投诉 / 仲裁是真实路径，
+ *     拦截会把这类操作直接堵死，代价大于信息密度不佳；
+ *   · 不做移动端专用重排：13 个管理端页面在 390px 下已验证无横向溢出，
+ *     兜底有效，而重排一整套响应式表格的工作量与收益不匹配。
+ * 提示条只做预期管理：告诉用户当前是窄屏视图、信息密度高。
+ */
+const mobileHintClosed = ref(getAdminMobileHintClosed())
+
+function closeMobileHint() {
+  mobileHintClosed.value = true
+  setAdminMobileHintClosed(true)
+}
 
 /** 形态判定（desktop-adapt-v2 复用 useResponsive）
  *  ⚠️ 断点用的是 `isLg`（≥1280），不是 `isMd`（1024-1279）：
@@ -218,6 +237,28 @@ onBeforeUnmount(() => {
         </div>
       </el-header>
 
+      <!-- ==================== 窄屏形态提示（N3 决策） ==================== -->
+      <!--
+        管理端是**桌面优先**场景：手机形态只保证「不破版 + 可用」，不硬拦截、
+        不做移动端重排（理由见上方 mobileHintClosed 的注释）。
+        这条提示只做预期管理 —— 让用户知道自己看到的是窄屏版、信息密度高。
+        宽屏不显示：判定放在样式里（display），不依赖 JS 监听 resize。
+      -->
+      <div v-if="!mobileHintClosed" class="admin__mobile-hint">
+        <el-icon class="admin__mobile-hint-icon"><InfoFilled /></el-icon>
+        <span class="admin__mobile-hint-text">
+          管理端为桌面端设计，当前是窄屏视图，信息密度较高，建议在电脑上访问。
+        </span>
+        <button
+          type="button"
+          class="admin__mobile-hint-close"
+          aria-label="关闭窄屏提示"
+          @click="closeMobileHint"
+        >
+          <el-icon><Close /></el-icon>
+        </button>
+      </div>
+
       <!-- ==================== 内容区 ==================== -->
       <el-main class="admin__main">
         <router-view v-slot="{ Component }">
@@ -360,6 +401,54 @@ onBeforeUnmount(() => {
   &__page {
     min-height: 100%;
   }
+
+  /*
+   * 窄屏形态提示条（宽屏隐藏，窄屏由媒体查询打开）
+   *
+   * 配色沿用 NlNoticeBar 的 primary 档：--nl-primary-text 配 --nl-primary-ghost，
+   * 对比度与全站提示条一致（原始主色在自身浅底上只有 2.1~4.0:1，不达 AA）。
+   */
+  &__mobile-hint {
+    display: none;
+    gap: $nl-space-2;
+    align-items: flex-start;
+    padding: $nl-space-2 $nl-space-3;
+    font-size: var(--nl-font-caption);
+    line-height: 1.5;
+    color: var(--nl-primary-text);
+    background: var(--nl-primary-ghost);
+    border-bottom: 1px solid var(--nl-border);
+  }
+
+  &__mobile-hint-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  &__mobile-hint-text {
+    flex: 1;
+  }
+
+  /* 关闭按钮：44×44 命中区（窄屏手指点得准），视觉上只留一个 × */
+  &__mobile-hint-close {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    color: var(--nl-text-2);
+    background: transparent;
+    border: 0;
+    border-radius: var(--nl-radius-chip);
+    cursor: pointer;
+
+    &:hover {
+      color: var(--nl-text-1);
+      background: var(--nl-bg-sunken);
+    }
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -396,6 +485,11 @@ onBeforeUnmount(() => {
 
   .admin__elder-switch {
     display: none;
+  }
+
+  /* 窄屏提示条：宽屏 display:none，这里打开 */
+  .admin__mobile-hint {
+    display: flex;
   }
 
   .admin__user > span,

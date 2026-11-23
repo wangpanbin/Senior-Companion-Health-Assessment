@@ -18,6 +18,7 @@ const REFRESH_TOKEN_KEY = 'nianglin_refresh_token'
 const USER_INFO_KEY = 'nianglin_user_info'
 const ELDERLY_MODE_KEY = 'nianglin_elderly_mode'
 const APP_SIDEBAR_MODE_KEY = 'nianglin_admin_sidebar_mode'
+const APP_ADMIN_MOBILE_HINT_KEY = 'nianglin_admin_mobile_hint_closed'
 
 /* -------------------- 存储位置 -------------------- */
 
@@ -159,6 +160,36 @@ export function getSidebarMode() {
 export function setSidebarMode(mode) {
   if (mode === 'auto' || mode === 'expanded' || mode === 'collapsed') {
     localStorage.setItem(APP_SIDEBAR_MODE_KEY, mode)
+  }
+}
+
+/* -------------------- 管理端窄屏提示条（关闭状态） -------------------- */
+
+/**
+ * 管理端在窄屏（<768px）下会显示一条「建议在电脑上访问」的提示条，
+ * 用户关掉后记在这里，跨会话不再打扰。
+ *
+ * ⚠️ 键名写错不会报错、只会静默失效（老人模式栽过同一个坑，
+ *    见 docs/design/design.md §5「写规范时踩过的坑」），故单测里钉死键名。
+ */
+export function getAdminMobileHintClosed() {
+  try {
+    return localStorage.getItem(APP_ADMIN_MOBILE_HINT_KEY) === 'true'
+  } catch {
+    // 隐私模式 / 被测环境禁用 localStorage —— 当作没关过，提示条照常显示
+    return false
+  }
+}
+
+export function setAdminMobileHintClosed(closed) {
+  try {
+    if (closed) {
+      localStorage.setItem(APP_ADMIN_MOBILE_HINT_KEY, 'true')
+    } else {
+      localStorage.removeItem(APP_ADMIN_MOBILE_HINT_KEY)
+    }
+  } catch {
+    // 写不进去也不影响本次会话：提示条本次已隐藏，刷新后重新出现
   }
 }
 

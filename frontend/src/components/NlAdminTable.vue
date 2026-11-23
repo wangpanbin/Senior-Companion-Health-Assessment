@@ -171,6 +171,23 @@ function formatCell(col, row) {
     border-top: 1px dashed var(--nl-divider);
   }
 
+  /*
+   * 窄屏形态（<768px）下，卡片底部的操作按钮是这一行**唯一**的操作入口，
+   * 而 Element Plus 的 text 型小按钮只有 24px —— 手指点不准。
+   * 这里补到 44px（与 index.scss 里 F4 兜底同口径）。
+   *
+   * ⚠️ 必须用 :deep()：这些按钮来自各 admin view 的 actions 插槽，
+   *    插槽内容保留**调用方**的作用域，本组件的 scoped 选择器打不中它。
+   * ⚠️ 桌面形态（≥1280）走 el-table，表格操作列维持 EP 默认的 24px：
+   *    EP 的 .el-table .cell 带 overflow: hidden，任何「不撑行高的外扩」
+   *    都会被裁掉（命中区一起裁），真要提到 32px 只能让整表行高 +8px。
+   */
+  @media (max-width: 767px) {
+    &__card-actions :deep(.el-button) {
+      min-height: 44px;
+    }
+  }
+
   &__empty {
     list-style: none;
   }
