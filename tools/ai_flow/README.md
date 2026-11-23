@@ -72,6 +72,29 @@ python tools/ai_flow/gate_check.py --strict-text
 
 退出码：0 全过 / 1 有失败项。
 
+### 第 5 项里的「悬空路径」怎么判
+
+文档里反引号包着的路径，若**在仓库里不存在**且**不被 `.gitignore` 忽略**，才算悬空。
+
+**「被 `.gitignore` 忽略」这一条是 2026-11-23 补的**（PR #33 的 CI 被它顶红）：
+README 引用 `ai-service/.env` 说明本地怎么配环境变量，这个文件按仓库红线**刻意不入库**
+（`.gitignore` 第 105 行），所以 CI 的全新检出里根本没有它 —— 早先的门禁把它判成
+「文档引用了不存在的路径」，于是每次改 README 的 PR 都在 CI 上红，而本地因为
+那个文件就在磁盘上所以是绿的。
+
+判断方式直接问 git（`git check-ignore`），**不在脚本里再抄一份忽略清单** ——
+抄两份必然漂移，而漂移的表现恰恰是「本地绿、CI 红」。
+
+### gate_check.py 自己的回归测试
+
+```bash
+python -m unittest tools.ai_flow.test_gate_check -v
+```
+
+纯标准库，不连 MySQL / Redis / 网络。CI 的 `static-gates` job 会在跑完上面两项
+**之后**跑它 —— 门禁有 bug 时门禁自己也会放行，只有「先验证门禁本身可信，
+再让它去验仓库」才成立。
+
 ### 在 CI 里怎么用
 
 `.github/workflows/ci.yml` 的 `static-gates` job 只跑 CI 尚未覆盖的两项，
@@ -81,6 +104,7 @@ python tools/ai_flow/gate_check.py --strict-text
 |---|---|
 | `python3 tools/ai_flow/gate_check.py --only error-codes` | 全量，与 diff 无关 |
 | `python3 tools/ai_flow/gate_check.py --only md --base "$BASE..HEAD"` | 增量，只查本次改动碰过的 .md |
+| `python3 -m unittest tools.ai_flow.test_gate_check -v` | 门禁脚本自身的回归测试 |
 
 `--only` 取值：`secrets` / `metric-dict` / `faq` / `error-codes` / `md`；
 `--skip` 同理（逗号分隔），`--skip-faq` 是 `--skip faq` 的别名。

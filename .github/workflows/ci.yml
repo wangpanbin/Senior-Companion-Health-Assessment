@@ -349,4 +349,11 @@ jobs:
           echo "校验范围：$BASE..HEAD"
           python3 tools/ai_flow/gate_check.py --only md --base "$BASE..HEAD"
 
+      # 门禁脚本自己的回归测试。
+      # ⚠️ 必须排在上面两项**之后**：门禁有 bug 时，门禁自己也会放行，
+      #    只有「先验证门禁本身可信，再让它去验仓库」才成立。
+      # 纯标准库 unittest，不连 MySQL / Redis / 网络。
+      - name: 门禁脚本自测（gate_check 回归）
+        run: python3 -m unittest tools.ai_flow.test_gate_check -v
+
 
