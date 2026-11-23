@@ -246,17 +246,51 @@ PLACEHOLDER_MARKERS = ("–", "—", "~", "{", "}", "YYYY", "NNNN", "...")
 PLACEHOLDER_NAME_RE = re.compile(r"(?:^|[^a-z0-9])(?:x{2,}|todo|tbd)(?:[^a-z0-9]|$)", re.IGNORECASE)
 # 路径中间出现纯数字段 = 范围写法（如 iteration-test-report-1/2/3.md 指三份文件）
 RANGE_SEGMENT_RE = re.compile(r"^\d+$")
-# 构建产物 / 产物目录：CI 上不存在，但引用它们是合法的
-GITIGNORED_PATH_PREFIXES = ("reports/", "backend/target/", "target/")
 # 历史档案：CHANGELOG 记录的是当时的计划文档，那些文件后来被重命名/合并，
 # 悬空是正常现象，不该让 CI 为历史流水账变红。围栏仍要查。
 PATH_CHECK_EXEMPT_FILES = ("CHANGELOG.md",)
 
 
+def git_ignored_paths(paths):
+    """问 git：这些路径里哪些被 .gitignore 忽略。
+
+    ⚠️ **不要**在脚本里再抄一份忽略清单 —— 抄两份必然漂移，
+    而漂移的表现恰恰是「本地绿、CI 红」：本地有那个被忽略的文件
+    （如 `ai-service/.env`），CI 的全新检出里没有，于是同一段文档
+    一边 PASS 一边 FAIL。
+
+    规则本体只有一处，就是 `.gitignore`，由 git 自己回答。
+
+    被忽略的文件（本地 `.env`、构建产物、测试产出）在 CI 上本来就不存在，
+    但文档引用它们是**合法**的 —— 所以它们不算「悬空路径」。
+    """
+    if not paths:
+        return set()
+    try:
+        # ⚠️ 必须传**字节**：`text=True` 时 Python 在 Windows 会把 \n 翻成 \r\n，
+        # 而 git 的 --stdin 把行尾的 \r 当成路径的一部分 —— 于是路径匹配不到，
+        # 规则被静默跳过（Linux 上不会复现，属典型「本地绿、CI 绿但规则失效」）。
+        payload = ("\n".join(paths) + "\n").encode("utf-8")
+        proc = subprocess.run(
+            ["git", "check-ignore", "--stdin", "--no-index"],
+            cwd=str(ROOT),
+            input=payload,
+            capture_output=True,
+        )
+    except OSError:
+        return set()
+    out = (proc.stdout or b"").decode("utf-8", errors="replace")
+    return {
+        ln.strip().replace("\\", "/")
+        for ln in out.splitlines()
+        if ln.strip()
+    }
+
+
 def check_md_paths(text):
     """找出文档里引用但不存在的仓库内路径。"""
     span_re = re.compile(BT + r"([^" + BT + r"\n]+)" + BT)
-    missing = []
+    candidates = []
     for m in span_re.finditer(text):
         token = m.group(1).strip()
         # 只取第一个空白分隔片段（后面通常是散文说明）
@@ -274,8 +308,6 @@ def check_md_paths(text):
             continue
         if PLACEHOLDER_NAME_RE.search(token):
             continue
-        if token.startswith(GITIGNORED_PATH_PREFIXES):
-            continue
         if token.endswith("/"):
             continue
         # 必须像具体文件名（有扩展名），排除「docs/api/01」这类片段
@@ -286,10 +318,13 @@ def check_md_paths(text):
         segments = token.split("/")
         if any(RANGE_SEGMENT_RE.match(seg) for seg in segments[1:-1]):
             continue
-        candidate = (ROOT / token).resolve()
-        if not candidate.exists():
-            missing.append(token)
-    return missing
+        candidates.append(token)
+    # 磁盘上不存在的候选才可能是「悬空路径」——
+    # 再用 git 排除「被 .gitignore 忽略」的：它们在 CI 的全新检出里同样不存在，
+    # 但文档引用它们是合法的（本地 .env / 构建产物 / 测试产出）。
+    not_exist = [t for t in dict.fromkeys(candidates) if not (ROOT / t).exists()]
+    ignored = git_ignored_paths(not_exist)
+    return [t for t in not_exist if t not in ignored]
 
 
 def check_markdown(base, all_md=False):
