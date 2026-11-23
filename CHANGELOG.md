@@ -17,6 +17,36 @@
 
 ## [Unreleased]
 
+### Changed · UI 走查三项待决项定案（N1 / N2 / N3）
+
+- **N1 触控区取 44px（普通形态）** —— 44px 是 WCAG 2.2 / Apple HIG 的通行下限；
+  48px 会把列表每行再撑高 24px，与 VISUAL_DENSITY=6 冲突。
+  **老人模式的 ≥48px（主按钮 56px）是另一条硬约束，不变。**
+  规范同步到 [`docs/design/design.md`](docs/design/design.md) v1.3 与
+  [`docs/agents/frontend-conventions.md`](docs/agents/frontend-conventions.md)
+- **N2 表格操作列点击区** —— 窄屏 <768px 提到 **44px**（`NlAdminTable` 卡片操作区）；
+  桌面 ≥1280 **维持 EP 默认 24px**：想在不改行高的前提下提到 32px 做不到
+  （`.el-table .cell` 的 `overflow: hidden` 会把外扩的命中区一起裁掉），
+  真要 32px 只能让 13 个管理端页面的表格整体行高 +8px，密度代价过大
+- **N3 管理端在手机形态的定位** —— **桌面优先 + 窄屏兜底不破版 + 一次性提示**，
+  不硬拦截、不做移动端专用重排：管理员在门诊现场用手机处理投诉 / 仲裁是真实路径，
+  拦截会直接堵死业务。窄屏提示条已落地（可关闭，localStorage 记忆）
+- 落地文件：`frontend/src/components/NlAdminTable.vue` ·
+  `frontend/src/layouts/AdminLayout.vue` · `frontend/src/utils/auth.js`
+- 新增单测：`frontend/src/utils/__tests__/auth.test.js`（4 例，提示条关闭状态读写）
+- 门禁：`pnpm run lint:check` 0 警告 · vitest **262 / 262** 全绿（26 个文件）
+
+### Fixed · 移动端触控区与管理端窄屏溢出（PR #37）
+
+- 管理端顶栏在 390px 下撑出视口（13 个页面全中，溢出 +10~17px）→ 无溢出；
+  窄屏隐藏老人模式开关与用户昵称 / 角色标签，页面标题超长省略
+- 老人档案卡「解绑 / 删除」由 24px 竖排小按钮改为卡片底部整行 44px 等分操作栏
+- 家属 / 陪诊员订单列表筛选项 31px → 44px，补右侧渐隐提示；陪诊员端补 `overflow-x`
+- 全局移动端规则补 `.el-button--small` 的 44px 兜底 —— 原规则刻意豁免 `--small`，
+  列表里的「删除 / 查看 / 抢单」普遍只有 24px
+- 走查记录：[`docs/reports/UI快速走查与修复记录-2026-11-23.md`](docs/reports/UI快速走查与修复记录-2026-11-23.md)
+  （51 路由 × 2 视口 = 102 快照）
+
 ### Changed · 前端依赖升级
 
 - `axios` 1.20.0 → **1.21.1**（PR #32）
@@ -63,7 +93,7 @@ CI 同款命令：`lint:check` 0 警告 · vitest **258 / 258** 全绿 · `build
 
 - 静态门禁全绿：密钥体检（1144 个入库文件）· 指标字典 parity（64 条）· 错误码双向一致（72 个码值）·
   文档三项校验 · **门禁脚本自测 9 / 9**
-- 前端 vitest **258 / 258** + lint 0 警告 + build 成功
+- 前端 vitest **262 / 262**（26 个文件）+ lint 0 警告 + build 成功
 - 后端 surefire 实跑 **1550** 条全绿；AI 助手 pytest 全绿
 - 规模数字取数：`python tools/repo_metrics.py --base v6.0`（基线 ref = **v6.0**）——
   端点 **138** / 表 **29** / Controller **25** / 后端主代码 **484** / 前端路由 **54** /

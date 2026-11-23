@@ -169,6 +169,24 @@ async function submit() {
 | 2.5 | 按钮在操作中会被重复点吗 | `:loading` + `:disabled`，且两者都由**同步**置位的锁驱动 |
 | 2.6 | 反馈渠道统一吗 | 统一 `import { ElMessage } from 'element-plus'`；**禁止** `this.$message`（Options API 写法） |
 
+### 2.3 「不撑行高地扩大点击区」在 Element Plus 表格里做不到
+
+**症状**：给表格操作列的 `text` 型小按钮加 `::after` 外扩、或用负边距把命中区撑到 32px，
+DevTools 里量按钮盒子确实是 32px，但**扩出来的那圈实际点不中**，看着像被切掉。
+
+**根因**：Element Plus 的 `.el-table .cell` 带 `overflow: hidden`
+（`frontend/node_modules/element-plus/theme-chalk/el-table.css`），单元格里超出内容盒的部分
+**连同命中区一起被裁掉**；而 `min-height` 只能让按钮变高、单元格随之变高 ——
+想要 32px 点击区又不动行高，两条路都堵死。
+
+**判据**：
+- 表格单元格内要扩大点击区，只能**让行高一起长**（窄屏用 `min-height: 44px`）；
+- 桌面端密度优先时宁可保持 EP 默认的 24px，也不要用伪元素做无效外扩；
+- 窄屏密集场景改用**卡片形态**（如 `NlAdminTable`），卡片操作区不受 `.cell` 裁剪限制。
+
+> 落地参考：`frontend/src/components/NlAdminTable.vue`（窄屏 44px）、
+> `docs/reports/UI快速走查与修复记录-2026-11-23.md` §7.2（决策与理由）。
+
 ---
 
 ## 3 · 表单填写与出错提示
