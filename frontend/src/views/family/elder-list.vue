@@ -325,6 +325,11 @@ v-for="e in elders" :key="e.id" role="button" tabindex="0"
   border-radius: var(--nl-radius-card);
   cursor: pointer;
 
+  /* 移动端：操作按钮挪到卡片底部整行（见下方 __ops 说明），故允许换行 */
+  @media (max-width: 767px) {
+    flex-wrap: wrap;
+  }
+
   &__body {
     flex: 1;
     min-width: 0;
@@ -355,6 +360,28 @@ v-for="e in elders" :key="e.id" role="button" tabindex="0"
     flex-direction: column;
     gap: 6px;
     flex-shrink: 0;
+
+    /*
+     * 移动端：「解绑 / 删除」改为卡片底部整行操作栏。
+     *
+     * 改之前这两个 size="small" 按钮只有 24px 高、竖着挤在卡片右上角：
+     *   ① 触控区远低于 design.md 的「最小触控区 >=48px」，老年人点不准；
+     *   ② 视觉上把卡片右侧压得很挤，两个胶囊一蓝一红竖排看着像残留控件。
+     * 现在撑满一行、等分宽度，破坏性操作「删除」仍然靠右但不再是针尖大小。
+     */
+    @media (max-width: 767px) {
+      flex-direction: row;
+      width: 100%;
+      gap: var(--nl-space-2);
+      padding-top: var(--nl-space-3);
+      margin-top: var(--nl-space-1);
+      border-top: 1px solid var(--nl-divider);
+
+      :deep(.el-button) {
+        flex: 1;
+        margin-left: 0;
+      }
+    }
   }
 }
 

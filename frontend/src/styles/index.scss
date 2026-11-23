@@ -169,6 +169,20 @@
     min-height: 48px;
   }
 
+  /*
+   * 小按钮（size="small"）此前被上面那条规则排除在外，于是移动端列表里的
+   * 「删除 / 解绑 / 查看 / 抢单」只有 24px 高 —— 与 design.md「最小触控区
+   * >=48px（普通与老人模式同口径）」直接冲突，老年用户基本点不准。
+   *
+   * 这里补一条兜底：窄屏下小按钮至少 44px。
+   * 不直接取 48px 是为了兼顾列表行密度（48px 会把消息列表每行再撑高 24px）；
+   * 44px 是 WCAG 2.2 与 Apple HIG 的通行下限。文字按钮 / 链接按钮仍豁免 ——
+   * 它们是行内文案，点击区由所在行提供。
+   */
+  .el-button--small:not(.el-button--text):not(.el-button--link) {
+    min-height: 44px;
+  }
+
   .el-input__wrapper,
   .el-select__wrapper,
   .el-textarea__inner {

@@ -211,13 +211,21 @@ onMounted(loadOrders)
   padding: 0 var(--nl-gutter);
   overflow-x: auto;
   scrollbar-width: none;
+  /*
+   * 7 个筛选项在 390px 宽下放不下，原本靠横向滚动 + 隐藏滚动条，
+   * 但没有任何滚动提示 —— 最后一个 chip 被切一半，看起来像布局坏了。
+   * 右侧加一层渐隐，把「还有更多」讲清楚。
+   */
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
 
   &::-webkit-scrollbar {
     display: none;
   }
 
   &__btn {
-    padding: 6px 14px;
+    min-height: 44px;
+    padding: 0 14px;
     font-size: var(--nl-font-caption);
     font-weight: 500;
     color: var(--nl-text-2);
