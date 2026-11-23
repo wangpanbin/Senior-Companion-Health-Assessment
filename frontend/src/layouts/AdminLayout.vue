@@ -362,6 +362,48 @@ onBeforeUnmount(() => {
   }
 }
 
+/* --------------------------------------------------------------------------
+ * 窄屏兜底（<768px）
+ *
+ * 管理后台的目标形态是桌面（design.md：1440×900），但在手机上打开时顶栏会撑出
+ * 视口 —— 实测 390px 宽下横向溢出 10~17px，整页出现横向滚动条，右侧用户区被裁。
+ * 这里只做「不破版」兜底，不把后台改造成移动端：
+ *   · 两侧都允许收缩，页面标题过长省略；
+ *   · 隐藏「老人模式」开关 —— 桌面端本就按 ADR-0007 Q4 禁用，窄屏更是零信息量；
+ *   · 用户区只留图标，昵称与角色标签收进下拉菜单。
+ * -------------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  .admin__header {
+    gap: $nl-space-3;
+    padding: 0 $nl-space-4;
+  }
+
+  .admin__header-left,
+  .admin__header-right {
+    min-width: 0;
+  }
+
+  .admin__header-right {
+    flex-shrink: 1;
+    gap: 8px;
+  }
+
+  .admin__page-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin__elder-switch {
+    display: none;
+  }
+
+  .admin__user > span,
+  .admin__user .el-tag {
+    display: none;
+  }
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.15s ease;

@@ -160,9 +160,23 @@ onMounted(loadOrders)
   display: flex;
   gap: var(--nl-space-2);
   padding: 0 var(--nl-gutter);
+  /*
+   * 与家属端订单列表对齐：筛选项超出宽度时横向滚动而不是撑破页面，
+   * 并用右侧渐隐提示「还有更多」（原先这里连 overflow-x 都没有，
+   * 一旦筛选项变多就会把整页顶出横向滚动条）。
+   */
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 
   &__btn {
-    padding: 6px 14px;
+    min-height: 44px;
+    padding: 0 14px;
     font-size: var(--nl-font-caption);
     font-weight: 500;
     color: var(--nl-text-2);
