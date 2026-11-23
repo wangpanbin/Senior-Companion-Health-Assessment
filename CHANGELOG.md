@@ -17,7 +17,57 @@
 
 ## [Unreleased]
 
-_（当前无待发布变更）_
+### Changed · 前端依赖升级
+
+- `axios` 1.20.0 → **1.21.1**（PR #32）
+- `vitest` 5.0.1 → **5.1.0**（PR #30）
+- `@vitejs/plugin-vue` 5.2.4 → **6.0.11**（PR #31）
+
+三项均由 Dependabot 提 PR，经人工审查后合并：改动只落在 `frontend/package.json`
+与 `frontend/pnpm-lock.yaml`，不触碰任何业务代码。合并后按合并后的 lockfile 实跑
+CI 同款命令：`lint:check` 0 警告 · vitest **258 / 258** 全绿 · `build` 成功。
+
+### Fixed · Node 下限声明与依赖实况对齐
+
+- `frontend/package.json` 的 `engines.node`：**22.10.0 → 22.12.0**
+- README 前置条件表与 `docs/deployment.md` §1 环境要求表同步为 **22.12+**
+- 原因：`@vitejs/plugin-vue@6.0.11` 要求 `^20.19.0 || >=22.12.0`，
+  `vitest@5.1.0` 要求 `^22.12.0 || ^24.0.0 || >=26.0.0` —— **22.12 是两者的共同下限**。
+  原声明 22.10 会让 22.10 / 22.11 的本地环境装上跑不起来的组合；CI 跑 Node 24 所以一直是绿的，
+  问题只在本地装依赖后运行时才暴露
+- 同步点见 [README 快速开始](README.md#快速开始) 与 [部署文档](docs/deployment.md)
+
+### Fixed · 静态门禁「悬空路径」误判（本地绿 / CI 红）
+
+- `tools/ai_flow/gate_check.py` —— 删掉手抄 `.gitignore` 的白名单
+  （`GITIGNORED_PATH_PREFIXES`），改为 `git check-ignore` **问 git 本身**；
+  同一路径多次引用只报一次
+- 连带修掉一个只会在 Windows 复现的隐蔽坑：`git check-ignore --stdin` 的输入若带 CRLF，
+  git 会把行尾 `\r` 当成路径的一部分导致匹配失败 —— 而 Python 的 `text=True`
+  恰好在 Windows 上把 `\n` 翻成 `\r\n`。实现改走**字节**输入
+- **影响面**：README 引用 `ai-service/.env`（按红线刻意不入库）此前会被判成「悬空路径」，
+  于是**任何改动 README 的 PR 都在 CI 上红、而本地绿**
+- **新增** `tools/ai_flow/test_gate_check.py` —— 门禁脚本自己的回归测试（9 例，纯 stdlib）：
+  被忽略的文件不算悬空 / 真·不存在的路径仍然要报 / Windows 换行不能吃掉匹配
+- `.github/workflows/ci.yml` 的 `static-gates` job 在跑完原有两项**之后**跑该回归测试 ——
+  门禁自己有 bug 时门禁自己也会放行，顺序必须是「先验证门禁本身可信，再让它去验仓库」
+- 规则本体仍然只有一处（就是 `.gitignore`），CI 与本地共用同一份脚本
+
+### Docs · 版本标签规范落地
+
+- `docs/agents/git-workflow.md` §7.4 —— 双层标签（`vX.0` 里程碑 + `vX.Y` 功能单元）
+  + 触发判据 + message 模板 + 编号映射表
+- `plans/git-tagging-plan.md` —— 标签方案的执行计划
+
+### 门禁与规模
+
+- 静态门禁全绿：密钥体检（1144 个入库文件）· 指标字典 parity（64 条）· 错误码双向一致（72 个码值）·
+  文档三项校验 · **门禁脚本自测 9 / 9**
+- 前端 vitest **258 / 258** + lint 0 警告 + build 成功
+- 后端 surefire 实跑 **1550** 条全绿；AI 助手 pytest 全绿
+- 规模数字取数：`python tools/repo_metrics.py --base v6.0`（基线 ref = **v6.0**）——
+  端点 **138** / 表 **29** / Controller **25** / 后端主代码 **484** / 前端路由 **54** /
+  E2E 用例实跑 **272**（23 个文件）
 
 ---
 
