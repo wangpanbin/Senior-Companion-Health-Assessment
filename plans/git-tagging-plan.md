@@ -127,8 +127,12 @@ git push origin v3.1 v3.2 v3.3 v3.4 v3.5 v3.6
 - [x] 3. `docs/agents/doc-sync.md` 联动矩阵加一行；`AGENTS.md` §11 加一条 checkbox；`CHANGELOG.md` 头部加标签口径说明
 - [x] 4. ~~（可选）实现 tag_helper.py~~ —— **用户已确认跳过**，§7.4.2 用 `git diff --name-only` 一条命令即可复现判据
 - [x] 5. 一次性补推存量标签 `v3.1`–`v3.6` —— 已获用户授权并推送，`git ls-remote --tags origin` 可见 6 个新 tag ref
-- [ ] 6. 下一个功能单元落地时，按新规范产出「建议标签 `v6.1` + message + 门禁结果」，**报给用户确认**后再 `git tag -a` 与 `git push origin v6.1`
-- [ ] 7. 跑门禁 + 自查 §11 清单
+- [x] 6. 下一个功能单元落地时，按新规范产出「建议标签 `v6.1` + message + 门禁结果」，**报给用户确认**后再 `git tag -a` 与 `git push origin v6.1`
+      —— 2026-11-23 落地：锚点 `cfaa25a`（PR #35 合并），message 首行
+      `v6.1 · 前端依赖三升 + Node 下限对齐 + 静态门禁悬空路径判定改为问 git`；
+      已获用户确认后 `git tag -a` + `git push origin v6.1`，`git ls-remote --tags origin` 可见
+- [x] 7. 跑门禁 + 自查 §11 清单 —— 静态门禁 5 项全绿 + 门禁脚本自测 9 / 9；§7.4.6 自查逐条过
+      （annotated / 首行格式 / 锚点 / 不与既有标签共用 commit / 远端可见）
 
 ## Verification
 
