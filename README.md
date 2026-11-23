@@ -94,12 +94,13 @@ Senior Companion Health Assessment/
 |---|---|---|
 | JDK | 21（Spring Boot 3.x 要求 17+） | 21.0.7 ✅ |
 | Maven | 3.6+ | 3.9.15 ✅ |
-| Node.js | 22.10+ | 22.22.2 ✅ |
+| Node.js | 22.12+ | 22.22.2 ✅ |
 | MySQL | 8.0 | 8.0.42 ✅（服务 MySQL80） |
 | Redis | 5+ | 8.8.0 ✅（服务 Redis） |
 
 > 首次使用请先确认 `C:\Users\wang\.m2\settings.xml` 已配置阿里云镜像，否则依赖下载极慢。
-> Node 下限以 `frontend/package.json` 的 `engines.node` 为准（当前 22.10+）：低于该版本 pnpm 直接拒绝安装；
+> Node 下限以 `frontend/package.json` 的 `engines.node` 为准（当前 22.12+）：低于该版本 pnpm 直接拒绝安装；
+> 22.12 是 `@vitejs/plugin-vue@6`（`^20.19.0 || >=22.12.0`）与 `vitest@5.1`（`^22.12.0 || ^24 || >=26`）的共同下限；
 > 18 上 `jsdom` / `undici` 依赖的 `markAsUncloneable` 还不存在，vitest 会在启动期就崩掉。
 
 ### 数据库准备

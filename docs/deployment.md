@@ -17,7 +17,7 @@
 |---|---|---|---|
 | JDK | **21** | 后端 | `pom.xml` `<java.version>21</java.version>`；本机装有 8/11/17/21/25 多版本时注意 `JAVA_HOME` 指向 21 |
 | Maven | 3.6+ | 构建 | 建议配置阿里云镜像（`~/.m2/settings.xml`），否则首次拉依赖极慢 |
-| Node.js | **22.10+** | 前端 | `package.json` `engines.node` 下限；低版本 pnpm 直接拒绝安装 |
+| Node.js | **22.12+** | 前端 | `package.json` `engines.node` 下限；低版本 pnpm 直接拒绝安装 |
 | pnpm | 10+ | 前端 | lockfile 为 `pnpm-lock.yaml`，不要用 npm 重装 |
 | MySQL | 8.0 | 数据库 | 字符集 **utf8mb4 / utf8mb4_general_ci**（硬约束） |
 | Redis | 5+ | 缓存 / 锁 / 验证码 | Windows 移植版可用；以 `redis-cli ping` → `PONG` 为准判断存活 |
