@@ -65,7 +65,7 @@ expand–contract 而不是直接改造的理由：
 但它们其实是**同一个市场的供给** —— 把它们判成 0.5 才对。
 
 映射表放在 `backend/sql/tools/region_code_mapping.json`，
-由 `gen_region_codes.py` 生成 backfill SQL，并用 `--check` 模式**机械核对**
+由 `backend/sql/tools/gen_region_codes.py` 生成 backfill SQL，并用 `--check` 模式**机械核对**
 迁移文件里手写的 CASE 与生成器逐字一致 ——
 「手写的迁移」与「可复现的生成器」之间必须有一道自动校验，否则两边迟早漂移。
 

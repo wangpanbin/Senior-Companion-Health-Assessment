@@ -416,7 +416,7 @@
 | 运行期主题 | 所有颜色/字号走 CSS 变量，**组件内禁止硬编码色值**（老人模式靠变量覆盖实现） |
 | 老人模式样式 | `styles/elderly.scss`，仅覆盖变量，不写组件选择器 |
 | 组件目录 | `frontend/src/components/` 下按 `nl-` 前缀：`nl-button / nl-card / nl-chip / nl-list-row / nl-tabbar / nl-navbar / nl-steps / nl-timeline / nl-empty / nl-skeleton` |
-| 图标 | `frontend/src/components/icons/` 存 SVG 源文件，统一 24×24 viewBox、`stroke: currentColor`、`stroke-width: 1.8`、`stroke-linecap: round` |
+| 图标 | 图标**内联在组件内**（`NlIconBox.vue` 用 `:deep(svg)` 接管样式），本仓**不设**独立 SVG 目录；统一 24×24 viewBox、`stroke: currentColor`、`stroke-width: 1.8`、`stroke-linecap: round` |
 | 请求层 | 统一走 `utils/request.js`；错误码映射到 §3.7 反馈策略；401 跳登录、403 走无权限页 |
 | 单位 | 布局用 `px`（移动端不做 rem 缩放），字号用 CSS 变量 |
 | 断点 | 形态判定真源是 `useDevice.js` 的 `MOBILE_QUERY = (max-width: 767px)`；档位体系在 `useResponsive.js`（360 / 480 / 768 / 1024 / 1280 五档）。**SCSS 的 `$bp-*` 变量未被任何组件使用**，view 内如需媒体查询请直接写 px |

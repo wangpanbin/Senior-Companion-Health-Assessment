@@ -303,7 +303,7 @@ JUnit5 + Mockito Service 单测覆盖率 ≥ 60%(JaCoCo 报告为证);**4 角色
 | 文件存储 | 一期本地 `./uploads/{yyyyMM}/{uuid}.{ext}`,后续可替换为对象存储 |
 | 实时通信 | WebSocket(详见 ADR-0001),可后续替换 SSE 或消息队列 |
 | 模块解耦 | 按模块子包(`controller/{auth,user,order,...}`),允许后续拆微服务 |
-| 国际化 | 字符集统一 utf8mb4 / UTF-8;文案集中在 `frontend/src/i18n/`(留位,本期不实装多语言) |
+| 国际化 | 字符集统一 utf8mb4 / UTF-8;文案集中在 `frontend/src/i18n/`(留位，当前未建目录，本期不实装多语言) |
 
 ---
 
