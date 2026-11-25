@@ -756,7 +756,9 @@ ms-playwright 缓存里的 ffmpeg 二进制，缺失时**所有用例在 `newPag
 > `sys_file` 行——先跑单测再跑 E2E 时，verify 会报 `sys_file` 水位 +1，
 > 删掉该行再跑即可，这不是 E2E 回滚的锅。
 
-> ✅ **`tools/e2e/` 的 9 个脚本已随仓库分发**（此前被 `.gitignore` 整体忽略，现已入库）。
+> ✅ **`tools/e2e/` 的脚本已随仓库分发**（此前被 `.gitignore` 整体忽略，现已入库）。
+> 脚本清单与「哪个写库 / 哪个要口令 / 哪个能进 CI」一律以 [`tools/e2e/README.md`](../tools/e2e/README.md) 的索引表为准 ——
+> **本文件不重复写数量**（写死数字必然在新增脚本时过期，而快照类文档又不适合清单）。
 > 干净 clone 上直接 `pnpm exec playwright test` 的三项前置：
 > 1. `MYSQL_PASSWORD` —— 脚本**不内置默认口令**，未设置会直接报错退出；
 > 2. `mysql` / `redis-cli` 可用 —— 两者都按「`MYSQL_BIN` / `REDIS_CLI` 环境变量 >

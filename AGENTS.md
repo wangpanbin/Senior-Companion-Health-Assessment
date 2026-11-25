@@ -184,7 +184,7 @@ Senior Companion Health Assessment/
 │   ├── knowledge/faq.json         ← FAQ 知识库（30 条，每条带 source + anchor 指向 docs/api 真实锚点）
 │   ├── tests/                     ← pytest 单测（核心断言不依赖 LLM 与网络）
 │   └── .env.example               ← 环境变量样例（只有占位符，.env 不入库）
-└── tools/e2e/                      E2E 夹具 / 服务脚本 / 探针（9 个脚本，随仓库入库；**每个脚本的作用、是否写库、是否要口令见 `tools/e2e/README.md`**，见 FRONTEND_CONTRACT §12–§13）
+└── tools/e2e/                      E2E 夹具 / 服务脚本 / 探针 / 跨进程 e2e（随仓库入库；**每个脚本的作用、是否写库、是否要口令见 `tools/e2e/README.md`**，见 FRONTEND_CONTRACT §12–§13）
 ```
 
 **AI 写代码时**：先按上面这个目录找到归属位置，再决定用什么模板。**不要**在 `controller/` 下塞 Service、**不要**把 Entity 当 VO 返回、**不要**在前端 `views/` 下直接 `import request from '@/utils/request'` 之外的封装方式。
