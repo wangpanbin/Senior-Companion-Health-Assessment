@@ -17,6 +17,59 @@
 
 ## [Unreleased]
 
+### Fixed · 文档路径对账：10 处悬空引用清零 + 门禁改全量
+
+一次性清掉仓库里 10 处「文档引用已删除 / 改名 / 从未落地的文件」。它们都是历史遗账，
+不在任何 diff 里，因此增量口径的 CI 永远碰不到 —— 单独一轮处理。
+
+**A 类 · 真漂移（改引用，指向现在的位置）**
+
+- `docs/plan/README.md` —— 「原 `plans/迭代计划.md`」「原 `plans/ui-rework.md`」两处括注：
+  `plans/` 下这两个文件在文档收敛（`4d6b4f0`）时删除，说法改为「前身是迭代计划」而不裸引路径
+- `docs/prd/功能拓展规划.md` §6.3 —— 交付物「新增 `docs/api/10-settlement.md`」从未落地：
+  结算接口最终**并入既有文件**（`08-admin.md` §25–§27 + `09-statistics-export.md` §9），
+  `10-` 编号后来给了 `10-file-upload.md`，文档已改正
+- `docs/spec/desktop-adapt-v2.md` §4.1 —— `NlDialog.vue` 计划里写了却**最终没建**：
+  改用 EP 原生 `el-dialog` + `useResponsive().isXs` 逐页绑 `:fullscreen`，表格里如实标注
+- `tools/ai_flow/README.md` —— 补充「为什么 CI 改全量」的理由与两处目录级豁免
+
+**B 类 · 历史快照（不动原文，改为目录级豁免）**
+
+- `docs/plan/archive/2026-09-28-convergence-iteration.md`（3 处）—— 计划存档里
+  `git rm PermissionProbeController.java` 的**执行步骤原文**；探针确实在 `038723a` 删了
+- `docs/review/2026-09-17-m2-auth.md`（1 处）—— 评审记录引用被评审那天的代码位置
+
+> 判据与既有的 `CHANGELOG.md` 豁免同源：快照类文档引用的是「当时」的路径，
+> 让它随今天改名而失效等于篡改历史。**正确做法是新文档指向现在的位置。**
+
+**C 类 · 功能缺口（文档如实标注，代码留待立项）**
+
+- `docs/spec/E4-review-credibility.md` + `E4-tickets.md` —— 后端
+  `POST /api/admin/review/{id}/validity` 已上线、`api/admin.js` 也封了 `rulingReview`，
+  但**全仓没有任何 .vue 调用它**：`admin/review-audit.vue` 从未存在（`git log --all` 零命中），
+  `admin/complaint.vue` 也无裁定入口 —— 「管理员裁定」当前只有 API 可达，管理端 UI 为零
+- 同一处标注 `tools/e2e/e2e_review_appeal.py` **未交付**（spec T7 承诺的 5 条断言）；
+  现有覆盖靠 `ReviewRulingServiceTest` / `AdminControllerReviewTest` / `ReviewAccessMatrixTest`，
+  缺的恰是「真 HTTP + 跨进程」那层
+- `docs/plan/gap-closure-2026-11.md` —— 四条链活动图**本轮不交付**（用户裁定，
+  `CHANGELOG` 早有记录），原文按「新文档」列着却从未产出，已改为划线 + 决策说明
+
+**门禁：增量 → 全量**
+
+- `tools/ai_flow/gate_check.py` —— 新增 `PATH_CHECK_EXEMPT_DIRS = ("docs/plan/archive/", "docs/review/")`
+  与 `path_check_exempt()`；**只豁免路径判定，围栏检查照旧**。`CHANGELOG.md` 的单文件豁免并入同一函数
+- `.github/workflows/ci.yml` 的 `static-gates` job —— 文档校验从
+  `--only md --base "$BASE..HEAD"` 改为 **`--only md --all-md`**；连带删掉
+  「`base.sha` → `before` → `HEAD~1` 三级兜底」那段（它容易静默走 `exit 0`，
+  表现是「门禁看着绿其实什么都没验」）与 `fetch-depth: 0`。全量 140 份 .md 实测 **1.5s**
+- `tools/ai_flow/test_gate_check.py` —— 新增 `PathCheckExemptTest`（6 例）：
+  存档 / 评审目录豁免、`CHANGELOG.md` 旧豁免不被误伤、普通文档不豁免、
+  `docs/reviewsomething/` 不被前缀咒语命中、端到端确认存档文件的悬空不进结果。
+  回归测试 **9 → 15 例**
+- 门禁现状：全量 md 扫描 **140 份 / 悬空 0 处 / 围栏 0 处不闭合** · 门禁自测 **15 / 15**
+
+> 遗留（本轮不动，待立项）：E4 裁定入口的前端落点、`tools/e2e/` 的跨进程 e2e 脚本。
+
 ### Changed · UI 走查三项待决项定案（N1 / N2 / N3）
 
 - **N1 触控区取 44px（普通形态）** —— 44px 是 WCAG 2.2 / Apple HIG 的通行下限；
