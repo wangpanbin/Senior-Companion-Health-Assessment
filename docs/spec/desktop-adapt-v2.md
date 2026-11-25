@@ -105,7 +105,7 @@
 | 修改 | `frontend/src/components/NlPhoneShell.vue` | 加 small-screen 与 landscape 适配 |
 | 修改 | `frontend/src/layouts/AdminLayout.vue` | 加断点驱动的 sidebar 折叠(< 1280 默认 64px);保留 toggle |
 | 修改 | `frontend/src/store/modules/app.js` | 加 `setSidebarMode('collapsed' / 'expanded' / 'auto')` |
-| 修改 | `frontend/src/components/NlDialog.vue`(新建)或 Element Plus 全局配置 | < 768 全屏;`>= 768` 维持 |
+| 修改 | `frontend/src/components/` 下的 `NlDialog.vue`（**该组件最终未建**：改用 Element Plus 原生 `el-dialog` + `useResponsive()` 的 `isXs` 逐页绑 `:fullscreen`，见 §8.2 / §8.3）或 Element Plus 全局配置 | < 768 全屏;`>= 768` 维持 |
 | 修改 | `frontend/src/views/admin/dashboard.vue` | kpi-grid auto-fit;图表 row 断点堆叠 |
 | 新增 | `frontend/src/components/NlAdminTable.vue` | 统一封装「卡片化 fallback」模式,8 个表格 view 复用 |
 | 修改 | `frontend/src/views/admin/order.vue` | 用 NlAdminTable 替代 el-table |
