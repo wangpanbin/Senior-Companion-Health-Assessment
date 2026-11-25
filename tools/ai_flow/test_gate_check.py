@@ -137,5 +137,34 @@ class PathCheckExemptTest(unittest.TestCase):
         self.assertNotIn(rel + " -> ", detail)
 
 
+class MdSkipDirsTest(unittest.TestCase):
+    """all_md_files 的跳过范围：根层级 `reports/` 跳，任意层级构建产物跳。
+
+    2026-11-25 修的缺陷：早先用 `any(seg in MD_SKIP_DIRS for seg in parts[:-1])`
+    做**任意层级**匹配，`reports` 把入库的正式报告目录 `docs/reports/`（28 份 .md）
+    一起静默跳过了 —— 围栏检查与路径检查双双漏检。
+    """
+
+    def test_docs_reports_is_scanned(self):
+        """`docs/reports/` 是入库的正式报告目录，必须在扫描范围内。"""
+        files = gc.all_md_files()
+        hits = [f for f in files if f.startswith("docs/reports/")]
+        self.assertTrue(hits, "docs/reports/ 下的 .md 一份都没被扫到 —— 跳过逻辑误伤了")
+        self.assertIn("docs/reports/README.md", hits)
+
+    def test_root_reports_is_skipped(self):
+        """根 `reports/` 是 Playwright / e2e 产物（.gitignore 已忽略），必须跳过。"""
+        files = gc.all_md_files()
+        leaked = [f for f in files if f.startswith("reports/")]
+        self.assertEqual(leaked, [], "根 reports/ 下的 .md 不该被扫到")
+
+    def test_build_output_dirs_skipped_at_any_depth(self):
+        """构建产物目录名在**任意层级**都要跳（node_modules/target/dist 等）。"""
+        files = gc.all_md_files()
+        for seg in gc.MD_SKIP_ANY_DIRS:
+            leaked = [f for f in files if seg in f.split("/")[:-1]]
+            self.assertEqual(leaked, [], "%s 下的 .md 不该被扫到" % seg)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

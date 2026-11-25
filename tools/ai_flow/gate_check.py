@@ -197,11 +197,23 @@ def changed_files(base=None):
     return uniq
 
 
-MD_SKIP_DIRS = (
+# 只在**根层级**生效的跳过目录名。
+#
+# ⚠️ `reports` 只能待在这一组里（2026-11-25 修）：
+#   本意是跳过根目录的 `reports/`（`.gitignore:98` 的 `/reports/`，Playwright / e2e 产物），
+#   但早先用 `any(seg in MD_SKIP_DIRS for seg in parts[:-1])` 做**任意层级**匹配，
+#   于是 `docs/reports/` 这个**入库的正式报告目录**（28 份 .md）被一起静默跳过 ——
+#   围栏检查与路径检查双双漏检。
+#   根层级锚定后：根 `reports/` 照跳（它本来就被 gitignore），`docs/reports/` 回到扫描范围。
+MD_SKIP_ROOT_DIRS = (
+    "reports",
+)
+
+# 任意层级生效的跳过目录名（构建产物与工具缓存，仓库内不应有 .md）
+MD_SKIP_ANY_DIRS = (
     "node_modules",
     "target",
     "dist",
-    "reports",
     "__pycache__",
     ".venv",
     ".pytest_cache",
@@ -221,7 +233,9 @@ def all_md_files():
         parts = rel.split("/")
         if any(seg.startswith(".") for seg in parts):
             continue
-        if any(seg in MD_SKIP_DIRS for seg in parts[:-1]):
+        if parts[0] in MD_SKIP_ROOT_DIRS:
+            continue
+        if any(seg in MD_SKIP_ANY_DIRS for seg in parts[:-1]):
             continue
         out.append(rel)
     return sorted(out)
@@ -426,19 +440,6 @@ def main(argv=None):
         print("本次只跑：" + ",".join(only))
     elif skip:
         print("本次跳过：" + ",".join(skip))
-    print("=" * 74)
-    for name, res, detail in results:
-        print("{:<16} {:<5} {}".format(name, res, detail))
-    failed = [r for r in results if r[1] == "FAIL"]
-    print("-" * 74)
-    if failed:
-        print("静态门禁：FAIL（" + str(len(failed)) + " 项未过）")
-        return 1
-    print("静态门禁：PASS")
-    return 0
-
-    print("=" * 74)
-    print("静态门禁汇总（tools/ai_flow/gate_check.py）")
     print("=" * 74)
     for name, res, detail in results:
         print("{:<16} {:<5} {}".format(name, res, detail))
