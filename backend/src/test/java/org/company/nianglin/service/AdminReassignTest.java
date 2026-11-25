@@ -118,7 +118,7 @@ class AdminReassignTest {
         // 审计走真实实现：本组要验证「日志里记的是前后陪诊员」，mock 掉就测不到
         service = new AdminServiceImpl(null, companionProfileMapper, null, null, orderMapper,
                 operLogMapper, new OperLogRecorderImpl(operLogMapper, userNameResolver), null, null,
-                orderRejectLogMapper, fulfillmentEventMapper,
+                orderRejectLogMapper, null, fulfillmentEventMapper,
                 messageService, orderService, null, null, null, null, new ObjectMapper());
         loginAsAdmin();
     }

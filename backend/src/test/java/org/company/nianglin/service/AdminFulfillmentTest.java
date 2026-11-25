@@ -86,7 +86,7 @@ class AdminFulfillmentTest {
         // 未用到的依赖传 null：本类只走计数与风险列表两条只读路径
         service = new AdminServiceImpl(null, null, null, null, orderMapper, null,
                 null, adminReadMapper, orderReadMapper, null, null, null, null, null,
-                null, null, null, new ObjectMapper());
+                null, null, null, null, new ObjectMapper());
     }
 
     /* ================================================================== */

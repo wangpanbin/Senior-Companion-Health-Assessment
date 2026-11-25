@@ -24,6 +24,7 @@ import org.company.nianglin.constant.WorkStatus;
 import org.company.nianglin.dto.AdminAuditQuery;
 import org.company.nianglin.dto.AdminComplaintQuery;
 import org.company.nianglin.dto.AdminOrderQuery;
+import org.company.nianglin.dto.AdminReviewQuery;
 import org.company.nianglin.dto.AdminUserQuery;
 import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
@@ -43,6 +44,7 @@ import org.company.nianglin.entity.Complaint;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.OrderFulfillmentEvent;
 import org.company.nianglin.entity.OrderRejectLog;
+import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.AdminOperLogMapper;
@@ -54,6 +56,7 @@ import org.company.nianglin.mapper.ComplaintMapper;
 import org.company.nianglin.mapper.OrderFulfillmentEventMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
 import org.company.nianglin.mapper.OrderRejectLogMapper;
+import org.company.nianglin.mapper.OrderReviewMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
@@ -70,6 +73,7 @@ import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.util.TimeUtil;
 import org.company.nianglin.vo.AdminFulfillmentRiskItemVO;
 import org.company.nianglin.vo.AdminOrderVO;
+import org.company.nianglin.vo.AdminReviewVO;
 import org.company.nianglin.vo.AdminUserVO;
 import org.company.nianglin.vo.ArbitrateResultVO;
 import org.company.nianglin.vo.AuditApplicationVO;
@@ -157,6 +161,8 @@ public class AdminServiceImpl implements AdminService {
     private final OrderReadMapper orderReadMapper;
     /** 拒单记录：改派前置校验「目标陪诊员是否拒过该单」用 */
     private final OrderRejectLogMapper orderRejectLogMapper;
+    /** 评价巡查列表用（E4） */
+    private final OrderReviewMapper orderReviewMapper;
     /** 履约事件流水：改派要留一条 ORDER_REASSIGNED 事件 */
     private final OrderFulfillmentEventMapper fulfillmentEventMapper;
     private final MessageService messageService;
@@ -520,6 +526,103 @@ public class AdminServiceImpl implements AdminService {
         log.info("纠纷处理完成 | orderId={} | {} → {} | adminId={}",
                 id, beforeStatus, after.getStatus(), SecurityUtils.currentUserId());
         return ArbitrateResultVO.of(id, target, handleTime);
+    }
+
+    /* ================================================================== */
+    /* 评价巡查（E4）                                                     */
+    /* ================================================================== */
+
+    /**
+     * 评价巡查列表（E4）。
+     *
+     * <p><b>与 {@code GET /api/review/companion/{id}} 的关键区别</b>：
+     * 那条链路是「公开口碑」，硬编码只返回<b>有效</b>评价
+     * （{@code ReviewServiceImpl#byCompanion} 里写死了 {@code eq(is_valid, 1)}），
+     * 管理员用它<b>永远看不到已被裁定无效的评价</b> ——
+     * 而「裁完就从列表里消失」的评价等于从来没被巡查过。
+     * 所以本方法不写死有效性条件，而是把它做成一个可筛的三态参数。</p>
+     *
+     * <p>姓名一律脱敏，与 {@code ReviewVO} 同口径 ——
+     * 订单详情那条「全名豁免」只对详情页成立，不适用于列表。</p>
+     */
+    @Override
+    public PageResult<AdminReviewVO> reviewList(AdminReviewQuery query) {
+        LambdaQueryWrapper<OrderReview> wrapper = Wrappers.lambdaQuery();
+        if (query.getCompanionId() != null) {
+            wrapper.eq(OrderReview::getCompanionId, query.getCompanionId());
+        }
+        if (query.getMinScore() != null) {
+            wrapper.ge(OrderReview::getScore, query.getMinScore());
+        }
+        if (query.getMaxScore() != null) {
+            wrapper.le(OrderReview::getScore, query.getMaxScore());
+        }
+        // isValid 三态：null = 不限 / true = 只看有效 / false = 只看已被裁定无效。
+        // ⚠️ 这里查的是**原值**（0/1），不是 ReviewVO 里的布尔语义 ——
+        //    is_valid 为 null 的 V1 老数据视为有效（与 ReviewVO.of 的兜底一致），
+        //    因此「只看有效」必须写成 (is_valid = 1 OR is_valid IS NULL)。
+        if (query.getIsValid() != null) {
+            if (query.getIsValid()) {
+                wrapper.and(w -> w.eq(OrderReview::getIsValid, 1).or().isNull(OrderReview::getIsValid));
+            } else {
+                wrapper.eq(OrderReview::getIsValid, 0);
+            }
+        }
+        if (StringUtils.hasText(query.getKeyword())) {
+            String keyword = query.getKeyword().trim();
+            wrapper.and(w -> w.like(OrderReview::getContent, keyword)
+                    .or().like(OrderReview::getOrderNo, keyword));
+        }
+        applyRange(wrapper, OrderReview::getCreateTime, query.getStartDate(), query.getEndDate(), "评价时间");
+
+        // 最新的在前：巡查是「看最近发生了什么」，不是「看最老还没看的」
+        wrapper.orderByDesc(OrderReview::getCreateTime).orderByDesc(OrderReview::getId);
+
+        Page<OrderReview> page = orderReviewMapper.selectPage(query.toMpPage(), wrapper);
+        List<OrderReview> rows = page.getRecords();
+        if (rows.isEmpty()) {
+            return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getPages(), List.of());
+        }
+
+        Set<Long> userIds = new LinkedHashSet<>();
+        for (OrderReview review : rows) {
+            userIds.add(review.getFamilyId());
+            if (review.getCompanionId() != null) {
+                userIds.add(review.getCompanionId());
+            }
+        }
+        Map<Long, String> names = userNameResolver.resolveAll(userIds);
+
+        List<AdminReviewVO> records = new ArrayList<>(rows.size());
+        for (OrderReview review : rows) {
+            records.add(AdminReviewVO.of(review,
+                    names.get(review.getFamilyId()),
+                    names.get(review.getCompanionId()),
+                    parseReviewTags(review.getTags())));
+        }
+        return PageResult.of(page, records);
+    }
+
+    /**
+     * 评价标签 JSON 解析；内容损坏时按空处理，不让一条脏数据把列表打挂。
+     *
+     * <p>与 {@code ReviewServiceImpl#parseTags} 同口径，但这里是管理端列表的独立副本 ——
+     * 跨 Service 互相调私有方法会形成不该有的耦合，
+     * 而这段解析逻辑只有十几行，重复的代价小于耦合的代价。</p>
+     */
+    private List<String> parseReviewTags(String json) {
+        if (!StringUtils.hasText(json)) {
+            return List.of();
+        }
+        try {
+            List<String> parsed = objectMapper.readValue(json,
+                    new TypeReference<List<String>>() {
+                    });
+            return parsed == null ? List.of() : parsed;
+        } catch (Exception e) {
+            log.warn("评价标签 JSON 解析失败，已按空处理 | len={} | {}", json.length(), e.getMessage());
+            return List.of();
+        }
     }
 
     /* ================================================================== */
