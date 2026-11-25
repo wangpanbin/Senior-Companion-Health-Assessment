@@ -115,7 +115,7 @@ Senior Companion Health Assessment/
 │   │   ├── V1__init_schema.sql       20 张表 DDL
 │   │   ├── V2__seed_data.sql         种子数据
 │   │   ├── V3__seed_boundary.sql     边界场景补充
-│   │   └── tools/                    生成器 + 校验 SQL（不参与构建，见其 README）
+│   │   └── tools/                    生成器 + 校验 SQL（**不参与运行时**，唯一例外是 `region_code_mapping.json`，见其 README）
 │   └── src/
 │       ├── main/
 │       │   ├── java/org/company/nianglin/
