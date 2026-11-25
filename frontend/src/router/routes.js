@@ -600,6 +600,21 @@ export const routes = [
           module: 'M9',
           code: 'W-13'
         }
+      },
+      {
+        // E4 评价巡查：管理员主动巡查评价并发起「有效 → 无效」单向裁定。
+        // 独立端点（GET /api/admin/review）而不是复用公开的陪诊员评价列表 ——
+        // 后者硬编码只返回有效评价，被裁定无效的那些就再也看不见了。
+        path: 'review-audit',
+        name: 'AdminReviewAudit',
+        component: () => import('@/views/admin/review-audit.vue'),
+        meta: {
+          title: '评价巡查',
+          icon: 'Star',
+          roles: ['ADMIN'],
+          module: 'M9',
+          code: 'W-14'
+        }
       }
     ]
   },
