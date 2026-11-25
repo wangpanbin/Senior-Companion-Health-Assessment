@@ -4,6 +4,7 @@ import org.company.nianglin.common.PageResult;
 import org.company.nianglin.dto.AdminAuditQuery;
 import org.company.nianglin.dto.AdminComplaintQuery;
 import org.company.nianglin.dto.AdminOrderQuery;
+import org.company.nianglin.dto.AdminReviewQuery;
 import org.company.nianglin.dto.AdminUserQuery;
 import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
@@ -18,6 +19,7 @@ import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.vo.AdminFulfillmentRiskItemVO;
 import org.company.nianglin.vo.AdminOrderVO;
+import org.company.nianglin.vo.AdminReviewVO;
 import org.company.nianglin.vo.AdminUserVO;
 import org.company.nianglin.vo.ArbitrateResultVO;
 import org.company.nianglin.vo.AuditApplicationVO;
@@ -124,6 +126,19 @@ public interface AdminService {
      * @throws org.company.nianglin.exception.BusinessException 3001 订单不存在 / 3002 已是终态 / 400 目标状态不合法
      */
     ArbitrateResultVO arbitrate(Long id, ArbitrateDTO dto);
+
+    /* ==================== 评价巡查（E4） ==================== */
+
+    /**
+     * 评价巡查列表（E4）。
+     *
+     * <p>与 {@code GET /api/review/companion/{id}} 的关键区别：那条链路硬编码只返回
+     * <b>有效</b>评价（公开口碑口径），本方法<b>能筛出已被裁定无效的评价</b> ——
+     * 否则「裁完就从列表里消失」的评价等于从来没被巡查过。</p>
+     *
+     * <p>姓名一律脱敏，与 {@code ReviewVO} 同口径（订单详情的全名豁免不适用于列表）。</p>
+     */
+    PageResult<AdminReviewVO> reviewList(AdminReviewQuery query);
 
     /* ==================== 投诉管理 ==================== */
 

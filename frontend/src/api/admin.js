@@ -103,6 +103,26 @@ export function rulingReview(reviewId, data) {
   return request({ url: `/admin/review/${reviewId}/validity`, method: 'post', data })
 }
 
+/**
+ * 评价巡查列表（E4）。
+ *
+ * 与 {@code GET /api/review/companion/{id}} 的关键区别：那条链路是「公开口碑」，
+ * 硬编码只返回**有效**评价，管理员用它永远看不到已被裁定无效的 ——
+ * 而「裁完就从列表里消失」的评价等于从来没被巡查过。
+ *
+ * @param {object} params
+ * @param {number} [params.companionId] 只看某位陪诊员
+ * @param {number} [params.minScore] 评分下限（1–5）
+ * @param {number} [params.maxScore] 评分上限（1–5）
+ * @param {boolean} [params.isValid] 不传 = 全部；true = 只看有效；false = 只看已被裁定无效
+ * @param {string} [params.keyword] 评价正文 / 订单号模糊搜索
+ * @param {string} [params.startDate] 评价时间起（yyyy-MM-dd）
+ * @param {string} [params.endDate] 评价时间止（yyyy-MM-dd，含当天）
+ */
+export function listAdminReviews(params) {
+  return request({ url: '/admin/review', method: 'get', params })
+}
+
 /* ---------------- 操作日志 ---------------- */
 
 export function listOperLogs(params) {

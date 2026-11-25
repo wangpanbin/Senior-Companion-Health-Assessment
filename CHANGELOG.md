@@ -17,6 +17,56 @@
 
 ## [Unreleased]
 
+### Added · E4 评价公信力闭环：管理端两个裁定入口落地
+
+上一轮做文档路径对账时如实标注了一个功能缺口：后端 `POST /api/admin/review/{id}/validity`
+（评价有效性裁定）早已上线，`frontend/src/api/admin.js` 也封了 `rulingReview`，
+但**全仓没有任何 .vue 调用它** —— 管理员看得见评价，却没有一个入口说「这条评价不算数」。
+本轮把它补成端到端可用。
+
+**新增后端端点 · `GET /api/admin/review`（评价巡查列表）**
+
+- `docs/api/08-admin.md` §29 · 权限 ADMIN · 只读不写操作日志 · **零迁移**
+- **为什么要新端点**：`GET /api/review/companion/{id}` 是「公开口碑」链路，
+  硬编码只返回**有效**评价，管理员用它**永远看不到已被裁定无效的** ——
+  而「裁完就从列表里消失」的评价等于从来没被巡查过。
+  该端点不在 `/api/admin/**` 下，**不能**改它（`SecurityConfig` 只对 `/api/admin/**`
+  做 `hasRole(ADMIN)`，改了会扩大公众可见性边界）
+- `isValid` 三态：不传 = 全部 / `true` = 只看有效 / `false` = 只看已被裁定无效。
+  「只看有效」的口径是 `is_valid = 1` **或** `is_valid IS NULL`，与 `ReviewVO.of` 的老数据兜底一致
+- 新增 `AdminReviewQuery` / `AdminReviewVO`；`AdminReviewVO` 字段名与 `ReviewVO` 刻意对齐
+  （两个入口把评价对象喂给同一个对话框组件，字段名分叉就得写两套取值判断）
+- 姓名一律脱敏 —— 订单详情那条「全名豁免」只对详情页成立
+
+**新增前端 · 两个裁定入口，共用一个对话框组件**
+
+- `frontend/src/components/admin/ReviewRulingDialog.vue` —— 共用组件
+  （口径 / 10–200 字校验 / in-flight 锁 / 单向裁定提示只此一份）
+- `frontend/src/views/admin/complaint.vue` —— `REVIEW_APPEAL` 行加「裁定无效」按钮。
+  评价 ID 的来源：`complaint` 表**没有** `review_id` 列（E4 零迁移），
+  用 `complaint.orderId` 反查 —— `GET /api/review/order/{orderId}` 的归属校验
+  `requireInvolved` 对 ADMIN 直接放行
+- `frontend/src/views/admin/review-audit.vue` —— 评价巡查页（陪诊员 / 评分 / 有效性 / 时间四类筛选）
+- `frontend/src/router/routes.js` —— `admin/review-audit` 一条（`W-14`）
+
+**测试**
+
+- 后端 `AdminServiceReviewListTest`（12 例）+ `AdminControllerReviewListTest`（2 例）；
+  `AdminServiceImpl` 新增构造器参数，4 个既有测试类同步适配
+- 前端 `ReviewRulingDialog.test.js`（7 例）
+- `mvn -B verify` → **1564 例 / 0 失败**；`pnpm run lint:check` → 0 警告；
+  `pnpm run test` → **27 文件 / 269 例全绿**
+
+**文档同步**
+
+- `docs/api/08-admin.md` §二 端点表 +1 行、新增 §29
+- `docs/spec/E4-review-credibility.md` §2.5（新增端点契约）、§8.3（端点签名）、
+  §10.1 / §10.2（前端交付状态）、§十的「未交付」警示块改为「已补齐」
+- `docs/spec/E4-tickets.md` T5 → ✅ 已交付
+- `docs/prd/功能拓展规划.md` 附录 A · RTM R-E4 → 标注管理端两个入口已交付
+- `docs/agents/interaction-checklist.md` §2.7 / §2.8 / §4.10 三条新陷阱
+  （多入口口径收敛 / 单向操作不给反向选项 / Boolean 筛选的「不限」怎么传）
+
 ### Fixed · 文档路径对账：10 处悬空引用清零 + 门禁改全量
 
 一次性清掉仓库里 10 处「文档引用已删除 / 改名 / 从未落地的文件」。它们都是历史遗账，

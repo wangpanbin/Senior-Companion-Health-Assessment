@@ -146,7 +146,7 @@ class AdminServiceTest {
         service = new AdminServiceImpl(auditRecordMapper, companionProfileMapper, sysUserMapper,
                 complaintMapper, orderMapper, operLogMapper,
                 new OperLogRecorderImpl(operLogMapper, userNameResolver), adminReadMapper, orderReadMapper,
-                orderRejectLogMapper, fulfillmentEventMapper,
+                orderRejectLogMapper, null, fulfillmentEventMapper,
                 messageService, orderService, userNameResolver, passwordEncoder, securityProperties,
                 tokenStore, new ObjectMapper());
         loginAsAdmin();

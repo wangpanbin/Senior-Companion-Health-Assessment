@@ -12,6 +12,7 @@ import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.AdminAuditQuery;
 import org.company.nianglin.dto.AdminComplaintQuery;
 import org.company.nianglin.dto.AdminOrderQuery;
+import org.company.nianglin.dto.AdminReviewQuery;
 import org.company.nianglin.dto.AdminSettlementQuery;
 import org.company.nianglin.dto.AdminUserQuery;
 import org.company.nianglin.dto.ArbitrateDTO;
@@ -30,6 +31,7 @@ import org.company.nianglin.service.ReviewService;
 import org.company.nianglin.service.SettlementService;
 import org.company.nianglin.vo.AdminFulfillmentRiskItemVO;
 import org.company.nianglin.vo.AdminOrderVO;
+import org.company.nianglin.vo.AdminReviewVO;
 import org.company.nianglin.vo.AdminUserVO;
 import org.company.nianglin.vo.ArbitrateResultVO;
 import org.company.nianglin.vo.AuditApplicationVO;
@@ -199,6 +201,25 @@ public class AdminController {
             @Parameter(description = "投诉 ID", example = "3001") @PathVariable("id") Long id,
             @Valid @RequestBody ComplaintHandleDTO dto) {
         return Result.success("投诉已处理", adminService.handleComplaint(id, dto));
+    }
+
+    /**
+     * 评价巡查列表（E4）。
+     *
+     * <p><b>与 {@code GET /api/review/companion/{id}} 的关键区别</b>：
+     * 那条链路是「公开口碑」，硬编码只返回<b>有效</b>评价，
+     * 管理员用它<b>永远看不到已被裁定无效的评价</b> ——
+     * 而「裁完就从列表里消失」的评价等于从来没被巡查过。
+     * 本端点用 {@code isValid} 三态筛选把两种都露出来。</p>
+     */
+    @Operation(summary = "评价巡查列表",
+            description = "管理端可见全部评价（含已被裁定无效的）。"
+                    + "isValid 不传 = 全部；true = 只看有效；false = 只看已被裁定无效。"
+                    + "支持按陪诊员 / 评分区间 / 评价时间区间 / 关键字筛选。"
+                    + "姓名一律脱敏（列表口径，不适用订单详情的全名豁免）")
+    @GetMapping("/review")
+    public Result<PageResult<AdminReviewVO>> reviewList(@Valid AdminReviewQuery query) {
+        return Result.success(adminService.reviewList(query));
     }
 
     /**

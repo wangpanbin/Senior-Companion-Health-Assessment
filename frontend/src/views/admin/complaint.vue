@@ -10,11 +10,19 @@
  *   - status 只能是 PROCESSING / RESOLVED / REJECTED（不能退回 PENDING）
  *   - handleResult 是「处理结果说明」，必填且 10–500 字（后端每次都校验）
  *   - penaltyToTarget 可选，是否对被投诉人计违规
+ *
+ * 评价申诉（REVIEW_APPEAL）的裁定入口也挂在本页：
+ * 后端 `ComplaintType` 有 REVIEW_APPEAL（陪诊员对收到的评价发起申诉），
+ * 管理员在投诉列表里能看到这类投诉，但原本**没有任何入口去裁定关联的那条评价** ——
+ * 看得见、够不着。裁定口径（理由 10–200 字、单向裁定、in-flight 锁）统一收敛到
+ * `components/admin/ReviewRulingDialog.vue`，与巡查页共用同一个组件。
  */
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
+import ReviewRulingDialog from '@/components/admin/ReviewRulingDialog.vue'
 import { listComplaints, handleComplaint } from '@/api/admin'
+import { getReviewByOrder } from '@/api/review'
 import { formatDateTime, labelOf, COMPLAINT_STATUS_TEXT } from '@/utils/format'
 import { confirmThen } from '@/utils/confirm'
 import { usePagedList } from '@/composables/usePagedList'
@@ -154,6 +162,49 @@ const columns = [
 ]
 const mobileFields = ['id', 'complainantName', 'status']
 
+/* ================================================================== */
+/* 评价申诉 · 裁定入口（E4）                                          */
+/* ================================================================== */
+
+/** 裁定对话框是否打开 */
+const rulingVisible = ref(false)
+/** 待裁定的评价（打开前先反查一次） */
+const rulingTarget = ref(null)
+/** 反查评价的 in-flight 标记（行内按钮的 loading） */
+const rulingLoading = ref(false)
+
+/**
+ * 打开裁定对话框。
+ *
+ * <p>评价 ID 的来源：投诉表**没有** {@code review_id} 列（E4 零迁移），
+ * 所以这里用 {@code complaint.orderId} 反查 —— {@code GET /api/review/order/{orderId}}
+ * 的归属校验 {@code requireInvolved} 对 ADMIN 直接放行，管理员能查到该订单的评价。</p>
+ *
+ * <p>取不到评价（该订单还没被评价）时不打开对话框，让对话框自己显示空态。</p>
+ */
+async function openRuling(c) {
+  if (!c.orderId) {
+    ElMessage.warning('该投诉没有关联订单，无法定位评价')
+    return
+  }
+  if (rulingLoading.value) return
+  rulingLoading.value = true
+  try {
+    const review = await getReviewByOrder(c.orderId)
+    rulingTarget.value = review ? { ...review, orderNo: c.orderNo } : null
+    rulingVisible.value = true
+  } catch {
+    // 后端报错由 request.js 拦截器统一提示，这里不重复弹
+  } finally {
+    rulingLoading.value = false
+  }
+}
+
+/** 裁定成功后刷新列表（该行的裁定按钮应随之消失） */
+async function handleRulingSuccess() {
+  await reloadAfterMutate()
+}
+
 onMounted(loadList)
 </script>
 
@@ -228,6 +279,18 @@ onMounted(loadList)
           处理
         </el-button>
         <span v-else class="nl-caption nl-text-muted">已结案</span>
+        <!-- 评价申诉（REVIEW_APPEAL）的裁定入口：管理员看得见这类投诉，
+             但没有入口去裁定关联的那条评价 —— 看得见、够不着。 -->
+        <el-button
+          v-if="row.type === 'REVIEW_APPEAL' && !isTerminal(row.status)"
+          type="warning"
+          text
+          size="small"
+          :loading="rulingLoading"
+          @click="openRuling(row)"
+        >
+          裁定无效
+        </el-button>
         <el-button v-if="row.orderId" text size="small" @click="$router.push({ name: 'AdminChatViewer', query: { orderId: row.orderId } })">查看沟通记录</el-button>
       </template>
     </NlAdminTable>
@@ -284,6 +347,13 @@ onMounted(loadList)
       <el-button type="primary" :loading="handleSubmitting" @click="submitHandle">确认处理</el-button>
     </template>
   </el-dialog>
+
+  <!-- 评价裁定对话框（与巡查页共用同一个组件） -->
+  <ReviewRulingDialog
+    v-model="rulingVisible"
+    :review="rulingTarget"
+    @success="handleRulingSuccess"
+  />
 </template>
 
 <style scoped lang="scss">

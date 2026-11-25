@@ -63,6 +63,20 @@
 
 无接口路径变更，仅 `ReviewVO` 字段扩展（§四）；`byCompanion` 已有 `is_valid=1` 过滤（零改动）。
 
+### 2.5 GET /api/admin/review · 评价巡查列表（2026-11-25 补做）
+
+| 项 | 规格 |
+|---|---|
+| 角色门槛 | 类级 `@PreAuthorize("hasRole('ADMIN')")`（继承 AdminController）|
+| 查询参数 | `companionId` / `minScore` / `maxScore` / `isValid`（三态）/ `keyword` / `startDate` / `endDate` + 分页 |
+| 成功响应 | `Result<PageResult<AdminReviewVO>>`；`AdminReviewVO` 字段与 `ReviewVO` 同构，但有效性字段名统一为 `isValid` |
+| **为什么要新端点** | `GET /api/review/companion/{id}` 是「公开口碑」链路，**硬编码只返回有效评价**（`ReviewServiceImpl#byCompanion` 里的 `eq(is_valid, 1)`）。管理员用它**永远看不到已被裁定无效的评价** —— 而「裁完就从列表里消失」的评价等于从来没被巡查过。该端点不在 `/api/admin/**` 下，**不能**改它（`SecurityConfig` 只对 `/api/admin/**` 做 `hasRole(ADMIN)`，改了会扩大公众可见性边界）|
+| `isValid` 三态 | 不传 = 全部；`true` = 只看有效（口径为 `is_valid = 1` **或** `is_valid IS NULL`，与 `ReviewVO.of` 的老数据兜底一致）；`false` = 只看已被裁定无效 |
+| 姓名脱敏 | 列表一律脱敏（订单详情那条「全名豁免」只对详情页成立）|
+| 排序 | 固定「评价时间倒序 → id 倒序」，不开放 `sortField` |
+| 零迁移 | 全部条件落在 `order_review` 既有列上 |
+| 错误码 | `400` 日期区间倒置 / 评分越界 · `403` 非 ADMIN · `401` 未登录 |
+
 ---
 
 ## 三、数据契约（PRD §十 + 字段表）
@@ -352,7 +366,7 @@ public Result<ReviewReplyResultVO> reply(
 
 `POST /api/complaint` 既有即可，仅 DTO 增加字段。
 
-### 8.3 AdminController（既有，加 1 个）
+### 8.3 AdminController（既有，加 2 个）
 
 ```java
 @PostMapping("/review/{id}/validity")
@@ -360,6 +374,14 @@ public Result<ReviewRulingResultVO> reviewValidity(
         @PathVariable("id") Long reviewId,
         @Valid @RequestBody ReviewRulingDTO dto) {
     return Result.success("裁定已生效", reviewService.reviewValidity(reviewId, dto));
+}
+```
+
+```java
+// 2026-11-25 补做：评价巡查列表（§2.5）
+@GetMapping("/review")
+public Result<PageResult<AdminReviewVO>> reviewList(@Valid AdminReviewQuery query) {
+    return Result.success(adminService.reviewList(query));
 }
 ```
 
@@ -412,26 +434,33 @@ public Result<ReviewRulingResultVO> reviewValidity(
 | `frontend/src/api/admin.js`（非 `review.js`） | — | `rulingReview(id, {isValid, reason})` —— **实际落在 `admin.js`**，与其它 `/api/admin/**` 封装同处 | ✅ 已交付 |
 | `frontend/src/views/companion/reviews.vue` | 陪诊员 | 收到的评价列表 + 未回复的评价行内表单（5–200 字） | ✅ 已交付 |
 | `frontend/src/router/routes.js` 扩展 | — | `companion/reviews` 一条 | ✅ 已交付 |
-| `frontend/src/views/admin/` 下的 `review-audit.vue` | 管理员 | 评价巡查（按陪诊员 / 评分 / 时间筛选）+ 主动裁定对话框 | ❌ **未交付**（该文件从未在本仓存在；路径拆两段写是刻意的，见下方警示） |
-| `frontend/src/router/routes.js` 扩展 | — | `admin/review-audit` 一条 | ❌ **未交付** |
+| `frontend/src/views/admin/review-audit.vue` | 管理员 | 评价巡查（按陪诊员 / 评分 / 有效性 / 时间筛选）+ 主动裁定对话框 | ✅ **已交付**（2026-11-25） |
+| `frontend/src/router/routes.js` 扩展 | — | `admin/review-audit` 一条 | ✅ **已交付**（2026-11-25） |
+| `frontend/src/components/admin/ReviewRulingDialog.vue` | — | **裁定对话框共用组件**（申诉联动与巡查页共用同一份）| ✅ **已交付**（2026-11-25） |
 
-> ⚠️ **未交付的真实后果（2026-11-24 核对）**：后端 `POST /api/admin/review/{id}/validity` 已上线
-> （`AdminController#reviewValidity`），`frontend/src/api/admin.js` 也封装了 `rulingReview`，
-> 但**全仓没有任何 .vue 调用它** —— `admin/complaint.vue` 也没有 §10.2 描述的裁定入口。
-> 也就是说「管理员裁定」当前只有 API 可达，管理端 UI 为零。补做时按本 spec 原设计走，
-> 不要新建第三个页面：裁定入口挂 `admin/complaint.vue` 的 `REVIEW_APPEAL` 行即可。
+> ✅ **管理端 UI 缺口已补齐（2026-11-25）**：上一版这里记的是「未交付」——
+> 后端 `POST /api/admin/review/{id}/validity` 已上线，`frontend/src/api/admin.js` 也封装了 `rulingReview`，
+> 但**全仓没有任何 .vue 调用它**，管理端 UI 为零。本轮补齐两个入口：
 >
-> 路径为什么拆成「目录 + 文件名」两段：`gate_check.py` 把反引号里形如
-> `frontend/.../xxx.vue` 的字符串当作「仓库内真实路径」校验，不存在就报悬空。
-> 本 spec 记录的是**该建而未建**的文件，硬写完整路径会让文档全量门禁红。
-> 这是本仓库唯一允许的写法（其它文档引用真实文件时照旧写完整路径）。
+> 1. **申诉联动**：`admin/complaint.vue` 的 `REVIEW_APPEAL` 行 → 「裁定无效」按钮。
+>    评价 ID 的来源：`complaint` 表**没有** `review_id` 列（E4 零迁移），
+>    用 `complaint.orderId` 反查 —— `GET /api/review/order/{orderId}` 的归属校验
+>    `requireInvolved` 对 ADMIN 直接放行，管理员能查到该订单的评价。
+> 2. **主动巡查**：新建 `admin/review-audit.vue`，走**新端点** `GET /api/admin/review`
+>    （`docs/api/08-admin.md` §29）。为什么不能复用 `GET /api/review/companion/{id}`：
+>    那条链路是「公开口碑」，硬编码只返回**有效**评价，管理员用它**永远看不到已被裁定无效的**——
+>    而「裁完就从列表里消失」的评价等于从来没被巡查过。
+>
+> 两个入口的裁定动作**共用同一个对话框组件**（`components/admin/ReviewRulingDialog.vue`）——
+> 裁定的口径、10–200 字校验、in-flight 锁必须两处完全一致，
+> 否则管理员会靠回忆去判断哪个入口才是对的。
 
 ### 10.2 修改文件
 
 | 路径 | 改动 |
 |---|---|
 | `frontend/src/views/family/order-detail.vue` | 评价卡片下渲染回复区（`v-if="review.companionReply"`）+ 无效标注（`v-if="review.isValid === false"`）| ✅ 已交付 |
-| `frontend/src/views/admin/complaint.vue` | `REVIEW_APPEAL` 行展开关联评价摘要 + 「裁定无效」按钮（弹 dialog 调 `rulingReview`）| ❌ **未接**（见 §10.1 警示） |
+| `frontend/src/views/admin/complaint.vue` | `REVIEW_APPEAL` 行展开关联评价摘要 + 「裁定无效」按钮（弹 dialog 调 `rulingReview`）| ✅ **已交付**（2026-11-25） |
 
 ### 10.3 mock 优先
 
