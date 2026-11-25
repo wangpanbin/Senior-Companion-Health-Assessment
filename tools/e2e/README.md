@@ -27,6 +27,7 @@
 | `probe_backend_gaps.py` | 后端功能缺口探测 | — | ✅ | — |
 | `probe_ws_handshake.py` | WebSocket 握手探测（开跑先探测 8080/5141 是否有监听，进程没起会直接指路而非误归因） | — | — | — |
 | `l0_identity_gate.py` | **端口与服务身份闸门**（跑任何 E2E 前必须先过） | — | — | — |
+| `e2e_review_appeal.py` | **E4 评价公信力闭环**（PRD §13.3 五条断言：回复 ≤3s 收站内信 / 裁定后 score 与手工 SQL 一致 / 公开列表 −1 / 越权 3004 / 违禁词 grep） | ✅ | ✅ | — |
 | `_probe_http.py` | 轻量 HTTP 客户端，复用 `probe_api` 的 http / login / BASE 逻辑 | — | ✅ | — |
 
 `_` 前缀 = 内部模块，不作为独立入口调用。
@@ -141,6 +142,44 @@ HTTP 403；只做资源归属的 `/order/1007/fulfillment`，无关方是业务�
 `probe_ws_handshake.py` 之前写死旧前端端口 5410（项目早已改到 5141）——**F-3 已修（2026-10-21）**：
 改读 `VITE_PORT`（缺省 5141），标签与归因文案一并参数化；**2026-10-25 再补**：归因前先探测
 8080 / 5141 是否有监听 —— vite 进程没起时不再输出「代理没生效」的误导归因，而是直接指路 `pnpm dev`。
+
+### `e2e_review_appeal.py`（E4 评价公信力闭环 · 跨进程）
+
+**破坏性（写库）。** 它自己造夹具、自己清干净，但**跑完仍建议走一遍 `fixture.py restore`**：
+脚本只能清自己造的痕迹，清不了「跑的时候恰好有别的东西也在写」。
+
+覆盖 PRD §13.3 的五条演示断言 —— 这正是后端三个单测类
+（`ReviewRulingServiceTest` / `AdminControllerReviewTest` / `ReviewAccessMatrixTest`）
+**盖不住**的那一层：鉴权是真的、事务是真的、通知是真的、越权是真的。
+
+| # | 断言 | 判据 |
+|---|---|---|
+| 1 | 回复 → 家属端 ≤ 3 秒收到站内信 | 家属令牌轮询 `GET /api/message?type=REVIEW_REPLIED`，命中 `bizId=订单 ID` 的那条且耗时 ≤3s |
+| 2 | 裁定 → 立即查 score 与手工 SQL 一致 | `GET /api/review/companion/{id}/score` 的 `averageScore`/`totalCount` == 手工 SQL（口径逐字同构 `is_valid=1 AND deleted=0`）|
+| 3 | 裁定后公开列表 −1、家属订单详情带无效标注 | `GET /api/review/companion/{id}` 的 `total` 减 1；`GET /api/review/order/{id}` 的 `isValid=false` |
+| 4 | 陪诊员 A 用 B 的评价 ID 回复 → `3004` | 用别的陪诊员令牌打本陪诊员的评价，业务码必须是 `3004` |
+| 5 | 全站 grep「建议服用 / 推荐剂量」→ 空 | 扫 `backend/src/main` + `frontend/src` + `ai-service/app`，**减去脚本内的显式 allowlist**（每条带 why）|
+
+```powershell
+$env:PYTHONUTF8 = 1
+$env:PYTHONIOENCODING = "utf-8"
+$env:MYSQL_PASSWORD = "<你的本机 dev 口令，不入库>"
+$env:SPRING_PROFILES_ACTIVE = "dev"
+python tools/e2e/l0_identity_gate.py          # 端口身份闸门
+python tools/e2e/fixture.py snapshot
+.\tools\e2e\start-services.ps1
+python tools/e2e/e2e_review_appeal.py         # 期望：五条断言全绿 + 退出码 0
+python tools/e2e/fixture.py restore
+python tools/e2e/fixture.py verify
+.\tools\e2e\stop-services.ps1
+```
+
+**自清范围**：夹具评价行、本次产生的站内信与审计日志行、`companion_profile` 的评分快照、
+Redis 的评分/未读缓存、本次登录产生的 `sys_login_log` 行。
+
+**关于第 5 条的 allowlist**：它是**显式文件清单**，不是「按目录跳过」。
+新增一个词表文件却忘了加进去，脚本会红并指路 ——
+隐式豁免会让这条断言悄悄失效，而它恰恰是防「医疗建议表述漏进产品」的最后一道网。
 
 ### `l0_identity_gate.py`（跑任何 E2E 之前**必须**先过）
 

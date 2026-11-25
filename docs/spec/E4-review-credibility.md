@@ -407,20 +407,42 @@ public Result<PageResult<AdminReviewVO>> reviewList(@Valid AdminReviewQuery quer
 
 > 「带合法 payload」是 §11.2 / RK-05 的硬性要求：FAMILY/ELDER 用例必须提供能通过 `@Valid` 的合法 body（reviewId/非空 content），避免死在参数校验拿不到 403 假绿。
 
-### 9.3 e2e 脚本（`tools/e2e/` 或 `frontend/e2e/`）
+### 9.3 e2e 脚本（`tools/e2e/`）
 
-> ⚠️ **本脚本从未交付**（2026-11-24 核对：`tools/e2e/` 下没有该脚本）。
-> 当前覆盖靠后端单测/集成测：`ReviewRulingServiceTest`（裁定事务四件事）、
-> `AdminControllerReviewTest`（裁定的 flown 契约）、`ReviewAccessMatrixTest`（越权）。
-> 缺的是**跨进程 + 真 HTTP** 的那层（尤其「回复 → 家属端 ≤ 3 秒收到站内信」这条
-> 单测根本盖不住）。补做时按下述 5 条写。
+> ✅ **已交付（2026-11-25）**：`tools/e2e/` 下的 e2e 脚本（**跨进程 + 真 HTTP + 真 MySQL + 真 Redis**）。
+>
+> 它补的是后端三个测试类（`ReviewRulingServiceTest` 裁定事务四件事 /
+> `AdminControllerReviewTest` 裁定 HTTP 契约 / `ReviewAccessMatrixTest` 越权矩阵）
+> **全是进程内**、盖不住的那一层：鉴权是真的、事务是真的、通知是真的、越权是真的 ——
+> 尤其「回复 → 家属端 ≤ 3 秒收到站内信」这条，单测根本测不到。
 
-按 PRD §13.3 演示清单 5 条断言：
-1. 回复 → 家属端 ≤ 3 秒收到站内信。
-2. 裁定 → 立即查 score，与手工 SQL `AVG(score) WHERE is_valid=1 AND companion_id=?` 一致。
-3. 裁定后公开列表条数 −1，订单详情该评价带标注。
-4. 陪诊员 A 用 B 的评价 ID 回复 → `3004`。
-5. 全站 grep 违禁词 → 空。
+按 PRD §13.3 演示清单 5 条断言（**实际实现的口径**）：
+
+| # | PRD 原文 | 脚本里的判据 |
+|---|---|---|
+| 1 | 回复 → 家属端 ≤ 3 秒收到站内信 | 家属令牌轮询 `GET /api/message?type=REVIEW_REPLIED`，命中 `bizId=订单 ID` 的那条且耗时 ≤3s（实测 0.04s）|
+| 2 | 裁定 → 立即查 score，与手工 SQL `AVG(score) WHERE is_valid=1 AND companion_id=?` 一致 | 接口 `averageScore` / `totalCount` **逐字同构**对手工 SQL（口径 `is_valid=1 AND deleted=0`）|
+| 3 | 裁定后公开列表条数 −1，订单详情该评价带标注 | `GET /api/review/companion/{id}` 的 `total` 减 1；`GET /api/review/order/{id}` 的 `isValid=false` |
+| 4 | 陪诊员 A 用 B 的评价 ID 回复 → `3004` | 用别的陪诊员令牌打本陪诊员的评价，**业务码**必须是 `3004`（不是 HTTP 状态码 —— 后端对这类越权返 HTTP 200 + 信封里的业务码）|
+| 5 | 全站 grep 违禁词 → 空 | **扫描面限定**为 `backend/src/main` + `frontend/src` + `ai-service/app`，减去脚本内的**显式 allowlist**（每条带 why）|
+
+> ⚠️ **第 5 条的口径与 PRD §13.3 原文不同（2026-11-25 交付时改的，PRD 已同步补注）**：
+> PRD 原文写「全站 grep」，但词表本体（`medical-advice-words.txt`）、
+> 守卫器（`ComplianceCheckUtil`）、反面断言用例（`elderHealth.test.js` / `data-loop.test.js`）
+> **本身就含这些词** —— 逐字按「全站 grep → 空」实现必然假红。
+> 所以改成「限定业务扫描面 + 显式 allowlist」。
+> allowlist 是**文件级清单**而非「按目录跳过」：新增一个词表文件却忘了加进去，脚本会红并指路；
+> 隐式豁免会让这条断言悄悄失效 —— 而它恰是防「医疗建议表述漏进产品」的最后一道网。
+
+**夹具与自清**：脚本**自己造夹具**（往 `order_review` 直接插一条「未回复 + 属于某陪诊员」的评价，
+挂在一条 COMPLETED 且**尚无评价**的订单上），跑完把这条及其副作用**全部删掉**
+（夹具评价行、本次产生的站内信与审计日志行、`companion_profile` 的评分快照、
+Redis 的评分/未读缓存、本次登录产生的 `sys_login_log` 行）。
+
+> 不依赖种子数据的当前状态 —— 种子评价早已被回复过，拿种子行当「未回复」用，
+> 脚本第二次跑就会撞上 `6006 已回复`。
+
+**退出码**：0 = 五条断言全过；1 = 有断言失败；2 = 前置缺失（后端没起 / 口令没设 / 账号不存在）。
 
 ---
 

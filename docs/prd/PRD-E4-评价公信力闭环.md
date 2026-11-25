@@ -524,6 +524,18 @@ PENDING → PROCESSING → RESOLVED / REJECTED     （ComplaintStatus 既有流�
 4. 陪诊员 A 用 B 的评价 ID 回复 → `3004`（服务端强校验，绕过前端也无效）。
 5. 全站 grep「建议服用 / 推荐剂量」→ 空（合规红线回归）。
 
+> ⚠️ **第 5 条的口径（2026-11-25 交付时补注）**：原文写「全站 grep」，
+> 但**词表本体**（`backend/src/main/resources/compliance/medical-advice-words.txt`）、
+> **守卫器**（`ComplianceCheckUtil`）、**反面断言用例**（`elderHealth.test.js` / `data-loop.test.js`）
+> 本身就含这些词 —— 逐字按「全站 grep → 空」实现必然假红。
+>
+> 故实际口径改为：**扫描面限定**为 `backend/src/main` + `frontend/src` + `ai-service/app`，
+> 减去一份**显式的文件级 allowlist**（每条注明为何合法）。
+> allowlist 是文件清单而非「按目录跳过」：新增一个词表文件却忘了加进去，脚本会红并指路；
+> 隐式豁免会让这条断言悄悄失效 —— 而它恰是防「医疗建议表述漏进产品」的最后一道网。
+> 实现见 [`docs/spec/E4-review-credibility.md`](./E4-review-credibility.md) §9.3。
+
+
 ---
 
 ## 十四、风险与遗留问题

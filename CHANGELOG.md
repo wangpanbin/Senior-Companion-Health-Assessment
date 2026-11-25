@@ -17,6 +17,45 @@
 
 ## [Unreleased]
 
+### Added · E4 评价公信力闭环：跨进程 e2e 脚本交付（PRD §13.3 五条断言）
+
+上一轮做文档路径对账时如实标注了第二个功能缺口：
+`tools/e2e/` 下承诺的 e2e 脚本**从未交付**，现有覆盖只有三个**进程内**的后端测试类
+（`ReviewRulingServiceTest` / `AdminControllerReviewTest` / `ReviewAccessMatrixTest`）——
+鉴权、事务、通知、越权全是 Mock 的，尤其「回复 → 家属端 ≤ 3 秒收到站内信」这条**根本测不到**。
+
+本轮补上 `tools/e2e/` 下的 e2e 脚本（**跨进程 + 真 HTTP + 真 MySQL + 真 Redis**），
+覆盖 PRD §13.3 的五条演示断言。
+
+**五条断言与实际判据**
+
+| # | PRD 原文 | 脚本判据 |
+|---|---|---|
+| 1 | 回复 → 家属端 ≤ 3 秒收到站内信 | 家属令牌轮询 `GET /api/message?type=REVIEW_REPLIED`，命中 `bizId=订单 ID` 的那条且耗时 ≤3s（实测 **0.04s**）|
+| 2 | 裁定 → 立即查 score 与手工 SQL 一致 | 接口 `averageScore` / `totalCount` 逐字同构对手工 SQL（口径 `is_valid=1 AND deleted=0`）|
+| 3 | 裁定后公开列表 −1、家属订单详情带标注 | 列表 `total` 减 1；`GET /api/review/order/{id}` 的 `isValid=false` |
+| 4 | 陪诊员 A 用 B 的评价 ID 回复 → `3004` | **业务码**必须是 `3004`（不是 HTTP 状态码 —— 后端对这类越权返 HTTP 200 + 信封里的业务码）|
+| 5 | 全站 grep 违禁词 → 空 | 扫描面限定 + 显式文件级 allowlist（口径见下）|
+
+> ⚠️ **第 5 条的口径与 PRD 原文不同（PRD 已同步补注）**：词表本体、守卫器、反面断言用例
+> **本身就含这些词** —— 逐字按「全站 grep → 空」实现必然假红。
+> 故改为「限定业务扫描面（`backend/src/main` + `frontend/src` + `ai-service/app`）
+> + 显式文件级 allowlist（每条注明为何合法）」。
+> allowlist 是**文件清单**而非「按目录跳过」：新增词表文件却忘了加进去，脚本会红并指路；
+> 隐式豁免会让这条断言悄悄失效 —— 而它恰是防「医疗建议表述漏进产品」的最后一道网。
+
+**夹具与自清**：脚本**自己造夹具**（往 `order_review` 插一条「未回复 + 属于某陪诊员」的评价，
+挂在一条 COMPLETED 且尚无评价的订单上），跑完把这条及其副作用**全部删掉**
+（夹具评价行 / 站内信 / 审计日志 / `companion_profile` 评分快照 / Redis 评分与未读缓存 /
+本次登录产生的 `sys_login_log` 行）。**不依赖种子数据的当前状态** ——
+种子评价早已被回复过，拿种子行当「未回复」用，第二次跑就会撞上 `6006 已回复`。
+
+**验证**：`l0_identity_gate.py` 身份闸门 **10/10** 全绿 → 脚本 **5 条断言全绿、退出码 0**
+→ `fixture.py restore` + `verify` **全部回到基线**（成对性 `REVIEWED 订单 31 == order_review 31`）。
+
+**文档同步**：`docs/spec/E4-review-credibility.md` §9.3、`docs/spec/E4-tickets.md` T7、
+`docs/prd/PRD-E4-评价公信力闭环.md` §13.3 第 5 条补注、`tools/e2e/README.md` 索引行 + 细节小节。
+
 ### Added · E4 评价公信力闭环：管理端两个裁定入口落地
 
 上一轮做文档路径对账时如实标注了一个功能缺口：后端 `POST /api/admin/review/{id}/validity`

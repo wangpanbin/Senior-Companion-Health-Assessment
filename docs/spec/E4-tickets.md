@@ -90,10 +90,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 范围 | Python + requests 的跨进程 e2e 脚本（覆盖 PRD §13.3 5 条断言）；自带数据清理（事务或 delete）；与既有 `e2e_*.py` 同目录同风格 |
+| 范围 | Python 跨进程 e2e 脚本（覆盖 PRD §13.3 5 条断言）；自带数据清理（事务或 delete）；与既有 `e2e_*.py` 同目录同风格 |
 | 工作流 | 后端全绿后写；本地 MySQL/Redis 起服务即可跑 |
 | 验收 | 5 条断言全绿；脚本耗时 < 30s |
-| 状态 | ❌ **未交付（2026-11-24 核对：脚本不存在）**。现有覆盖靠 `ReviewRulingServiceTest` / `AdminControllerReviewTest` / `ReviewAccessMatrixTest`；缺的是「真实 HTTP + 跨进程」那层（尤其「回复 → 家属端 ≤ 3 秒收到站内信」单测盖不住）。断言清单见 [`E4-review-credibility.md`](./E4-review-credibility.md) §9.3 |
+| 状态 | ✅ **已交付（2026-11-25）**：脚本落在 `tools/e2e/` 下（**跨进程 + 真 HTTP + 真 MySQL + 真 Redis**）。它补的是后端三个测试类（全进程内）盖不住的那层：鉴权、事务、通知、越权都是真的 —— 尤其「回复 → 家属端 ≤ 3 秒收到站内信」单测根本测不到。**实测 5 条断言全绿、退出码 0**。脚本**自己造夹具**（往 `order_review` 插一条「未回复 + 属于某陪诊员」的评价）并**跑完全清**（夹具行 / 站内信 / 审计日志 / 评分快照 / Redis 缓存 / 登录日志）。第 5 条的口径见 [`E4-review-credibility.md`](./E4-review-credibility.md) §9.3 |
 
 ---
 
