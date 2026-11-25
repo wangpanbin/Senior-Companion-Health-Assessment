@@ -99,5 +99,43 @@ class CheckMdPathsTest(unittest.TestCase):
         self.assertEqual(missing.count("docs/api/99-missing.md"), 1)
 
 
+class PathCheckExemptTest(unittest.TestCase):
+    """path_check_exempt：历史存档豁免「悬空路径」，但圆栏照查。
+
+    判据与 CHANGELOG.md 同一套：**快照类文档**引用当时的路径，
+    文件后来被删/改名是文档的性质，不是错误。让快照随今天改名而失效
+    等于篡改历史 —— 正确做法是新文档指向现在的位置。
+    """
+
+    def test_archive_dir_is_exempt(self):
+        self.assertTrue(gc.path_check_exempt(
+            "docs/plan/archive/2026-09-28-convergence-iteration.md"))
+
+    def test_review_dir_is_exempt(self):
+        self.assertTrue(gc.path_check_exempt("docs/review/2026-09-17-m2-auth.md"))
+
+    def test_changelog_still_exempt(self):
+        """旧的单文件豁免不能被目录级改动误伤。"""
+        self.assertTrue(gc.path_check_exempt("CHANGELOG.md"))
+
+    def test_normal_doc_is_not_exempt(self):
+        """普通文档不豁免 —— 否则门禁就放瞎了。"""
+        for rel in ("docs/api/README.md", "AGENTS.md", "docs/plan/README.md"):
+            self.assertFalse(gc.path_check_exempt(rel), rel)
+
+    def test_prefix_lookalike_is_not_exempt(self):
+        """`docs/reviewsomething/` 不应被 `docs/review/` 前缀咒语命中。"""
+        self.assertFalse(gc.path_check_exempt("docs/reviewsomething/x.md"))
+
+    def test_exempt_dir_files_are_skipped_by_check_markdown(self):
+        """端到端：存档文件里的悬空路径不进结果，圆栏检查不受影响。"""
+        # 用仓库内真实存在的存档文件跑一遍（它在 2026-11-24 确实有悬空路径）
+        rel = "docs/plan/archive/2026-09-28-convergence-iteration.md"
+        if not (REPO_ROOT / rel).is_file():
+            self.skipTest("存档文件已改名，跳过正向断言")
+        ok, detail, _ = gc.check_markdown(None, all_md=True)
+        self.assertNotIn(rel + " -> ", detail)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

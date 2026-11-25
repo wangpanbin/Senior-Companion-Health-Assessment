@@ -250,6 +250,18 @@ RANGE_SEGMENT_RE = re.compile(r"^\d+$")
 # 悬空是正常现象，不该让 CI 为历史流水账变红。围栏仍要查。
 PATH_CHECK_EXEMPT_FILES = ("CHANGELOG.md",)
 
+# 历史档案目录，与上面同一判据：
+#   · `docs/plan/archive/` —— 计划存档，含「当时 git rm 了哪些文件」的执行步骤；
+#   · `docs/review/`       —— 评审记录，引用被评审那天的代码位置。
+# 让快照随文件改名而失效，等于篡改历史；正确做法是**新文档**指向现在的位置。
+# 围栏（代码块成对）照旧检查 —— 那跟时间无关。
+PATH_CHECK_EXEMPT_DIRS = ("docs/plan/archive/", "docs/review/")
+
+
+def path_check_exempt(rel):
+    """该 .md 是否豁免「悬空路径」判定（只豁免路径，围栏照查）。"""
+    return rel in PATH_CHECK_EXEMPT_FILES or rel.startswith(PATH_CHECK_EXEMPT_DIRS)
+
 
 def git_ignored_paths(paths):
     """问 git：这些路径里哪些被 .gitignore 忽略。
@@ -340,7 +352,7 @@ def check_markdown(base, all_md=False):
         text = path.read_text(encoding="utf-8", errors="replace")
         if check_fences(text):
             bad_fence.append(rel)
-        if rel in PATH_CHECK_EXEMPT_FILES:
+        if path_check_exempt(rel):
             continue
         for token in check_md_paths(text):
             bad_path.append(rel + " -> " + token)

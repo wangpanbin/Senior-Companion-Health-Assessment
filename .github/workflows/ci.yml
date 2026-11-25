@@ -309,45 +309,36 @@ jobs:
   # 与本次 diff 无关，任何时候都该成立 —— V4 曾漏同步 6005/6006 就是这么溜过去的
   # （枚举里有、接口文档总表里没有，而 spec 里早就写明要补）。
   #
-  # 文档三项校验（代码围栏成对 / 引用路径真实存在）走**增量**：
-  # 只查这次改动碰过的 .md。
-  # 为什么不全量 —— 仓库里的 spec 与归档计划天然引用「还没实现 / 已删除」的路径
-  # （那是它们的性质，不是错误），全量扫必然要开一堆豁免；豁免越多门禁越不可信。
-  # 门禁的价值是挡住**新引入**的问题，不是清算历史。
+  # 文档三项校验（代码围栏成对 / 引用路径真实存在）走**全量**：
+  # 仓库全部 .md 一次扫完（140 份，实测 1.5s，成本可忽略）。
+  #
+  # 为什么曾经走增量、后来改全量：增量只查这次改动碰过的 .md，于是
+  # 「旧文档里引用了已删除/改名的文件」这类悬空路径**永远碰不到 PR** ——
+  # 2026-11-24 实测就是 10 处漂了几轮没人管。门禁的价值是不让问题**累积**，
+  # 不只是挡住新引入的；衍生的代价只是两处目录级豁免（见 PATH_CHECK_EXEMPT_DIRS）。
+  #
+  # 但豁免必须窄：只有**快照类**文档豁免路径判定 ——
+  # `CHANGELOG.md`、`docs/plan/archive/`（计划存档）、`docs/review/`（评审记录）。
+  # 它们引用的是「当时」的路径，文件后来改名/删除是文档的性质不是错误；
+  # 让快照随今天改名而失效等于篡改历史。围栏（代码块成对）对它们照查。
+  # 普通文档（含 spec / api / agents）**不豁免** —— 那是要随代码一起维护的活文档。
   # ------------------------------------------------------------------ #
   static-gates:
     name: 静态门禁 · 错误码 + 文档
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-        with:
-          # 要 diff BASE..HEAD，必须拿到 base 那个 commit
-          fetch-depth: 0
 
       # 脚本只用标准库，不装 setup-python（runner 自带 python3，
       # 与 secrets job 同款做法）
       - name: 错误码双向一致（ResultCode ↔ 接口文档总表）
         run: python3 tools/ai_flow/gate_check.py --only error-codes
 
-      # BASE 的三种来源，逐级兜底：
-      #   ① pull_request 事件 → base.sha
-      #   ② push 事件        → before（新分支首次推送是全 0 SHA，必须兜底）
-      #   ③ workflow_dispatch → 都没有，退到 HEAD~1
+      # 全量扫描：不需要 BASE ref，也就不需要 fetch-depth: 0
+      # 与上面那套「三种来源逐级兜底」的逻辑一并删除 —— 那段兜底本身
+      # 就容易静默走 `exit 0`，表现是「门禁看着绿其实什么都没验」。
       - name: 文档三项校验（围栏成对 / 引用路径存在）
-        run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            BASE="${{ github.event.before }}"
-          fi
-          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            BASE="$(git rev-parse HEAD~1 2>/dev/null || true)"
-          fi
-          if [ -z "$BASE" ]; then
-            echo "::notice::拿不到 BASE ref，本轮跳过文档增量校验"
-            exit 0
-          fi
-          echo "校验范围：$BASE..HEAD"
-          python3 tools/ai_flow/gate_check.py --only md --base "$BASE..HEAD"
+        run: python3 tools/ai_flow/gate_check.py --only md --all-md
 
       # 门禁脚本自己的回归测试。
       # ⚠️ 必须排在上面两项**之后**：门禁有 bug 时，门禁自己也会放行，

@@ -60,7 +60,7 @@
 **新文档**
 - `docs/user-guide.md` — 四角色（家属/陪诊员/老人/管理员）操作手册，复用 `docs/reports/screenshots/` 15 张截图
 - `docs/deployment.md` — 环境要求 / 本机 dev 5 进程启动 / prod profile fail-closed 部署 / 排障表；Docker 注明二期
-- `docs/diagrams/activity-order.md` · `activity-medication.md` · `activity-auth.md` · `activity-admin.md` — 四条链活动图（mermaid，沿用 `architecture.md` 风格；PNG 尽力渲染）
+- ~~四条链活动图~~ — **本轮不交付**（用户裁定，见 `CHANGELOG.md`「计划书迭代一交付物『活动图』本轮不交付」，不计入缺口）。`docs/diagrams/` 现有 `architecture` / `prototype` / `usecase` 三组，就是全部
 
 **状态刷新（先核对代码再勾）**
 - `docs/prd/功能拓展规划.md` — 附录 A RTM 状态逐行更新（E1a/E2/E3/E4/E5/E6/G7 → 已落地；G4 核实后如实标注）

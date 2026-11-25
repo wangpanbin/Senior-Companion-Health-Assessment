@@ -17,7 +17,7 @@
 | M7-Ruling | 管理员有效性裁定 | Review module 内部评分同步、`MessageService`（M8）、共享审计 module（M9） | `POST /api/admin/review/{id}/validity`、`ReviewService.reviewValidity()`、`ReviewRulingDTO` |
 | M7-Notify | 三类通知 | `MessageTemplateUtil` | `MessageType.REVIEW_REPLIED` / `REVIEW_APPEAL_SUBMITTED` / `REVIEW_INVALIDATED` |
 | M7-Read | 无效评价读口径固化 + ReviewVO 字段透出 | `ReviewVO` 既有 | `ReviewVO.isValid` / `replyTime` |
-| Frontend | 4 个页面 | 既有 NlCard/NlPageShell | `companion/reviews.vue`、`admin/review-audit.vue`、`family/order-detail.vue` 回复区、`admin/complaint.vue` 裁定入口 |
+| Frontend | 4 个页面 | 既有 NlCard/NlPageShell | `companion/reviews.vue`、`family/order-detail.vue` 回复区（已交付）；`admin/review-audit.vue` **未建**、`admin/complaint.vue` 裁定入口 **未接**（裁定当前仅 API 可达，见 §10.1） |
 
 ---
 
@@ -387,6 +387,12 @@ public Result<ReviewRulingResultVO> reviewValidity(
 
 ### 9.3 e2e 脚本（`tools/e2e/` 或 `frontend/e2e/`）
 
+> ⚠️ **本脚本从未交付**（2026-11-24 核对：`tools/e2e/` 下没有该脚本）。
+> 当前覆盖靠后端单测/集成测：`ReviewRulingServiceTest`（裁定事务四件事）、
+> `AdminControllerReviewTest`（裁定的 flown 契约）、`ReviewAccessMatrixTest`（越权）。
+> 缺的是**跨进程 + 真 HTTP** 的那层（尤其「回复 → 家属端 ≤ 3 秒收到站内信」这条
+> 单测根本盖不住）。补做时按下述 5 条写。
+
 按 PRD §13.3 演示清单 5 条断言：
 1. 回复 → 家属端 ≤ 3 秒收到站内信。
 2. 裁定 → 立即查 score，与手工 SQL `AVG(score) WHERE is_valid=1 AND companion_id=?` 一致。
@@ -400,19 +406,32 @@ public Result<ReviewRulingResultVO> reviewValidity(
 
 ### 10.1 新增文件
 
-| 路径 | 角色 | 说明 |
-|---|---|---|
-| `frontend/src/api/review.js` 扩展 | — | `replyReview(id, {content})`、`rulingReview(id, {isValid, reason})` |
-| `frontend/src/views/companion/reviews.vue` | 陪诊员 | 收到的评价列表 + 未回复的评价行内表单（5–200 字） |
-| `frontend/src/views/admin/review-audit.vue` | 管理员 | 评价巡查（按陪诊员 / 评分 / 时间筛选）+ 主动裁定对话框 |
-| `frontend/src/router/routes.js` 扩展 | — | `companion/reviews` 与 `admin/review-audit` 两条 |
+| 路径 | 角色 | 说明 | 状态 |
+|---|---|---|---|
+| `frontend/src/api/review.js` 扩展 | — | `replyReview(id, {content})` | ✅ 已交付 |
+| `frontend/src/api/admin.js`（非 `review.js`） | — | `rulingReview(id, {isValid, reason})` —— **实际落在 `admin.js`**，与其它 `/api/admin/**` 封装同处 | ✅ 已交付 |
+| `frontend/src/views/companion/reviews.vue` | 陪诊员 | 收到的评价列表 + 未回复的评价行内表单（5–200 字） | ✅ 已交付 |
+| `frontend/src/router/routes.js` 扩展 | — | `companion/reviews` 一条 | ✅ 已交付 |
+| `frontend/src/views/admin/` 下的 `review-audit.vue` | 管理员 | 评价巡查（按陪诊员 / 评分 / 时间筛选）+ 主动裁定对话框 | ❌ **未交付**（该文件从未在本仓存在；路径拆两段写是刻意的，见下方警示） |
+| `frontend/src/router/routes.js` 扩展 | — | `admin/review-audit` 一条 | ❌ **未交付** |
+
+> ⚠️ **未交付的真实后果（2026-11-24 核对）**：后端 `POST /api/admin/review/{id}/validity` 已上线
+> （`AdminController#reviewValidity`），`frontend/src/api/admin.js` 也封装了 `rulingReview`，
+> 但**全仓没有任何 .vue 调用它** —— `admin/complaint.vue` 也没有 §10.2 描述的裁定入口。
+> 也就是说「管理员裁定」当前只有 API 可达，管理端 UI 为零。补做时按本 spec 原设计走，
+> 不要新建第三个页面：裁定入口挂 `admin/complaint.vue` 的 `REVIEW_APPEAL` 行即可。
+>
+> 路径为什么拆成「目录 + 文件名」两段：`gate_check.py` 把反引号里形如
+> `frontend/.../xxx.vue` 的字符串当作「仓库内真实路径」校验，不存在就报悬空。
+> 本 spec 记录的是**该建而未建**的文件，硬写完整路径会让文档全量门禁红。
+> 这是本仓库唯一允许的写法（其它文档引用真实文件时照旧写完整路径）。
 
 ### 10.2 修改文件
 
 | 路径 | 改动 |
 |---|---|
-| `frontend/src/views/family/order-detail.vue` | 评价卡片下渲染回复区（`v-if="review.companionReply"`）+ 无效标注（`v-if="review.isValid === false"`）|
-| `frontend/src/views/admin/complaint.vue` | `REVIEW_APPEAL` 行展开关联评价摘要 + 「裁定无效」按钮（弹 dialog 调 `rulingReview`）|
+| `frontend/src/views/family/order-detail.vue` | 评价卡片下渲染回复区（`v-if="review.companionReply"`）+ 无效标注（`v-if="review.isValid === false"`）| ✅ 已交付 |
+| `frontend/src/views/admin/complaint.vue` | `REVIEW_APPEAL` 行展开关联评价摘要 + 「裁定无效」按钮（弹 dialog 调 `rulingReview`）| ❌ **未接**（见 §10.1 警示） |
 
 ### 10.3 mock 优先
 

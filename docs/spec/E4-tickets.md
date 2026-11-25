@@ -69,9 +69,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 范围 | `api/review.js` 加 `replyReview(id, {content})` + `rulingReview(id, {isValid, reason})`；新增 `views/companion/reviews.vue`（陪诊员收到的评价 + 行内回复表单，5–200 字）；新增 `views/admin/review-audit.vue`（评价巡查列表 + 主动裁定对话框）；`views/family/order-detail.vue` 在评价卡片下加回复区 + 无效标注；`views/admin/complaint.vue` 在 `REVIEW_APPEAL` 行加关联评价摘要 + 「裁定无效」按钮；`router/routes.js` 加 `companion/reviews` + `admin/review-audit` |
+| 范围 | `api/review.js` 加 `replyReview(id, {content})`（✅ 已交付）；`rulingReview(id, {isValid, reason})` —— **实际落在 `api/admin.js`**，与其它 `/api/admin/**` 封装同处（✅ 已交付）；新增 `views/companion/reviews.vue`（陪诊员收到的评价 + 行内回复表单，5–200 字）（✅ 已交付）；新增 `views/admin/review-audit.vue`（评价巡查列表 + 主动裁定对话框）（❌ **未交付**）；`views/family/order-detail.vue` 在评价卡片下加回复区 + 无效标注（✅ 已交付）；`views/admin/complaint.vue` 在 `REVIEW_APPEAL` 行加关联评价摘要 + 「裁定无效」按钮（❌ **未接**）；`router/routes.js` 加 `companion/reviews`（✅）+ `admin/review-audit`（❌） |
 | 工作流 | **前端先 mock，后端就绪后切真接口**（按 AGENTS.md §3.10）；Component 走 `<script setup>` + Element Plus；适老化在 `elderly.scss` 已有的可点击高度 ≥ 48px 基础上复用 |
 | 验收 | `pnpm lint` 0 警告；手动走查 4 个页面；不在 dev 服务器跑通即可交付（演示场景）|
+| 状态 | **部分交付（2026-11-24 核对）**：后端裁定端点与 `rulingReview` 封装已就绪，但**全仓无任何 .vue 调用 `rulingReview`**，`admin/complaint.vue` 也未加裁定入口 —— 裁定目前只有 API 可达。补做时按 [`E4-review-credibility.md`](./E4-review-credibility.md) §10.1 的警示走，**裁定入口挂 `admin/complaint.vue` 即可，不必新建第三个页面** |
 
 ---
 
@@ -89,9 +90,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 范围 | `tools/e2e/e2e_review_appeal.py`（Python + requests，覆盖 PRD §13.3 5 条断言）；自带数据清理（事务或 delete）；与既有 `e2e_*.py` 同目录同风格 |
+| 范围 | Python + requests 的跨进程 e2e 脚本（覆盖 PRD §13.3 5 条断言）；自带数据清理（事务或 delete）；与既有 `e2e_*.py` 同目录同风格 |
 | 工作流 | 后端全绿后写；本地 MySQL/Redis 起服务即可跑 |
 | 验收 | 5 条断言全绿；脚本耗时 < 30s |
+| 状态 | ❌ **未交付（2026-11-24 核对：脚本不存在）**。现有覆盖靠 `ReviewRulingServiceTest` / `AdminControllerReviewTest` / `ReviewAccessMatrixTest`；缺的是「真实 HTTP + 跨进程」那层（尤其「回复 → 家属端 ≤ 3 秒收到站内信」单测盖不住）。断言清单见 [`E4-review-credibility.md`](./E4-review-credibility.md) §9.3 |
 
 ---
 
