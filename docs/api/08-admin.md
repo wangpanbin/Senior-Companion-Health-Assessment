@@ -119,6 +119,7 @@
 | 27 | GET | `/api/admin/operation-param` | ADMIN | 运营参数列表（P2-3） |
 | 28 | PUT | `/api/admin/operation-param/{code}` | ADMIN | 修改运营参数（P2-3） |
 | 29 | GET | `/api/admin/operation-param/logs` | ADMIN | 参数变更留痕（P2-3） |
+| 30 | GET | `/api/admin/review` | ADMIN | 评价巡查列表（E4） |
 
 ---
 
@@ -1361,3 +1362,72 @@ V3.6 起，「哪个端点返回了哪些指标」由
 
 留痕查询：`GET /api/admin/operation-param/logs?page=1&size=10`　权限：**ADMIN**，
 返回 `PageResult<OperLogVO>`，`operType` 固定为 `UPDATE_OPERATION_PARAM`，按操作时间倒序。
+
+---
+
+## 29. 评价巡查列表（E4）
+
+`GET /api/admin/review`　权限：**ADMIN**　只读，**不写操作日志**
+
+### 请求参数
+
+| 字段 | 类型 | 必填 | 约束 | 说明 |
+|---|---|---|---|---|
+| `page` | Integer | 否 | ≥ 1 | 页码，默认 1 |
+| `size` | Integer | 否 | 1–100 | 每页条数，默认 10 |
+| `companionId` | Long | 否 | — | 只看某位陪诊员收到的评价 |
+| `minScore` | Integer | 否 | 1–5 | 评分下限 |
+| `maxScore` | Integer | 否 | 1–5 | 评分上限 |
+| `isValid` | Boolean | 否 | — | **不传 = 全部**；`true` = 只看有效；`false` = 只看已被裁定无效 |
+| `keyword` | String | 否 | — | 评价正文 / 订单号模糊搜索 |
+| `startDate` | String | 否 | `yyyy-MM-dd` | 评价时间起（含当天） |
+| `endDate` | String | 否 | `yyyy-MM-dd` | 评价时间止（含当天） |
+
+### 为什么需要这个端点（与 `GET /api/review/companion/{id}` 的区别）
+
+后者是**公开口碑**链路，硬编码只返回**有效**评价（`ReviewServiceImpl#byCompanion` 里
+写死了 `eq(is_valid, 1)`）。管理员用它**永远看不到已被裁定无效的评价** ——
+而「裁完就从列表里消失」的评价等于从来没被巡查过。
+
+本端点用 `isValid` 三态把两种都露出来，让管理员能主动巡查
+（PRD FR-03 规则 6：「不要求存在关联申诉，管理员可主动巡查裁定」）。
+
+### 响应
+
+`data` 为标准分页结构 `{ total, page, size, pages, records }`，`records` 元素：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | Long | 评价 ID |
+| `orderId` | Long | 关联订单 ID |
+| `orderNo` | String | 订单号 |
+| `score` | Integer | 评分（1–5 星） |
+| `tags` | String[] | 标签列表 |
+| `content` | String | 评价正文 |
+| `anonymous` | Boolean | 是否匿名评价 |
+| `familyName` | String | 评价家属姓名（**脱敏**；匿名时为固定串 `匿***`） |
+| `companionId` | Long | 陪诊员用户 ID |
+| `companionName` | String | 陪诊员姓名（**脱敏**） |
+| `companionReply` | String | 陪诊员回复正文（未回复时为 `null`，不是空串） |
+| `replyTime` | String | 陪诊员回复时间（未回复时为 `null`） |
+| `valid` | Boolean | **是否有效**：`false` = 已被管理员裁定无效 |
+| `createTime` | String | 评价时间 |
+
+### 业务规则
+
+1. 姓名一律**脱敏** —— 订单详情那条「全名豁免」只对详情页成立，不适用于列表。
+2. `is_valid IS NULL` 的历史数据**视为有效**，与 `ReviewVO` 的兜底口径一致；
+   因此 `isValid=true` 的筛选条件是「`is_valid = 1` **或** `is_valid IS NULL`」。
+3. 排序固定为「评价时间倒序 → id 倒序」，不开放 `sortField`。
+4. 日期区间倒置（开始晚于结束）返回 `400`，不静默忽略。
+5. 只读端点，**不写** `admin_oper_log`。
+6. 零迁移：全部条件落在 `order_review` 既有列上。
+
+### 错误场景
+
+| code | 触发条件 |
+|---|---|
+| 400 | 日期区间倒置 / `minScore` 或 `maxScore` 越界（不在 1–5） |
+| 403 | 非 ADMIN |
+| 401 | 未登录 |
+

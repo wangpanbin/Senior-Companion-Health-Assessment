@@ -69,10 +69,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 范围 | `api/review.js` 加 `replyReview(id, {content})`（✅ 已交付）；`rulingReview(id, {isValid, reason})` —— **实际落在 `api/admin.js`**，与其它 `/api/admin/**` 封装同处（✅ 已交付）；新增 `views/companion/reviews.vue`（陪诊员收到的评价 + 行内回复表单，5–200 字）（✅ 已交付）；新增 `views/admin/review-audit.vue`（评价巡查列表 + 主动裁定对话框）（❌ **未交付**）；`views/family/order-detail.vue` 在评价卡片下加回复区 + 无效标注（✅ 已交付）；`views/admin/complaint.vue` 在 `REVIEW_APPEAL` 行加关联评价摘要 + 「裁定无效」按钮（❌ **未接**）；`router/routes.js` 加 `companion/reviews`（✅）+ `admin/review-audit`（❌） |
+| 范围 | `api/review.js` 加 `replyReview(id, {content})`（✅ 已交付）；`rulingReview(id, {isValid, reason})` —— **实际落在 `api/admin.js`**，与其它 `/api/admin/**` 封装同处（✅ 已交付）；新增 `views/companion/reviews.vue`（陪诊员收到的评价 + 行内回复表单，5–200 字）（✅ 已交付）；新增 `views/admin/review-audit.vue`（评价巡查列表 + 主动裁定对话框）（✅ **已交付 2026-11-25**）；`views/family/order-detail.vue` 在评价卡片下加回复区 + 无效标注（✅ 已交付）；`views/admin/complaint.vue` 在 `REVIEW_APPEAL` 行加关联评价摘要 + 「裁定无效」按钮（✅ **已交付 2026-11-25**）；`router/routes.js` 加 `companion/reviews`（✅）+ `admin/review-audit`（✅ **已交付 2026-11-25**） |
 | 工作流 | **前端先 mock，后端就绪后切真接口**（按 AGENTS.md §3.10）；Component 走 `<script setup>` + Element Plus；适老化在 `elderly.scss` 已有的可点击高度 ≥ 48px 基础上复用 |
 | 验收 | `pnpm lint` 0 警告；手动走查 4 个页面；不在 dev 服务器跑通即可交付（演示场景）|
-| 状态 | **部分交付（2026-11-24 核对）**：后端裁定端点与 `rulingReview` 封装已就绪，但**全仓无任何 .vue 调用 `rulingReview`**，`admin/complaint.vue` 也未加裁定入口 —— 裁定目前只有 API 可达。补做时按 [`E4-review-credibility.md`](./E4-review-credibility.md) §10.1 的警示走，**裁定入口挂 `admin/complaint.vue` 即可，不必新建第三个页面** |
+| 状态 | ✅ **已交付（2026-11-25）**：本项原为「部分交付」——后端裁定端点与 `rulingReview` 封装已就绪，但**全仓无任何 .vue 调用它**。本轮补齐两个管理端入口：① `admin/complaint.vue` 的 `REVIEW_APPEAL` 行「裁定无效」（评价 ID 由 `complaint.orderId` 反查 —— `GET /api/review/order/{orderId}` 的归属校验对 ADMIN 放行）；② 新建 `admin/review-audit.vue` 巡查页（走新端点 `GET /api/admin/review`，因为公开的陪诊员评价列表硬编码只返回有效评价，管理员看不到已裁定无效的那些）。两个入口**共用同一个对话框组件** `components/admin/ReviewRulingDialog.vue`（口径 / 10–200 字校验 / in-flight 锁两处必须一致）。前端单测 `ReviewRulingDialog.test.js` 7 例 |
 
 ---
 

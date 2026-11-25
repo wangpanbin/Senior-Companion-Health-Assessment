@@ -168,6 +168,8 @@ async function submit() {
 | 2.4 | 成功反馈会被下一次 toast 顶掉吗 | 不可逆动作（提交评价 / 提交投诉）的反馈不该只有 3 秒 toast |
 | 2.5 | 按钮在操作中会被重复点吗 | `:loading` + `:disabled`，且两者都由**同步**置位的锁驱动 |
 | 2.6 | 反馈渠道统一吗 | 统一 `import { ElMessage } from 'element-plus'`；**禁止** `this.$message`（Options API 写法） |
+| 2.7 | 同一个不可逆操作有多个入口吗 | 口径（参数校验 / 二次确认文案 / in-flight 锁 / 载荷）必须收敛到**同一个组件**；两处各写一份 → 管理员只能靠回忆判断「哪个入口才是对的」。反例：评价裁定一度有两个入口（申诉联动 + 巡查页），现共用 [`components/admin/ReviewRulingDialog.vue`](../../frontend/src/components/admin/ReviewRulingDialog.vue) |
+| 2.8 | 单向操作给了双向选项吗 | 只支持「有效 → 无效」这类单向操作时，界面**根本不渲染**反向选项（后端返 400 是兜底，不是许可）—— 让「恢复有效」成为一个可点的按钮就是在骗管理员 |
 
 ### 2.3 「不撑行高地扩大点击区」在 Element Plus 表格里做不到
 
@@ -216,6 +218,7 @@ DevTools 里量按钮盒子确实是 32px，但**扩出来的那圈实际点不�
 | 4.7 | 组件 prop / 插槽写错会静默吗 | `NlEmpty` / `NlSkeleton` 有开发期自检（[`utils/componentGuard.js`](../../frontend/src/utils/componentGuard.js)）：未声明的 prop 会落到根元素、**未声明的插槽会被 Vue 直接丢弃**（403 页曾因此一个按钮都没有） |
 | 4.8 | 分页回退判据对吗 | 「**本页被掏空**」才回退，**不是**「刚处理的那条不在本页」——后者会在本页还有别的行时也跳页，把用户从正在看的内容上拽走。判据见 [`utils/pagination.js`](../../frontend/src/utils/pagination.js) 的 `shouldRollbackPage` |
 | 4.9 | 列表会被截断吗 | 显示「共 N 条」就要能翻到第 N 条；固定 `size: 50` 却不给分页 = 假可达 |
+| 4.10 | Boolean 筛选参数的「不限」怎么传 | 三态（不限 / 是 / 否）在前端必须**显式区分**：不传该参数才是「不限」，传 `''` 会被后端当成 `false`（“只筛出无效的那些”）。反例：`isValid` 筛选的 `''` 分支若直接拼进 query，会把全部有效评价藏掉 |
 
 ---
 
