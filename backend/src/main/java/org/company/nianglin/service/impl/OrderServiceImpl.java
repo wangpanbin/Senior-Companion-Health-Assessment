@@ -55,6 +55,7 @@ import org.company.nianglin.service.OperationParamService;
 import org.company.nianglin.service.OrderFeeItemService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.util.ComplianceCheckUtil;
+import org.company.nianglin.util.RegionCodeResolver;
 import org.company.nianglin.service.support.matching.MatchingWeights;
 import org.company.nianglin.service.support.matching.OrderMatchRank;
 import org.company.nianglin.util.MaskUtil;
@@ -207,6 +208,12 @@ public class OrderServiceImpl implements OrderService {
         order.setDepartment(dto.getDepartment().trim());
         order.setVisitTime(dto.getVisitTime());
         order.setAddress(dto.getAddress().trim());
+        // 区域码在**写入时**解析，而不是等匹配时再算：
+        // V7 的回填只处理了「当时库里已有」的订单，此后新下的单如果这里不写，
+        // service_region_code 永远是 NULL，区域维度只能走自由文本回退（只有 0 / 1 两档，
+        // 算不出 V3.4 设计的「同市不同区 = 0.5」）。
+        // 解析不出（地址里没有任何区县名）就留 null —— 与 V7 「映射不上的留空」同口径，不猜。
+        order.setServiceRegionCode(RegionCodeResolver.resolve(dto.getAddress()));
         // 坐标成对归一：只传一个视为没传（半对坐标无法参与距离计算，
         // 留着只会让下游写「lat != null 但 lng == null」这种判断）
         BigDecimal[] point = normalizePoint(dto.getLongitude(), dto.getLatitude());

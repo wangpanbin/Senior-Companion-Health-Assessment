@@ -166,6 +166,28 @@
                     <include>*.sql</include>
                 </includes>
             </resource>
+            <!--
+                区域码映射表：**运行期也要读**，不只拿来生成迁移。
+
+                为什么不把 JSON 拄进 src/main/resources 而是从这里复制：
+                那份 JSON 是「自由文本 → 区域码」的**唯一真源** ——
+                gen_region_codes.py 用它生成 V7 的 backfill，
+                RegionCodeResolver 用它解析**新写入**的订单地址 / 陪诊员服务区域。
+                拄一份到 resources/ 就等于两份词表，而两份词表必然有一份先过期
+                （ComplianceCheckUtil 的类注释里已经为词表写过一遍这条纪律）。
+
+                注意这里的 <includes> 是精确文件名，不是 *.json ——
+                sql/tools/ 下还有别的文件（gen_*.py、README.md 等），
+                全搬进 classpath 只会把 jar 弄脏。
+            -->
+            <resource>
+                <directory>sql/tools</directory>
+                <targetPath>matching</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>region_code_mapping.json</include>
+                </includes>
+            </resource>
         </resources>
 
         <plugins>

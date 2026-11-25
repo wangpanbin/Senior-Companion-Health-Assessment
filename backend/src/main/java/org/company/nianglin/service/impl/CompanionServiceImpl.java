@@ -21,6 +21,7 @@ import org.company.nianglin.security.SecurityProperties;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.CompanionService;
 import org.company.nianglin.util.AesUtil;
+import org.company.nianglin.util.RegionCodeResolver;
 import org.company.nianglin.vo.CompanionApplicationVO;
 import org.company.nianglin.vo.CompanionApplyResultVO;
 import org.company.nianglin.vo.CompanionProfileVO;
@@ -228,6 +229,12 @@ public class CompanionServiceImpl implements CompanionService {
             created.setRealName(dto.getRealName().trim());
             created.setIdCard(encryptedIdCard);
             created.setServiceArea(dto.getServiceArea().trim());
+            // 区域码在**写入时**解析（V3.4 结构化匹配的运行期写入点）。
+            // V7 的回填只覆盖了「当时库里已有」的档案；此后新提交的资质如果不在这里写，
+            // service_region_code 恒为 null，区域维度只能走自由文本回退
+            // （只有命中 1.0 / 不命中 0 两档，算不出「同市不同区 = 0.5」）。
+            // 解析不出（服务区域里没有任何区县名）就留 null —— 与 V7 「映射不上的留空」同口径。
+            created.setServiceRegionCode(RegionCodeResolver.resolve(dto.getServiceArea()));
             created.setAvailableTime(dto.getAvailableTime().trim());
             created.setAuditStatus(AuditStatus.PENDING.name());
             // 还没通过审核，语义上就是「不接单」，而不是库默认的 AVAILABLE
@@ -247,6 +254,11 @@ public class CompanionServiceImpl implements CompanionService {
                 .set(CompanionProfile::getRealName, dto.getRealName().trim())
                 .set(CompanionProfile::getIdCard, encryptedIdCard)
                 .set(CompanionProfile::getServiceArea, dto.getServiceArea().trim())
+                // 重提申请也重算区域码：服务区域文本改了，旧码就是错的。
+                // 这里不能写成「只在为空时才写」——管理员按旧码匹配到错误的区县时，
+                // 定位成本远高于重新算一次。
+                .set(CompanionProfile::getServiceRegionCode,
+                        RegionCodeResolver.resolve(dto.getServiceArea()))
                 .set(CompanionProfile::getAvailableTime, dto.getAvailableTime().trim())
                 .set(CompanionProfile::getAuditStatus, AuditStatus.PENDING.name())
                 .set(CompanionProfile::getWorkStatus, WorkStatus.REST.name())

@@ -69,6 +69,43 @@ expand–contract 而不是直接改造的理由：
 迁移文件里手写的 CASE 与生成器逐字一致 ——
 「手写的迁移」与「可复现的生成器」之间必须有一道自动校验，否则两边迟早漂移。
 
+### 回填只覆盖存量 —— 运行期写入点（2026-11-25 补）
+
+**上面那条 backfill 是一次性的**：它只处理「迁移执行那一刻库里已有」的订单与档案。
+此后通过接口新下的单、新提交的资质，`service_region_code` 恒为 `NULL`，
+只能靠 `RegionMatchRule` 的「结构化列缺失 → 回退自由文本包含式」兜住。
+
+而回退路径的判定是「陪诊员的 `service_area` **整串**出现在订单地址里」——
+它只有**命中 1.0 / 不命中 0** 两档，**算不出本节设计的「同市不同区 = 0.5」**。
+结果是：新数据的区域维度退化成「0 或 1 的赌博」，没有任何报错，只会让候选排序悄悄变差。
+
+**处置**：把解析搬到**写入时**，而不是等匹配时再算。
+
+| 写入点 | 输入文本 | 实现 |
+|---|---|---|
+| `OrderServiceImpl#create` | `dto.getAddress()`（医院地址） | `RegionCodeResolver.resolve(...)` → `order.setServiceRegionCode(...)` |
+| `CompanionServiceImpl#upsertProfile`（insert 与 update **两处**） | `dto.getServiceArea()`（服务区域） | 同上 |
+
+`RegionCodeResolver`（`util/` 下）读的是**迁移用的同一份 JSON**，
+由 `pom.xml` 的 `sql/tools → matching/` 资源段复制进 classpath。
+**不另抄一份 Java 词表**：两份词表的必然结果是「谁先过期」——
+而先过期的那份恰好是 `gen_region_codes.py` 拿来生成回填的依据时，
+同一张表里就会出现两套映射口径。
+
+**匹配语义与 V7 backfill 逐字同构**：V7 是一串顺序执行的
+`UPDATE ... WHERE service_region_code IS NULL AND <列> LIKE '%<关键词>%'`，
+`IS NULL` 意味着**先执行的赢**。所以解析器按**映射文件顺序**返回第一个命中的区域码，
+而不是「最长关键词」或「最后一个」——否则回填出来的老数据与新写入的数据
+会在同一份地址上得出不同区域码。这条语义由 `RegionCodeResolverTest` 钉住。
+
+**解析不出就留 `null`**（地址里没有任何区县名）：与 V7「映射不上的留空」同口径，
+**绝不猜**。留空时该维度仍走回退分支，行为与改造前一致。
+
+**读不到就启动失败**：资源缺失、JSON 解析失败、区域码重复或格式不合
+`<CITY>_<DISTRICT>`，一律抛 `IllegalStateException`。
+静默降级成「全部返回 null」会让区域维度悄悄退回「0 或 1 的赌博」且看起来一切正常 ——
+那是最难定位的一类故障（同 `ComplianceCheckUtil` / `SensitiveWordUtil` 的 fail-fast 纪律）。
+
 ### 为什么可服务时段用表而不是 JSON 列
 
 时段要参与**筛选**（订单就诊时间落在哪个时段里），必须可索引、可 JOIN。
