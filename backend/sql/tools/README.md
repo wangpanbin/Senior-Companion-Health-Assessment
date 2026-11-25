@@ -3,6 +3,15 @@
 > 「唯一真源」是 `backend/sql/` 下的 `V1` / `V2` / `V3` 三个 SQL 脚本。
 > 本目录的脚本只负责**生成**与**校验**，不参与运行时，也不会被打进 jar
 > （`pom.xml` 的 `<includes>*.sql</includes>` 不递归子目录，已实测确认）。
+>
+> ⚠️ **有一个例外（2026-11-25）**：`region_code_mapping.json` **会**被打进 jar。
+> 它是「自由文本 → 区域码」的唯一真源，而运行期也需要它 ——
+> `RegionCodeResolver`（`util/` 下）用它解析**新写入**的订单地址与陪诊员服务区域。
+> `pom.xml` 里有一条 `sql/tools → matching/` 的资源段负责复制（`<includes>` 精确到该文件名，
+> 不会把本目录的 `.py` / `.md` 一起搬进去）。
+> 为什么不抄一份到 `src/main/resources/`：两份词表必然有一份先过期，
+> 而「先过期的那份」恰好是 `gen_region_codes.py` 拿来生成 backfill 的那份时，
+> 迁移与新写入数据就会用两套映射，同一张表里出现两种口径。
 
 ## 文件清单
 

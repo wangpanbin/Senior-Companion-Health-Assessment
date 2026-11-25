@@ -17,6 +17,63 @@
 
 ## [Unreleased]
 
+### Fixed · V3.4 区域维度对新数据失效：区域码在写入时解析
+
+**症状**：通过接口新下的订单、新提交的陪诊员资质，`service_region_code` 恒为 `NULL`。
+
+**根因**：V7 迁移的 backfill 是**一次性的** —— 它只处理
+`WHERE service_region_code IS NULL AND <文本列> LIKE '%<区县名>%'`，
+也就是「迁移执行那一刻库里已有的行」。此后经 `OrderServiceImpl#create` /
+`CompanionServiceImpl#upsertProfile` 写入的新数据<b>没人给它算区域码</b>。
+
+后果不是报错，而是**区域维度静默退化**：只剩 `RegionMatchRule` 的自由文本回退，
+它只有「命中 1.0 / 不命中 0」两档，**算不出 ADR-0016 决策 1 设计的「同市不同区 = 0.5」**。
+更具体的失效场景：陪诊员填 `海口市美兰区`、订单地址写 `海口美兰区…` 时，
+`address.contains(serviceArea)` 直接不命中 —— 同一个区，区域分从 1.0 掉到 0。
+
+**修复**：新增 `util/RegionCodeResolver`，把解析搬到**写入时**。
+
+| 写入点 | 输入 |
+|---|---|
+| `OrderServiceImpl#create` | `dto.getAddress()`（医院地址）|
+| `CompanionServiceImpl#upsertProfile`（insert 与 update **两处**）| `dto.getServiceArea()`（服务区域）|
+
+四条设计决定：
+
+1. **单一真源，不另抄一份 Java 词表** —— 读的是迁移用的同一份
+   `backend/sql/tools/region_code_mapping.json`，由 `pom.xml` 新增的
+   `sql/tools → matching/` 资源段复制进 classpath（`<includes>` 精确到该文件名，
+   不会把 `gen_*.py` / `.md` 一起搬进 jar）。
+   两份词表的必然结果是「谁先过期」——而先过期的那份恰好是 `gen_region_codes.py`
+   拿来生成回填的依据时，同一张表里就会出现两套映射口径。
+2. **匹配语义与 V7 backfill 逐字同构** —— V7 是顺序执行的
+   `UPDATE ... WHERE service_region_code IS NULL`，`IS NULL` 意味着<b>先执行的赢</b>。
+   所以解析器按**映射文件顺序**返回第一个命中的区域码，
+   而不是「最长关键词」或「最后一个」——否则回填出来的老数据与新写入的数据
+   会在同一份地址上得出不同区域码。
+3. **解析不出就留 `null`**（地址里没有任何区县名）—— 与 V7「映射不上的留空」同口径，
+   绝不猜。留空时该维度仍走回退分支，行为与改造前一致。
+4. **读不到就启动失败** —— 资源缺失 / JSON 解析失败 / 区域码重复 / 格式不合
+   `<CITY>_<DISTRICT>`，一律抛 `IllegalStateException`。
+   静默降级成「全部返回 null」会让区域维度悄悄退回「0 或 1 的赌博」且看起来一切正常
+   —— 同 `ComplianceCheckUtil` / `SensitiveWordUtil` 的 fail-fast 纪律。
+
+**实现形态**：静态工具类（同 `ComplianceCheckUtil` 范式），
+**不新增注入依赖** → `OrderServiceImpl` / `CompanionServiceImpl` 的构造器未变，
+5 个既有测试类（`OrderServiceTest` / `CompanionServiceTest` / `CompanionWorkStatusTest` /
+`HallSortTest` / `AdminArbitrateTest`）零改动。
+
+**测试**：新增 `RegionCodeResolverTest`（**18 例**）—— 八个区县名的典型地址形态 / 
+只填区名的短形态 / null 与空白 / 无命中返回 null / 
+**多区县名同时出现时按文件顺序取第一个**（钉住与 V7 的同构语义）/ 
+映射表恰好 8 条且顺序固定 / `cityOf` 与 `RegionMatchRule.cityOf` 两处口径一致。
+
+**验证**：`mvn -B verify` → **1568 例 / 0 失败**（1564 → +4 个参数化展开）。
+
+**文档同步**：ADR-0016 新增「回填只覆盖存量 —— 运行期写入点」小节；
+`docs/spec/V3.4-tickets.md` 新增偏差 `D-3.4-5`；
+`backend/sql/tools/README.md` 修正「不参与运行时」的说法（新增例外说明）。
+
 ### Fixed · 文档路径对账：10 处悬空引用清零 + 门禁改全量
 
 一次性清掉仓库里 10 处「文档引用已删除 / 改名 / 从未落地的文件」。它们都是历史遗账，
