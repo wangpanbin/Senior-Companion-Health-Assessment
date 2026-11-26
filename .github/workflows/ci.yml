@@ -326,7 +326,7 @@ jobs:
   # 普通文档（含 spec / api / agents）**不豁免** —— 那是要随代码一起维护的活文档。
   # ------------------------------------------------------------------ #
   static-gates:
-    name: 静态门禁 · 错误码 + 文档
+    name: 静态门禁 · 错误码 + 文档 + 坏字符
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -348,5 +348,28 @@ jobs:
       # 纯标准库 unittest，不连 MySQL / Redis / 网络。
       - name: 门禁脚本自测（gate_check 回归）
         run: python3 -m unittest tools.ai_flow.test_gate_check -v
+
+      # 坏字符（U+FFFD 替换字符 + 混进来的韩文 / 假名 / 西里尔字母）。
+      #
+      # 为什么之前没有这一步：`tools/scan_bad_chars.py` 早就存在，但从没人把它
+      # 接进 CI —— 它也不设退出码（打印完就 exit 0），于是「脚本的存在」本身
+      # 成了假信号。2026-11-25 两轴评审实测：仓库里躺着 6 处坏字符（含一处韩文），
+      # 从 11 月初一路没被任何人看到。
+      #
+      # 两处一起修，缺一不可：脚本要 **exit 1**（否则 CI 判不出来）+ 这一步要真的接进来
+      # （否则本地没跑就是没人跑）。
+      - name: 坏字符扫描（U+FFFD / 非中英文字符）
+        run: python3 tools/scan_bad_chars.py
+
+      # 上面那条的回归测试：锁住「命中必须 exit 1」与两条规则本身。
+      # 与 gate_check 自测同一纪律：先证明检查本身可信，再让它去验仓库。
+      - name: 坏字符扫描自测
+        run: python3 -m unittest tools.test_scan_bad_chars -v
+
+      # fixture 状态文件选择的回归测试（纯 stdlib，**不连库**）。
+      # 锁住两个实际踩过的坑：① verify 拿错基线（残留的 state.done.json 优先）；
+      # ② verify 抹掉 restore 要用的影子表。两者都是 2026-11-26 真机实跑时暴露的。
+      - name: e2e 回滚状态机自测
+        run: python3 -m unittest tools.e2e.test_fixture_state_source -v
 
 

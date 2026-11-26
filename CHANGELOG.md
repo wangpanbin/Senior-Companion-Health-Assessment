@@ -17,6 +17,39 @@
 
 ## [Unreleased]
 
+### Fixed · 坏字符扫描接 CI + e2e 回滚状态机两个缺陷（真机实跑暴露）
+
+**`tools/scan_bad_chars.py` 接入 CI 并补退出码**
+
+- 旧版本**打印完就 exit 0**，而 CI 又从来没跑过它 —— 结果「脚本存在」本身成了假信号：
+  仓库里 6 处坏字符（U+FFFD + 一处韩文字符）从 11 月初一路躺到 11-25 被评审翻出来。
+  现在命中 ≥ 1 处即 **exit 1**，并接入 `static-gates` job（与它的自测一起）。
+- 新增第二条规则：**混进来的韩文 / 日文假名 / 西里尔字母**。只查 U+FFFD 抓不到那个韩文字形，
+  而本项目是中文 + 英文，这些文字块没有正当用途。全角标点 / 箭号 / 框线不误伤。
+- 文件清单改取 `git ls-files --cached --others --exclude-standard`：既扫已入库的，
+  也能扫「刚写完还没 add」的新文件（否则反馈循环变长），但仍跳过 `.gitignore` 里的产物。
+- 逐行豁免标记 `bad-chars-allow <理由>`（显式、逐行、带理由，不做目录级豁免）。
+- 新增 `tools/test_scan_bad_chars.py`（13 例）：锁住「命中必须 exit 1」、两条规则、逐行豁免、
+  后缀过滤，以及**仓库自身当前干净**。顺手修掉 `fixture_credentials.py` 里一处遗留 U+FFFD。
+
+**`tools/e2e/fixture.py` 两个实际踩到的缺陷**（e2e 全流程真机实跑时暴露）
+
+| 缺陷 | 旧行为 | 修法 |
+|---|---|---|
+| `verify` 拿错基线 | `src = DONE if exists(DONE) else STATE` —— 磁盘上残留上一轮的 `state.done.json` 时，新跑一轮的 verify 拿**上一轮水位**比，把当天正常的 5 行数据报成「行数 75 != 基线 70」 | 改为 `STATE` 优先（`choose_state_source`） |
+| `verify` 抹掉 restore 的输入 | 比对完无条件 `DROP` 影子表；先 verify 后 restore 是很常见的顺序，随后 restore 报 `Table '_e2e_bak_xxx' doesn't exist` 并以退出码 2 中止 | 只在「比的就是 done」时删（`shadows_can_drop`） |
+
+新增 `tools/e2e/test_fixture_state_source.py`（5 例，纯 stdlib 不连库）并接入 CI。
+
+**真机实操结果**（本机 MySQL 8.0.42 / Redis / 后端 8080 dev）
+
+- `l0_identity_gate.py` → **10/10**（为此起了 ai-service 8081 与 vite 5141）
+- `e2e_review_appeal.py`（dry-run）→ 只读前置通过，打印写库计划，**零写入**，exit 0
+- `e2e_review_appeal.py --execute --yes` → **五条断言全绿**（站内信 0.01s / score 与手工 SQL 一致 /
+  公开列表 2→1 且家属侧 `isValid=false` / 越权 `3004` / 违禁词 0 处），exit 0
+- `fixture.py snapshot → verify → restore → verify` → **全部回到基线**，影子表 0 残留
+- 跑完 `stop-services.ps1` + 停掉 ai-service / vite，8080 / 8081 / 5141 均不再监听
+
 ### Fixed · E4 收口后的两轴代码评审整改（字段名 / 写库闸门 / 重复实现）
 
 对 `v6.3...HEAD`（E4 收口那 18 个提交）跑了两轴评审（规范 + 规格），整改的实质问题：

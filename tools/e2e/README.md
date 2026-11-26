@@ -19,9 +19,9 @@
 | `check_api_imports.py` | 静态检查 `frontend/src` 的 `import { } from '@/api/xxx'` 引用完整性 | — | — | ✅ |
 | `start-services.ps1` | 拉起后端（8080）。MySQL/Redis 走本机常驻，不负责起 | — | ✅ | — |
 | `stop-services.ps1` | 停 8080 的 Java 进程 | — | — | — |
-| `fixture.py` | 写路径 E2E 夹具：`snapshot` / `restore` / `verify`，让库回到跑之前 | ✅ | ✅ | — |
-| `restore_clean_baseline.py` | 把库与 Redis 恢复到种子基线（删写路径新增行） | ✅ | ✅ | — |
+| `fixture.py` | 写路径 E2E 夹具：`snapshot` / `restore` / `verify`，让库回到跑之前 | ✅ | ✅ | — || `restore_clean_baseline.py` | 把库与 Redis 恢复到种子基线（删写路径新增行） | ✅ | ✅ | — |
 | `test_restore_clean_baseline.py` | `restore_clean_baseline` 水位对账回归测试（纯 stdlib 单测，不连库） | — | — | — |
+| `test_fixture_state_source.py` | `fixture.py` 的**状态文件选择与影子表保留**回归测试（纯 stdlib，不连库）| — | — | ✅ |
 | `probe_api.py` | 接口冒烟探测（与 Playwright 独立） | — | ✅ | — |
 | `probe_access_matrix.py` | **A-1 越权矩阵**（25 端点 × 4 角色 = 100 次真实 HTTP，0 违规判据，见 TEST_REPORT §6.1） | — | ✅ | — |
 | `probe_backend_gaps.py` | 后端功能缺口探测 | — | ✅ | — |
@@ -34,7 +34,7 @@
 
 ## 「能进 CI」的判据
 
-只有 `check_api_imports.py` 与 `test_restore_clean_baseline.py` 满足判据（后者本轮刻意不接 CI，见下），其余全部排除，原因各不相同：
+只有 `check_api_imports.py` 与两个 `test_*.py` 满足判据（后者一个本轮刻意不接 CI，见下），其余全部排除，原因各不相同：
 
 - **需要 MySQL / Redis / 后端进程** —— `fixture.py`、`restore_clean_baseline.py`、五个 `probe_*`、
   `l0_identity_gate.py`、两个 `*.ps1` 都是本机联调脚本，CI 环境没有这些常驻服务，跑必失败
@@ -47,13 +47,11 @@
 `python -m unittest tools.e2e.test_restore_clean_baseline`。本轮（2026-11-13 收口提交 79044a8
 「本轮不接 CI」）**刻意不接**，是下方「新增就补 step」规则记录在案的例外，现属本机手动门禁。
 
-⚠️ **闸门为什么也不进 CI**：`l0_identity_gate.py` 判的是「8080 / 8081 / 5141 上跑的**是不是本项目的进程**」，
-前提是那三个端口已经被本机起起来了。CI 里没有这套常驻服务（后端 job 只起 MySQL / Redis 容器），
+⚠️ **闸门为什么也不进 CI**：`l0_identity_gate.py` 判的是「8080 / 8081 / 5141 上跑的**是不是本项目的进程**」，前提是那三个端口已经被本机起起来了。CI 里没有这套常驻服务（后端 job 只起 MySQL / Redis 容器），
 跑它只会得到「端口没人监听」的全红，判不出任何东西。它的正确用法是**本机跑 E2E 之前先跑一遍**。
 
 ⚠️ `.github/workflows/ci.yml` 目前**没有**接 `check_api_imports.py`（全仓 grep 该脚本名只在本
-README 命中）：CI 的三个 job 是后端 `mvn verify`（带 MySQL / Redis service 容器）、
-前端 `pnpm run lint:check` + `vitest run` + `build`、以及 JWT / 明文口令 / 手机号密钥扫描 ——
+README 命中）：CI 的静态门禁 job 跑的是错误码 / 文档三项 / 坏字符 / 两个自测，
 **没有一步等价于本脚本的 `@/api` 引用完整性检查**。它也不在 `tools/verify_all.ps1` 的段内，
 是**本机手动门禁**（按下面的命令自己跑）。**新增能进 CI 的脚本时，在 workflow 里补上对应
 step，并在这里改「能进 CI」列。**
@@ -92,6 +90,19 @@ python -m unittest tools.e2e.test_restore_clean_baseline        # 水位对账�
 
 `--force` 用于「单表待删超 30% 或 500 行」的守卫 —— 超阈值说明基线判断可能错了。
 口令走 `MYSQL_PWD`（由 `MYSQL_PASSWORD` 转换），**不进 argv**，避免被 `tasklist` 看到。
+
+### `test_fixture_state_source.py`（已接 CI）
+
+纯 stdlib、不连库，锁住 `fixture.py` 的两个实际踩过的坑（2026-11-26 真机实跑暴露）：
+
+| 坑 | 旧行为 | 修法 |
+|---|---|---|
+| **verify 拿错基线** | `src = DONE if exists(DONE) else STATE` —— 磁盘上残留上一轮的 `state.done.json` 时，新跑一轮的 verify 会拿**上一轮水位**比，把当天正常数据报成「行数 75 != 基线 70」 | 改为 `STATE` 优先（抽成 `choose_state_source`） |
+| **verify 抹掉 restore 的输入** | 比对完无条件 `DROP` 影子表；先 verify 后 restore 是很常见的顺序，随后 restore 报 `Table '_e2e_bak_xxx' doesn't exist` 并以退出码 2 中止 | 只在「比的就是 done」时删（抽成 `shadows_can_drop`） |
+
+```powershell
+python -m unittest tools.e2e.test_fixture_state_source -v
+```
 
 ### `fixture.py`
 

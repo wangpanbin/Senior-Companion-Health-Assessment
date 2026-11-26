@@ -138,6 +138,34 @@ WHITELIST = [
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(ROOT, "backend", "uploads"))
 
 
+# ------------------------------------------------------------------
+# 状态文件选择（纯函数，供不连库的回归测试使用）
+# ------------------------------------------------------------------
+
+def choose_state_source(state_path, done_path):
+    """`verify` 该比哪个状态文件。
+
+    优先级：**未 restore 的 `state.json` > 已 restore 的 `state.done.json`**。
+    反过来的话（旧实现），磁盘上残留上一轮的 done 就会把当天正常数据报成
+    「行数不等」（2026-11-26 实测：75 vs 70）。
+    """
+    if os.path.exists(state_path):
+        return state_path
+    if os.path.exists(done_path):
+        return done_path
+    return None
+
+
+def shadows_can_drop(source_path, done_path):
+    """比对完能不能删影子表。
+
+    只有「比的就是 done」时才能删 —— 比 `state.json` 时删掉它等于把
+    `restore` 要用的输入抹了，随后 restore 会报 `Table '_e2e_bak_xxx' doesn't exist`
+    并以退出码 2 中止（2026-11-26 实测：先 verify 后 restore 的正常顺序就踩到）。
+    """
+    return source_path == done_path
+
+
 def die(msg):
     print("[FATAL] " + msg)
     sys.exit(2)
@@ -337,7 +365,24 @@ def restore():
 # verify
 # ================================================================
 def verify():
-    src = DONE if os.path.exists(DONE) else (STATE if os.path.exists(STATE) else None)
+    """校验当前库是否回到基线。
+
+    为什么 STATE 优先于 DONE：`restore` 成功后会把 `state.json` 改名成
+    `state.done.json`。所以：
+
+      · `state.json` 存在 -> 有一轮**尚未 restore** 的跑，真正该比对的基线就是它；
+      · `state.json` 不存在、`state.done.json` 存在 -> 已经 restore 过，比 `done`。
+
+    ⚠️ 此前这里是反的（`DONE if exists(DONE) else STATE`）—— 只要磁盘上留着
+    上一轮的 `done`，新跑一轮再 `verify` 就会拿**上一轮的水位**去比，
+    表现是「明明干净却报 N 项不一致」。2026-11-26 实跑 e2e 就踩到了：
+    当天 snapshot 的 `sys_file` 水位是 75/70084，而 11-25 的 done 是 70/70079，
+    于是 verify 把 5 行正常数据报成「行数 75 != 基线 70」。
+
+    判据抽在 `choose_state_source` / `shadows_can_drop` 两个纯函数里，
+    供 `test_fixture_state_source.py` 不连库就能回归。
+    """
+    src = choose_state_source(STATE, DONE)
     if src is None:
         die("找不到状态文件（先 snapshot / restore）。")
     with open(src, "r", encoding="utf-8") as f:
@@ -386,7 +431,8 @@ def verify():
                 print("  [OK] %-24s 白名单行 %d 行逐列一致" % (t, s["rows"]))
             else:
                 problems.append("%s 白名单行不一致：diff=%d missing=%d" % (t, diff, missing))
-            exec_sql("DROP TABLE IF EXISTS %s;" % shadow)
+            if shadows_can_drop(src, DONE):
+                exec_sql("DROP TABLE IF EXISTS %s;" % shadow)
         except SystemExit:
             problems.append("%s 影子表比对失败" % t)
 
