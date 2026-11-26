@@ -223,7 +223,7 @@ backend/src/test/java/org/company/nianglin/
   constant/FeedbackStatusTest.java                            [新]
   service/FeedbackServiceTest.java                            [新]
   security/AdminAccessMatrixTest.java                         [改]  ← 加 ADMIN 端点越权用例
-  security/PermissionMatrixTest.java                          [改]  ← 加 4 角色 × 反馈端点
+  security/FeedbackAccessMatrixTest.java                      [新]  ← 4 角色 × 反馈端点（独立成文件，未动 PermissionMatrixTest）
 ```
 
 ## Steps
@@ -236,7 +236,7 @@ backend/src/test/java/org/company/nianglin/
 - [x] 5. `FeedbackServiceImpl`：create / myList / detail / adminList / handle（含敏感词与医疗红线词表、条件更新闸门、站内信、oper log）
 - [x] 6. Controller 两个（客户端 + `AdminController` 追加），补 `@Operation` / `@Tag` / `@Schema`
 - [x] 7. `MessageTemplateUtil` 三个 switch 补 `FEEDBACK_HANDLED`
-- [x] 8. 后端测试：`FeedbackStatusTest`（状态机矩阵）、`FeedbackServiceTest`（敏感词 / 图片上限 / 归属 / 终态才发信）、`PermissionMatrixTest` + `AdminAccessMatrixTest` 增补
+- [x] 8. 后端测试：`FeedbackStatusTest`（状态机矩阵）、`FeedbackServiceTest`（敏感词 / 图片上限 / 归属 / 终态才发信）、`FeedbackAccessMatrixTest`（4 角色 × 反馈端点，独立成文件）+ `AdminAccessMatrixTest` 增补
 - [x] 9. 前端 `api/feedback.js` + `api/admin.js` + `api/file.js` JSDoc
 - [x] 10. `views/feedback/index.vue`（提交 + 我的反馈）
 - [x] 11. `views/admin/feedback.vue`（列表 + 处理弹窗，照抄 complaint.vue 骨架）
@@ -283,3 +283,24 @@ python tools/check_secrets.py          # 截图示例 URL 不得含真实路径 
 - **不做限流**：恶意刷屏靠人工处理。低频功能，限流基建的成本高于收益。
 - **`keyword` 搜提交人姓名要两段查**（先 `sys_user` 模糊查 id 集合，再进 `product_feedback`），与 `AdminComplaintQuery` 同一手法，会在 `idx_submitter` 上走索引。
 - **监管空白**：`images` 不做 `sys_file.uploader_id` 归属校验（与投诉 `evidence` 同口径）。有人可以填他人 URL；收益是零额外代码，风险是伪造截图 —— 但截图本就是用户自证材料，仲裁时同样要人工核验。
+
+## 两轴评审整改（2026-11-26 · `bugfix/feedback-review-fixes`）
+
+对本特性（`1d1d9af...fb8e25a`）跑「规范 + 规格」两轴评审后，确认属实并已修：
+
+| # | 问题 | 整改 |
+|---|---|---|
+| 1 | 管理端列表按 `status` **字典序**排 —— 「未采纳」（`REJECTED`）排在「已采纳」（`RESOLVED`）前，与 §4「status 排序权重」相反；`FeedbackStatus.sort` 是死字段 | 整段 ORDER BY 改走 `last()` + `FIELD(status,...)`，参数顺序由 `FeedbackStatus.fieldOrder()` 从枚举权重生成（权重只写一份） |
+| 2 | 正文 / 处理说明的 `@Size` 按**原始串**计数，空白可绕过下限（10 空格 + 1 字 = trim 后 1 字） | 服务层在 **trim 后**复核长度（10–1000 / 10–500），词表优先于长度（命中敏感词仍报 6003） |
+| 3 | 契约承诺「`type` 取值不合法（响应带允许取值）」，实现只回一句「取值不合法」 | 错误信息补上允许取值清单（`FeedbackType.allowedValues()`） |
+| 4 | Q11 的 `startDate` / `endDate` 只落在后端，管理端界面没有入口 | 管理端加日期区间控件（`el-date-picker` daterange），传参接上 |
+| 5 | 客户端「我的反馈」固定取前 20 条且**无翻页控件** —— 第 21 条起不可达（`family/order-list.vue` P1-9 同款缺陷） | 补 `el-pagination`，按后端分页口径取 10 条一页 |
+| 6 | 文档说 `bizType=FEEDBACK` 只收 jpg/png/webp，服务端实际连 pdf 一并收（`FileStorageServiceImpl` 只对 mp4 分档） | 类型闸门加一档：FEEDBACK 拒绝 pdf（截图是 `<img>` 直连渲染的插图，pdf 只会得到破图）；`business-rules.md` §4.5 同步 |
+| 7 | 触控区写死 `44px`，老人模式也停在 44px（规范要求老人形态 ≥48px） | 改走 `var(--nl-touch-min)`（仓库惯用写法） |
+| 8 | `utils/format.js` 新增的 `FEEDBACK_STATUS_TEXT` / `FEEDBACK_TYPE_TEXT` **全仓零引用**（死导出），且分类/状态中文在四处各抄一份 | 两个页面改为从 `format.js` 取值，导出转活、重复收敛 |
+| 9 | 本计划「Files to modify」列的是 `PermissionMatrixTest`，实际新建了 `FeedbackAccessMatrixTest` | 清单与步骤 8 改为与现实一致（新增独立权限矩阵测试，未动 `PermissionMatrixTest`） |
+| 10 | `ResultCode` 新开 `12xxx` 段位，`backend-conventions.md` §2.7 段位表未回写 | 段位表补 `11xxx` / `12xxx` |
+
+> 评审中另有两项**判定为非缺陷**，不改：
+> ① `FeedbackStatus` 与 `ComplaintStatus` 逐字同构 —— 规格里明写「照抄 `ComplaintStatus`」，属既定决策；
+> ② 服务层对 >3 张截图静默截断 —— `FeedbackServiceTest` 里写明了这是有意取舍（HTTP 层 `@Size(max=3)` 已拦），不改。

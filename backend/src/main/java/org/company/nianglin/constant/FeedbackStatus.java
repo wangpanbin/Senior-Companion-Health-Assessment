@@ -2,9 +2,12 @@ package org.company.nianglin.constant;
 
 import lombok.Getter;
 
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 产品反馈处理状态机（{@code product_feedback.status}）。
@@ -79,6 +82,22 @@ public enum FeedbackStatus {
             }
         }
         return null;
+    }
+
+    /**
+     * 管理端列表排序用的 {@code FIELD(status, ...)} 参数顺序（按 {@link #sort} 权重升序）。
+     *
+     * <p>为什么要有这个方法：SQL 里排的是 {@code status} 字符串，
+     * 字典序会把「未采纳」（{@code REJECTED}）排在「已采纳」（{@code RESOLVED}）前面 ——
+     * 而 {@code docs/api/15-product-feedback.md} §4 承诺的是「status 排序权重」。
+     * 权重写在枚举里、SQL 从枚举取，抄两份就会对不上（与
+     * {@code AdminServiceImpl#FULFILLMENT_RISK_LIST_ORDER_BY} 同一手法）。</p>
+     */
+    public static String fieldOrder() {
+        return Arrays.stream(values())
+                .sorted(Comparator.comparingInt(FeedbackStatus::getSort))
+                .map(s -> "'" + s.name() + "'")
+                .collect(Collectors.joining(","));
     }
 
     /** 中文展示名；非法值原样返回 */

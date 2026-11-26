@@ -100,7 +100,8 @@ PENDING ──► ACCEPTED ──► IN_SERVICE ──► COMPLETED ──► RE
 | 请求类型 | `multipart/form-data`，字段名统一 `file` |
 | 单文件上限 | 10 MB；**`bizType=CHAT` 为 50 MB**（M13 聊天专用，代码层按 bizType 分级，servlet 全局 50MB/52MB） |
 | 单请求上限 | 52 MB（原 20 MB 随 servlet 提额上调；非聊天类型仍由代码守 10 MB） |
-| 允许类型 | `image/jpeg`、`image/png`、`image/webp`、`application/pdf`；**`bizType=CHAT` 另允许 `video/mp4`** |
+| 允许类型 | `image/jpeg`、`image/png`、`image/webp`、`application/pdf`；**`bizType=CHAT` 另允许 `video/mp4`**；**`bizType=FEEDBACK` 只收图片（jpg/png/webp），pdf 被类型闸门拒绝** |
 | 返回 | `{ fileId, url, size }` |
 | 存储 | 一期落本地 `./uploads/{yyyyMM}/{uuid}.{ext}`，后续可替换为对象存储 |
 | 校验 | 必须读文件头（magic bytes）二次确认，**禁止**信任前端传来的 `Content-Type`；50MB 走流式落盘（**禁止**整文件 `getBytes()` 读进堆） |
+| 类型闸门 | 按 bizType 分档：mp4 只给 CHAT；**FEEDBACK 只给 jpg/png/webp**（反馈截图是 `<img>` 直连渲染的插图，pdf 收进来只会得到一张破图） |

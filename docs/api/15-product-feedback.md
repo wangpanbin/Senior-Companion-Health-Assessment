@@ -51,7 +51,7 @@
 | `type` | String | `FEATURE` / `EXPERIENCE` / `DEFECT` / `OTHER` |
 | `typeLabel` | String | 分类中文名 |
 | `content` | String | 反馈正文（10–1000 字） |
-| `images` | Array | 截图 URL 列表（≤3 张；`/uploads/...`，可 `<img>` 直连） |
+| `images` | Array | 截图 URL 列表（≤3 张；`/uploads/...`，可 `<img>` 直连）。上传类型收窄为 jpg/png/webp —— pdf 被服务端类型闸门拒绝 |
 | `status` | String | `PENDING` / `PROCESSING` / `RESOLVED` / `REJECTED` |
 | `statusLabel` | String | 待处理 / 处理中 / 已采纳 / 未采纳 |
 | `handleResult` | String | 处理说明（**仅终态返回**，见 §三） |
@@ -138,7 +138,7 @@
 
 | code | HTTP | 场景 |
 |---|---|---|
-| `400` | 200 | `type` 取值不合法（响应带允许取值）；`content` 长度不合规（Bean Validation） |
+| `400` | 200 | `type` 取值不合法（响应带允许取值）；`content` 长度不合规（Bean Validation + 服务层按 **trim 后**复核） |
 | `400` | 200 | `images` 超过 3 张 |
 | `6003` | 200 | `content` 命中敏感词 |
 | `403` | 403 | ELDER 调用（只读拦截器）；未登录 / token 失效 |
@@ -220,14 +220,20 @@
 | `page` / `size` | Long | 否 | 分页，`size` 上限 100 |
 | `status` | String | 否 | 状态筛选 |
 | `type` | String | 否 | 分类筛选 |
-| `keyword` | String | 否 | 正文 / 提交人姓名模糊搜索 |
-| `startDate` | String | 否 | 提交时间起（`yyyy-MM-dd`） |
-| `endDate` | String | 否 | 提交时间止（`yyyy-MM-dd`，含当天） |
+| `keyword` | String | 否 | 正文 / 提交人姓名模糊搜索（管理端界面已暴露） |
+| `startDate` | String | 否 | 提交时间起（`yyyy-MM-dd`；管理端界面用日期区间控件暴露） |
+| `endDate` | String | 否 | 提交时间止（`yyyy-MM-dd`，含当天；管理端界面用日期区间控件暴露） |
 
 ### 响应
 
 结构同分页约定，`records` 为 `FeedbackVO` 数组，**待处理优先**排前
 （`status` 排序权重，`PENDING` 最先），同状态内按 `create_time DESC`。
+
+> 排序权重序是 `PENDING → PROCESSING → RESOLVED → REJECTED`，**不是 `status` 的字典序** ——
+> 字典序会把「未采纳」（`REJECTED`）排在「已采纳」（`RESOLVED`）前面。
+> 实现走 `FIELD(status, ...)`（整段 ORDER BY 塞进 `last()`，与
+> `AdminServiceImpl#FULFILLMENT_RISK_LIST_ORDER_BY` 同一手法），参数顺序从
+> `FeedbackStatus.fieldOrder()` 取，权重只在枚举里写一份。
 
 ### 实现要点
 
@@ -273,7 +279,7 @@
 | code | 场景 |
 |---|---|
 | `12001` | 反馈记录不存在 |
-| `400` | `status` 取值不合法；`handleResult` 长度不合规 |
+| `400` | `status` 取值不合法；`handleResult` 长度不合规（Bean Validation + 服务层按 **trim 后**复核） |
 | `409` | 已处于该状态；或状态不可从当前值流转到目标值（含回退、跳级） |
 | `6003` | 处理说明命中敏感词，**或命中医疗红线词表**（如「建议您调整剂量」） |
 
@@ -365,3 +371,4 @@ CREATE TABLE IF NOT EXISTS `product_feedback` (
 | 版本 | 日期 | 变更内容 |
 |---|---|---|
 | v0.1.0 | 2026-11-20 | 首版：产品反馈通道（客户端提交 / 我的反馈 / 管理端列表与处理）、`bizType=FEEDBACK`、`MessageType.FEEDBACK_HANDLED`、错误码 `12001` |
+| v0.2.0 | 2026-11-26 | 两轴评审整改：管理端列表改按状态**权重**排序（`FIELD(status, ...)`，此前按字典序会把「未采纳」排在「已采纳」前）；分类非法时错误信息补上允许取值；正文 / 处理说明在服务层按 **trim 后**复核长度（`@Size` 按原始串计数，可被空白绕过）；管理端补日期区间筛选控件；客户端「我的反馈」补分页控件（此前固定取前 20 条，第 21 条起不可达）；`bizType=FEEDBACK` 上传类型收窄为 jpg/png/webp |

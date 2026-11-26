@@ -2,6 +2,9 @@ package org.company.nianglin.constant;
 
 import lombok.Getter;
 
+import java.util.Arrays;
+import java.util.stream.Collectors;
+
 /**
  * 产品反馈分类（{@code product_feedback.type}）。
  *
@@ -52,6 +55,17 @@ public enum FeedbackType {
             }
         }
         return null;
+    }
+
+    /**
+     * 允许取值清单（错误提示用）。
+     *
+     * <p>{@code docs/api/15-product-feedback.md} §错误场景 承诺「type 取值不合法
+     * （响应带允许取值）」—— 只回一句「取值不合法」等于让调用方自己猜枚举，
+     * 这条清单就是那份承诺的实现。</p>
+     */
+    public static String allowedValues() {
+        return Arrays.stream(values()).map(Enum::name).collect(Collectors.joining(" / "));
     }
 
     /** 中文展示名；非法值原样返回，避免列表因为一条脏数据整体 500 */

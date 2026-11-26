@@ -77,6 +77,18 @@ public class FeedbackServiceImpl implements FeedbackService {
     /** 截图数量上限（与 {@code docs/api/15-product-feedback.md} §1 一致） */
     private static final int MAX_IMAGES = 3;
 
+    /** 正文字数下限（trim 后判定，见 {@link #create}） */
+    private static final int MIN_CONTENT_LENGTH = 10;
+
+    /** 正文字数上限（trim 后判定，见 {@link #create}） */
+    private static final int MAX_CONTENT_LENGTH = 1000;
+
+    /** 处理说明字数下限（trim 后判定，见 {@link #normalizeHandleResult}） */
+    private static final int MIN_HANDLE_RESULT_LENGTH = 10;
+
+    /** 处理说明字数上限（trim 后判定，见 {@link #normalizeHandleResult}） */
+    private static final int MAX_HANDLE_RESULT_LENGTH = 500;
+
     /**
      * 站内信正文里处理说明的摘要长度。
      *
@@ -103,7 +115,8 @@ public class FeedbackServiceImpl implements FeedbackService {
         LoginUser me = SecurityUtils.currentUser();
         FeedbackType type = FeedbackType.of(dto.getType());
         if (type == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "反馈分类取值不合法：" + dto.getType());
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "反馈分类取值不合法：" + dto.getType() + "，允许取值：" + FeedbackType.allowedValues());
         }
 
         String content = dto.getContent() == null ? "" : dto.getContent().trim();
@@ -113,6 +126,14 @@ public class FeedbackServiceImpl implements FeedbackService {
         if (hit != null) {
             log.info("产品反馈命中敏感词，已拒绝 | submitterId={} | hit={}", me.userId(), hit);
             throw new BusinessException(ResultCode.CONTENT_SENSITIVE, "反馈内容包含敏感词：" + hit);
+        }
+        // trim 之后再判长度：DTO 上的 @Size 按**原始串**计数，
+        // 「10 个空格 + 1 个字」能过 @Size(min=10)，trim 完却只剩 1 个字 ——
+        // 那样入库就是一条「1 字反馈」，与 §1 的「10–1000 字符（trim 后）」口径不符。
+        // 放在词表之后：命中敏感词时先报 6003（用户真正要改的是措辞，不是长度）。
+        if (content.length() < MIN_CONTENT_LENGTH || content.length() > MAX_CONTENT_LENGTH) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "反馈内容长度应为 " + MIN_CONTENT_LENGTH + "–" + MAX_CONTENT_LENGTH + " 个字符");
         }
 
         List<String> images = normalizeImages(dto.getImages());
@@ -183,7 +204,8 @@ public class FeedbackServiceImpl implements FeedbackService {
         if (StringUtils.hasText(query.getType())) {
             FeedbackType type = FeedbackType.of(query.getType());
             if (type == null) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "反馈分类取值不合法：" + query.getType());
+                throw new BusinessException(ResultCode.PARAM_ERROR,
+                        "反馈分类取值不合法：" + query.getType() + "，允许取值：" + FeedbackType.allowedValues());
             }
             wrapper.eq(ProductFeedback::getType, type.name());
         }
@@ -201,10 +223,17 @@ public class FeedbackServiceImpl implements FeedbackService {
             });
         }
         applyRange(wrapper, query.getStartDate(), query.getEndDate());
-        // 待处理优先：管理端第一屏应该是待办，而不是最新提交的
-        wrapper.orderByAsc(ProductFeedback::getStatus)
-                .orderByDesc(ProductFeedback::getCreateTime)
-                .orderByDesc(ProductFeedback::getId);
+        // 待处理优先：管理端第一屏应该是待办，而不是最新提交的。
+        //
+        // ⚠️ 整段 ORDER BY 走 last()：MyBatis-Plus 的 orderBy* 只接受列，塞不进
+        // FIELD(...)；而「既 orderBy* 又 last」会产出两个 ORDER BY 的非法 SQL
+        // （与 AdminServiceImpl#FULFILLMENT_RISK_LIST_ORDER_BY 同一手法）。
+        //
+        // ⚠️ 为什么不用 orderByAsc(status)：status 是 VARCHAR，字典序是
+        // PENDING → PROCESSING → REJECTED → RESOLVED，「未采纳」会排在「已采纳」前面，
+        // 与 docs/api/15-product-feedback.md §4 承诺的「status 排序权重」相反。
+        // 参数顺序从 FeedbackStatus.fieldOrder() 取，权重只在枚举里写一份。
+        wrapper.last("ORDER BY FIELD(status," + FeedbackStatus.fieldOrder() + "), create_time DESC, id DESC");
 
         var page = feedbackMapper.selectPage(query.toMpPage(), wrapper);
         return PageResult.of(page, toVOList(page.getRecords()));
@@ -294,6 +323,13 @@ public class FeedbackServiceImpl implements FeedbackService {
         if (complianceHit != null) {
             throw new BusinessException(ResultCode.CONTENT_SENSITIVE,
                     "处理说明包含医疗建议类表述（" + complianceHit + "），请修改后重试");
+        }
+        // 长度放在两套词表之后：与正文同理，@Size 按原始串计数，
+        // trim 后可能掉到下限以下（「10 个空格 + 1 个字」过得了 @Size(min=10)），
+        // 而库里这一列的约定是「10-500 字」。命中词表时先报 6003 —— 那是管理员真正要改的。
+        if (text.length() < MIN_HANDLE_RESULT_LENGTH || text.length() > MAX_HANDLE_RESULT_LENGTH) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "处理说明长度应为 " + MIN_HANDLE_RESULT_LENGTH + "–" + MAX_HANDLE_RESULT_LENGTH + " 个字符");
         }
         return text;
     }

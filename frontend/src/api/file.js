@@ -11,7 +11,8 @@ import request from '@/utils/request'
  *    （CHECKIN 被刻意拒绝 —— 打卡照片必须走原有 /execution/{id}/photo 端点）
  *  - 服务端按文件头判定类型；非 CHAT 仍为 jpg/png/webp/pdf、10MB。
  *  - CHAT 支持 jpg/png/webp/mp4、50MB；对应 docs/api/11-order-chat.md（M13）。
- *  - FEEDBACK（V6 产品反馈截图）与 COMPLAINT 同档：jpg/png/webp、10MB、可 <img> 直连。
+ *  - FEEDBACK（V6 产品反馈截图）：≤10MB、可 <img> 直连，类型收窄为 jpg/png/webp
+ *    （pdf 被服务端类型闸门拒绝 —— 反馈截图是插图，pdf 直连只会得到破图）。
  *    它不用 COMPLAINT 是因为 sys_file.biz_type 是文件用途的唯一记录，
  *    把产品截图标成「投诉证据」会让后续的清理 / 受控读取判断误判。
  *  - 允许角色：FAMILY / COMPANION / ADMIN；ELDER 会被服务端 403 拦截（message 含「只读」）。

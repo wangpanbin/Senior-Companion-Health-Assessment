@@ -20,25 +20,21 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
 import { listAdminFeedback, handleFeedback } from '@/api/admin'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, FEEDBACK_TYPE_TEXT, FEEDBACK_STATUS_TEXT } from '@/utils/format'
 import { confirmThen } from '@/utils/confirm'
 import { usePagedList } from '@/composables/usePagedList'
 
-const FEEDBACK_TYPES = [
-  { value: 'FEATURE', label: '功能建议' },
-  { value: 'EXPERIENCE', label: '使用体验' },
-  { value: 'DEFECT', label: '缺陷问题' },
-  { value: 'OTHER', label: '其他' }
-]
+/**
+ * 反馈分类 / 状态选项（取自 utils/format.js 的 FEEDBACK_TYPE_TEXT / FEEDBACK_STATUS_TEXT）。
+ *
+ * <p>不在本页另抄一份：抄一份就会两处各改一次、迟早对不上。</p>
+ */
+const FEEDBACK_TYPES = Object.entries(FEEDBACK_TYPE_TEXT).map(([value, label]) => ({ value, label }))
 
-const STATUS_OPTIONS = [
-  { value: 'PENDING', label: '待处理' },
-  { value: 'PROCESSING', label: '处理中' },
-  { value: 'RESOLVED', label: '已采纳' },
-  { value: 'REJECTED', label: '未采纳' }
-]
+const STATUS_OPTIONS = Object.entries(FEEDBACK_STATUS_TEXT).map(([value, label]) => ({ value, label }))
 
-const filter = ref({ status: '', type: '', keyword: '' })
+/** 筛选条件；date 是 [开始, 结束] 两段字符串（value-format=YYYY-MM-DD） */
+const filter = ref({ status: '', type: '', keyword: '', date: [] })
 
 const list = ref([])
 const loading = ref(false)
@@ -55,6 +51,11 @@ async function loadList() {
     if (filter.value.status) params.status = filter.value.status
     if (filter.value.type) params.type = filter.value.type
     if (filter.value.keyword) params.keyword = filter.value.keyword.trim()
+    // Q11 的五项筛选里，日期区间此前只落在后端，管理端界面上没有入口
+    if (filter.value.date && filter.value.date.length === 2) {
+      params.startDate = filter.value.date[0]
+      params.endDate = filter.value.date[1]
+    }
     const data = await listAdminFeedback(params)
     list.value = data?.records || []
     total.value = data?.total || 0
@@ -207,6 +208,16 @@ onMounted(loadList)
       >
         <el-option v-for="t in FEEDBACK_TYPES" :key="t.value" :label="t.label" :value="t.value" />
       </el-select>
+      <el-date-picker
+        v-model="filter.date"
+        type="daterange"
+        range-separator="-"
+        start-placeholder="提交时间起"
+        end-placeholder="提交时间止"
+        value-format="YYYY-MM-DD"
+        style="width: 240px"
+        @change="onFilterChange"
+      />
       <el-input
         v-model="filter.keyword"
         placeholder="内容 / 提交人姓名"

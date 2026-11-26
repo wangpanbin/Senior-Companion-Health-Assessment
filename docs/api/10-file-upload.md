@@ -32,7 +32,7 @@
 | `COMPLAINT` | 投诉证据 | 家属 / 陪诊员提交投诉 | 由业务侧持 `url` 关联，见 [06-review-complaint.md](./06-review-complaint.md) |
 | `AVATAR` | 用户头像 | 全部角色 | 由业务侧持 `url` 关联 |
 | `CHAT` | 订单聊天媒体 | 家属 / 陪诊员（**ADMIN 被拒**） | 由 `ChatService` 校验 `uploader_id`，见 [11-order-chat.md](./11-order-chat.md) |
-| `FEEDBACK` | 产品反馈截图 | 家属 / 陪诊员（V6） | 由业务侧持 `url` 关联，见 [15-product-feedback.md](./15-product-feedback.md) |
+| `FEEDBACK` | 产品反馈截图 | 家属 / 陪诊员（V6） | 由业务侧持 `url` 关联，见 [15-product-feedback.md](./15-product-feedback.md)。**类型收窄为 jpg/png/webp**（pdf 被类型闸门拒绝） |
 
 ### 为什么 `CHECKIN` 与 `REVIEW` **不放行**
 
@@ -104,7 +104,7 @@ curl -X POST http://127.0.0.1:8080/api/file/upload \
 
 | code | HTTP | 场景 |
 |---|---|---|
-| `400` | 200 | 未选择文件（`file` 为空）；`bizType` 不在白名单（响应会列出允许取值）；文件类型不允许（仅支持 jpg / png / webp / pdf）；文件读取失败 |
+| `400` | 200 | 未选择文件（`file` 为空）；`bizType` 不在白名单（响应会列出允许取值）；文件类型不允许（仅支持 jpg / png / webp / pdf；**`bizType=FEEDBACK` 额外只收 jpg / png / webp**；mp4 仅限 `bizType=CHAT`）；文件读取失败 |
 | `400` | 200 | 文件超过 **10 MB** 单文件上限（`MaxUploadSizeExceededException` 经 `GlobalExceptionHandler` 翻译） |
 | `500` | 200 | 文件落盘失败（`SYSTEM_ERROR`） |
 | `403` | 403 | ELDER 调用（只读拦截器）；或未登录 / token 失效 |
@@ -183,4 +183,4 @@ curl -X POST http://127.0.0.1:8080/api/file/upload \
 |---|---|---|
 | v0.1.0 | 2026-09-17 | 首版：补录已实现但此前未进 `docs/api/` 的通用上传端点（端点、`bizType` 白名单、错误场景、验收标准） |
 | v0.2.0 | 2026-10-18 | 新增 `GET /api/file/cert` 受控证件读取端点（§2）；补「证件类原始 URL 禁止直连」与「失败关闭」安全边界 |
-| v0.3.0 | 2026-11-20 | `bizType` 白名单新增 `FEEDBACK`（产品反馈截图，V6；与 `COMPLAINT` 同档：jpg/png/webp、≤10MB、可 `<img>` 直连），见 [15-product-feedback.md](./15-product-feedback.md)。**不复用 `COMPLAINT`**：`sys_file.biz_type` 是文件用途的唯一记录，标错会让后续的清理 / 受控读取判断误判 |
+| v0.3.0 | 2026-11-20 | `bizType` 白名单新增 `FEEDBACK`（产品反馈截图，V6；与 `COMPLAINT` 同档的 ≤10MB 上限，类型收窄为 jpg/png/webp、可 `<img>` 直连），见 [15-product-feedback.md](./15-product-feedback.md)。**不复用 `COMPLAINT`**：`sys_file.biz_type` 是文件用途的唯一记录，标错会让后续的清理 / 受控读取判断误判 |

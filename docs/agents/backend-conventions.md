@@ -119,11 +119,11 @@ public class OrderServiceImpl implements OrderService {
 
 错误码是 `ResultCode` 枚举（`org.company.nianglin.common.ResultCode`）与 `docs/api/README.md` 错误码表的镜像。新增错误码必须：
 
-1. 在 `ResultCode` 枚举里按段位（1xxx–10xxx）添加，注释写清楚业务场景。
+1. 在 `ResultCode` 枚举里按段位（1xxx–12xxx）添加，注释写清楚业务场景。
 2. 同步更新 `docs/api/README.md` 的对应段位表格。
 3. **不要**新增跨段位或杂糅语义的码（如把订单相关错误放到 1xxx）。
 
-段位含义：`2xx/4xx/5xx` 通用；`1xxx` 认证账号；`2xxx` 用户档案；`3xxx` 陪诊订单；`4xxx` 陪诊执行打卡；`5xxx` 用药；`6xxx` 评价投诉；`7xxx` 站内信与订单聊天（M13）；`8xxx` 管理后台；`9xxx` 统计导出；**`10xxx` 智能助手（M14 · V3.7 新开）**。
+段位含义：`2xx/4xx/5xx` 通用；`1xxx` 认证账号；`2xxx` 用户档案；`3xxx` 陪诊订单；`4xxx` 陪诊执行打卡；`5xxx` 用药；`6xxx` 评价投诉；`7xxx` 站内信与订单聊天（M13）；`8xxx` 管理后台；`9xxx` 统计导出；**`10xxx` 智能助手（M14 · V3.7 新开）**；**`11xxx` 注销 / 导出（V4）**；**`12xxx` 产品反馈（V6）**。
 
 ## 2.8 鉴权 / Spring Security
 
