@@ -244,7 +244,7 @@ backend/src/test/java/org/company/nianglin/
 - [x] 13. 文档收尾：`10-file-upload.md`、`design.md`、`GLOSSARY.md`、`CHANGELOG.md`、`FRONTEND_CONTRACT.md`
 - [x] 14. 过 `docs/agents/interaction-checklist.md`（空态 / 加载态 / 错误态 / 字段级校验 / in-flight 锁 / ElMessage 统一）
 - [x] 15. 跑全部检查（见下）
-- [ ] 16. 向用户报出建议标签名 `vX.Y` + message，**等确认后**再 `git tag -a` / `git push origin`
+- [x] 16. 向用户报出建议标签名 `vX.Y` + message，**等确认后**再 `git tag -a` / `git push origin`
 
 ## Verification
 
