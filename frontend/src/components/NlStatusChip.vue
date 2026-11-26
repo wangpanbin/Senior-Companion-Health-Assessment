@@ -25,16 +25,27 @@
  * 「后端没给 label」时兜底，避免页面直接暴露 IN_SERVICE 这种裸枚举名。
  */
 import { computed } from 'vue'
+import { TONES_CHIP, oneOf } from './nlEnumProps'
 
 const props = defineProps({
   /** 业务枚举值，自动映射颜色 */
   status: { type: String, default: '' },
-  /** 模块域：order / audit / complaint / feedback / task / plan / user / bind */
-  scope: { type: String, default: 'order' },
+  /** 模块域：order / audit / complaint / feedback / task / plan / user / bind / payment */
+  scope: {
+    type: String,
+    default: 'order',
+    validator: oneOf([
+      'order', 'audit', 'complaint', 'feedback', 'task', 'plan', 'user', 'bind', 'payment'
+    ])
+  },
   /** 自定义文本（status 未识别或想覆盖时使用） */
   text: { type: String, default: '' },
-  /** 强制 tone：success / warning / danger / info / purple / neutral */
-  tone: { type: String, default: '' },
+  /** 强制 tone：success / warning / danger / info / purple / neutral（空串 = 自动映射） */
+  tone: {
+    type: String,
+    default: '',
+    validator: oneOf(TONES_CHIP, true)
+  },
   /** 圆点（订单状态用） */
   dot: { type: Boolean, default: false }
 })

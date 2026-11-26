@@ -123,7 +123,24 @@ public class OrderServiceImpl implements OrderService {
 2. 同步更新 `docs/api/README.md` 的对应段位表格。
 3. **不要**新增跨段位或杂糅语义的码（如把订单相关错误放到 1xxx）。
 
-段位含义：`2xx/4xx/5xx` 通用；`1xxx` 认证账号；`2xxx` 用户档案；`3xxx` 陪诊订单；`4xxx` 陪诊执行打卡；`5xxx` 用药；`6xxx` 评价投诉；`7xxx` 站内信与订单聊天（M13）；`8xxx` 管理后台；`9xxx` 统计导出；**`10xxx` 智能助手（M14 · V3.7 新开）**。
+段位含义：`2xx/4xx/5xx` 通用；`1xxx` 认证账号；`2xxx` 用户档案；`3xxx` 陪诊订单；`4xxx` 陪诊执行打卡；`5xxx` 用药；`6xxx` 评价投诉；`7xxx` 站内信与订单聊天（M13）；`8xxx` 管理后台；`9xxx` 统计导出；`10xxx` 智能助手（M14 · V3.7 新开）；`11xxx` 账号注销 / 数据导出 / 用药草稿（V4）；`12xxx` 产品反馈（V6）。
+
+> 码值集的一致性由 `gate_check.py --only error-codes` 双向校验（`ResultCode` ↔ 错误码总表），不靠人记。
+
+## 2.7b 日期区间筛选 / 解析（**先找现成的，再写新的**）
+
+管理端列表几乎每个都要「按时间区间筛选」（`startDate` / `endDate` + `yyyy-MM-dd` 解析 + 起止颠倒校验）。
+仓库里已经有 `dto/DateRangeQuery#toRange()`，但**已有 6 处各自写了一份私有 `parseDate` / `applyRange`
+（`AdminServiceImpl` / `FeedbackServiceImpl` / `MedicationServiceImpl` / `MessageServiceImpl` / `SettlementServiceImpl`）。**
+新增第七份不需要评审，只需要一次复制粘贴 —— 所以先看这两个地方：
+
+| 需求 | 用什么 | 位置 |
+|---|---|---|
+| 统计类区间（默认近 30 天、上限 366 天、错码 `9002`） | `DateRangeQuery#toRange()` | `dto/DateRangeQuery.java` + `common/DateRange.java` |
+| 管理端列表区间（**无默认值**、两字段均可空、错误码 `400`） | 照着 `AdminServiceImpl#applyRange` 的形状写，但先确认没有可复用的 | `service/impl/AdminServiceImpl.java` |
+
+两个口径的差别是真实的（默认区间 / 上限 / 错误码都不同），所以不是简单的「合并成一个」。
+但如果发现自己在写**第三份**「管理端列表区间」，那就是该抽公共 util 的信号。
 
 ## 2.8 鉴权 / Spring Security
 

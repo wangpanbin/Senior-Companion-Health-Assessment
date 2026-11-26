@@ -19,29 +19,38 @@ if (-not $env:MYSQL_PASSWORD) {
 }
 Add-Result '前置' $true 'MYSQL_PASSWORD 已设置'
 
-# ---- 1. 前端 lint（0 警告）----
+# ---- 1. 静态门禁（零依赖，秒级；必须排在最前）----
+# 与 CI 的 secrets / metric-dict / faq / error-codes / page-codes / md 六个 job **同一套实现**。
+# 以前这里一个都没跑 —— 结果是「本地全绿、CI 红了」，因为 gate_check.py 当时
+# 也只是个旁路脚本（它自己的 docstring 就写着这件事）。接进来后，
+# verify_all 才是真的「本地能复跑 CI」，也才配得上 AGENTS.md §0.2 的那句话。
+$env:PYTHONUTF8 = '1'; $env:PYTHONIOENCODING = 'utf-8'
+python "$root\tools\ai_flow\gate_check.py" --all-md
+Add-Result 'gate_check' ($LASTEXITCODE -eq 0) "EXIT=$LASTEXITCODE"
+
+# ---- 2. 前端 lint（0 警告）----
 cmd /c "cd /d `"$root\frontend`" && pnpm.cmd lint"
 Add-Result 'pnpm lint' ($LASTEXITCODE -eq 0) "EXIT=$LASTEXITCODE"
 
-# ---- 2. 前端 build（必须排在 lint 之后：lint 不编译 SCSS，样式错误只有 build 能抓）----
+# ---- 3. 前端 build（必须排在 lint 之后：lint 不编译 SCSS，样式错误只有 build 能抓）----
 cmd /c "cd /d `"$root\frontend`" && pnpm.cmd build"
 Add-Result 'pnpm build' ($LASTEXITCODE -eq 0) "EXIT=$LASTEXITCODE"
 
-# ---- 3. 后端全量测试（顺带产出 jacoco）----
+# ---- 4. 后端全量测试（顺带产出 jacoco）----
 cmd /c "cd /d `"$root\backend`" && mvn.cmd test"
 Add-Result 'mvn test' ($LASTEXITCODE -eq 0) "EXIT=$LASTEXITCODE"
 
-# ---- 4. 明文口令防扩散门禁（独立退出码，不并入 mvn）----
+# ---- 5. 明文口令防扩散门禁（独立退出码，不并入 mvn）----
 $env:PYTHONUTF8 = '1'; $env:PYTHONIOENCODING = 'utf-8'
 python "$root\backend\sql\tools\check_seed_password.py"
 Add-Result 'check_seed_password' ($LASTEXITCODE -eq 0) "EXIT=$LASTEXITCODE"
 
-# ---- 5. Playwright 全量 E2E（前置：后端 8080 + dev server 5141 已就绪，
+# ---- 6. Playwright 全量 E2E（前置：后端 8080 + dev server 5141 已就绪，
 #         起法见 docs/agents/FRONTEND_CONTRACT.md §13）----
 cmd /c "cd /d `"$root\frontend`" && pnpm.cmd exec playwright test"
 Add-Result 'playwright' ($LASTEXITCODE -eq 0) "EXIT=$LASTEXITCODE"
 
-# ---- 6. 覆盖率达标线 ----
+# ---- 7. 覆盖率达标线 ----
 $jacoco = "$root\backend\target\site\jacoco\jacoco.csv"
 if (Test-Path $jacoco) {
     $rows = Import-Csv $jacoco
@@ -53,7 +62,7 @@ if (Test-Path $jacoco) {
     Add-Result 'coverage >= 60%' $false 'jacoco.csv 不存在（mvn test 是否真的跑过？）'
 }
 
-# ---- 7.（可选）JMeter 抢单，双条件判据 ----
+# ---- 8.（可选）JMeter 抢单，双条件判据 ----
 if ($WithLoad) {
     if (-not $env:JMETER_HOME) {
         Add-Result 'jmeter 抢单' $false 'JMETER_HOME 未设置'

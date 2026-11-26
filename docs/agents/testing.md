@@ -23,10 +23,21 @@
 
 ## 6.2 前端
 
-- 暂无强制单测要求；M12 起补 Pinia store 与工具类的 Vitest 单测。
+- 单测落在 `frontend/src/__tests__/`（工具类 / store / 组合式函数）与
+  `frontend/src/components/__tests__/`（共享组件）。**页面级不写单测**，靠下面的 Playwright 套件覆盖。
+  CI 里 `vitest` 是硬门槛（`pnpm run test`，当前 27 个文件 / 269 个用例）。
 - **E2E（Playwright）**：套件在 `frontend/e2e/`，跑法与前置见 `docs/agents/FRONTEND_CONTRACT.md` §13。
   改动登录态 / 路由守卫 / 页面主流程后，先跑 `pnpm exec playwright test specs/01-auth.spec.js`
   （含 F-01 两会话回归），再按影响面跑对应 spec。`playwright.config.js` 里 `video: 'off'`，**不需要 ffmpeg**。
+
+## 6.2b 新增实体的两处登记（测试会挡）
+
+新建带 `@TableName` 的实体后有两处必须同步，两处都已被自动检查覆盖，漏了会在 `mvn test` 阶段直接红：
+
+| 登记处 | 不登记的现象 | 守它的测试 |
+|---|---|---|
+| `backend/sql/V*.sql`（建表） + `docs/db/`（重跑 `gen_db_docs.py`） | 库里有表、字典里没有 | 无自动检查；`docs/agents/database.md` 有约定 |
+| `test/.../support/MybatisLambdaCache.ENTITY_CLASSES` | 纯 Mockito 单测**单独跑红、全量跑绿**（假绿，靠执行顺序决定成败） | `MybatisLambdaCacheCompletenessTest` |
 
 ## 6.3 静态检查
 

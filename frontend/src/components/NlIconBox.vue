@@ -5,9 +5,16 @@
  * 48×48 圆角 12，浅蓝底，中心放 24×24 SVG 图标
  * tone 用于切换底色（快捷入口常用 primary，但预约/用药/进度 三色不同）
  */
+import { TONES_BADGE, oneOf } from './nlEnumProps'
+
 defineProps({
   size: { type: [String, Number], default: 48 },
-  tone: { type: String, default: 'primary' },
+  /** 底色档（与 NlAvatar / NlListRow 同一组；SCSS 里少一个分支就会静默无色） */
+  tone: {
+    type: String,
+    default: 'primary',
+    validator: oneOf(TONES_BADGE)
+  },
   /** 圆度 12 / 14 / 999 */
   radius: { type: [String, Number], default: 12 }
 })
