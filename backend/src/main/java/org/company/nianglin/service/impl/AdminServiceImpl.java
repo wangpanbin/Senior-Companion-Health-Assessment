@@ -66,6 +66,7 @@ import org.company.nianglin.service.AdminService;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.support.OperLogRecorder;
+import org.company.nianglin.service.support.ReviewTagCodec;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.AesUtil;
 import org.company.nianglin.util.ComplianceCheckUtil;
@@ -604,25 +605,15 @@ public class AdminServiceImpl implements AdminService {
     }
 
     /**
-     * 评价标签 JSON 解析；内容损坏时按空处理，不让一条脏数据把列表打挂。
+     * 评价标签 JSON 解析 —— 与 {@code ReviewServiceImpl} 共用 {@link ReviewTagCodec}。
      *
-     * <p>与 {@code ReviewServiceImpl#parseTags} 同口径，但这里是管理端列表的独立副本 ——
-     * 跨 Service 互相调私有方法会形成不该有的耦合，
-     * 而这段解析逻辑只有十几行，重复的代价小于耦合的代价。</p>
+     * <p>以前这里是逐字复制的第二份实现，注释里写着「重复的代价小于耦合的代价」。
+     * 但两处解析的差异只体现在「改了一处忘了另一处」时：同一条评价在两个页面上
+     * 标签一个有一个没有，不报错也不告警 —— 这类漂移靠注释维持不了，
+     * 所以收敛到 {@link ReviewTagCodec}。</p>
      */
     private List<String> parseReviewTags(String json) {
-        if (!StringUtils.hasText(json)) {
-            return List.of();
-        }
-        try {
-            List<String> parsed = objectMapper.readValue(json,
-                    new TypeReference<List<String>>() {
-                    });
-            return parsed == null ? List.of() : parsed;
-        } catch (Exception e) {
-            log.warn("评价标签 JSON 解析失败，已按空处理 | len={} | {}", json.length(), e.getMessage());
-            return List.of();
-        }
+        return ReviewTagCodec.parse(json, objectMapper);
     }
 
     /* ================================================================== */

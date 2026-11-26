@@ -1404,13 +1404,13 @@ V3.6 起，「哪个端点返回了哪些指标」由
 | `score` | Integer | 评分（1–5 星） |
 | `tags` | String[] | 标签列表 |
 | `content` | String | 评价正文 |
-| `anonymous` | Boolean | 是否匿名评价 |
+| `isAnonymous` | Boolean | 是否匿名评价（与 `ReviewVO` / `docs/api/06-review-complaint.md` 同名字段） |
 | `familyName` | String | 评价家属姓名（**脱敏**；匿名时为固定串 `匿***`） |
 | `companionId` | Long | 陪诊员用户 ID |
 | `companionName` | String | 陪诊员姓名（**脱敏**） |
 | `companionReply` | String | 陪诊员回复正文（未回复时为 `null`，不是空串） |
 | `replyTime` | String | 陪诊员回复时间（未回复时为 `null`） |
-| `valid` | Boolean | **是否有效**：`false` = 已被管理员裁定无效 |
+| `isValid` | Boolean | **是否有效**：`false` = 已被管理员裁定无效（与 `ReviewVO.isValid` 同名，两个入口共用同一个裁定对话框） |
 | `createTime` | String | 评价时间 |
 
 ### 业务规则

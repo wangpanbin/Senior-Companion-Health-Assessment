@@ -215,7 +215,7 @@ class AdminServiceReviewListTest {
         AdminReviewVO item = service.reviewList(new AdminReviewQuery()).getRecords().get(0);
 
         assertEquals("匿***", item.getFamilyName());
-        assertTrue(item.getAnonymous());
+        assertTrue(item.getIsAnonymous());
     }
 
     @Test

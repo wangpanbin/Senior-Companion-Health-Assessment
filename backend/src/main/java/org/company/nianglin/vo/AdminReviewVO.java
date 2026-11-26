@@ -28,8 +28,15 @@ import java.util.List;
  *
  * <h3>姓名一律脱敏</h3>
  *
- * <p>与 {@code ReviewVO} 同口径：评价的价值在分数与文字，不在���属叫什么。
+ * <p>与 {@code ReviewVO} 同口径：评价的价值在分数与文字，不在家属叫什么。
  * 巡查页是列表页，不是详情页，不适用订单详情「全名豁免」。</p>
+ *
+ * <h3>字段名与 {@code ReviewVO} 逐字对齐</h3>
+ *
+ * <p>{@code isAnonymous} / {@code isValid} 两个布尔字段沿用 {@code ReviewVO} 的拼法
+ * （{@code docs/api/README.md} §七：布尔字段用 {@code is} / {@code has} 前缀）。
+ * 两个入口（申诉联动 / 巡查页）把评价对象喂给同一个裁定对话框组件，
+ * 字段名一旦分叉，同一个组件就得写两套取值判断。</p>
  *
  * @author 银龄伴诊团队
  * @since E4
@@ -58,7 +65,7 @@ public class AdminReviewVO {
     private String content;
 
     @Schema(description = "是否匿名评价", example = "false")
-    private Boolean anonymous;
+    private Boolean isAnonymous;
 
     @Schema(description = "评价家属姓名（脱敏；匿名时为固定串）", example = "张*")
     private String familyName;
@@ -114,7 +121,7 @@ public class AdminReviewVO {
                 .setScore(entity.getScore())
                 .setTags(tags == null ? List.of() : tags)
                 .setContent(entity.getContent())
-                .setAnonymous(anonymous)
+                .setIsAnonymous(anonymous)
                 // 匿名分支必须在脱敏之前短路：先脱敏再判断匿名，
                 // 将来任何一次顺序调整都可能让真实姓名漏出去
                 .setFamilyName(anonymous ? ReviewVO.ANONYMOUS_NAME : MaskUtil.name(familyName))

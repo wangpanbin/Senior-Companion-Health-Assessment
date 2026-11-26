@@ -17,6 +17,57 @@
 
 ## [Unreleased]
 
+### Fixed · E4 收口后的两轴代码评审整改（字段名 / 写库闸门 / 重复实现）
+
+对 `v6.3...HEAD`（E4 收口那 18 个提交）跑了两轴评审（规范 + 规格），整改的实质问题：
+
+**契约层（文档 ↔ 代码 ↔ 前端三处对齐）**
+
+- `docs/api/08-admin.md` §29 响应表把有效性字段写成 `valid`、匿名字段写成 `anonymous`，
+  而 VO 实际输出的是 `isValid` / `isAnonymous`（`docs/api/README.md` §七：布尔字段用 `is` 前缀，
+  且两者需与 `ReviewVO` 同构）。照文档接的客户端会拿到 `undefined`。**三处一起改**。
+- `vo/AdminReviewVO.anonymous` → `isAnonymous`，`AdminServiceReviewListTest` 同步。
+
+**e2e 脚本（`tools/e2e/e2e_review_appeal.py`）**
+
+- 补 `--execute` 闸门：默认 **dry-run**，不登录、不插夹具、不改评分快照，
+  只做只读前置（口令 / `/health` / 四个种子账号 / 夹具订单）并打印写库计划；
+  `--execute --yes` 才能跳过二次确认。此前它是「跑起来就写库」的。
+- `MYSQL_PASSWORD` 缺失时改为 `exit 1`（`tools/e2e/README.md` 红线 2 原文要求，
+  此前一律 exit 2，红线写下的码从未生效）。
+- `assert3_ruling_visible` 删掉两个从头到尾没用过的形参；未使用的 `admin_id` 不再赋值。
+
+**重复实现收敛**
+
+- 新增 `service/support/ReviewTagCodec`：评价标签 JSON 的解析/序列化只此一份。
+  此前 `ReviewServiceImpl#parseTags` 与 `AdminServiceImpl#parseReviewTags` 是逐字副本，
+  靠注释「与对方同口径」维持一致 —— 漂移的表现是「同一条评价在两个页面上标签一个有一个没有」。
+- `RegionCodeResolver.cityOf` 改为直接委托 `RegionMatchRule.cityOf`（此前是第二份实现，
+  只靠一条「两份要相等」的测试维持）；补注释说明 `REQUIRED_CODES` 是映射表的**已知内容列表**
+  而非匹配规则副本，不违反 ADR-0016「不另抄一份 Java 词表」。
+- 新增前端 `composables/useReviewRuling`：两个裁定入口（投诉申诉 / 巡查页）共用的
+  「可见性 / 目标评价 / 反查 loading / 已裁定拦截 / 成功后刷新」三件套。
+  此前两处逐字各写一份，差别只在「评价对象从哪来」。
+
+**前端**
+
+- `ReviewRulingDialog.vue` 的用户可见文案去掉字面 Markdown（`**不可撤销**`），
+  管理员不会再看到裸星号。
+
+**测试与文档**
+
+- `AdminAccessMatrixTest` 纳入 `GET /api/admin/review`（3 角色 403 / 未登录 401 / 管理员 200）
+  与评分越界 400 四例 —— 契约 §29 的「错误场景」此前一条都没测。
+- `RegionCodeResolverTest` 方法名改为 `docs/agents/testing.md` §6.1 要求的
+  `methodNameShouldXxx` 形式。
+- `docs/spec/E4-review-credibility.md` §一 Frontend 行从「未建 / 未接」改为「已交付」
+  （与同文件 §10.1 对齐，此前一个文件自打两套说法）。
+- `GLOSSARY.md` 的 `PhoneLayout` / `MobileLayout` 改名方向写反了（ADR-0007 是旧→新），已订正。
+- 文档里的自指计数（`140 份 .md` / 门禁自测 `15 / 15`）改为「以脚本输出为准」，
+  只保留带日期的快照口径 —— AGENTS.md §11 禁止跨文档手抄规模数字。
+- `tools/scan_bad_chars.py` 此前就有 6 处 U+FFFD 未被拦住，本轮清零（`scan_bad_chars`
+  **未接入 CI**，这是它漏到现在的原因；待接）。
+
 ### Added · E4 评价公信力闭环：跨进程 e2e 脚本交付（PRD §13.3 五条断言）
 
 上一轮做文档路径对账时如实标注了第二个功能缺口：
@@ -206,12 +257,15 @@
 - `.github/workflows/ci.yml` 的 `static-gates` job —— 文档校验从
   `--only md --base "$BASE..HEAD"` 改为 **`--only md --all-md`**；连带删掉
   「`base.sha` → `before` → `HEAD~1` 三级兜底」那段（它容易静默走 `exit 0`，
-  表现是「门禁看着绿其实什么都没验」）与 `fetch-depth: 0`。全量 140 份 .md 实测 **1.5s**
+  表现是「门禁看着绿其实什么都没验」）与 `fetch-depth: 0`。全量 md 扫描在该轮实测 **~1.5s**
+  （**份数不写进文档**：每加一篇 .md 就过期一次，要看就跑脚本，见 AGENTS.md §11）
 - `tools/ai_flow/test_gate_check.py` —— 新增 `PathCheckExemptTest`（6 例）：
   存档 / 评审目录豁免、`CHANGELOG.md` 旧豁免不被误伤、普通文档不豁免、
   `docs/reviewsomething/` 不被前缀咒语命中、端到端确认存档文件的悬空不进结果。
   回归测试 **9 → 15 例**
-- 门禁现状：全量 md 扫描 **140 份 / 悬空 0 处 / 围栏 0 处不闭合** · 门禁自测 **15 / 15**
+- 门禁现状（**该轮口径**）：全量 md 扫描「悬空 0 处 / 围栏 0 处不闭合」· 门禁自测 **15 / 15**
+  —— 后续 T7 又 +3 例（`docs/reports/` 被扫到 / 根 `reports/` 被跳过 / 构建产物任意层级都跳）
+  → **18 例**，见 `plans/e4-handoff-completion.md` §T7。份数与用例数以脚本实测为准，此处不抄。
 
 > 遗留（本轮不动，待立项）：E4 裁定入口的前端落点、`tools/e2e/` 的跨进程 e2e 脚本。
 

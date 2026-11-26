@@ -116,7 +116,7 @@ async function submit() {
     // confirmThen 把「用户是否点了确认」变成布尔：取消时静默返回 false，不发请求
     const confirmed = await confirmThen(() =>
       ElMessageBox.confirm(
-        '裁定后该评价将从公开列表移除，且**不可撤销**（本期仅支持「有效 → 无效」单向裁定）。确认继续？',
+        '裁定后该评价将从公开列表移除，且不可撤销（本期仅支持「有效 → 无效」单向裁定）。确认继续？',
         '确认裁定',
         { confirmButtonText: '确认裁定', type: 'warning' }
       )
@@ -185,7 +185,7 @@ async function submit() {
         <p v-if="reasonError" class="ruling__error">{{ reasonError }}</p>
 
         <p class="ruling__notice">
-          单向裁定：仅支持「有效 → 无效」，本期**不支持恢复有效**。裁定后该评价
+          单向裁定：仅支持「有效 → 无效」，本期不支持恢复有效。裁定后该评价
           从公开列表移除，同时向评价家属与陪诊员各发一条站内信。
         </p>
       </section>

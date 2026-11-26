@@ -40,7 +40,7 @@
 - **Mobile** — 移动端壳：`NlPhoneShell`（状态栏 + 顶部 NavBar + 内容区 + 底部 Tab Bar / CTA）。设计基线 390 × 844。
 - **Desktop** — 桌面端壳：`NlDesktopShell`（见 ADR-0007）。设计基线 ≥ 768 宽屏。
 
-> **关键纠正**：`MobileLayout` 这个旧名字（`PhoneLayout`）把「形态」和「角色」耦合在一起，导致 admin 巧合占用了桌面壳。重命名后，**形态是形态，角色是角色**；一个 FAMILY 用户的 home 页在 390 屏走 Mobile，在 1280 屏走 Desktop，URL 不变。
+> **关键纠正**：`PhoneLayout` 这个旧名字把「形态」和「角色」耦合在一起，导致 admin 巧合占用了桌面壳。重命名后（旧 `PhoneLayout.vue` → 新 `MobileLayout.vue`，见 ADR-0007），**形态是形态，角色是角色**；一个 FAMILY 用户的 home 页在 390 屏走 Mobile，在 1280 屏走 Desktop，URL 不变。
 
 ### Layout 命名（重命名后）
 

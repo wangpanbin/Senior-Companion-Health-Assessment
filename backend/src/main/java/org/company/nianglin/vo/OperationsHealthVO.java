@@ -16,7 +16,7 @@ import lombok.experimental.Accessors;
  * <p>六项统一用字符串渲染 —— 前端把它们并排放在一个块里，
  * 类型一致才不会各写一套格式化逻辑。</p>
  *
- * <p>⚠️ {@code avgAcceptMinutes} 在这里��� {@link String}，
+ * <p>⚠️ {@code avgAcceptMinutes} 在这里是 {@link String}，
  * 而 {@link OperationsOverviewVO} 的同名字段是 {@link Integer}：
  * 同名不同型是接口设计的坑，两端各按各的 VO 处理，不要写通用取值函数。</p>
  *

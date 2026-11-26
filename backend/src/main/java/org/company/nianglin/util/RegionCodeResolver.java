@@ -62,7 +62,15 @@ import java.util.Set;
  */
 public final class RegionCodeResolver {
 
-    /** 映射表在 classpath 中的位置（由 pom.xml 从 backend/sql/tools/ 复制而来） */
+    /**
+     * 区域码映射表在 classpath 中的位置（由 pom.xml 从 backend/sql/tools/ 复制而来）。
+     *
+     * <p>⚠️ {@link #REQUIRED_CODES} 里那 8 个码是**映表表本身的已知内容列表**，不是映射
+     * 规则的第二份副本：它不参与任何匹配（匹配只读 JSON 里的 keywords），
+     * 只用来回答「读到的到底是不是那份表」——与 {@link org.company.nianglin.util.ComplianceCheckUtil}
+     * 的 {@code REQUIRED_WORDS} 同一个用途。真正不能抄的是「关键词 → 区域码」的对应关系，
+     * 那部分只存在于 JSON 里（ADR-0016 §「回填只覆盖存量」）。
+     */
     private static final String RESOURCE_PATH = "/matching/region_code_mapping.json";
 
     /** 区域码清单至少要有这么多条才算「读到了」，低于此值一律视为读空 */
@@ -72,7 +80,6 @@ public final class RegionCodeResolver {
     private static final Set<String> REQUIRED_CODES = Set.of(
             "HAIKOU_MEILAN", "HAIKOU_LONGHUA", "HAIKOU_XIUYING", "HAIKOU_QONGSHAN",
             "SANYA_JIYANG", "SANYA_TIANYA", "DANZHOU_NADA", "QIONGHAI_JIJI");
-
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** 映射规则，<b>按文件顺序</b> —— 顺序即优先级，见类注释「先执行的赢」 */
@@ -195,15 +202,17 @@ public final class RegionCodeResolver {
     /**
      * 把区域码的城市前缀取出来（{@code HAIKOU_MEILAN → HAIKOU}）。
      *
-     * <p>与 {@link org.company.nianglin.service.support.matching.RegionMatchRule#cityOf}
-     * 同一口径；这里保留一份是为了让「写入侧」不必依赖匹配规则包。</p>
+     * <p>⚠️ 唯一实现是 {@link org.company.nianglin.service.support.matching.RegionMatchRule#cityOf} ——
+     * 这里以前复制了第二份（注释理由是「让写入侧不必依赖匹配规则包」），
+     * 但写入侧（{@code OrderServiceImpl} / {@code CompanionServiceImpl}）只调 {@link #resolve}，
+     * 根本用不到它，而复制出来的两份靠一条「两份要相等」的测试维持一致 ——
+     * 那份测试本身就是这份重复唯一的存在理由。已删。</p>
      */
     public static String cityOf(String regionCode) {
         if (regionCode == null) {
             return null;
         }
-        String normalized = regionCode.trim().toUpperCase(Locale.ROOT);
-        int idx = normalized.indexOf('_');
-        return idx <= 0 ? normalized : normalized.substring(0, idx);
+        return org.company.nianglin.service.support.matching.RegionMatchRule
+                .cityOf(regionCode.trim().toUpperCase(Locale.ROOT));
     }
 }

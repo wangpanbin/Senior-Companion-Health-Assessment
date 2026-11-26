@@ -54,12 +54,22 @@ r"""
     $env:MYSQL_PASSWORD = "<你的本机 dev 口令，不入库>"
     $env:SPRING_PROFILES_ACTIVE = "dev"
     .\tools\e2e\start-services.ps1          # 先起后端
-    python tools/e2e/e2e_review_appeal.py
+    python tools/e2e/e2e_review_appeal.py             # dry-run：只做只读前置 + 打印计划
+    python tools/e2e/e2e_review_appeal.py --execute   # 真跑（二次确认后写库）
+    python tools/e2e/e2e_review_appeal.py --execute --yes   # 跳过确认（自动化场景）
     .\tools\e2e\stop-services.ps1
 
-退出码：0 = 五条断言全过；1 = 有断言失败；2 = 前置缺失（后端没起 / 口令没设 / 账号不存在）
+⚠️ **默认 dry-run**（`tools/e2e/README.md` 红线 3）：不加 `--execute` 时脚本**一个字节都不写** ——
+不登录（登录会写 Redis 验证码与 `sys_login_log`）、不插夹具评价、不改评分快照。
+它只做三件只读的事：探后端 `/health`、查四个种子账号是否存在、挑一条可用的夹具订单，
+然后把**即将写哪些表**逐条打印出来。
+
+退出码：0 = 五条断言全过（或 dry-run 正常结束）；
+1 = 有断言失败、**或 `MYSQL_PASSWORD` 未设置**（红线 2 明确要求 exit 1，与断言失败同码）；
+2 = 其它前置缺失（后端没起 / 种子账号不存在 / 找不到可用夹具订单）。
 """
 
+import argparse
 import importlib.util
 import io
 import json
@@ -114,7 +124,7 @@ SCAN_EXTENSIONS = (".java", ".js", ".vue", ".py", ".json", ".txt",
 FORBIDDEN_WORD_ALLOWLIST = {
     "backend/src/main/java/org/company/nianglin/common/ResultCode.java":
         "合规错误码的文案常量（如「内容包含敏感词，请修改后重试」）—— "
-        "拦截器对外说的话本来就要点명违禁表述",
+        "拦截器对外说的话本来就要点明违禁表述",
     "backend/src/main/java/org/company/nianglin/util/ComplianceCheckUtil.java":
         "医疗建议词表的守卫器本体：REQUIRED_WORDS 常量与 javadoc 里逐条解释每个词为什么在表上",
     "backend/src/main/resources/compliance/medical-advice-words.txt":
@@ -164,6 +174,13 @@ def load_seed_password():
 
 
 def die(msg, code=2):
+    """前置缺失退出。
+
+    `code` 默认 2（后端没起 / 账号不存在这类**环境**问题）；
+    环境变量缺失走 `code=1` —— `tools/e2e/README.md` 红线 2 写死的就是「`MYSQL_PASSWORD`
+    未设置时直接 `exit 1`」，与断言失败同码（都是「需要一个人类去修」的失败）。
+    曾经这里所有情况一律 exit 2，红线 2 写下的 `exit 1` 从来没生效过。
+    """
     print("[FATAL] " + msg)
     sys.exit(code)
 
@@ -379,13 +396,15 @@ def assert2_score_matches_sql(companion_id, api_score, sql_avg, sql_count):
     return Result(2, "裁定 → 立即查 score 与手工 SQL 一致", ok, detail)
 
 
-def assert3_ruling_visible(companion_id, list_before, list_after,
-                           family_review_vo, order_id):
+def assert3_ruling_visible(list_before, list_after, family_review_vo):
     """断言 3：裁定后公开列表条数 −1、家属订单详情该评价带标注。
 
     两件事构成「一隐一现」：
       · 隐 —— 公开的陪诊员评价列表不再收录这条（`is_valid=0` 被过滤）
       · 显 —— 家属在订单详情里仍能看到它，且带着「已裁定无效」的标注
+
+    参数只收它真正用到的三个：先前那版还挂着 `companion_id` / `order_id` 两个
+    一个字符都没用的形参，读的人会以为判据跟它们有关。
     """
     count_delta = list_before - list_after
     count_ok = count_delta == 1
@@ -430,24 +449,81 @@ def assert5_no_forbidden_words():
 
 
 # ------------------------------------------------------------------
+# dry-run：写操作清单
+# ------------------------------------------------------------------
+
+class WritePlan(object):
+    """dry-run 时收集「本该执行的写操作」，一个字节都不落库。
+
+    接口与 `fixture` 模块的两个写入口同形（`exec_sql` / `redis`），
+    所以 `cleanup()` 不需要为 dry-run 写分支 —— 把 writer 换掉就行。
+    """
+
+    def __init__(self):
+        self.statements = []
+
+    def exec_sql(self, sql):
+        self.statements.append("SQL    " + " ".join(sql.split()))
+
+    def redis(self, args):
+        self.statements.append("REDIS  " + " ".join(str(a) for a in args))
+        return 0, "", ""
+
+    def render(self):
+        for line in self.statements:
+            print("    " + line)
+
+
+# ------------------------------------------------------------------
+# 前置（只读）
+# ------------------------------------------------------------------
+
+def preflight():
+    """只读前置：口令 / 后端 / 种子账号 / 夹具订单。
+
+    dry-run 与 `--execute` 走的是同一段 —— 先把「环境到底行不行」验完，
+    再决定要不要写。否则 dry-run 绿了而 `--execute` 死在第一步，
+    那个 dry-run 就是个假信号。
+    """
+    if not os.environ.get("MYSQL_PASSWORD"):
+        # 红线 2：口令走环境变量；缺失按它的原文要求 exit 1
+        die("环境变量 MYSQL_PASSWORD 未设置（DB 口令一律走环境变量，不入库）", code=1)
+
+    status, code, data = api("GET", "/health")
+    if status == 0 or code is None:
+        die("后端不可达（HTTP %s）—— 先跑 tools/e2e/start-services.ps1" % status)
+    print("[前置] 后端可达：%s" % (data.get("application") if isinstance(data, dict) else "?"))
+
+    ids = {key: user_id_of(username) for key, username in ACCOUNTS.items()}
+    print("[前置] 账号就位：%s(%d) / %s(%d) / %s(%d) / %s(%d)"
+          % (ACCOUNTS["family"], ids["family"], ACCOUNTS["companion"], ids["companion"],
+             ACCOUNTS["other_companion"], ids["other_companion"],
+             ACCOUNTS["admin"], ids["admin"]))
+
+    return ids, pick_fixture_order(ids["family"], ids["companion"])
+
+
+# ------------------------------------------------------------------
 # 自清
 # ------------------------------------------------------------------
 
-def cleanup(ctx):
+def cleanup(ctx, writer=None):
     """删掉脚本造出来的全部痕迹。
 
     逐张表按「本次之前的水位」划界 —— 比按业务键删更精确，
     不会误伤别的脚本或手测留下的同表数据。
+
+    `writer` 默认为真写（`fixture`）；dry-run 传 `WritePlan` 只收集不执行。
     """
+    writer = writer or fixture
     print("\n[cleanup] 清理夹具与副作用 …")
     review_id = ctx.get("review_id")
-    order_id = ctx.get("order_id")
 
     if review_id:
         # 审计日志：裁定写的那一行（target_type=REVIEW / target_id=评价 ID）
         # 双重限定：id 超水位（本次新增）**且** target 指向本次夹具 ——
         # 只靠 target_id 虽也能精确命中，但加上水位后就算将来夹具 id 复用也不会误删。
-        fixture.exec_sql(
+        writer.exec_sql(
             "DELETE FROM admin_oper_log WHERE id > %d "
             "AND target_type = 'REVIEW' AND target_id = %d;"
             % (ctx.get("oper_log_max", 0), review_id))
@@ -455,19 +531,19 @@ def cleanup(ctx):
         # ⚠️ 按 id 水位删，不按 biz_id 删：订单上可能已有**种子**站内信
         #    （ORDER_CREATED / ORDER_COMPLETED 等），按 biz_id 删会把它们一起带走。
         #    水位 + type 双限定，只删本次新增的那两条 E4 通知。
-        fixture.exec_sql(
+        writer.exec_sql(
             "DELETE FROM internal_message WHERE id > %d "
             "AND type IN ('REVIEW_REPLIED', 'REVIEW_INVALIDATED');"
             % ctx.get("message_max", 0))
         # 夹具评价本体
-        fixture.exec_sql("DELETE FROM order_review WHERE id = %d;" % review_id)
+        writer.exec_sql("DELETE FROM order_review WHERE id = %d;" % review_id)
         print("  [OK] 删除夹具评价 #%d 及其站内信 / 审计日志" % review_id)
 
     # 评分快照：裁定把 companion_profile 的 score / review_count 重算了，
     # 还原成跑之前的值（user_id 是业务键，不是代理键 id）
     snapshot = ctx.get("profile_before")
     if snapshot:
-        fixture.exec_sql(
+        writer.exec_sql(
             "UPDATE companion_profile SET score = %s, review_count = %d "
             "WHERE user_id = %d AND deleted = 0;"
             % (snapshot["score"], snapshot["review_count"], snapshot["companion_id"]))
@@ -477,15 +553,15 @@ def cleanup(ctx):
     # 但脚本自己读 score 又会把它写回去）
     companion_id = ctx.get("companion_id")
     if companion_id:
-        fixture.redis(["DEL", "companion:score:%d" % companion_id])
+        writer.redis(["DEL", "companion:score:%d" % companion_id])
     for uid in ctx.get("unread_cache_users", []):
-        fixture.redis(["DEL", "message:unread:%d" % uid])
+        writer.redis(["DEL", "message:unread:%d" % uid])
     print("  [OK] 清理 Redis 评分 / 未读缓存")
 
     # 登录日志：本次 4 次登录留下的行（按水位删，不碰别人的）
     login_log_max = ctx.get("login_log_max")
     if login_log_max is not None:
-        fixture.exec_sql("DELETE FROM sys_login_log WHERE id > %d;" % login_log_max)
+        writer.exec_sql("DELETE FROM sys_login_log WHERE id > %d;" % login_log_max)
         print("  [OK] 删除本次登录产生的 sys_login_log 行")
 
 
@@ -493,31 +569,46 @@ def cleanup(ctx):
 # 主流程
 # ------------------------------------------------------------------
 
-def main():
-    if not os.environ.get("MYSQL_PASSWORD"):
-        die("环境变量 MYSQL_PASSWORD 未设置（DB 口令一律走环境变量，不入库）")
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="E4 评价公信力闭环跨进程 e2e（写库；默认 dry-run）")
+    parser.add_argument("--execute", action="store_true",
+                        help="真正执行（不加则只做只读前置并打印写库计划，一个字节都不写）")
+    parser.add_argument("--yes", action="store_true",
+                        help="跳过二次确认（自动化场景）")
+    args = parser.parse_args(argv)
+
+    # 前置先跑：dry-run 与 --execute 验的是同一套环境，
+    # 否则 dry-run 绿而 --execute 死在第一步，那个 dry-run 就是个假信号
+    ids, fixture_order = preflight()
+    family_id, companion_id = ids["family"], ids["companion"]
+    order_id, order_no, elder_id = fixture_order
+    print("[夹具] 订单 #%s（%s）下单家属=%d 陪诊员=%d 状态=COMPLETED 且无评价"
+          % (order_id, order_no, family_id, companion_id))
+
+    if not args.execute:
+        plan = WritePlan()
+        print("\n" + "=" * 74)
+        print("dry-run：以下写操作**都没有执行**（加 --execute 才真跑）")
+        print("=" * 74)
+        plan.render()
+        print("[写库计划] INSERT order_review ×1 · POST /review/{id}/reply ×1"
+              " · POST /admin/review/{id}/validity ×1")
+        print("[写库计划] DELETE admin_oper_log / internal_message / order_review 各 1 条"
+              " + UPDATE companion_profile 评分快照 + DELETE sys_login_log（本次 4 行）")
+        print("[写库计划] Redis：DEL companion:score:{id} · message:unread:{family,companion}")
+        print("\n确认无误后跑：python tools/e2e/e2e_review_appeal.py --execute")
+        return 0
+
+    if not args.yes:
+        ans = input("\n即将写入本机 dev 库（order_review / internal_message / admin_oper_log / "
+                    "companion_profile / sys_login_log + Redis），跑完自动回滚。\n"
+                    "确认继续？(输入 yes 继续，其它任意键退出) ").strip()
+        if ans != "yes":
+            print("已取消，未写入任何数据。")
+            return 1
 
     password = load_seed_password()
-
-    print("=" * 74)
-    print("E4 评价公信力闭环 · 跨进程 e2e（PRD §13.3 五条断言）")
-    print("=" * 74)
-
-    # ---------- 前置：后端可达 ----------
-    status, code, data = api("GET", "/health")
-    if status == 0 or code is None:
-        die("后端不可达（HTTP %s）—— 先跑 tools/e2e/start-services.ps1" % status)
-    print("[前置] 后端可达：%s" % (data.get("application") if isinstance(data, dict) else "?"))
-
-    # ---------- 账号 ----------
-    family_id = user_id_of(ACCOUNTS["family"])
-    companion_id = user_id_of(ACCOUNTS["companion"])
-    other_companion_id = user_id_of(ACCOUNTS["other_companion"])
-    admin_id = user_id_of(ACCOUNTS["admin"])
-    print("[前置] 账号就位：%s(%d) / %s(%d) / %s(%d) / %s(%d)"
-          % (ACCOUNTS["family"], family_id, ACCOUNTS["companion"], companion_id,
-             ACCOUNTS["other_companion"], other_companion_id,
-             ACCOUNTS["admin"], admin_id))
 
     ctx = {
         "companion_id": companion_id,
@@ -534,11 +625,6 @@ def main():
     other_token = login(ACCOUNTS["other_companion"], password)
     admin_token = login(ACCOUNTS["admin"], password)
     print("[前置] 四个账号登录成功")
-
-    # ---------- 造夹具 ----------
-    order_id, order_no, elder_id = pick_fixture_order(family_id, companion_id)
-    print("[夹具] 订单 #%s（%s）下单家属=%d 陪诊员=%d 状态=COMPLETED 且无评价"
-          % (order_id, order_no, family_id, companion_id))
 
     profile_before = rows(
         "SELECT score, review_count FROM companion_profile "
@@ -601,8 +687,7 @@ def main():
                                    token=admin_token)
             list_after = int((after_list or {}).get("total") or 0)
             _, _, family_review = api("GET", "/review/order/%d" % order_id, token=family_token)
-            results.append(assert3_ruling_visible(companion_id, list_before, list_after,
-                                                   family_review, order_id))
+            results.append(assert3_ruling_visible(list_before, list_after, family_review))
 
         # ---- 断言 5：违禁词 ----
         results.append(assert5_no_forbidden_words())

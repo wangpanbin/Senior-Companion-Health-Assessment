@@ -17,7 +17,7 @@
 | M7-Ruling | 管理员有效性裁定 | Review module 内部评分同步、`MessageService`（M8）、共享审计 module（M9） | `POST /api/admin/review/{id}/validity`、`ReviewService.reviewValidity()`、`ReviewRulingDTO` |
 | M7-Notify | 三类通知 | `MessageTemplateUtil` | `MessageType.REVIEW_REPLIED` / `REVIEW_APPEAL_SUBMITTED` / `REVIEW_INVALIDATED` |
 | M7-Read | 无效评价读口径固化 + ReviewVO 字段透出 | `ReviewVO` 既有 | `ReviewVO.isValid` / `replyTime` |
-| Frontend | 4 个页面 | 既有 NlCard/NlPageShell | `companion/reviews.vue`、`family/order-detail.vue` 回复区（已交付）；`admin/review-audit.vue` **未建**、`admin/complaint.vue` 裁定入口 **未接**（裁定当前仅 API 可达，见 §10.1） |
+| Frontend | 4 个页面 | 既有 NlCard/NlPageShell | `companion/reviews.vue`、`family/order-detail.vue` 回复区（已交付）；`admin/review-audit.vue`、`admin/complaint.vue` 裁定入口与共用组件 `components/admin/ReviewRulingDialog.vue` **均已交付**（2026-11-25，见 §10.1） |
 
 ---
 

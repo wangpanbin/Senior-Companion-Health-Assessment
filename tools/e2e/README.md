@@ -27,7 +27,7 @@
 | `probe_backend_gaps.py` | 后端功能缺口探测 | — | ✅ | — |
 | `probe_ws_handshake.py` | WebSocket 握手探测（开跑先探测 8080/5141 是否有监听，进程没起会直接指路而非误归因） | — | — | — |
 | `l0_identity_gate.py` | **端口与服务身份闸门**（跑任何 E2E 前必须先过） | — | — | — |
-| `e2e_review_appeal.py` | **E4 评价公信力闭环**（PRD §13.3 五条断言：回复 ≤3s 收站内信 / 裁定后 score 与手工 SQL 一致 / 公开列表 −1 / 越权 3004 / 违禁词 grep） | ✅ | ✅ | — |
+| `e2e_review_appeal.py` | **E4 评价公信力闭环**（PRD §13.3 五条断言：回复 ≤3s 收站内信 / 裁定后 score 与手工 SQL 一致 / 公开列表 −1 / 越权 3004 / 违禁词 grep）· 默认 dry-run，`--execute` 才写库 | ✅ | ✅ | — |
 | `_probe_http.py` | 轻量 HTTP 客户端，复用 `probe_api` 的 http / login / BASE 逻辑 | — | ✅ | — |
 
 `_` 前缀 = 内部模块，不作为独立入口调用。
@@ -145,8 +145,13 @@ HTTP 403；只做资源归属的 `/order/1007/fulfillment`，无关方是业务�
 
 ### `e2e_review_appeal.py`（E4 评价公信力闭环 · 跨进程）
 
-**破坏性（写库）。** 它自己造夹具、自己清干净，但**跑完仍建议走一遍 `fixture.py restore`**：
+**破坏性（写库），默认 dry-run。** 它自己造夹具、自己清干净，但**跑完仍建议走一遍 `fixture.py restore`**：
 脚本只能清自己造的痕迹，清不了「跑的时候恰好有别的东西也在写」。
+
+不加 `--execute` 时**一个字节都不写**：不登录（登录会写 Redis 验证码与 `sys_login_log`）、
+不插夹具评价、不改评分快照。它先把**同一套只读前置**跑完（口令 / 后端 `/health` /
+四个种子账号 / 可用夹具订单），再把「本该写哪些表」逐条打印出来 ——
+这样 dry-run 绿了而 `--execute` 死在第一步这种假信号不会出现。
 
 覆盖 PRD §13.3 的五条演示断言 —— 这正是后端三个单测类
 （`ReviewRulingServiceTest` / `AdminControllerReviewTest` / `ReviewAccessMatrixTest`）
@@ -168,11 +173,17 @@ $env:SPRING_PROFILES_ACTIVE = "dev"
 python tools/e2e/l0_identity_gate.py          # 端口身份闸门
 python tools/e2e/fixture.py snapshot
 .\tools\e2e\start-services.ps1
-python tools/e2e/e2e_review_appeal.py         # 期望：五条断言全绿 + 退出码 0
+python tools/e2e/e2e_review_appeal.py             # dry-run：只读前置 + 写库计划
+python tools/e2e/e2e_review_appeal.py --execute   # 真跑（二次确认）
+python tools/e2e/e2e_review_appeal.py --execute --yes   # 跳过确认（自动化）
 python tools/e2e/fixture.py restore
 python tools/e2e/fixture.py verify
 .\tools\e2e\stop-services.ps1
 ```
+
+**退出码**：`0` = 五条断言全过（或 dry-run 正常结束）· `1` = 断言失败**或
+`MYSQL_PASSWORD` 未设置**（红线 2 原文要求的 `exit 1`，与断言失败同码）·
+`2` = 其它前置缺失（后端没起 / 种子账号不存在 / 找不到可用夹具订单）。
 
 **自清范围**：夹具评价行、本次产生的站内信与审计日志行、`companion_profile` 的评分快照、
 Redis 的评分/未读缓存、本次登录产生的 `sys_login_log` 行。

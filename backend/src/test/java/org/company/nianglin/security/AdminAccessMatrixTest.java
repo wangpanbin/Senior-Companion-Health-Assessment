@@ -5,6 +5,7 @@ import org.company.nianglin.support.TestTokens;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -76,6 +77,14 @@ class AdminAccessMatrixTest {
 
     /** 运营参数列表（V4 · P2-3） */
     private static final String API_OPERATION_PARAM = "/api/admin/operation-param";
+    /**
+     * 评价巡查列表（E4）。
+     *
+     * <p>路径与 {@code /api/admin/review/{id}/validity}（裁定写操作）同在
+     * {@code /api/admin} 下，靠类级 {@code @PreAuthorize("hasRole('ADMIN')")} 收口。
+     * 两条必须分开测：一处只读一处写，而「巡检页能看」不蕴含「巡检页能裁」。</p>
+     */
+    private static final String API_REVIEW_AUDIT_LIST = "/api/admin/review";
     /** 运营参数修改：用真实字典键，避免「键不存在」把越权用例变成 400 假绿 */
     private static final String API_OPERATION_PARAM_UPDATE =
             "/api/admin/operation-param/medication.missed-threshold-minutes";
@@ -383,6 +392,59 @@ class AdminAccessMatrixTest {
                         .contentType(JSON)
                         .content("{\"value\":0}")
                         .header(AUTH_HEADER, admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
+    /* ================================================================== */
+    /* 9 · 评价巡查列表（E4）：非管理员一律 403                              */
+    /* ================================================================== */
+
+    @ParameterizedTest(name = "评价巡查 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("评价巡查 · 非管理员看巡查列表 → 403（列表含已被裁定无效的评价与脱敏姓名）")
+    void nonAdminShouldNotReadReviewAuditList(String role) throws Exception {
+        mockMvc.perform(get(API_REVIEW_AUDIT_LIST).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("评价巡查 · 未登录看巡查列表 → 401")
+    void anonymousShouldGet401OnReviewAuditList() throws Exception {
+        mockMvc.perform(get(API_REVIEW_AUDIT_LIST))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("评价巡查 · 管理员读巡查列表 → 200 且 records 为数组")
+    void adminShouldReadReviewAuditList() throws Exception {
+        // 同时是「SQL 能在真库上跑通」的验收：is_valid 三态拼接、
+        // 姓名批量取回、标签 JSON 解析任一处出错这里就会红
+        mockMvc.perform(get(API_REVIEW_AUDIT_LIST).header(AUTH_HEADER, admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records").isArray());
+    }
+
+    @ParameterizedTest(name = "评价巡查评分越界 · minScore={0} maxScore={1} → 400")
+    @CsvSource({
+            "0, ''",
+            "6, ''",
+            "'', 0",
+            "'', 6",
+    })
+    @DisplayName("评价巡查 · 评分筛选取值越界 → 400（契约 §29 错误场景）")
+    void adminShouldGet400OnOutOfRangeScore(String minScore, String maxScore) throws Exception {
+        var request = get(API_REVIEW_AUDIT_LIST).header(AUTH_HEADER, admin());
+        if (!minScore.isEmpty()) {
+            request = request.param("minScore", minScore);
+        }
+        if (!maxScore.isEmpty()) {
+            request = request.param("maxScore", maxScore);
+        }
+        // 统一响应结构：HTTP 200 + code=400（见 docs/api/README.md §三）
+        mockMvc.perform(request)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(400));
     }

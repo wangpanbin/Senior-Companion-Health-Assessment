@@ -160,7 +160,7 @@ public interface OperationsMapper {
     /**
      * 按天分组的订单聚合（ORDER / COMPANION_ACTIVE / FULFILLMENT_RATE 三条趋势共用）。
      *
-     * <p>一行给齐三��趋势要用的数，避免为了三个维度跑三次全表扫描。</p>
+     * <p>一行给齐三条趋势要用的数，避免为了三个维度跑三次全表扫描。</p>
      *
      * @return 每行形如 {@code {d: 2026-09-15, totalCount: 13, completedCount: 9,
      *         cancelledCount: 1, activeCompanionCount: 4}}

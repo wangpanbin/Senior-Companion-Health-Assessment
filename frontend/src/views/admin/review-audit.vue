@@ -8,8 +8,7 @@
  *
  * 后端的 `POST /api/admin/review/{id}/validity`（评价有效性裁定，E4）早就上线了，
  * 但在它落地之前**没有任何管理端页面能调用它** ——
- * 管理员看得见评价，却没有一个入口说「这条评价不算数」。
- *
+ * 管理员看得见评价，却没有一个入口说「这条评价不算数」。 *
  * 更关键的是：公开的评价列表（`GET /api/review/companion/{id}`）硬编码只返回
  * **有效**评价。也就是说，**被裁定无效的评价在公开列表里是看不见的** ——
  * 如果巡查页也走那条链路，「裁完就消失」的评价等于从来没被巡查过。
@@ -28,12 +27,12 @@
  * 巡查页的动线是「扫一遍异常」，维度越多越扫不完。
  */
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
 import { NlCard, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
 import ReviewRulingDialog from '@/components/admin/ReviewRulingDialog.vue'
 import { listAdminReviews } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 import { usePagedList } from '@/composables/usePagedList'
+import { useReviewRuling } from '@/composables/useReviewRuling'
 
 /** 有效性筛选的三个选项；null = 不限（后端不传该参数） */
 const VALIDITY_OPTIONS = [
@@ -122,24 +121,20 @@ function onPageChange(p) {
 /* 裁定入口                                                          */
 /* ================================================================== */
 
-/** 裁定对话框是否打开 */
-const rulingVisible = ref(false)
-/** 待裁定的评价 */
-const rulingTarget = ref(null)
+/**
+ * 与申诉入口（投诉管理页）共用 `useReviewRuling` 的三件套：可见性 / 目标评价 /
+ * loading，以及「已裁定过的评价不再给裁」那道判断。
+ */
+const {
+  rulingVisible,
+  rulingTarget,
+  openRulingWith,
+  handleRulingSuccess
+} = useReviewRuling({ reload: reloadAfterMutate })
 
+/** 巡查页的评价对象就是行数据本身，不需要反查 */
 function openRuling(row) {
-  // 已裁定过的评价不再给裁（后端也会返 409，这里提前挡住）
-  if (row.isValid === false) {
-    ElMessage.info('该评价已被裁定无效')
-    return
-  }
-  rulingTarget.value = row
-  rulingVisible.value = true
-}
-
-/** 裁定成功后刷新列表（该行的有效性标记应随之翻转） */
-async function handleRulingSuccess() {
-  await reloadAfterMutate()
+  return openRulingWith(() => row)
 }
 
 /** 列定义（desktop 8 列；mobile 关键 4 字段：评分 / 有效性 / 陪诊员 / 评价时间） */

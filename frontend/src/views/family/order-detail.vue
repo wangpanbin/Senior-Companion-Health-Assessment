@@ -128,7 +128,7 @@ async function loadAll() {
   // 记下本次请求针对的订单：请求在途时 URL 可能又换了订单，回来时要能判断响应是否过期
   const target = orderId.value
   // 路由离开时 params.id 会先变 undefined（组件尚未卸载），实时推送的事件回调
-  // 也可能在这时进�� —— 无 id 不发请求，否则会打出
+  // 也可能在这时进来 —— 无 id 不发请求，否则会打出
   // /api/execution/undefined/checkins 这类废请求（V4V5 联调 DEF-1）
   if (!target) return
   try {

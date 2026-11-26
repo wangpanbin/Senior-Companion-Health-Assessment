@@ -53,13 +53,13 @@ class RegionCodeResolverTest {
             "海南省儋州市那大镇中兴大道, DANZHOU_NADA",
             "海南省琼海市嘉积镇人民路, QIONGHAI_JIJI",
     })
-    void shouldResolveTypicalAddresses(String address, String expected) {
+    void resolveShouldMatchTypicalAddresses(String address, String expected) {
         assertThat(RegionCodeResolver.resolve(address)).isEqualTo(expected);
     }
 
     @Test
     @DisplayName("解析 · 陪诊员只填「区名」这种短形态也能解析（自由文本回退做不到）")
-    void shouldResolveBareDistrictName() {
+    void resolveShouldHandleBareDistrictName() {
         // 自由文本回退要求「service_area 整串出现在订单地址里」，
         // 「美兰区」能命中，但「海口市美兰区」在「海口美兰区…」这种写法下就命不中 ——
         // 区域码解析是按关键词命中，不受整串限制
@@ -71,13 +71,13 @@ class RegionCodeResolverTest {
     @NullAndEmptySource
     @ValueSource(strings = {"   ", "\t\n"})
     @DisplayName("解析 · null / 空串 / 纯空白一律返回 null，不抛异常")
-    void shouldReturnNullForBlank(String text) {
+    void resolveShouldReturnNullForBlank(String text) {
         assertThat(RegionCodeResolver.resolve(text)).isNull();
     }
 
     @Test
     @DisplayName("解析 · 地址里没有区县名时返回 null（「映射不上的留空」与 V7 同口径，绝不猜）")
-    void shouldReturnNullWhenNoDistrictMatched() {
+    void resolveShouldReturnNullWhenNoDistrictMatched() {
         assertThat(RegionCodeResolver.resolve("海南省某市某路 100 号")).isNull();
         assertThat(RegionCodeResolver.resolve("协和医院")).isNull();
     }
@@ -88,7 +88,7 @@ class RegionCodeResolverTest {
 
     @Test
     @DisplayName("多个区县名同时出现时，按映射文件顺序取第一个（与 V7 的 IS NULL 先到先得一致）")
-    void shouldResolveByFileOrderWhenMultipleDistrictsPresent() {
+    void resolveShouldPreferFileOrderWhenMultipleDistrictsPresent() {
         // 映射文件里 HAIKOU_MEILAN 排在 HAIKOU_QONGSHAN 之前
         String ambiguous = "海南省海口市美兰区某某路（近琼山区边界）";
         assertThat(RegionCodeResolver.resolve(ambiguous)).isEqualTo("HAIKOU_MEILAN");
@@ -104,7 +104,7 @@ class RegionCodeResolverTest {
 
     @Test
     @DisplayName("映射表 · 恰好 8 条区域码，顺序与 region_code_mapping.json 一致")
-    void shouldLoadExactlyEightRegions() {
+    void allCodesShouldLoadExactlyEightRegions() {
         assertThat(RegionCodeResolver.allCodes()).containsExactly(
                 "HAIKOU_MEILAN", "HAIKOU_LONGHUA", "HAIKOU_XIUYING", "HAIKOU_QONGSHAN",
                 "SANYA_JIYANG", "SANYA_TIANYA", "DANZHOU_NADA", "QIONGHAI_JIJI");
@@ -112,7 +112,7 @@ class RegionCodeResolverTest {
 
     @Test
     @DisplayName("映射表 · 每条都是 <CITY>_<DISTRICT> 形态，城市前缀可被 cityOf 取出")
-    void shouldExposeCityPrefix() {
+    void cityOfShouldExposeCityPrefix() {
         for (String code : RegionCodeResolver.allCodes()) {
             assertThat(code).contains("_");
             assertThat(RegionCodeResolver.cityOf(code)).isEqualTo(code.split("_", 2)[0]);
@@ -123,11 +123,11 @@ class RegionCodeResolverTest {
     }
 
     /* ================================================================== */
-    /* 4 · 与匹配规则包的口径一致（防两处各写一份）                        */
+    /* 4 · 城市前缀                                                        */
     /* ================================================================== */
 
     @Test
-    @DisplayName("cityOf 与 RegionMatchRule.cityOf 对同一批区域码给出相同结果")
+    @DisplayName("cityOf 与 RegionMatchRule 给出相同结果（同一份实现，不是两份副本）")
     void cityOfShouldAgreeWithMatchRule() {
         List<String> codes = RegionCodeResolver.allCodes();
         for (String code : codes) {

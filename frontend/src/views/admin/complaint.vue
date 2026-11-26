@@ -26,6 +26,7 @@ import { getReviewByOrder } from '@/api/review'
 import { formatDateTime, labelOf, COMPLAINT_STATUS_TEXT } from '@/utils/format'
 import { confirmThen } from '@/utils/confirm'
 import { usePagedList } from '@/composables/usePagedList'
+import { useReviewRuling } from '@/composables/useReviewRuling'
 
 const filter = ref({ status: '' })
 
@@ -166,12 +167,17 @@ const mobileFields = ['id', 'complainantName', 'status']
 /* 评价申诉 · 裁定入口（E4）                                          */
 /* ================================================================== */
 
-/** 裁定对话框是否打开 */
-const rulingVisible = ref(false)
-/** 待裁定的评价（打开前先反查一次） */
-const rulingTarget = ref(null)
-/** 反查评价的 in-flight 标记（行内按钮的 loading） */
-const rulingLoading = ref(false)
+/**
+ * 裁定入口的三件套（可见性 / 目标评价 / 反查 loading）与「成功后刷新」
+ * 收在 `useReviewRuling` 里，与巡查页共用同一份 —— 两处原先逐字复制。
+ */
+const {
+  rulingVisible,
+  rulingTarget,
+  rulingLoading,
+  openRulingWith,
+  handleRulingSuccess
+} = useReviewRuling({ reload: reloadAfterMutate })
 
 /**
  * 打开裁定对话框。
@@ -180,29 +186,17 @@ const rulingLoading = ref(false)
  * 所以这里用 {@code complaint.orderId} 反查 —— {@code GET /api/review/order/{orderId}}
  * 的归属校验 {@code requireInvolved} 对 ADMIN 直接放行，管理员能查到该订单的评价。</p>
  *
- * <p>取不到评价（该订单还没被评价）时不打开对话框，让对话框自己显示空态。</p>
+ * <p>取不到评价（该订单还没被评价）时不报错，让对话框自己显示空态。</p>
  */
 async function openRuling(c) {
   if (!c.orderId) {
     ElMessage.warning('该投诉没有关联订单，无法定位评价')
     return
   }
-  if (rulingLoading.value) return
-  rulingLoading.value = true
-  try {
+  await openRulingWith(async () => {
     const review = await getReviewByOrder(c.orderId)
-    rulingTarget.value = review ? { ...review, orderNo: c.orderNo } : null
-    rulingVisible.value = true
-  } catch {
-    // 后端报错由 request.js 拦截器统一提示，这里不重复弹
-  } finally {
-    rulingLoading.value = false
-  }
-}
-
-/** 裁定成功后刷新列表（该行的裁定按钮应随之消失） */
-async function handleRulingSuccess() {
-  await reloadAfterMutate()
+    return review ? { ...review, orderNo: c.orderNo } : null
+  })
 }
 
 onMounted(loadList)

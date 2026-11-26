@@ -172,7 +172,10 @@
 - 确认走现有的 `confirmThen(() => ElMessageBox.confirm(...))`（`@/utils/confirm`，本文件已在用）。
 - in-flight 锁模式照抄本文件既有 `handleSubmitting`（**锁必须在第一个 `await` 之前同步置位**，见文件内 P1-5 注释）。
 - 成功后 `reloadAfterMutate()`（`usePagedList`）并 `ElMessage.success`；错误由 `request.js` 拦截器统一弹，本处不重复弹。
-- 已裁定过（后端 409）→ 拦截器提示，列表该行按钮应消失（后端 `isValid=0` 后反查得到 `isValid=false`，据此禁用按钮）。
+- 已裁定过（后端 409）→ 拦截器提示；**反查回来的 {@code review.isValid === false} 时就地判断**
+  （在 `openRuling` 里拦截，不开对话框也不发请求）。
+  ⚠️ 不能提前禁用按钮：投诉列表 `ComplaintVO` 里没有 `isValid` 字段，
+  要判断就得对每一行发一次反查请求（N+1）—— 所以拦截点在**点击之后、提交之前**。
 
 **2c · 前端新建 `admin/review-audit.vue`（巡查页）**
 
@@ -230,7 +233,10 @@
 - **数据自建自清**：脚本自己造夹具（一条「未回复 + 属于某陪诊员」的评价），
   跑完删除（事务回滚或显式 `DELETE`），**不依赖种子数据的当前状态**。
   ⚠️ `tools/e2e/fixture.py` 的 `WRITE_TABLES` 已含 `order_review` / `complaint` → 走既有快照/还原机制最省事。
-- 退出码：全绿 0，任一断言失败 1，前置缺失（令牌/服务未起）2（与 `probe_access_matrix.py` 口径一致）。
+- 退出码：全绿 0，任一断言失败或 `MYSQL_PASSWORD` 未设置 1（`tools/e2e/README.md` 红线 2），
+  其它前置缺失（服务未起 / 种子账号不存在）2。
+- **写库闸门**（`tools/e2e/README.md` 红线 3）：默认 dry-run，`--execute` 才真写，
+  `--yes` 跳过二次确认。
 - **验收方式（用户已授权）**：用户提供 `MYSQL_PASSWORD`（只进环境变量，不写仓库）→
   `start-services.ps1` → `fixture.py snapshot` → 跑脚本 → `fixture.py restore` → `stop-services.ps1` →
   判据：5 条全绿 + 退出码 0 + 库水位回基线。
@@ -335,6 +341,7 @@
 - [x] 修 4 处活文档悬空（PRD.md / design.md / GLOSSARY.md / adr-0016）
 - [x] 修 `docs/reports/` 4 处（验收报告 / script.md ×5 行 / iteration-v3.1）
 - [x] 跑 `python tools/ai_flow/gate_check.py --only md --all-md` → **168 份 / 悬空 0 / 围栏 0**
+  （当次快照。⚠️ 份数随文档增加而变 —— 引用前先重跑脚本，不要把 168 抄到別处）
 - [x] 跑 `python -m unittest tools.ai_flow.test_gate_check -v` → **18/18**
 - [x] 跑 `python tools/check_secrets.py`（1147 文件）+ `python tools/check_metric_dict_parity.py`（64 条）→ 全 PASS
 - [x] 提交 → **不 push**
@@ -373,7 +380,8 @@
 - [x] `python tools/e2e/l0_identity_gate.py` → **10/10**（为此额外起了 ai-service 8081 与 vite 5141）
 - [x] `python tools/e2e/fixture.py snapshot`
 - [x] 起后端（`tools/e2e/start-services.ps1`，显式 `SPRING_PROFILES_ACTIVE=dev`）
-- [x] `python tools/e2e/e2e_review_appeal.py` → **5 条断言全绿 + 退出码 0**
+- [x] `python tools/e2e/e2e_review_appeal.py --execute --yes` → **5 条断言全绿 + 退出码 0**
+  （交付当时该脚本还没有 dry-run 闸门，补上后真跑必须带 `--execute`）
 - [x] `python tools/e2e/fixture.py restore` + `verify` → **全部回到基线**（成对性 31 == 31）
 - [x] `python tools/e2e/stop-services.ps1`（含额外起的 ai-service / vite）
 - [x] 文档同步：spec §9.3、tickets T7、PRD §13.3 第 5 条补注、`CHANGELOG`
@@ -423,7 +431,8 @@ $env:SPRING_PROFILES_ACTIVE = "dev"
 python tools/e2e/l0_identity_gate.py          # 端口身份闸门
 python tools/e2e/fixture.py snapshot
 .\tools\e2e\start-services.ps1
-python tools/e2e/e2e_review_appeal.py         # 期望：5 条断言全绿 + 退出码 0
+python tools/e2e/e2e_review_appeal.py             # dry-run：只读前置 + 写库计划
+python tools/e2e/e2e_review_appeal.py --execute   # 期望：5 条断言全绿 + 退出码 0
 python tools/e2e/fixture.py restore
 python tools/e2e/fixture.py verify
 .\tools\e2e\stop-services.ps1
@@ -466,7 +475,7 @@ python tools/e2e/fixture.py verify
 
 | 项 | 结果 |
 |---|---|
-| 文档门禁 `--only md --all-md` | **168 份**（分支 1 修好后）· 悬空 0 · 围栏 0 |
+| 文档门禁 `--only md --all-md` | **168 份**（分支 1 修好后，当次快照）· 悬空 0 · 围栏 0 |
 | 门禁自测 | **18/18** 全绿 |
 | 密钥体检 / 指标字典 | 1147 文件 / 64 条 全 PASS |
 | `mvn -B verify` | **1564 例 / 0 失败** |

@@ -29,6 +29,7 @@ import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.ReviewService;
 import org.company.nianglin.service.support.OperLogRecorder;
+import org.company.nianglin.service.support.ReviewTagCodec;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.SensitiveWordUtil;
 import org.company.nianglin.vo.CompanionScoreVO;
@@ -517,27 +518,16 @@ public class ReviewServiceImpl implements ReviewService {
             return null;
         }
         try {
-            return objectMapper.writeValueAsString(tags);
-        } catch (Exception e) {
+            return ReviewTagCodec.serialize(tags, objectMapper);
+        } catch (IllegalStateException e) {
             log.error("评价标签序列化失败 | {}", e.getMessage());
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "保存评价标签失败，请稍后重试");
         }
     }
 
-    /** 解析标签 JSON；内容损坏时按空处理，不让一条脏数据把整个列表打挂 */
+    /** 解析标签 JSON（唯一实现：{@link ReviewTagCodec#parse}，管理端巡查列表共用） */
     private List<String> parseTags(String json) {
-        if (!StringUtils.hasText(json)) {
-            return List.of();
-        }
-        try {
-            List<String> parsed = objectMapper.readValue(json,
-                    new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {
-                    });
-            return parsed == null ? List.of() : parsed;
-        } catch (Exception e) {
-            log.warn("评价标签 JSON 解析失败，已按空处理 | len={} | {}", json.length(), e.getMessage());
-            return List.of();
-        }
+        return ReviewTagCodec.parse(json, objectMapper);
     }
 
     /** 空白串归一成 {@code null}：库里不该出现「看起来有内容、其实是空格」的评价 */
