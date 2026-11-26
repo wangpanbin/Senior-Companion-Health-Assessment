@@ -7,10 +7,20 @@
  */
 import { computed, useAttrs, useSlots } from 'vue'
 import { guardComponentApi } from '@/utils/componentGuard'
+import { EMPTY_TYPES, oneOf } from './nlEnumProps'
 
 const props = defineProps({
-  /** empty / 403 / 404 / network */
-  type: { type: String, default: 'empty' },
+  /**
+   * 空态语义：empty / 403 / 404 / network
+   *
+   * <p>非法值会静默退化到 `empty`（`map[props.type] || map.empty`）——
+   * 于是「403 无权限」页可能显示成「暂无数据」，而且不报错。用 validator 当场告警。</p>
+   */
+  type: {
+    type: String,
+    default: 'empty',
+    validator: oneOf(EMPTY_TYPES)
+  },
   /** 行动按钮文字（与 #action 插槽二选一；插槽优先） */
   actionText: { type: String, default: '' },
   /** 主标题 */

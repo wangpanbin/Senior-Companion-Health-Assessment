@@ -51,21 +51,32 @@
 
 - 任何代码改动落地前，**先说明思路与改动文件清单**，再开始改。
 - **新增功能 / 编写代码必须在独立分支上完成**：动手写代码前先新建分支（功能用 `feature/<module>-<name>`、修 bug 用 `bugfix/<module>-<name>`、改文档用 `docs/<name>`），全程在该分支上提交，**禁止直接在 `main` / `develop` 上编写或提交代码**；任务完成、检查通过后再按 `docs/agents/git-workflow.md` 的分支模型合并回主分支并删除该分支。仅改动文档、配置且不涉及代码生成时可经用户确认后免开分支。
+  > 这条有机械闸门：`tools/hooks/pre-commit`（**每个 clone 装一次**，装法见 `tools/hooks/README.md`）。
+  > 装了之后在 `main` / `develop` 上 `git commit` 会被拒；确需在受保护分支提交（合并 / 机器人 / 紧急修复）时用 `git commit --no-verify` 明确绕开。
 - **不要删除** `docs/plan/plan.md`、`README.md`、`docs/api/*`、`.gitignore`、`pom.xml`、`package.json`、根目录 `.workbuddy/`；这些是项目根骨。
 - **不要执行破坏性命令**：`rm -rf`、强制 `git push --force` 到 `main` / `develop`、直接 drop database、`mvn clean install -DskipTests` 之外的危险 Maven 目标。对 `git commit`、`git push`、`git reset`、`git clean`、重启服务、删容器等动作必须**先确认**。
 - **不要在仓库中留下明文密码 / 真实手机号 / 真实身份证号**。所有示例数据用合规占位串（如 `13800000000`、`110101199001010001`）。
 - **不要"自创"技术栈**：不得引入 README / pom.xml / package.json 之外的依赖。需要新增依赖时，在回复中明确说明理由，由人工确认后再写。（V3.7 的 Python 助手服务依赖清单是**已记录的例外**，见 §0.1。）
-- **提交前跑该跑的检查**。仓库已有 CI（`.github/workflows/ci.yml`，push / PR 到 `main` 时触发），覆盖后端 `mvn verify`、前端 `lint:check` + `vitest` + `build`、AI 助手服务 `pytest`、密钥体检、指标字典人读面↔机器面一致性、静态门禁（错误码双向一致 + 文档三项校验 + 坏字符扫描）。**改后端就跑 `mvn -B verify`，改 `frontend/` 就跑 `pnpm run lint:check` 与 `pnpm run test`** —— 与 CI 同命令，自己先红总比推送后红好。新增检查项时同步改 workflow。
+- **提交前跑该跑的检查**。仓库已有 CI（`.github/workflows/ci.yml`，push / PR 到 `main` 时触发），覆盖后端 `mvn verify`、前端 `lint:check` + `vitest` + `build`、AI 助手服务 `pytest`、密钥体检、指标字典人读面↔机器面一致性、静态门禁（错误码双向一致 + 页面编号双向一致 + 文档三项校验 + 坏字符扫描）。**改后端就跑 `mvn -B verify`，改 `frontend/` 就跑 `pnpm run lint:check` 与 `pnpm run test`** —— 与 CI 同命令，自己先红总比推送后红好。新增检查项时同步改 workflow。
 - **改 `ai-service/` 就跑 `python -m pytest ai-service/tests -q`；改 FAQ 知识库（`ai-service/knowledge/faq.json`）就跑 `python tools/check_faq_anchors.py`。** 助手核心断言**不依赖 LLM 与网络**（没配模型时也要能跑绿）；CI 的 `ai-service` job 跑的是同一套测试（工作目录 `ai-service/`）。
-- **本地能复跑 CI 的三个静态门禁**（纯 Python 标准库，不需要装任何依赖）：
-  - `python tools/check_secrets.py` —— 密钥体检五条（**CI secrets job 调的就是这一份**，规则本体只有一处）
-  - `python tools/check_metric_dict_parity.py` —— 指标字典人读面↔机器面一致性
-  - `python tools/scan_bad_chars.py` —— 坏字符（U+FFFD + 混进来的韩文/假名/西里尔字母），
-    **命中即 exit 1**（2026-11-26 前的版本只打印不设退出码，也没接 CI，
-    于是仓库里 6 处坏字符躺了半个多月；两处一起修才算闭环）。自测：
-    `python -m unittest tools.test_scan_bad_chars`
+- **本地能复跑 CI 的静态门禁**：统一入口是 `python tools/ai_flow/gate_check.py`（**纯标准库，不需要装任何依赖**），
+  CI 的 `secrets` / `metric-dict` / `faq` / `static-gates` 四个 job 调的就是它。分段跑用 `--only`：
 
-  改这三处的规则**只改脚本**，CI 与本地共用同一份；**不要在 workflow 里再抄一遍** —— 抄两份必然漂移（2026-10-21 review 实测：抄出来的两份在 Windows 上白名单语义不同，本地绿、CI 也绿，但其中一份其实已经失效）。
+  | `--only` | 检查 | 单独跑等价的旧命令 |
+  |---|---|---|
+  | `secrets` | 密钥体检五条 | `python tools/check_secrets.py` |
+  | `metric-dict` | 指标字典人读面↔机器面一致 | `python tools/check_metric_dict_parity.py` |
+  | `faq` | FAQ 锚点与合规词 | `python tools/check_faq_anchors.py` |
+  | `error-codes` | `ResultCode` ↔ `docs/api/README.md` 错误码总表双向一致 | —（新增，早前靠人记） |
+  | `page-codes` | `routes.js` 的 `meta.code` ↔ `docs/design/design.md` 页面表双向一致 | —（新增，早前从未检查过） |
+  | `md` | 文档围栏成对 / 引用路径存在（`--all-md` 全量） | — |
+  | 不带参数 | 以上六项全跑 | — |
+
+  坏字符扫描不在上面：`python tools/scan_bad_chars.py`（U+FFFD + 混进来的韩文/假名/西里尔字母），
+  **命中即 exit 1**；自测 `python -m unittest tools.test_scan_bad_chars`。
+  本机全量一键跑：`tools\verify_all.ps1`（第 1 步就是 `gate_check.py --all-md`）。
+
+  改这些规则**只改脚本**，CI 与本地共用同一份；**不要在 workflow 里再抄一遍** —— 抄两份必然漂移（2026-10-21 review 实测：抄出来的两份在 Windows 上白名单语义不同，本地绿、CI 也绿，但其中一份其实已经失效）。
 - 不确定就问，不要瞎猜；宁可少写，不要乱写。
 
 ---

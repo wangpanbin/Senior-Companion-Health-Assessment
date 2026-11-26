@@ -5,6 +5,8 @@
  * 公式：[图标容器 36×36 圆角 10 + 20px SVG] ← gap 12 → [标题 + 副标题] ← SPACE_BETWEEN → [chevron]
  * 最小高度 56（老人模式 68），分隔线 --nl-divider
  */
+import { TONES_BADGE, oneOf } from './nlEnumProps'
+
 defineProps({
   title: { type: String, required: true },
   subtitle: { type: String, default: '' },
@@ -12,8 +14,12 @@ defineProps({
   chevron: { type: Boolean, default: true },
   /** 是否显示上方分隔线（首行一般不显示） */
   divider: { type: Boolean, default: false },
-  /** 自定义主色（图标容器 / 文字） */
-  tone: { type: String, default: 'primary' }
+  /** 自定义主色（图标容器 / 文字）；与 NlAvatar / NlIconBox 同一组枚举值 */
+  tone: {
+    type: String,
+    default: 'primary',
+    validator: oneOf(TONES_BADGE)
+  }
 })
 </script>
 

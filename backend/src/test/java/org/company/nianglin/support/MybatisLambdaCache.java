@@ -4,7 +4,10 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.company.nianglin.entity.AdminOperLog;
+import org.company.nianglin.entity.ChatMessage;
+import org.company.nianglin.entity.ChatReadCursor;
 import org.company.nianglin.entity.CompanionAuditRecord;
+import org.company.nianglin.entity.CompanionAvailableSlot;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.CompanionTrack;
@@ -17,6 +20,8 @@ import org.company.nianglin.entity.MedicationTask;
 import org.company.nianglin.entity.MedicineDict;
 import org.company.nianglin.entity.NotificationPreference;
 import org.company.nianglin.entity.OrderCheckin;
+import org.company.nianglin.entity.OrderFeeItem;
+import org.company.nianglin.entity.OrderFulfillmentEvent;
 import org.company.nianglin.entity.OrderRejectLog;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.entity.OrderStatusLog;
@@ -62,7 +67,11 @@ import org.company.nianglin.entity.VitalSignRecord;
  * 与 Spring 启动时构建的一致。</p>
  *
  * <p>⚠️ 新增实体后请在上面的 import 与 {@link #ENTITY_CLASSES} 里补一行 ——
- * 漏补只会让新实体的单测报上面那个异常，不会污染已有测试。</p>
+ * 漏补只会让新实体的单测报上面那个异常，不会污染已有测试。
+ * <b>这条约定现在由 {@code MybatisLambdaCacheCompletenessTest} 自动守：</b>
+ * 它扫 {@code entity} 包下所有带 {@code @TableName} 的类与这份名单做双向差集，
+ * 漏登记 / 残留已删类都会在 {@code mvn test} 阶段直接红。
+ * （2026-11-26 补登记了 5 个此前一直漏着的实体。）</p>
  *
  * @author 银龄伴诊团队
  * @since M4
@@ -83,6 +92,13 @@ public final class MybatisLambdaCache {
             // V6 产品反馈：新增实体必须在这里登记，否则纯 Mockito 单测会报
             // 「can not find lambda cache for this entity」
             ProductFeedback.class,
+            // 以下 5 个自建表后一直没登记（2026-11-26 由
+            // MybatisLambdaCacheCompletenessTest 拉出来）：它们的纯 Mockito 单测
+            // 会「单独跑红、全量跑绿」。在这里补齐而不是给测试加白名单 ——
+            // 白名单会让下一个新实体默认滑进「不检查」那一側。
+            ChatMessage.class, ChatReadCursor.class,
+            CompanionAvailableSlot.class,
+            OrderFeeItem.class, OrderFulfillmentEvent.class,
     };
 
     /** 进程级只做一次，TableInfoHelper 本身就是全局缓存 */

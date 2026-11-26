@@ -336,6 +336,13 @@ jobs:
       - name: 错误码双向一致（ResultCode ↔ 接口文档总表）
         run: python3 tools/ai_flow/gate_check.py --only error-codes
 
+      # 页面编号双向一致（routes.js meta.code ↔ design.md 页面表）。
+      # 为什么值得一门禁：`meta.code` 的注释写着「与 design.md §1.2/1.3 对齐」，
+      # 但这个对齐此前**从未被检查过** —— 2026-11-26 实测有 16 个编号只存在于路由一侧
+      # （新增页面时只能手工扫表挑一个没人用的号）。挑号是机械动作，适合机器管。
+      - name: 页面编号双向一致（routes.js ↔ design.md）
+        run: python3 tools/ai_flow/gate_check.py --only page-codes
+
       # 全量扫描：不需要 BASE ref，也就不需要 fetch-depth: 0
       # 与上面那套「三种来源逐级兜底」的逻辑一并删除 —— 那段兜底本身
       # 就容易静默走 `exit 0`，表现是「门禁看着绿其实什么都没验」。

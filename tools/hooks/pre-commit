@@ -1,0 +1,40 @@
+#!/bin/sh
+# =============================================================================
+# pre-commit 守卫（AGENTS.md §0.2：禁止直接在 main / develop 上写代码）
+#
+# 为什么需要这一道：
+#   §0.2 是**机械规则**（"禁止在 main / develop 上提交"），不带任何判断力 ——
+#   而机械规则本就该是确定性检查，不是 prose。2026-11-26 实测：一次 feature
+#   分支的 fast-forward 之后，后续提交落在 main 上，全程没有任何东西拦住。
+#
+# 为什么不用 husky / pre-commit 框架：
+#   仓库一个 Node 依赖都不想多加（AGENTS.md §0.2「不要自创技术栈」），
+#   而这条判断只需要读 .git/HEAD —— 几行 shell 就够。
+#
+# 安装（一次性，不进版本库，因为 .git/hooks 本身不入库）：
+#   cp tools/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#
+# 绕过（确需在 main 上提交时，如合并提交 / 机器人 / 紧急修复）：
+#   git commit --no-verify
+# =============================================================================
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+case "$branch" in
+  main|master|develop)
+    echo "" >&2
+    echo "X 拒绝在受保护分支 '$branch' 上提交。" >&2
+    echo "" >&2
+    echo "  AGENTS.md §0.2：新增功能 / 编写代码必须在独立分支上完成。" >&2
+    echo "    功能  git checkout -b feature/<module>-<name>" >&2
+    echo "    修 bug git checkout -b bugfix/<module>-<name>" >&2
+    echo "    改文档 git checkout -b docs/<name>" >&2
+    echo "" >&2
+    echo "  如果这次提交确实该落在 '$branch' 上（合并 / 机器人 / 紧急修复），" >&2
+    echo "  用 git commit --no-verify 明确绕开。" >&2
+    echo "" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

@@ -26,10 +26,34 @@ playwright / 覆盖率。结果是「本地全绿、CI 红了」。
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+# --------------------------------------------------------------------------
+# 输出编码：强制 UTF-8
+# --------------------------------------------------------------------------
+# Windows 下 Python 的 stdout 默认跟系统代码页（简中 = GBK / cp936），
+# 本脚本与它调起的三个子脚本都会打印 ✅ / ❌ 这类符号，于是：
+#
+#     UnicodeEncodeError: 'gbk' codec can't encode character '\u2705'
+#
+# 最坏的后果不是报错本身，而是它**发生在检查全过之后的那行手上**：
+# 检查 PASS，然后打印汇总时崩 → 退出码 1 → 调用方（人或 agent）看到的
+# 是一个红门禁，会花时间去查一个根本不存在的码值不一致。
+# 2026-11-26 实测：`python tools/ai_flow/gate_check.py --only secrets`
+# 在默认环境下直接 FAIL，而单跑 check_secrets.py 五条全过。
+#
+# 所以在这里一次性把三处都钉住：
+#   ① 本进程的 stdout / stderr；
+#   ② 传给子进程的环境（PYTHONIOENCODING，子进程写到管道时默认也是 cp936）；
+#   ③ 子进程自身的输出解码（run_script 里的 encoding="utf-8" 已就位）。
+# 调用方不再需要记 PYTHONIOENCODING —— AGENTS.md §0.2 教的命令必须能直接跑。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parents[2]
 BT = chr(96)
@@ -37,6 +61,8 @@ FENCE = BT * 3
 
 RESULT_CODE_JAVA = "backend/src/main/java/org/company/nianglin/common/ResultCode.java"
 API_README = "docs/api/README.md"
+ROUTES_JS = "frontend/src/router/routes.js"
+DESIGN_MD = "docs/design/design.md"
 
 PATH_PREFIXES = (
     "docs/",
@@ -55,6 +81,12 @@ PATH_PREFIXES = (
 
 def run_script(rel_path, label):
     cmd = [sys.executable, rel_path]
+    # 子进程写的是**管道**，Windows 下管道编码取自 locale（cp936），
+    # 于是一个打印 ✅ 的脚本会死在最后一行而不是检查失败。
+    # PYTHONIOENCODING 是唯能穿透管道的可靠办法（PYTHONUTF8 也行，但显式编码更准）。
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env.setdefault("PYTHONUTF8", "1")
     proc = subprocess.run(
         cmd,
         cwd=str(ROOT),
@@ -62,6 +94,7 @@ def run_script(rel_path, label):
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
     tail = (proc.stdout or "") + (proc.stderr or "")
     lines = [ln.strip() for ln in tail.splitlines() if ln.strip()]
@@ -382,8 +415,86 @@ def check_markdown(base, all_md=False):
 
 
 # --------------------------------------------------------------------------
+# 门禁 5（新增）：页面编号双向一致
+# --------------------------------------------------------------------------
+# routes.js 的 meta.code 注释写着「页面编号，如 M-04（与 docs/design/design.md
+# §1.2/1.3 对齐）」—— 但这个对齐关系此前**从未被检查过**：
+# 2026-11-26 实测 design.md 只有 22 条、routes.js 有 52 条，28 个编号只存在于路由一侧。
+# 新增页面的人（包括 AI）只能手工扫表挑一个没人用的号，然后自己记得往 design.md 补一行。
+#
+# 形状与上面的「错误码双向一致」完全一样：两边各跑一个正则取集合，做双向差集。
+# 为什么值得单独一门禁而不是靠评审：挑号是机械动作，而「已经有人用了」这件事
+# 只能靠全局视图知道 —— 单看一个文件永远看不出来。
 
-GATE_IDS = ("secrets", "metric-dict", "faq", "error-codes", "md")
+ROUTE_CODE_RE = re.compile(r"code:\s*'(M-\d+|W-\d+)'")
+# design.md 里部分行把编号整格加粗（`| **M-04** |`），因此正则必须先吃掉可选的 `**`。
+# 不处理这个会让「已经写了的 11 行」被误报成缺失，门禁一上来就是假红。
+DESIGN_CODE_RE = re.compile(r"^\|\s*(?:\*\*)?(M-\d+|W-\d+)(?:\*\*)?\s*\|", re.M)
+
+#: design.md 允许出现、但**不**对应独立路由的编号（每条都带理由）。
+#:
+#: 为什么需要这份白名单而不是把三行删掉：design.md §1.2/1.3 是**设计稿的页面清单**，
+#: 它描述的是「要画哪些界面」，与「路由表里有哪些 path」本来就不同构 ——
+#: 一个路由可以有多种形态（老人模式），一个编号可以是一组全局组件。
+#: 把差异写成带理由的白名单，比让两侧集合强制相等诚实，也比静默跳过安全：
+#: 新增的孤立编号会真实报错，而非滲在白名单里。
+DESIGN_ONLY_CODES = {
+    # 与 M-04 共用 /elder/home，只差全局字号与对比度；不另建路由。
+    "M-05": "老人端首页的老人模式形态，与 M-04 共用同一条路由",
+    # 用药详情与确认服药是 /family/medication 页内的状态，不是独立页面。
+    "M-13": "用药计划详情 / 确认服药，是 M-12 页内的状态而非独立路由",
+    # 「空状态/加载/错误」是一组共享组件的设计约定，全站复用，没有自己的 path。
+    "M-23": "空状态 / 加载 / 错误三态组件集合，全站复用，无独立路由",
+}
+
+
+def read_route_codes():
+    path = ROOT / ROUTES_JS
+    if not path.is_file():
+        return set(), "找不到 " + ROUTES_JS
+    return set(ROUTE_CODE_RE.findall(path.read_text(encoding="utf-8"))), ""
+
+
+def read_design_codes():
+    path = ROOT / DESIGN_MD
+    if not path.is_file():
+        return set(), "找不到 " + DESIGN_MD
+    return set(DESIGN_CODE_RE.findall(path.read_text(encoding="utf-8"))), ""
+
+
+def check_page_codes():
+    route_codes, err = read_route_codes()
+    if err:
+        return False, err, []
+    design_codes, err = read_design_codes()
+    if err:
+        return False, err, []
+
+    only_route = sorted(route_codes - design_codes, key=_code_sort_key)
+    orphan_design = sorted(design_codes - route_codes - set(DESIGN_ONLY_CODES), key=_code_sort_key)
+    detail = "路由 %d 个编号 / 设计稿 %d 个编号（另有 %d 个设计稿专属）" % (
+        len(route_codes), len(design_codes), len(design_codes & set(DESIGN_ONLY_CODES)))
+    if only_route or orphan_design:
+        parts = []
+        if only_route:
+            parts.append("已建路由但 design.md 无记录（%d）：%s —— 新增页面时补一行页面表"
+                         % (len(only_route), ",".join(only_route)))
+        if orphan_design:
+            parts.append("design.md 有但既无路由也不在白名单（%d）：%s —— 要么补路由，要么加进 DESIGN_ONLY_CODES 并写理由"
+                         % (len(orphan_design), ",".join(orphan_design)))
+        return False, detail + " | " + "；".join(parts), only_route + orphan_design
+    return True, detail + "，覆盖完整", []
+
+
+def _code_sort_key(code):
+    """按「前缀 M/W + 数字」排序，让报错顺序与 design.md 表格顺序一致（M-02 在 M-10 之前）。"""
+    kind, num = code.split("-")
+    return (0 if kind == "M" else 1, int(num))
+
+
+# --------------------------------------------------------------------------
+
+GATE_IDS = ("secrets", "metric-dict", "faq", "error-codes", "page-codes", "md")
 
 
 def main(argv=None):
@@ -430,6 +541,9 @@ def main(argv=None):
     if enabled("error-codes"):
         ok, detail = check_error_codes(args.strict_text)
         add("错误码双向一致", ok, detail)
+    if enabled("page-codes"):
+        ok, detail, _ = check_page_codes()
+        add("页面编号双向一致", ok, detail)
     if enabled("md"):
         ok, detail, _ = check_markdown(args.base, args.all_md)
         add("Markdown 三项校验", ok, detail)

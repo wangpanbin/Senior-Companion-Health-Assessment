@@ -5,8 +5,22 @@
  * tone: primary / warning / success / danger
  * 内容 slot 例如：本服务为线下结算
  */
+import { TONES_NOTICE, oneOf } from './nlEnumProps'
+
 defineProps({
-  tone: { type: String, default: 'primary' },
+  /**
+   * 提示条色调：**只有** primary / warning / success / danger
+   *
+   * <p>SCSS 里没有 `is-info` / `is-purple` / `is-neutral` 分支，写 `tone="info"` 会渲染出
+   * 一条**完全无色**的提示条，且不报任何错（2026-11-26 写产品反馈页时真实踩过）。
+   * `componentGuard` 只挡「未声明的 prop」，挡不住「已声明但取值非法」——
+   * 取值合法性只能靠这个 validator。需要 info 语义时用 `primary`。</p>
+   */
+  tone: {
+    type: String,
+    default: 'primary',
+    validator: oneOf(TONES_NOTICE)
+  },
   icon: { type: Boolean, default: true }
 })
 </script>

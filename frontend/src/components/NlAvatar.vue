@@ -6,13 +6,25 @@
  * tone 用于默认背景色（与 age 关联：老人端绿；陪诊员蓝；管理员紫）
  */
 import { computed, ref, watch } from 'vue'
+import { TONES_BADGE, oneOf } from './nlEnumProps'
 
 const props = defineProps({
   src: { type: String, default: '' },
   /** 字母回退（当 src 不存在时显示） */
   fallback: { type: String, default: '' },
   size: { type: [String, Number], default: 40 },
-  tone: { type: String, default: 'primary' },
+  /**
+   * 底色档：primary / success / warning / danger / purple / info / neutral
+   *
+   * <p>⚠️ 这是**枚举值**，不是自由字符串：写一个未实现的值（如 `tone="brand"`）
+   * 会渲染出一个无背景色的头像，而且不报错。`componentGuard` 只能挡「未声明的 prop」，
+   * 挡不住「已声明但取值非法」—— 所以用 {@link oneOf} 当场告警。</p>
+   */
+  tone: {
+    type: String,
+    default: 'primary',
+    validator: oneOf(TONES_BADGE)
+  },
   /** 是否显示健康徽标（如老人的「健康」chip） */
   badge: { type: String, default: '' }
 })
