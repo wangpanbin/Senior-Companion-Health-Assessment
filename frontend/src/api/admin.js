@@ -92,6 +92,36 @@ export function handleComplaint(complaintId, data) {
   return request({ url: `/admin/complaint/${complaintId}/handle`, method: 'post', data })
 }
 
+/* ---------------- 产品反馈（V6） ---------------- */
+
+/**
+ * 产品反馈列表（分页）
+ *
+ * 支持 status / type / keyword / startDate / endDate 五个筛选条件，
+ * 默认「待处理优先」。姓名一律脱敏；处理说明仅在终态下发。
+ *
+ * @param {{page?:number, size?:number, status?:string, type?:string,
+ *          keyword?:string, startDate?:string, endDate?:string}} params
+ */
+export function listAdminFeedback(params) {
+  return request({ url: '/admin/feedback', method: 'get', params })
+}
+
+/**
+ * 处理产品反馈
+ *
+ * 状态只能正向流转：PENDING → PROCESSING → RESOLVED / REJECTED；
+ * 回退 / 跳级返回 409，记录不存在返回 12001。
+ * 处理说明 10–500 字，过敏感词 + 医疗红线两套词表（命中 6003）——
+ * 它会被站内信原样推给提交人，所以文案要写给用户看，不要写内部黑话。
+ *
+ * @param {number} feedbackId 反馈 ID
+ * @param {{status:'PROCESSING'|'RESOLVED'|'REJECTED', handleResult:string}} data
+ */
+export function handleFeedback(feedbackId, data) {
+  return request({ url: `/admin/feedback/${feedbackId}/handle`, method: 'post', data })
+}
+
 /**
  * 管理员裁定评价有效性（E4 评价公信力闭环）。
  *

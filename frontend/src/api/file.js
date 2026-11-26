@@ -7,10 +7,13 @@ import request from '@/utils/request'
  * 对应端点：POST /api/file/upload（multipart/form-data）、GET /api/file/cert（受控证件下载）
  *
  * ⚠️ 冻结的接口契约（后端按此实现）：
- *  - bizType 接受 COMPANION_CERT / COMPLAINT / AVATAR / CHAT。
+ *  - bizType 接受 COMPANION_CERT / COMPLAINT / AVATAR / CHAT / FEEDBACK。
  *    （CHECKIN 被刻意拒绝 —— 打卡照片必须走原有 /execution/{id}/photo 端点）
  *  - 服务端按文件头判定类型；非 CHAT 仍为 jpg/png/webp/pdf、10MB。
  *  - CHAT 支持 jpg/png/webp/mp4、50MB；对应 docs/api/11-order-chat.md（M13）。
+ *  - FEEDBACK（V6 产品反馈截图）与 COMPLAINT 同档：jpg/png/webp、10MB、可 <img> 直连。
+ *    它不用 COMPLAINT 是因为 sys_file.biz_type 是文件用途的唯一记录，
+ *    把产品截图标成「投诉证据」会让后续的清理 / 受控读取判断误判。
  *  - 允许角色：FAMILY / COMPANION / ADMIN；ELDER 会被服务端 403 拦截（message 含「只读」）。
  *  - 返回 { fileId, url, size }，其中 url 形如 /uploads/202609/xxx.jpg（站内相对路径）。
  *
@@ -24,7 +27,7 @@ import request from '@/utils/request'
 /**
  * 上传单个文件
  * @param {File} file 文件本体
- * @param {'COMPANION_CERT'|'COMPLAINT'|'AVATAR'|'CHAT'} bizType 业务类型
+ * @param {'COMPANION_CERT'|'COMPLAINT'|'AVATAR'|'CHAT'|'FEEDBACK'} bizType 业务类型
  * @returns {Promise<{fileId:string|number, url:string, size:number}>}
  */
 export function uploadFile(file, bizType) {

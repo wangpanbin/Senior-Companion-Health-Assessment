@@ -62,6 +62,7 @@ public final class MessageTemplateUtil {
             case ORDER_REASSIGNED -> "订单已改派陪诊员";
             case ORDER_EXAM_PREP -> "检查准备提醒";
             case HEALTH_CERT_EXPIRING -> "健康证到期提醒";
+            case FEEDBACK_HANDLED -> "反馈处理结果";
             case SYSTEM_NOTICE -> "系统公告";
         };
     }
@@ -169,6 +170,10 @@ public final class MessageTemplateUtil {
                         : "。出门前请按医院检查须知核对空腹、携带材料等准备，可在智能助手中查询「检查准备」。");
             }
             case SYSTEM_NOTICE -> value(p, "content");
+            case FEEDBACK_HANDLED ->
+                    // handleResult 已由 FeedbackServiceImpl 截到 100 字以内（含省略号），
+                    // 模板不再二次截断 —— 与 REVIEW_REPLIED 的 replyDigest 同款约定
+                    "您提交的产品反馈已处理：%s".formatted(value(p, "handleResult"));
             case HEALTH_CERT_EXPIRING -> {
                 // audience 区分两侧：本人看到的是「你该怎么办」，
                 // 管理员看到的是「谁的证到期了」（姓名已由调用方脱敏）
@@ -222,6 +227,10 @@ public final class MessageTemplateUtil {
             // 本人在该页重新提交材料，管理员从消息中心进入（MessageDetail 不走 linkUrl）
             case HEALTH_CERT_EXPIRING -> "/profile/companion";
             case COMPLAINT_HANDLED -> "/complaint/" + bizId;
+            // 产品反馈（V6）：处理结果回客户端反馈页——该页同时承载「提交」与「我的反馈」，
+            // 提交人点进来就能看到刚刚被采纳 / 未采纳的那条与处理说明。
+            // 不拼 bizId：页面上是一个列表，没有 /feedback/:id 详情路由。
+            case FEEDBACK_HANDLED -> "/feedback";
             case SYSTEM_NOTICE, MEDICATION_ESCALATED -> null;
         };
     }

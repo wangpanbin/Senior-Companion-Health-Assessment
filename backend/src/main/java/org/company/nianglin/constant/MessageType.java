@@ -117,6 +117,18 @@ public enum MessageType {
      * 文案只陈述到期事实与后果（无法接单），不含任何医疗判断。</p>
      */
     HEALTH_CERT_EXPIRING("健康证到期提醒", MessageBizType.AUDIT),
+    /**
+     * 产品反馈处理结果（V6）。
+     *
+     * <p>接收人是<b>反馈提交人</b>（家属 / 陪诊员），{@code bizId=feedbackId}，
+     * 点击跳客户端反馈页 {@code /feedback}。<b>只在终态（已采纳 / 未采纳）发送</b> ——
+     * 中间态也发的话，用户会收到一条「已处理完成」，而实际处理还在进行。</p>
+     *
+     * <p>正文里的处理说明摘要由调用方预先截断到 100 字以内（与 {@link #REVIEW_REPLIED}
+     * 的 {@code replyDigest} 同款约定）；发送前已由 {@code FeedbackServiceImpl}
+     * 过敏感词 + 医疗红线两套词表（平台产出口径）。</p>
+     */
+    FEEDBACK_HANDLED("反馈处理结果", MessageBizType.FEEDBACK),
     SYSTEM_NOTICE("系统公告", MessageBizType.SYSTEM),
     ;
 

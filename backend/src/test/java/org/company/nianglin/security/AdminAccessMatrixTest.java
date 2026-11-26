@@ -91,6 +91,15 @@ class AdminAccessMatrixTest {
     /** 合法请求体：非管理员必须在鉴权层被拒，不能死在参数校验层 */
     private static final String VALID_OPERATION_PARAM_BODY = "{\"value\":60,\"remark\":\"越权用例\"}";
 
+    /* V6 · 产品反馈 */
+    /** 管理端产品反馈列表（读） */
+    private static final String API_FEEDBACK_LIST = "/api/admin/feedback";
+    /** 处理产品反馈（写） */
+    private static final String API_FEEDBACK_HANDLE = "/api/admin/feedback/5001/handle";
+    /** 合法的处理请求体：同「改派」「封禁」同法，让越权用例跳过参数层 */
+    private static final String VALID_FEEDBACK_HANDLE_BODY =
+            "{\"status\":\"PROCESSING\",\"handleResult\":\"已接手，正在核实是哪一页的字号问题\"}";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -447,6 +456,60 @@ class AdminAccessMatrixTest {
         mockMvc.perform(request)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(400));
+    }
+
+    /* ================================================================== */
+    /* 10 · 产品反馈（V6）：非管理员一律 403                                  */
+    /* ================================================================== */
+
+    @ParameterizedTest(name = "产品反馈列表 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("产品反馈 · 非管理员看全量反馈列表 → 403（列表含全部用户的脱敏姓名与建议内容）")
+    void nonAdminShouldNotReadFeedbackList(String role) throws Exception {
+        mockMvc.perform(get(API_FEEDBACK_LIST).header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @ParameterizedTest(name = "处理产品反馈 · {0} → 403")
+    @ValueSource(strings = {RoleConstants.ELDER, RoleConstants.FAMILY, RoleConstants.COMPANION})
+    @DisplayName("产品反馈 · 非管理员处理反馈 → 403（携带合法请求体，避免参数层假绿）")
+    void nonAdminShouldNotHandleFeedback(String role) throws Exception {
+        mockMvc.perform(post(API_FEEDBACK_HANDLE)
+                        .contentType(JSON)
+                        .content(VALID_FEEDBACK_HANDLE_BODY)
+                        .header(AUTH_HEADER, bearer(userIdOf(role), role)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    @DisplayName("产品反馈 · 未登录看列表 → 401")
+    void anonymousShouldGet401OnFeedbackList() throws Exception {
+        mockMvc.perform(get(API_FEEDBACK_LIST))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    @DisplayName("产品反馈 · 管理员读列表 → 200 且 records 为数组（SQL 能在真库上跑通）")
+    void adminShouldReadFeedbackList() throws Exception {
+        // 同时是「SQL 能在真库上跑通」的验收：状态权重排序、姓名批量取回、
+        // 截图 JSON 解析、日期区间拼接任一处出错这里就会红
+        mockMvc.perform(get(API_FEEDBACK_LIST).header(AUTH_HEADER, admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records").isArray());
+    }
+
+    @Test
+    @DisplayName("产品反馈 · 管理员处理不存在的反馈 → 12001（不是 403，也不是 500）")
+    void adminHandleMissingFeedbackShouldBe12001() throws Exception {
+        mockMvc.perform(post(API_FEEDBACK_HANDLE)
+                        .contentType(JSON)
+                        .content(VALID_FEEDBACK_HANDLE_BODY)
+                        .header(AUTH_HEADER, admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(12001));
     }
 
     /* ================================================================== */

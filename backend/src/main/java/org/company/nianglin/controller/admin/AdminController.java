@@ -11,6 +11,7 @@ import org.company.nianglin.common.Result;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.AdminAuditQuery;
 import org.company.nianglin.dto.AdminComplaintQuery;
+import org.company.nianglin.dto.AdminFeedbackQuery;
 import org.company.nianglin.dto.AdminOrderQuery;
 import org.company.nianglin.dto.AdminReviewQuery;
 import org.company.nianglin.dto.AdminSettlementQuery;
@@ -18,6 +19,7 @@ import org.company.nianglin.dto.AdminUserQuery;
 import org.company.nianglin.dto.ArbitrateDTO;
 import org.company.nianglin.dto.AuditDecisionDTO;
 import org.company.nianglin.dto.ComplaintHandleDTO;
+import org.company.nianglin.dto.FeedbackHandleDTO;
 import org.company.nianglin.dto.FulfillmentRiskQuery;
 import org.company.nianglin.dto.OrderReassignDTO;
 import org.company.nianglin.dto.OperLogQuery;
@@ -27,6 +29,7 @@ import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.dto.UserDisableDTO;
 import org.company.nianglin.dto.UserEnableDTO;
 import org.company.nianglin.service.AdminService;
+import org.company.nianglin.service.FeedbackService;
 import org.company.nianglin.service.ReviewService;
 import org.company.nianglin.service.SettlementService;
 import org.company.nianglin.vo.AdminFulfillmentRiskItemVO;
@@ -39,6 +42,8 @@ import org.company.nianglin.vo.AuditDecisionResultVO;
 import org.company.nianglin.vo.AuditPageVO;
 import org.company.nianglin.vo.ComplaintHandleResultVO;
 import org.company.nianglin.vo.ComplaintVO;
+import org.company.nianglin.vo.FeedbackHandleResultVO;
+import org.company.nianglin.vo.FeedbackVO;
 import org.company.nianglin.vo.FulfillmentSummaryVO;
 import org.company.nianglin.vo.OperLogVO;
 import org.company.nianglin.vo.ReassignResultVO;
@@ -79,12 +84,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('" + RoleConstants.ADMIN + "')")
-@Tag(name = "08-管理后台", description = "资质审核、用户管理、订单纠纷、投诉处理、评价裁定与操作日志")
+@Tag(name = "08-管理后台", description = "资质审核、用户管理、订单纠纷、投诉处理、产品反馈、评价裁定与操作日志")
 public class AdminController {
 
     private final AdminService adminService;
     private final ReviewService reviewService;
     private final SettlementService settlementService;
+    private final FeedbackService feedbackService;
 
     /* ==================== 资质审核 ==================== */
 
@@ -201,6 +207,30 @@ public class AdminController {
             @Parameter(description = "投诉 ID", example = "3001") @PathVariable("id") Long id,
             @Valid @RequestBody ComplaintHandleDTO dto) {
         return Result.success("投诉已处理", adminService.handleComplaint(id, dto));
+    }
+
+    /* ==================== 产品反馈（V6） ==================== */
+
+    @Operation(summary = "产品反馈列表",
+            description = "管理端可见全部产品反馈（不做收窄）；待处理状态优先排在前面。"
+                    + "支持按状态 / 分类 / 关键词（正文或提交人姓名）/ 提交时间区间筛选。"
+                    + "处理说明仅在终态（已采纳 / 未采纳）下发；姓名一律脱敏")
+    @GetMapping("/feedback")
+    public Result<PageResult<FeedbackVO>> feedbackList(@Valid AdminFeedbackQuery query) {
+        return Result.success(feedbackService.adminList(query));
+    }
+
+    @Operation(summary = "处理产品反馈",
+            description = "状态只能正向流转：PENDING → PROCESSING → RESOLVED / REJECTED，"
+                    + "回退或跳级返回 409；记录不存在返回 12001。"
+                    + "处理说明 10–500 字，每次流转必填，且需过敏感词 + 医疗红线两套词表"
+                    + "（命中返回 6003）—— 这段话会经站内信原样回给提交人，属于平台产出口径。"
+                    + "进入终态时向提交人发一条站内信，并落 admin_oper_log（HANDLE_FEEDBACK / FEEDBACK）")
+    @PostMapping("/feedback/{id}/handle")
+    public Result<FeedbackHandleResultVO> handleFeedback(
+            @Parameter(description = "反馈 ID", example = "5001") @PathVariable("id") Long id,
+            @Valid @RequestBody FeedbackHandleDTO dto) {
+        return Result.success("反馈已处理", feedbackService.handle(id, dto));
     }
 
     /**

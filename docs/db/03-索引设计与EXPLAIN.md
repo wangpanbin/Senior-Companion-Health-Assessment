@@ -101,6 +101,9 @@
 | `vital_sign_record` | `idx_elder_time` | 普通 | `elder_id`, `measured_at` | 支撑业务查询条件 |
 | `vital_sign_record` | `idx_order_id` | 普通 | `order_id` | 支撑业务查询条件 |
 | `vital_sign_record` | `idx_operator` | 普通 | `operator_user_id` | 按操作人追溯 |
+| `product_feedback` | `idx_status_create` | 普通 | `status`, `create_time` | 按状态 + 下单时间分页 |
+| `product_feedback` | `idx_submitter` | 普通 | `submitter_id` | 支撑业务查询条件 |
+| `product_feedback` | `idx_type` | 普通 | `type` | 支撑业务查询条件 |
 
 ## 二、关键设计决策
 

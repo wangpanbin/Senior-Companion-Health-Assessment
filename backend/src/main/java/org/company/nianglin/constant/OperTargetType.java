@@ -40,6 +40,13 @@ public enum OperTargetType {
      * 单独一类便于按「参数键」检索变更历史。</p>
      */
     OPERATION_PARAM("运营参数"),
+    /**
+     * 产品反馈（V6）。
+     *
+     * <p>目标是 {@code product_feedback} 的一条用户建议，而不是某个订单或用户。
+     * 单独一类便于按「反馈 ID」检索处理历史。</p>
+     */
+    FEEDBACK("产品反馈"),
     ;
 
     private final String label;

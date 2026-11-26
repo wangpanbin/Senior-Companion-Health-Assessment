@@ -17,6 +17,7 @@
  *   <NlStatusChip scope="audit" status="PENDING" />      资质待审核
  *   <NlStatusChip scope="task" status="TAKEN" />         服药已服
  *   <NlStatusChip scope="complaint" status="RESOLVED" /> 投诉已结案
+ *   <NlStatusChip scope="feedback" status="RESOLVED" />  反馈已采纳
  *   <NlStatusChip scope="user" status="NORMAL" />        账号正常
  *   <NlStatusChip text="自定义" tone="warning" />        自定义文本
  *
@@ -28,7 +29,7 @@ import { computed } from 'vue'
 const props = defineProps({
   /** 业务枚举值，自动映射颜色 */
   status: { type: String, default: '' },
-  /** 模块域：order / audit / complaint / task / plan / user / bind */
+  /** 模块域：order / audit / complaint / feedback / task / plan / user / bind */
   scope: { type: String, default: 'order' },
   /** 自定义文本（status 未识别或想覆盖时使用） */
   text: { type: String, default: '' },
@@ -61,6 +62,19 @@ const SCOPES = {
     PROCESSING: { tone: 'info', text: '处理中' },
     RESOLVED: { tone: 'success', text: '已结案' },
     REJECTED: { tone: 'danger', text: '已驳回' }
+  },
+  /**
+   * 产品反馈（FeedbackStatus，V6）
+   *
+   * 与投诉同构的四态，但中文口径不同：产品反馈的终态是「已采纳 / 未采纳」，
+   * 不是「已结案 / 已驳回」—— 后者是纠纷仲裁的措辞，用在这里会让用户
+   * 以为自己在被审判。别把这两张表合并。
+   */
+  feedback: {
+    PENDING: { tone: 'warning', text: '待处理' },
+    PROCESSING: { tone: 'info', text: '处理中' },
+    RESOLVED: { tone: 'success', text: '已采纳' },
+    REJECTED: { tone: 'neutral', text: '未采纳' }
   },
   // 服药任务（MedicationTaskStatus）
   task: {

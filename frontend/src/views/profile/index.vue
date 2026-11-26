@@ -174,6 +174,15 @@ const DEACTIVATE_CONFIRM_TEXT = '我已知晓注销后果'
 
 const canManageAccount = computed(() => userStore.isFamily || userStore.isCompanion)
 
+/**
+ * 是否可以向平台提交产品反馈（V6）。
+ *
+ * <p>与 {@link canManageAccount} 取值相同但**语义不同**，所以不合并：
+ * 前者是「能不能注销 / 导出自己的数据」，后者是「能不能向平台提产品建议」。
+ * 两个业务规则将来可能分叉（例如老人也可以提反馈），合并会逼着把其中一个改坏。</p>
+ */
+const canSubmitFeedback = computed(() => userStore.isFamily || userStore.isCompanion)
+
 /** 用 Blob 触发浏览器下载（与 admin/export.vue 同一手法） */
 function triggerDownload(blob, filename) {
   const url = window.URL.createObjectURL(blob)
@@ -471,6 +480,40 @@ async function submitDeactivate() {
       </section>
 
       <!-- 通用设置 -->
+      <!-- 账户与安全 -->
+      <section class="profile-section">
+        <p class="profile-section__label">帮助与反馈</p>
+        <NlCard class="profile-group" :padding="0">
+          <!-- V6 产品反馈：提的是**产品本身**的建议（界面 / 流程 / 功能缺失）。
+               与订单无关的投诉仍在订单详情页发起 —— 两件事不能混在一个入口里。
+               ⚠️ 仅家属 / 陪诊员：路由 roles 与服务端注解都只放行这两个角色，
+               ELDER 看不到本行（v-if 与路由守卫是两道，不是重复）。 -->
+          <NlListRow
+            v-if="canSubmitFeedback"
+            title="产品反馈"
+            subtitle="提建议 / 报问题，可附截图"
+            chevron
+            @click="router.push('/feedback')"
+          >
+            <template #icon>
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z" />
+                <path d="M9 11h6M9 15h4" />
+              </svg>
+            </template>
+          </NlListRow>
+        </NlCard>
+      </section>
+
       <section class="profile-section">
         <p class="profile-section__label">账户与安全</p>
         <NlCard class="profile-group" :padding="0">

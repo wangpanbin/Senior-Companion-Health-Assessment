@@ -44,6 +44,7 @@ DOMAINS = [
                                    "chat_message", "chat_read_cursor",
                                    "notification_preference", "sms_send_log"]),
     ("六、体征记录域", ["vital_sign_record"]),
+    ("七、产品反馈域", ["product_feedback"]),
 ]
 
 MODULE_OF = {
@@ -58,6 +59,7 @@ MODULE_OF = {
     "complaint": "M7", "internal_message": "M8", "chat_message": "M13", "chat_read_cursor": "M13",
     "notification_preference": "V4 P1-3", "sms_send_log": "V4 P1-3",
     "vital_sign_record": "V4 P2-2",
+    "product_feedback": "V6",
 }
 
 TABLE_CN = {
@@ -77,6 +79,7 @@ TABLE_CN = {
     "notification_preference": "通知偏好表（站外短信开关与静默时段，V4 P1-3）",
     "vital_sign_record": "体征记录表（血压 / 血糖 / 体重，V4 P2-2）",
     "sms_send_log": "短信发送回执表（幂等 + 指数退避 + 死信，V4 P1-3，只存脱敏手机号）",
+    "product_feedback": "产品反馈表（与订单解耦的用户建议通道，V6）",
 }
 
 # 表间逻辑关系（用于 ER 图与关系说明；不做物理外键，见索引文档）
@@ -395,6 +398,7 @@ def doc_readme(tables, counts):
     L.append("| V10 | `V10__operation_param.sql` | `sys_dict` 新增 `OPS_PARAM` 运营参数种子（V4 · P2-3） | 纯增量种子；`ON DUPLICATE KEY UPDATE` 不覆盖已调值 |")
     L.append("| V11 | `V11__medication_notify_level.sql` | `medication_task` 增 `notify_level` 升级级别列（V5 漏服多级升级） | 裸 `ALTER TABLE`（Flyway 每版本只跑一次，不加守卫） |")
     L.append("| V12 | `V12__exam_prep_dict.sql` | `sys_dict` 新增 `EXAM_PREP` 检查准备字典 6 条（V5 · B） | 纯增量种子；`ON DUPLICATE KEY UPDATE` 不覆盖已调值 |")
+    L.append("| V13 | `V13__product_feedback.sql` | 产品反馈表 `product_feedback`（V6）；同时刷新 `sys_file.biz_type` 列注释纳入 `FEEDBACK` | 纯增量建表；`ALTER TABLE ... MODIFY COLUMN` 只改注释元数据，可重复执行 |")
     L.append("")
     L.append("> **已执行的脚本不得再改**：`validate-on-migrate: true` 会校验 checksum，")
     L.append("> 改动 V2 会导致下次启动迁移失败。追加数据一律新开版本号（V4、V5、V6…）。")

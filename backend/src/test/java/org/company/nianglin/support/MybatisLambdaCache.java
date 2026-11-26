@@ -20,6 +20,7 @@ import org.company.nianglin.entity.OrderCheckin;
 import org.company.nianglin.entity.OrderRejectLog;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.entity.OrderStatusLog;
+import org.company.nianglin.entity.ProductFeedback;
 import org.company.nianglin.entity.SmsSendLog;
 import org.company.nianglin.entity.SysDict;
 import org.company.nianglin.entity.SysFile;
@@ -79,6 +80,9 @@ public final class MybatisLambdaCache {
             OrderReview.class, Complaint.class, InternalMessage.class,
             NotificationPreference.class, SmsSendLog.class,
             VitalSignRecord.class,
+            // V6 产品反馈：新增实体必须在这里登记，否则纯 Mockito 单测会报
+            // 「can not find lambda cache for this entity」
+            ProductFeedback.class,
     };
 
     /** 进程级只做一次，TableInfoHelper 本身就是全局缓存 */

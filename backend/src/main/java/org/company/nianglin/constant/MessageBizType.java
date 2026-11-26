@@ -27,6 +27,15 @@ public final class MessageBizType {
     /** 投诉处理 */
     public static final String COMPLAINT = "COMPLAINT";
 
+    /**
+     * 产品反馈（V6）。
+     *
+     * <p>与 {@link #COMPLAINT} 分开：点击「反馈处理结果」应回客户端反馈页
+     * {@code /feedback}，而投诉通知回的是投诉详情。两类消息混在一个 bizType 里，
+     * 就得靠占位符猜跳转目标。</p>
+     */
+    public static final String FEEDBACK = "FEEDBACK";
+
     /** 系统公告 */
     public static final String SYSTEM = "SYSTEM";
 }

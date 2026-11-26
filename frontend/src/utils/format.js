@@ -147,6 +147,29 @@ export const COMPLAINT_STATUS_TEXT = {
   REJECTED: '已驳回'
 }
 
+/**
+ * 产品反馈状态（V6 · FeedbackStatus）
+ *
+ * ⚠️ 枚举名与投诉一模一样（PENDING / PROCESSING / RESOLVED / REJECTED），
+ * 但中文口径不同：反馈的终态是「已采纳 / 未采纳」。
+ * 合并两张表的话，「已驳回」这个词会跑到产品反馈页上，
+ * 用户看到会以为自己在被审判。
+ */
+export const FEEDBACK_STATUS_TEXT = {
+  PENDING: '待处理',
+  PROCESSING: '处理中',
+  RESOLVED: '已采纳',
+  REJECTED: '未采纳'
+}
+
+/** 产品反馈分类（FeedbackType）—— label 与后端 FeedbackType 保持一致 */
+export const FEEDBACK_TYPE_TEXT = {
+  FEATURE: '功能建议',
+  EXPERIENCE: '使用体验',
+  DEFECT: '缺陷问题',
+  OTHER: '其他'
+}
+
 export const MEDICATION_PLAN_STATUS_TEXT = {
   ACTIVE: '进行中',
   DISABLED: '已停用'

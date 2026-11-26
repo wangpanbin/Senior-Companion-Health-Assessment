@@ -10,7 +10,7 @@ import java.util.Arrays;
  * {@code COMPLAINT}(投诉证据) / {@code AVATAR}(头像) / {@code REVIEW}(评价图片)。
  * M13（ADR-0011）新增 {@code CHAT}(订单聊天媒体)。</p>
  *
- * <p><b>本通用端点只放行其中 4 个</b>，刻意<b>不放行</b> {@code CHECKIN} 与 {@code REVIEW}：</p>
+ * <p><b>本通用端点只放行其中 5 个</b>，刻意<b>不放行</b> {@code CHECKIN} 与 {@code REVIEW}：</p>
  * <ul>
  *   <li>{@code CHECKIN}：打卡照片有专属入口
  *       {@code POST /api/execution/{orderId}/photo}，那里会校验「须为本单陪诊员」，
@@ -19,9 +19,9 @@ import java.util.Arrays;
  *   <li>{@code REVIEW}：一期评价无图片字段，放开等于凭空造出一条无法关联的业务数据。</li>
  * </ul>
  *
- * <p>资质证件、投诉证据、头像三类没有归属校验需求，由调用方持有返回的 {@code url}
- * 自行关联到具体业务（如 {@code certificates[].url}、{@code complaint.evidence[]}），
- * 因此统一走本通用端点即可。</p>
+ * <p>资质证件、投诉证据、头像、产品反馈截图四类没有归属校验需求，由调用方持有返回的 {@code url}
+ * 自行关联到具体业务（如 {@code certificates[].url}、{@code complaint.evidence[]}、
+ * {@code feedback.images[]}），因此统一走本通用端点即可。</p>
  *
  * <p>⚠️ {@code CHAT} 是唯一有<b>角色限制</b>的类型：仅 FAMILY / COMPANION 可传
  * （50MB / 允许 mp4，是聊天媒体消息的专用通道）；ADMIN 被控制器显式拒绝 ——
@@ -41,6 +41,20 @@ public enum FileBizType {
     AVATAR("头像"),
     /** 订单聊天媒体（M13，仅 FAMILY/COMPANION，单文件 ≤50MB，允许 mp4） */
     CHAT("订单聊天媒体"),
+    /**
+     * 产品反馈截图（V6）。
+     *
+     * <p>与 {@link #COMPLAINT} 分开成独立取值，而不是复用投诉证据：
+     * {@code sys_file.biz_type} 是文件用途的**唯一记录**，把产品截图标成「投诉证据」，
+     * 将来的文件清理 / 归档任务、{@code UploadAccessGuardFilter} 的受控读取判断都会误判。</p>
+     *
+     * <p>约束与投诉证据同档：jpg / png / webp，单文件 ≤10MB（{@code FileStorageServiceImpl}
+     * 里非 CHAT 业务统一走 {@link #DEFAULT_MAX_BYTES} 那道防线）。
+     * 本类型**仅 FAMILY / COMPANION** 使用（ELDER 写请求被只读拦截器拦掉），
+     * 落盘后与头像 / 打卡照片一样可 {@code <img>} 直连 ——
+     * {@code UploadAccessGuardFilter} 只拦 {@link #COMPANION_CERT}。</p>
+     */
+    FEEDBACK("产品反馈截图"),
     ;
 
     private final String label;

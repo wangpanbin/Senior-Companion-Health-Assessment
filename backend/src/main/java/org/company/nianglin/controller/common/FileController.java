@@ -61,8 +61,9 @@ public class FileController {
     private final FileStorageService fileStorageService;
 
     @Operation(summary = "上传文件",
-            description = "仅家属 / 陪诊员 / 管理员可上传。bizType 限 COMPANION_CERT / COMPLAINT / AVATAR / CHAT 四种"
-                    + "（CHAT 为 M13 订单聊天媒体专用：仅家属与陪诊员，单文件 ≤50MB，允许 jpg/png/webp/mp4）；"
+            description = "仅家属 / 陪诊员 / 管理员可上传。bizType 限 COMPANION_CERT / COMPLAINT / AVATAR / CHAT / FEEDBACK 五种"
+                    + "（CHAT 为 M13 订单聊天媒体专用：仅家属与陪诊员，单文件 ≤50MB，允许 jpg/png/webp/mp4；"
+                    + "FEEDBACK 为 V6 产品反馈截图：与 COMPLAINT 同档，jpg/png/webp、≤10MB）；"
                     + "不接收 bizId（关联由业务侧持 url 自行完成）")
     @PreAuthorize("hasAnyRole('" + RoleConstants.FAMILY + "','" + RoleConstants.COMPANION + "','" + RoleConstants.ADMIN + "')")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

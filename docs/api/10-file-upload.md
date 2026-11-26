@@ -29,19 +29,22 @@
 | 传值 | 中文 | 典型调用方 | 归属校验 |
 |---|---|---|---|
 | `COMPANION_CERT` | 资质证件 | 陪诊员申请资质 | 由业务侧持 `url` 关联，见 [02-elder-family.md](./02-elder-family.md) |
-| `COMPLAINT` | 投诉证据 | 家属提交投诉 | 由业务侧持 `url` 关联，见 [06-review-complaint.md](./06-review-complaint.md) |
+| `COMPLAINT` | 投诉证据 | 家属 / 陪诊员提交投诉 | 由业务侧持 `url` 关联，见 [06-review-complaint.md](./06-review-complaint.md) |
 | `AVATAR` | 用户头像 | 全部角色 | 由业务侧持 `url` 关联 |
+| `CHAT` | 订单聊天媒体 | 家属 / 陪诊员（**ADMIN 被拒**） | 由 `ChatService` 校验 `uploader_id`，见 [11-order-chat.md](./11-order-chat.md) |
+| `FEEDBACK` | 产品反馈截图 | 家属 / 陪诊员（V6） | 由业务侧持 `url` 关联，见 [15-product-feedback.md](./15-product-feedback.md) |
 
 ### 为什么 `CHECKIN` 与 `REVIEW` **不放行**
 
-`sys_file.biz_type` 列注释定义了 5 个取值，本通用端点**刻意只放行其中 3 个**：
+`sys_file.biz_type` 列注释定义的取值里，本通用端点**刻意不放行其中 2 个**
+（其余全部放行；`CHAT` 为 M13 追加、`FEEDBACK` 为 V6 追加）：
 
 | 未放行的取值 | 原因 |
 |---|---|
 | `CHECKIN`（打卡照片） | 打卡照片有**专属入口** `POST /api/execution/{orderId}/photo`，那里会校验「须为本单陪诊员」，否则返回 `4003`。若通用端点也收 `CHECKIN`，任何人都能往任意订单塞打卡照片，**直接绕过归属校验**。 |
 | `REVIEW`（评价图片） | 一期评价无图片字段，放开等于凭空造出一条无法关联的业务数据。 |
 
-> 结论：**需要归属校验的文件走专属端点；没有归属校验需求的三类才走本通用端点。**
+> 结论：**需要归属校验的文件走专属端点；没有归属校验需求的（证件 / 投诉证据 / 头像 / 聊天媒体 / 产品反馈截图）才走本通用端点。**
 
 ---
 
@@ -180,3 +183,4 @@ curl -X POST http://127.0.0.1:8080/api/file/upload \
 |---|---|---|
 | v0.1.0 | 2026-09-17 | 首版：补录已实现但此前未进 `docs/api/` 的通用上传端点（端点、`bizType` 白名单、错误场景、验收标准） |
 | v0.2.0 | 2026-10-18 | 新增 `GET /api/file/cert` 受控证件读取端点（§2）；补「证件类原始 URL 禁止直连」与「失败关闭」安全边界 |
+| v0.3.0 | 2026-11-20 | `bizType` 白名单新增 `FEEDBACK`（产品反馈截图，V6；与 `COMPLAINT` 同档：jpg/png/webp、≤10MB、可 `<img>` 直连），见 [15-product-feedback.md](./15-product-feedback.md)。**不复用 `COMPLAINT`**：`sys_file.biz_type` 是文件用途的唯一记录，标错会让后续的清理 / 受控读取判断误判 |

@@ -3,6 +3,7 @@ package org.company.nianglin.controller.admin;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.dto.ReviewRulingDTO;
 import org.company.nianglin.service.AdminService;
+import org.company.nianglin.service.FeedbackService;
 import org.company.nianglin.service.ReviewService;
 import org.company.nianglin.service.SettlementService;
 import org.company.nianglin.vo.ReviewRulingResultVO;
@@ -32,11 +33,15 @@ class AdminControllerReviewTest {
     @Mock
     private SettlementService settlementService;
 
+    /** V6 产品反馈：本类只验评价裁定，反馈服务只需一个可注入的空实现 */
+    @Mock
+    private FeedbackService feedbackService;
+
     private AdminController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new AdminController(adminService, reviewService, settlementService);
+        controller = new AdminController(adminService, reviewService, settlementService, feedbackService);
     }
 
     @Test

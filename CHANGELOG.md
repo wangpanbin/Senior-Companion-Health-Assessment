@@ -17,6 +17,68 @@
 
 ## [Unreleased]
 
+### Added · 产品反馈渠道：客户端提建议 → 管理端处理闭环（V6）
+
+**背景**：此前两条反馈渠道（评价 / 投诉）**都绑死在订单上**（`uk_order_review(order_id)`、
+`complaint.order_id NOT NULL`）。用户想提的是**产品本身**（“订单页按钮太小”、“希望支持多老人一键下单”），
+走投诉会被当成服务纠纷走仲裁、写进陪诊员的违规记录；走评价会污染评分聚合。新增第三条**与订单完全解耦**的通道。
+
+**接口**（契约见 [`docs/api/15-product-feedback.md`](docs/api/15-product-feedback.md)）
+
+| # | 方法 | 路径 | 权限 |
+|---|---|---|---|
+| 1 | POST | `/api/feedback` | FAMILY / COMPANION |
+| 2 | GET | `/api/feedback/mine` | FAMILY / COMPANION（只看自己） |
+| 3 | GET | `/api/feedback/{id}` | 提交人本人 / ADMIN（其余 `12001`） |
+| 4 | GET | `/api/admin/feedback` | ADMIN |
+| 5 | POST | `/api/admin/feedback/{id}/handle` | ADMIN |
+
+**三条刻意的不对称（都被测试钉住）**
+
+1. **入参松、出参紧**：用户正文**只过敏感词** —— 提「希望用药页能提醒别吃错」是正当建议，
+   套医疗红线词表会被误杀；而管理员写的处理说明会经站内信**原样推给用户**，
+   属于平台产出口径，故要过**敏感词 + 医疗红线两套**词表（命中 `6003`）。
+2. **处理说明每次流转都写，但只在终态下发**：中间态那段是工作草稿，
+   渲染给用户会让人以为建议已有结论（与 `ComplaintVO` 同款）。
+3. **只有终态发站内信**（`FEEDBACK_HANDLED`）：`PROCESSING` 也发的话，
+   用户会收到一条「已处理完成」，而实际处理还在进行。
+
+**数据与枚举**
+
+- 新表 `product_feedback`（`V13__product_feedback.sql`，无种子数据），
+  同时更新 `sys_file.biz_type` 列注释纳入 `FEEDBACK`。
+- `FileBizType` 新增 `FEEDBACK`（**不复用 `COMPLAINT`**：`sys_file.biz_type` 是文件用途的唯一记录，
+  标错会让后续的清理 / 受控读取判断误判）：与投诉证据同档，jpg/png/webp、≤10MB、可 `<img>` 直连。
+- `MessageType.FEEDBACK_HANDLED` + `MessageBizType.FEEDBACK`；`OperType.HANDLE_FEEDBACK` + `OperTargetType.FEEDBACK`
+  （管理端写操作必须留痕）。
+- `FeedbackStatus` 四态（`PENDING → PROCESSING → RESOLVED / REJECTED`，不可回退、不可跳级）；
+  `FeedbackType` 四分类（`FEATURE` / `EXPERIENCE` / `DEFECT` / `OTHER`）。
+- 新错误码 `12001`（反馈不存在**或不属于当前用户**，刻意同码以避免按 ID 枚举）——
+  `docs/api/README.md` 错误码表与 `ResultCode` 双向一致（静态门禁 `error-codes` 校验）。
+
+**前端**
+
+- 新页 `M-34 /feedback`（提交 + 我的反馈）、`W-15 /admin/feedback`（列表 + 处理弹窗，
+  骨架照拄 `admin/complaint.vue`）；入口在「我的」页新增的「帮助与反馈」分组。
+- `NlStatusChip` 新增 `scope="feedback"`：反馈终态是「已采纳 / 未采纳」，
+  **不是**投诉的「已结案 / 已驳回」—— 合并会让用户在反馈页上看到“被审判”的措辞。
+- 敏感词 / 医疗红线命中（`6003`）的错误**落在字段下方**而不是只弹顶部 toast。
+
+**没做的事（刻意）**
+
+- 不做限流：正常用户一辈子提不了 5 条，低价值复杂度留给真正有流量的地方。
+- 不支持撤回 / 编辑：提交成本极低，重提一条更简单。
+- 不采集任何设备 / 版本指纹：隐私最小化红线（AGENTS.md §0.1-2）。
+- 不给老人开入口：不改 `@AllowElderWrite` 白名单，ELDER 写请求仍由只读拦截器 403。
+
+**测试**
+
+- `FeedbackStatusTest`（10 条）：四态矩阵 + 分类枚举。
+- `FeedbackServiceTest`（23 条）：登录态取身份 / 入参松出参紧 / 中间态不发信 / 12001 语义 / 并发条件更新。
+- `FeedbackAccessMatrixTest`（18 条，真实 HTTP + 真实令牌）：四角色门槛、老人只读、归属 `12001`、参数层四类拒绝。
+- `AdminAccessMatrixTest` 增补 5 条：非管理员读 / 处理反馈 403、未登录 401、管理员读 200、不存在 12001。
+- `MybatisLambdaCache` 登记新实体（漏登记会让纯 Mockito 单测报“can not find lambda cache”）。
+
 ### Fixed · 坏字符扫描接 CI + e2e 回滚状态机两个缺陷（真机实跑暴露）
 
 **`tools/scan_bad_chars.py` 接入 CI 并补退出码**

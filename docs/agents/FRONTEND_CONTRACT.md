@@ -112,6 +112,8 @@ import {
 | 结算状态 `PaymentStatus` | `UNPAID` / `SETTLED` | 未结算 / **已结算** |
 | 资质审核 `AuditStatus` | `PENDING` / `APPROVED` / `REJECTED` | 待审核 / 已通过 / 已驳回 |
 | 投诉 `ComplaintStatus` | `PENDING` / `PROCESSING` / `RESOLVED` / `REJECTED` | 待处理 / 处理中 / **已结案** / 已驳回 |
+| 产品反馈 `FeedbackStatus`（V6） | `PENDING` / `PROCESSING` / `RESOLVED` / `REJECTED` | 待处理 / 处理中 / **已采纳** / 未采纳 |
+| 产品反馈分类 `FeedbackType`（V6） | `FEATURE` / `EXPERIENCE` / `DEFECT` / `OTHER` | 功能建议 / 使用体验 / 缺陷问题 / 其他 |
 | 服药任务 | `PENDING` / `TAKEN` / `MISSED` | 待服 / 已服 / 漏服 |
 | 用药计划 | `ACTIVE` / `DISABLED` | 进行中 / 已停用 |
 | 账号状态 | `NORMAL` / `DISABLED` | 正常 / 已封禁 |
@@ -127,6 +129,11 @@ import {
 - 投诉终态是 **`RESOLVED`，不是 `CLOSED`**。
 - 账号状态是 `NORMAL`，**没有 `ACTIVE` / `BANNED`**。
 
+**第四个：产品反馈与投诉的枚举名完全相同，中文不一样。**
+反馈的 `RESOLVED` 是「已采纳」、`REJECTED` 是「未采纳」，
+不是投诉的「已结案 / 已驳回」。因此反馈页 **必须** 传 `scope="feedback"`，
+把两张表合并会让用户在反馈页上看到“被审判”的措辞。
+
 **展示状态一律优先用后端下发的 `xxxLabel` 字段**（如 `statusLabel`、`auditStatusLabel`），
 本地枚举表只做兜底。组件 `<NlStatusChip>` 已内置分域映射，用法：
 
@@ -134,6 +141,7 @@ import {
 <NlStatusChip status="PENDING" />                      <!-- 域=order：待接单 -->
 <NlStatusChip scope="audit"     status="PENDING" />    <!-- 待审核 -->
 <NlStatusChip scope="complaint" status="RESOLVED" />   <!-- 已结案 -->
+<NlStatusChip scope="feedback"  status="RESOLVED" />   <!-- 已采纳（V6） -->
 <NlStatusChip scope="task"      status="TAKEN" />      <!-- 已服 -->
 <NlStatusChip scope="plan"      status="ACTIVE" />     <!-- 进行中 -->
 <NlStatusChip scope="user"      status="NORMAL" />     <!-- 正常 -->
@@ -327,6 +335,25 @@ URL.revokeObjectURL(url)
 
 ⚠️ 后端导出有行数上限，超限会拒绝而不是截断 —— 页面上要给出日期区间提示。
 
+### `@/api/feedback`（V6 · 产品反馈）
+
+| 函数 | 端点 | 说明 |
+|---|---|---|
+| `createFeedback(data)` | `POST /feedback`（FAMILY / COMPANION） | `{ type, content, images? }`；content 10–1000 字，images ≤ 3 张 URL |
+| `listMyFeedback(params)` | `GET /feedback/mine` | 分页；**可见范围恒为本人**（`submitterId` 从令牌取，没有该参数） |
+| `getFeedback(id)` | `GET /feedback/{id}` | 提交人本人 / ADMIN；其余（含不存在）一律 `12001` |
+| `listAdminFeedback(params)` | `GET /admin/feedback`（`@/api/admin`） | 管理端全量；`status` / `type` / `keyword` / `startDate` / `endDate` |
+| `handleFeedback(id, data)` | `POST /admin/feedback/{id}/handle`（`@/api/admin`） | `{ status, handleResult }`；状态只可正向流转 |
+
+⚠️ 三条口径：
+
+1. **与订单完全解耦** —— 入参里没有 `orderId`，也没有被投诉人。
+   涉及具体订单的服务纠纷请走 `/api/complaint`（两件事不能混在一个入口里）。
+2. **截图先上传**：`uploadFile(file, 'FEEDBACK')` 拿 `url`，再随反馈提交。
+   不要用 `COMPLAINT` 这个 bizType —— `sys_file.biz_type` 是文件用途的唯一记录。
+3. **处理说明只在终态返回**（`RESOLVED` / `REJECTED`）；`PROCESSING` 时字段不存在，
+   页面不要写「暂无结论」以外的推测文案。
+
 ### `@/api/assistant`（V3.7 · M14）
 | 函数 | 端点 | 说明 |
 |---|---|---|
@@ -459,7 +486,8 @@ onBeforeUnmount(() => polling?.stop())
 | `/companion/workbench` | `companion/workbench.vue` | COMPANION（**V3.3** 陪诊员工作台；运营指标 / 趋势 / 服务画像 / 收入摘要四块） |
 | `/companion/message` | `companion/message.vue` | COMPANION |
 | `/profile` | `profile/index.vue` | 全角色共用 |
-| `/admin/*`（11 页） | `admin/*.vue` | ADMIN —— `dashboard` / `companion-audit` / `order-dispute` / `user` / `order` / `complaint` / `export` / `oper-log` / `chat` / `operations` / `fulfillment`；其中 `/admin/operations` 是 **V3.5** 运营驾驶舱（概览 / 异常中心 / 趋势 / 健康度 / 供给缺口 / 干预效果），`/admin/fulfillment` 是 **V3.1** 履约风险 |
+| `/feedback` | `feedback/index.vue` | FAMILY / COMPANION（**V6** 产品反馈；`name: ProductFeedback` / `module: M2` / `code: M-34` / `elderlyHidden: true`） |
+| `/admin/*`（13 页） | `admin/*.vue` | ADMIN —— `dashboard` / `companion-audit` / `order-dispute` / `user` / `order` / `complaint` / `export` / `oper-log` / `chat` / `operations` / `fulfillment` / `operation-param` / `review-audit` / `settlement` / `feedback`；其中 `/admin/operations` 是 **V3.5** 运营驾驶舱，`/admin/fulfillment` 是 **V3.1** 履约风险，`/admin/feedback` 是 **V6** 产品反馈（`code: W-15`） |
 
 ⚠️ **`elder/message.vue` 与 `family/message.vue` 没有被任何路由引用（死文件），不要动它们。**
 消息页只有一份：`companion/message.vue`，且它被 3 个角色共用 → **必须按当前登录角色渲染**（读 `useUserStore().role`）。

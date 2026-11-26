@@ -434,6 +434,24 @@ export const routes = [
         //    但 ADMIN 的入口是 AdminLayout 顶栏下拉，正常路径不会到 /profile。
         meta: { title: '我的', icon: 'User', module: 'M2', mobileOnly: true, code: 'M-22' }
       },
+      // ---------- 产品反馈（V6） ----------
+      // 提交人只有家属 / 陪诊员：老人账号只读，且老人端交互刻意做减法，
+      // 意见由家属代提（服务端 FeedbackController 的 @PreAuthorize 同样只放行这两个角色）。
+      // elderlyHidden：老人模式下从后台侧栏隐藏（对齐其它二级页）。
+      {
+        path: 'feedback',
+        name: 'ProductFeedback',
+        component: () => import('@/views/feedback/index.vue'),
+        meta: {
+          title: '产品反馈',
+          icon: 'ChatLineSquare',
+          roles: ['FAMILY', 'COMPANION'],
+          module: 'M2',
+          elderlyHidden: true,
+          code: 'M-34'
+        }
+      },
+
       // ---------- 静态说明页（由“我的”页进入） ----------
       // 服务协议 / 隐私政策面向业务角色，与 AGENTS.md 0.1 红线一致：
       //   0.1.1 不做诊断、不开药方  → privacy 页面已加免责声明
@@ -614,6 +632,21 @@ export const routes = [
           roles: ['ADMIN'],
           module: 'M9',
           code: 'W-14'
+        }
+      },
+      {
+        // V6 产品反馈：用户提的产品建议（与订单无关），管理员按四态状态机处理。
+        // 与「投诉管理」分成两页：投诉是当事人纠纷（会涉及违规计数与订单关系），
+        // 反馈是产品意见（无当事人、无订单），合并会让两边的口径都变形。
+        path: 'feedback',
+        name: 'AdminFeedback',
+        component: () => import('@/views/admin/feedback.vue'),
+        meta: {
+          title: '产品反馈',
+          icon: 'ChatLineSquare',
+          roles: ['ADMIN'],
+          module: 'M9',
+          code: 'W-15'
         }
       }
     ]
