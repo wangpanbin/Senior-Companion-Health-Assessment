@@ -110,6 +110,11 @@ M11（横切全部前端）─────────────────�
 - [x] 故意抛异常，前端收到 `Content-Type: application/json` 且 body 符合 `Result` 结构。（证据：`ResultTest` + `e2e_auth.py` 40 项断言（docs/api/01-auth-user.md 实测记录））
 - [x] ESLint / Prettier / Alibaba 规范检查在 `git commit` 前执行，违规可拦截。（证据：本轮 `pnpm lint`（--max-warnings 0）EXIT=0；Java 按 AGENTS.md §6.3 自查）
 - [x] `git branch -a` 可见 `main / develop`，`main` 已设为保护分支。（证据：2026-09-28 实测 `git branch -a` 含 main/develop；经 `gh api PUT /branches/main/protection` 设为保护分支，回读 `allow_force_pushes.enabled=false`、`allow_deletions.enabled=false`，禁强推与删分支）
+  > **⚠️ 证据口径修正（2026-11-27）**：上句是 **2026-09-28 当时的实测**。此后分支模型收敛为
+  > **`main` 直提 + 短生命周期 `feature/*` / `bugfix/*` 分支**，`develop` 长期分支已停用 ——
+  > 现在 `git branch -a` 只有 `main` 与 `origin/main`（外加各功能分支）。
+  > 以 [`docs/agents/git-workflow.md`](../agents/git-workflow.md) 为准；分支模型变更见其 §7.4。
+  > 这条原样保留是为了「当时确实这么验收过」，不是当前事实。
 
 ---
 
@@ -324,7 +329,10 @@ M11（横切全部前端）─────────────────�
 
 #### 具体职责
 1. 站内信表与接口：列表（分页）、详情、标记已读、全部已读、未读数。
-2. 五类消息模板：订单事件、资质审核结果、漏服提醒、**投诉事件**、系统公告。
+2. 消息模板：订单事件、资质审核结果、漏服提醒、**投诉事件**、**履约预警 / 检查准备 / 健康证到期 / 产品反馈**、系统公告。
+   > **模板数以代码枚举为准**，不在本节写死「几类」：`org.company.nianglin.constant.MessageType`
+   > 是唯一真源，接口侧照 [`docs/api/07-message.md`](../api/07-message.md)。
+   > （PRD v1.0 写「4 类模板」是 2026-09-16 的快照，已在该文头部标注，不要拿它当现状。）
 3. 通过 **SSE**（`GET /sse/message`，事件名 `NEW_MESSAGE`）实时推送未读数变化，前端顶栏红点提示。
    > 实现口径以 `docs/api/07-message.md` §6 为准；一期前端 `EventSource` 无法带 `Authorization` 头，
    > 故实际走 60 秒轮询兜底，SSE 作为秒级通道预留。
@@ -444,6 +452,55 @@ M11（横切全部前端）─────────────────�
 - [x] 遗留 Bug 清单按严重级别排序，P0/P1 必须清零才能提交竞讲。（证据：iteration-5-test-report.md §3：P0/P1 均为 0）
 
 ---
+
+### M13 订单聊天（二期扩围 · ADR-0011）
+
+**归属**：二期 · R 系列之后（A + B）— 前置 M4, M5, M8
+
+> **范围变更**：§0 与计划书原文写「一期不做 IM 聊天，改站内信」。2026-10-16 经 [ADR-0011](../adr/0011-order-chat.md) 放开为
+> **仅按陪诊订单的家属 ↔ 陪诊员双向聊天**，不做自由加好友式 IM；在线支付与地图导航两条红线不变。
+
+#### 具体职责
+1. 按订单的会话：会话列表、历史消息（游标分页）、发送消息、标记已读、未读总数
+   （`GET/POST /api/chat/**`，契约见 [`docs/api/11-order-chat.md`](../api/11-order-chat.md)）。
+2. 实时通道：`/ws/chat` 推送到会话内双方；离线时回落站内信与列表未读数。
+3. 权限：ELDER **只读**，ADMIN 仅仲裁查看（`/api/admin/chat/orders`），非订单相关方一律 `3004`。
+4. 内容合规：发送前过敏感词与医疗红线词表；图片 / 视频走 `sys_file` 受控读取。
+
+#### 应当实现的效果
+- 家属与陪诊员在订单详情里能直接沟通，不需要交换手机号。
+- 管理员处理纠纷时能按订单调出完整聊天记录，且只读。
+
+#### 验收标准
+- [x] 非相关方访问他人订单会话返回 `3004`。（证据：`ChatHandshakeTest` + `ChatServiceTest` 归属断言）
+- [x] ELDER 发送消息被拒（只读），读取正常。（证据：ELDER 只读拦截用例）
+- [x] 消息落库后 3 秒内对端可见（WS 推送），断线重连不丢消息（历史分页补齐）。（证据：`docs/api/11-order-chat.md` §5 与 `ChatMessageHubTest`）
+- [x] 聊天正文命中敏感词 / 医疗红线词时拒发并给出可读提示。（证据：`GuardService` 调用链 + `ChatServiceTest` 拒发用例）
+
+---
+
+### M14 家属智能助手（V3.7 · ADR-0020）
+
+**归属**：V3.7 迭代（2026-10-21 开工）— A + B，前置 M3, M4, M10
+
+#### 具体职责
+1. 单一入口 `POST /api/assistant/chat`（契约见 [`docs/api/13-assistant.md`](../api/13-assistant.md)），
+   覆盖问答 / 推荐解释 / 下单草稿回填三类意图。
+2. 独立 Python 服务 `ai-service/`（FastAPI，端口 8081，只监听 `127.0.0.1`），
+   依赖清单人工冻结在 `ai-service/requirements.txt`，越界需重新报批。
+3. 降级为**主路径**：未配模型时恒返回确定性答案（FAQ 原文 / 规则解释），不伪造模型输出。
+4. 双向护栏：输入侧敏感词 + 医疗红线词表；输出侧再过一遍，命中整段拒答。
+   词表在 **import 期 fail-fast** —— 读不到或词数不足，进程直接起不来。
+
+#### 应当实现的效果
+- 家属问「怎么取消订单 / 检查要准备什么」能得到带依据链接的回答，且回答里没有诊断与用药建议。
+- 没配 LLM 的环境（CI、评审机器）里功能照常可用，只是叙述退化为 FAQ 原文。
+
+#### 验收标准
+- [x] `python -m pytest ai-service/tests -q` 在不注入任何模型变量的环境下全绿。（证据：CI `ai-service` job）
+- [x] 助手回答不出现诊断 / 剂量类表述（词表命中即拒答）。（证据：`ai-service/app/guard.py` + `tests/test_guard.py`）
+- [x] FAQ 每条 `source` 与 `anchor` 逐字命中真实文档标题。（证据：`python tools/check_faq_anchors.py`，条数以 `ai-service/knowledge/faq.json` 为准）
+- [x] 助手宕机 / 超时时主流程不受影响（订单与用药链路不依赖 8081）。（证据：`AssistantServiceImpl` 的降级分支与超时配置）
 
 ---
 

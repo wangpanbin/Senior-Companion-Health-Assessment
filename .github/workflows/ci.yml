@@ -1,7 +1,7 @@
 # 银龄伴诊 · CI
 #
-# 存在的理由：仓库里本来就有 1520 条后端测试（surefire `Tests run` 实跑口径）、
-# 251 条前端单测（vitest passed，23 个文件）、ESLint 与 Prettier 配置，
+# 存在的理由：仓库里本来就有成规模的后端测试（surefire `Tests run` 实跑口径）、
+# 前端单测（vitest passed）、ESLint 与 Prettier 配置，
 # 但**没有任何入口会自动跑它们** —— 唯一的质量防线是「谁记得跑」。
 # 本文件把那套已经存在的检查接上电。
 #
@@ -12,16 +12,19 @@
 #     + 文档三项校验（代码围栏成对 / 引用路径真实存在）；规则本体在
 #     tools/ai_flow/gate_check.py，与本地跑的是同一份
 #
-# 为什么需要 service 容器：backend/src/test 下**有** @SpringBootTest（113 个 *Test.java 中
-# 28 处 —— `repo_metrics.py` 字符串口径 29，含 `MybatisLambdaCache` javadoc 1 处）—— 它们会拉起完整 Spring 上下文、Flyway 连库
-# 建表灌种子，所以 CI 必须起 MySQL / Redis。本机全绿靠的是常驻服务，runner 上没有，必须显式起容器。
+# 为什么需要 service 容器：backend/src/test 下**有** @SpringBootTest（具体处数以
+# `python tools/repo_metrics.py` 现取为准，这里刻意不写死 —— 见下方"三套口径"）——
+# 它们会拉起完整 Spring 上下文、Flyway 连库建表灌种子，所以 CI 必须起 MySQL / Redis。
+# 本机全绿靠的是常驻服务，runner 上没有，必须显式起容器。
 # 其余测试类是纯 Mockito 单测（没有用 @Testcontainers）。
 # 别按「纯单测流水线、几十秒跑完」的预期去调 timeout。
 #
-# ⚠️ 后端测试条数有三套口径，别混用（2026-11-12 验收实测，取数 `python tools/repo_metrics.py`，Git 增量基线 ref=v3.0）：
-#   · 源码 @Test 方法数 1183 —— 汇报/影片口径
-#   · 测试注解总数 1273 —— @Test 1183 + @ParameterizedTest 90
-#   · surefire `Tests run` 1520 —— @ParameterizedTest 展开后的实跑数，本文件一律用这套
+# ⚠️ 后端测试条数有三套口径，别混用；**本文件不写死任何数字**（写死过一次就必然过期：
+#    2026-11-26 复盘实测：注释里写死的「测试类数 / 用例数」已与当次实测不符，而门禁不校验数字真实性）。
+#    取数一律 `python tools/repo_metrics.py`，或直接看当次 job 的 `Tests run: N`：
+#   · 源码 @Test 方法数 —— 汇报/影片口径
+#   · 测试注解总数 —— @Test + @ParameterizedTest
+#   · surefire `Tests run` —— @ParameterizedTest 展开后的实跑数，**CI 以这套为准**
 #
 # 改本文件前先读 AGENTS.md §0.2：不要在这里引入 pom.xml / package.json 之外的依赖。
 
@@ -47,12 +50,12 @@ concurrency:
 
 jobs:
   # ------------------------------------------------------------------ #
-  # 后端：编译 + 1520 条测试（surefire `Tests run`）+ JaCoCo 覆盖率报告
+  # 后端：编译 + 全量测试（surefire `Tests run`）+ JaCoCo 覆盖率报告
   # 跑 mvn verify 而非 mvn test：verify 才会触发 jacoco:report
   #
-  # ⚠️ 113 个 *Test.java 中有 **28 处 @SpringBootTest**（各 *AccessMatrixTest /
-  #    ElderOwnershipMatrixTest / OrderFeeItemTest / FileUploadEndpointTest /
-  #    JacksonDateTimeFormatTest 等），它们会拉起完整 Spring 上下文 → Flyway 连库
+  # ⚠️ 测试类中的 @SpringBootTest 处数以 `python tools/repo_metrics.py` 现取为准
+  #    （各 *AccessMatrixTest / ElderOwnershipMatrixTest / OrderFeeItemTest /
+  #    FileUploadEndpointTest / JacksonDateTimeFormatTest 等），它们会拉起完整 Spring 上下文 → Flyway 连库
   #    建表灌种子。其余是纯 Mockito 单测。
   #    口径：surefire `Tests run`（@ParameterizedTest 展开后的实跑数）—— 源码里的
   #    源码 @Test 方法数比它小，差额是参数化展开（三套口径与取数命令见文件头注释，不要在这里重抄数字）。
@@ -190,6 +193,14 @@ jobs:
       # 用 lint:check 而非 lint：后者带 --fix，会在 CI 里静默改文件
       - name: ESLint
         run: pnpm run lint:check
+
+      # ⚠️ 格式门禁（`pnpm run format:check`）**本版刻意没有接进来**（最终复盘 FE-09）。
+      #    原因：仓库现有 164 个文件不符合 Prettier 默认配置。现在接 = 推送即红，
+      #    而「为了变绿把 164 个文件重排一遍」会造出一个几千行的、与任何业务无关的 diff，
+      #    评审时无法分辨哪一行是功能改动。正确顺序是：
+      #      ① 单独开一个 chore 分支跑 `pnpm run format`，只提交格式化，单独评审；
+      #      ② 那一次合并后，再把 `- name: Prettier` + `run: pnpm run format:check` 加到这里。
+      #    脚本已经就位（package.json），随时可接 —— 缺的是那一次纯格式化提交。
 
       # ⚠️ 必须限制 worker：vitest 5 默认 pool=forks，maxWorkers 取「可用 CPU 数」，
       #    每个 worker 都是独立 node 进程、各带一份 jsdom 与完整模块图。
@@ -379,4 +390,49 @@ jobs:
       - name: e2e 回滚状态机自测
         run: python3 -m unittest tools.e2e.test_fixture_state_source -v
 
+  # ------------------------------------------------------------------ #
+  # 前端关键 e2e（手动触发）—— 最终复盘 FE-09
+  #
+  # 为什么是「手动」而不是 push 触发：
+  #   这套 spec 需要 MySQL + Redis + 8080 后端 + 5141 前端 dev 四件套同时就绪，
+  #   且 global-setup 会**写库造数**。直接挂到 push 上，第一次跑不通就会挡住所有人的合并，
+  #   而「跑不通」的原因通常是环境而不是代码 —— 这和历史上「e2e 首轮 43 红是环境事故」
+  #   是同一类问题。所以本版先把它做成**可手动触发、可复跑**的 job，
+  #   等手动跑绿一次、确认环境脚本稳定，再把 `if:` 去掉改成 push 触发。
+  #
+  # 跑的是 3 个最关键 spec（覆盖「谁能进哪一页 / 老人端写拦截 / 下单主流程」）：
+  #   02-access-matrix · 03-elder · 04-family-order
+  # ------------------------------------------------------------------ #
+  frontend-e2e:
+    name: 前端 · 关键 e2e（手动）
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
 
+      - name: 装 pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.9
+
+      - name: 装 Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 装 Playwright 浏览器
+        run: pnpm exec playwright install --with-deps chromium
+
+      # ⚠️ 后端与数据库不在本 job 内起：本 job 只做「有环境时能一键跑关键回归」。
+      #    接 push 之前必须补上 services（mysql/redis）+ 后端启动 + 造数，
+      #    参见 backend job 的 service 配置与 docs/agents/testing.md。
+      - name: 关键 e2e（需本机/runner 已有 8080 + 5141）
+        run: pnpm run test:e2e:critical

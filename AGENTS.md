@@ -29,16 +29,23 @@
 1. **不做诊断、不开药方**。药品字典只返回通用信息（名称、规格、通用说明），接口与页面必须出现免责声明文案。**禁止**出现"建议服用""推荐剂量""诊断为""可能是 XX 病"等表述。
 2. **隐私最小化**。密码 BCrypt 存储（值以 `$2a$` 开头）；接口返回时手机号 `138****8888`、身份证号 `110101********4567`、姓名按场景脱敏；本地存储（localStorage）**禁止**写入密码、身份证号、完整手机号。
 
-   > **「按场景脱敏」已记录的唯一豁免：订单详情返回全名。**
-   > `GET /api/order/{id}` 的 `elderName` / `companionName` **不脱敏**，这是刻意设计而非疏漏，三层一致：
-   > ① 访问由 `OrderService#requireInvolved` 把守，非相关方一律 `3004`，能打开详情的只有下单家属本人 / 接单陪诊员本人 / 就诊老人本人 / 管理员；
-   > ② `OrderVO#ofDetail` 的 javadoc 写明理由——「该看的人看不到该看的信息」；
-   > ③ `OrderController#detail` 的 `@Operation` 契约里明写「此处姓名返回全名」，Knife4j 文档可见。
-   > 同 VO 的 `ofList` / `ofHall` 仍走 `MaskUtil.name()`，所以**列表脱敏、详情全显**是有意的不一致。
-   > ⚠️ 改动前先确认自己没在推翻这条既定决策；确需调整须同时改 `ofDetail`、`OrderController#detail` 的
-   > `@Operation` 描述与本条豁免说明，三处一起改。
-   > 同一口径的其它位置（`GET /api/order` 列表、`/api/user/elder`、`/api/admin/**`）**一律脱敏**，
-   > 不要拿本条豁免去类推其它接口。
+   > **「按场景脱敏」的豁免台账（不是「唯一豁免」—— 之前只登记了订单详情一处，导致每次审计都要重新取证）。**
+   > 下表每一行都是**刻意设计**：先看守卫点，守卫点的可见面就是全名的可见面。
+   > 新增「返回全名」的位置必须先在表里加一行（位置 / 守卫点 / 理由 / 判定），否则视为越界返回。
+
+   | # | 位置（返回全名） | 守卫点（谁能看到） | 理由 | 判定 |
+   |---|---|---|---|---|
+   | 1 | `GET /api/order/{id}` 的 `elderName` / `companionName`（`OrderVO#ofDetail`） | `OrderService#requireInvolved`：非相关方一律 `3004`；可达者为下单家属 / 接单陪诊员 / 就诊老人本人 / 管理员 | 订单详情页要让家属确认「陪的是谁、谁来陪」，脱敏后无法核对；「该看的人看不到该看的信息」 | 豁免 |
+   | 2 | `GET /api/order/{id}/timeline` 的 `operatorName`（`OrderTimelineVO`，工厂在 `OrderServiceImpl#timeline`） | 同 #1 —— `timeline()` 先调 `requireInvolved()`，可见面与订单详情**完全同一批人** | 时间线要能回答「这一步是谁做的」，与 #1 同口径；不是「另一个接口的额外泄露」 | 豁免（与 #1 同源） |
+   | 3 | `GET /api/user/elder/{id}` 的姓名（`ElderVO#ofDetail`） | `ElderService#requireAccessible`：本人 / 绑定家属 / 管理员；其余 `2006` 或 `3004` | 家属管理自己家人的档案，姓名全隐会让「张*海」与「张*河」分不清 | 豁免；同 VO 的 `ofList` 仍脱敏 |
+   | 4 | `GET /api/admin/companion/audit/{id}` 的 `realName`（`AuditApplicationVO`） | 类级 `@PreAuthorize` 仅 ADMIN；`/api/admin/**` 另有路径级兜底 | 资质审核必须核对身份证姓名与证件照是否同一人，脱敏后审核动作无法完成 | 豁免；仅 ADMIN 可见 |
+
+   > 豁免不覆盖的地方（**一律脱敏，不要拿上表去类推**）：`GET /api/order` 列表与大厅、`/api/user/elder` 列表、
+   > `/api/admin/**` 的**列表类**接口（含审核列表）、`/api/chat/**`、站内信、操作日志。
+   >
+   > ⚠️ 要动 #1：同时改 `OrderVO#ofDetail`、`OrderController#detail` 的 `@Operation` 与本表，三处一起改。
+   > ⚠️ 要动 #3：同时改 `ElderVO#ofDetail`、`ElderService#requireAccessible` 与本表 —— 只改 VO 等于把守卫点留在原地。
+   > ⚠️ 审计口径：判「泄露」前先查本表，**表里没有的才算泄露**；表里有的，判错的是审计而不是代码。
 3. **一期不做**：在线支付（改为线上记账 + 线下结算）、地图导航（改为文字地址 + 签到坐标）、IM 聊天（改为站内信）。
    > **二期变更（2026-10-16，ADR-0011）**：IM 聊天已按 **M13 订单聊天** 形态放开——仅限**按陪诊订单**的家属↔陪诊员双向聊天（`/api/chat/**`），ELDER 只读、ADMIN 仲裁只读，**不做**自由加好友式 IM；在线支付与地图导航红线**不变**，涉及仍须主动拒绝或改写。聊天沿用全部合规约束（不做诊断、敏感词拦截、脱敏、免责声明），契约见 `docs/api/11-order-chat.md`。
 
@@ -128,7 +135,7 @@ Senior Companion Health Assessment/
 ├── backend/
 │   ├── pom.xml
 │   ├── sql/                          ← Flyway 脚本唯一真源
-│   │   ├── V1__init_schema.sql       20 张表 DDL
+│   │   ├── V1__init_schema.sql       20 张基础表 DDL（V4–V13 另有 9 张增量表，合计 29 张，以 sql 目录为准）
 │   │   ├── V2__seed_data.sql         种子数据
 │   │   ├── V3__seed_boundary.sql     边界场景补充
 │   │   └── tools/                    生成器 + 校验 SQL（**不参与运行时**，唯一例外是 `region_code_mapping.json`，见其 README）
@@ -197,7 +204,7 @@ Senior Companion Health Assessment/
 ├── ai-service/                    ← V3.7 AI 助手服务（独立 Python 进程，8081；只监听 127.0.0.1）
 │   ├── requirements.txt           ← 依赖清单（经人工逐项批准并冻结，改动需重新报批）
 │   ├── app/                       ← FastAPI 应用：main / config / schemas / paths / intents / knowledge / guard / llm / prompts / actions / service
-│   ├── knowledge/faq.json         ← FAQ 知识库（30 条，每条带 source + anchor 指向 docs/api 真实锚点）
+│   ├── knowledge/faq.json         ← FAQ 知识库（条数以该文件为准，当前 38 条，每条带 source + anchor 指向 docs/api 真实锚点）
 │   ├── tests/                     ← pytest 单测（核心断言不依赖 LLM 与网络）
 │   └── .env.example               ← 环境变量样例（只有占位符，.env 不入库）
 └── tools/e2e/                      E2E 夹具 / 服务脚本 / 探针 / 跨进程 e2e（随仓库入库；**每个脚本的作用、是否写库、是否要口令见 `tools/e2e/README.md`**，见 FRONTEND_CONTRACT §12–§13）

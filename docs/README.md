@@ -11,7 +11,7 @@
 |---|---|---|---|
 | `prd/` | 产品 | PRD 逐版（V3.1 – V3.7 + E4）+ 功能拓展规划 | [`PRD.md`](prd/PRD.md) |
 | `plan/` | 工程 | 课程原始计划书（[`银龄伴诊项目计划书.md`](plan/银龄伴诊项目计划书.md)）· 模块拆分计划（[`plan.md`](plan/plan.md)）· 迭代规划 · 目录适配 / 收敛迭代存档 | [`plan.md`](plan/plan.md) |
-| `api/` | 接口 | 全局约定 + 错误码表 + 13 个模块接口明细 | [`api/README.md`](api/README.md) |
+| `api/` | 接口 | 全局约定 + 错误码表 + 15 个模块接口明细（编号 01–15） | [`api/README.md`](api/README.md) |
 | `spec/` | 契约 | 各版工程规格 + 工单 + 指标字典（人读面） | [`V3.x-roadmap-spec.md`](spec/V3.x-roadmap-spec.md) |
 | `adr/` | 架构 | 架构决策记录（0021 止）· 背景 / 决策 / 后果 | [`adr/`](adr/) |
 | `design/` | 视觉 | 前端设计规范（设计令牌 / 组件 / 交互，视觉唯一真源） | [`design.md`](design/design.md) |

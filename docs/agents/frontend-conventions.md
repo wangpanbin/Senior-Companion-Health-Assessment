@@ -45,13 +45,33 @@
 
 ## 3.4 SCSS / 样式
 
-- 设计令牌在 `frontend/src/styles/variables.scss`（编译期 SCSS 变量）。
-- 运行期 CSS 自定义属性在 `frontend/src/styles/index.scss` 的 `:root` 里集中声明（`--nl-color-primary` 等）。
+- 设计令牌在 `frontend/src/styles/variables.scss`（编译期 SCSS 变量 `$nl-primary` 等）。
+- 运行期 CSS 自定义属性在 `frontend/src/styles/index.scss` 的 `:root` 里集中声明。
+  **真实名字是 `--nl-primary` / `--nl-primary-text` / `--nl-text-1` / `--nl-text-2` / `--nl-text-3` / `--nl-bg-card` / `--nl-border` / `--nl-divider` 这一套**
+  （本文档此前后写成 `--nl-color-primary`，是个不存在的变量 —— 见下面这条禁令）。
 - **不要**在 `vite.config.js` 里配 SCSS `additionalData` 全局注入（项目刻意避免，会触发 Sass 模块循环错误）。每个 `.vue` / `.scss` 文件需要变量时显式：
   ```scss
   @use '@/styles/variables.scss' as *;
   ```
-- Element Plus 主题打通通过 `index.scss` 里的 `--el-color-primary: var(--nl-color-primary);` 等覆盖实现。
+- Element Plus 主题打通通过 `index.scss` 里的 `--el-color-primary: var(--nl-primary-text);` 等覆盖实现。
+
+### 3.4.1 禁止写 `var(--nl-*, 兜底值)`（最终复盘 FE-11）
+
+**规则**：组件样式里只用**确实存在**的令牌，且**不写 fallback**。
+
+```scss
+/* ❌ 不要：写错名字不报错，fallback 静默生效，老人模式切换时这一处不跟随 */
+color: var(--nl-color-text-secondary, #909399);
+
+/* ✅ 要：名字写错 = 颜色没了 = 立刻被发现 */
+color: var(--nl-text-3);
+```
+
+理由：`var()` 的 fallback 会把「令牌名写错」变成**看起来正常**的渲染结果 ——
+改错的人以为改对了，只有截图对比或老人模式下一眼能看出色差。
+历史上 `OrderFeeItems.vue` 就这样硬编码了一处灰和一个主色，主题切换时两处都不跟随。
+
+**新增令牌时**：先在 `variables.scss` 定义 SCSS 变量 → 在 `index.scss` 的 `:root` 里映射成 `--nl-*` → 再在组件里用。三步缺一步就是上面那个坑。
 
 ## 3.5 适老化（老人模式）硬约束（M11 验收）
 
@@ -102,7 +122,10 @@
 ## 3.7 Pinia 状态
 
 - `userStore`：登录态（`token / userInfo / routesLoaded`）+ 角色相关 getter（`isLogin / role / isAdmin / isFamily / isCompanion / isElder`）。userInfo 只缓存 `id / username / nickname / role / avatar`，**禁止**写完整手机号 / 身份证号。
-- `appStore`：UI 全局（`title / sidebarCollapsed / elderlyMode / loadingCount`），方法 `toggleSidebar / setElderlyMode / toggleElderlyMode / applyElderlyClass / initElderlyMode / startLoading / stopLoading`。
+- `appStore`：UI 全局（`title / sidebarMode / elderlyMode`），方法 `setSidebarMode / setElderlyMode / toggleElderlyMode / applyElderlyClass / initElderlyMode`。
+  ⚠️ **没有** `loadingCount` / `startLoading` / `stopLoading`（最终复盘 FE-07 已删除）：它们曾是全仓 0 调用的死代码
+  —— 看着像有全局进度条，实际没有任何消费者。三态反馈由**页内**承担：`NlSkeleton`（加载中）/ `NlEmpty`（空）/ `NlEmpty type="network"`（失败 + 重试）。
+  要加全局进度就做成真能被观察的实现（请求拦截器计数 + 顶部条），不要再往 store 里放一个没人订阅的计数器。
 - 新增状态前先确认现有两个 store 不能复用，再决定是否新建 `store/modules/<name>.js`。
 
 ## 3.8 localStorage 读写
@@ -126,6 +149,23 @@
 ## 3.10 API 封装规则
 
 - 每个后端模块对应一个 `frontend/src/api/<module>.js`，并在 `frontend/src/api/index.js` 用 `export * as xxxApi from './xxx'` 统一出口。
+  ⚠️ **新增 `<module>.js` 时必须同时补这一行**（最终复盘 FE-10：`vitalSign.js` 长期没登记，
+  4 个页面只能按路径 `@/api/vitalSign` 直接 import，与「业务代码从 `@/api` 引入」的约定分叉）。
+  检查办法：`ls src/api/*.js | wc -l` 与 `grep -c "export \* as" src/api/index.js` 应当对得上（`index.js` 自身不算）。
 - 函数命名用动词：`getXxx` / `listXxx` / `createXxx` / `updateXxx` / `removeXxx` / `acceptXxx` / `cancelXxx` / ...
 - 每个文件头注释要写：`对应文档：docs/api/<n>-<name>.md` + `负责模块：M<n> <模块名>`。
+- **后端有端点但前端 0 调用**要显式记一笔（是「预留」还是「漏接」），不要让它默默躺着 ——
+  最终复盘 FE-01 统计出 14 个未接端点，其中 5 个是用户可感知的功能断点，就是这么积起来的。
+
+## 3.11 表单校验：一律 `el-form rules`（最终复盘 FE-08）
+
+- **错误必须落在字段上**：用 `:model` + `:rules` + `prop`，提交前 `await formRef.value.validate()`。
+  禁止「`if (!xxx) ElMessage.warning(...)` 然后 return」—— 提示只在屏幕顶部闪 3 秒，
+  用户不知道该改哪个框，而且手写判断极易漏掉「全空格」这类输入。
+- **跨字段联动**（上限 > 下限、两次密码一致）才写自定义 `validator`，仍挂在 `rules` 上，
+  不要退回手写 if。
+- **手写规则要 `trim()` 后再判**：`required` 对 `'   '` 是放行的；本项目多次踩过
+  「空格通过前端 → 后端 `@NotBlank` 400」。
+- 取值范围**从数据行读**（如运营参数的 `min` / `max`），不要在模板和 validator 里各抄一份。
+- 提交函数里的 in-flight 锁必须在**任何 `await` 之前**同步置位（`validate()` 本身是 await）。
 - **接口先行约定**：后端未交付前用 `Promise.resolve({...mock...})` 占位，但路径 / 参数 / 响应结构必须与 `docs/api/` 对齐，**不要**等后端写完再调。

@@ -1072,7 +1072,8 @@ V3.6 起，「哪个端点返回了哪些指标」由
         "source": "companion_order(status, create_time)",
         "formula": "(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)",
         "caliberVersion": 1,
-        "endpoints": ["GET /api/admin/operations/overview", "GET /api/admin/operations/health"]
+        "endpoints": ["GET /api/admin/operations/overview", "GET /api/admin/operations/health"],
+        "calculatorKey": "operations.fulfillment_rate"
       }
     ]
   }
@@ -1091,6 +1092,7 @@ V3.6 起，「哪个端点返回了哪些指标」由
 | `metrics[].formula` | 计算公式 |
 | `metrics[].caliberVersion` | 该指标的口径版本 |
 | `metrics[].endpoints` | 返回该指标的端点（端点 ↔ 指标机器面） |
+| `metrics[].calculatorKey` | **该 key 背后计算器的主 key**；`null` 表示没有计算器（只能读、不能算）。别名 key 返回同一个 `calculatorKey`，前端据此去重（V6.0 新增，供运营驾驶舱生成「效果对比」下拉，见最终复盘清单 v6.6（2026-11-26）FE-05） |
 
 ### 它导出的是「口径」，不是「值」
 
