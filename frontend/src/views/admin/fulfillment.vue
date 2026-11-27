@@ -18,7 +18,7 @@
  *   4. 列表里姓名与订单号是**脱敏**的；要看全名请点「查看详情」——
  *      详情接口返回全名，那是相关方豁免，只对已通过归属校验的详情生效。
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { NlCard, NlSkeleton, NlEmpty, NlAdminTable } from '@/components'
 import { ElMessage } from 'element-plus'
 import {
@@ -189,9 +189,29 @@ function reloadDetail() {
 /* ==================== 行内「改派」 ==================== */
 
 const reassignVisible = ref(false)
-const reassignTarget = ref(null)
-const reassignReason = ref('')
+const reassignFormRef = ref(null)
+/** 表单模型：两个字段都走 rules，不再各自一个 ref + 手写 if */
+const reassignForm = reactive({ companionId: null, reason: '' })
 const reassignSubmitting = ref(false)
+
+/**
+ * 与后端 `OrderReassignDTO` 同口径：companionId 必填；reason 10–200 字（写入审计与三方通知）。
+ * 用自定义 validator 而不是裸 `min` —— `min` 对全空格照样放行（FE-08 点名的漏项）。
+ */
+const reassignRules = {
+  companionId: [{ required: true, message: '请选择目标陪诊员', trigger: 'change' }],
+  reason: [
+    {
+      validator: (_rule, value, cb) => {
+        const v = (value || '').trim()
+        if (v.length < 10) cb(new Error('改派理由至少 10 字（会写入审计与三方通知）'))
+        else if (v.length > 200) cb(new Error('改派理由不能超过 200 个字符'))
+        else cb()
+      },
+      trigger: ['blur', 'change']
+    }
+  ]
+}
 const companions = ref([])
 const companionsLoading = ref(false)
 const reassignRow = ref(null)
@@ -216,9 +236,10 @@ async function loadCompanions() {
 
 function openReassign(row) {
   reassignRow.value = row
-  reassignTarget.value = null
-  reassignReason.value = ''
+  reassignForm.companionId = null
+  reassignForm.reason = ''
   reassignVisible.value = true
+  reassignFormRef.value?.clearValidate()
   if (!companions.value.length) loadCompanions()
 }
 
@@ -227,23 +248,17 @@ async function submitReassign() {
   //    否则同 tick 连点会发出两个改派请求，第二个报「订单已被改派」，
   //    用户看到「成功 + 报错」双提示。
   if (reassignSubmitting.value) return
-  if (!reassignTarget.value) {
-    ElMessage.warning('请选择目标陪诊员')
-    return
-  }
-  const reason = reassignReason.value.trim()
-  if (reason.length < 10) {
-    ElMessage.warning('改派理由至少 10 字（会写入审计与三方通知）')
-    return
-  }
-  // ⚠️ 置位必须在**任何 await 之前**（上面两个守卫都是同步的，不算）——
-  //    否则锁恒为 false，守卫形同虚设，连点仍会发两次请求。
+  // ⚠️ 置位必须在**任何 await 之前**：下面那次 validate() 是 await，
+  //    放在它后面置位，同 tick 连点会一起穿过 await，锁形同虚设。
   reassignSubmitting.value = true
   try {
+    reassignFormRef.value?.clearValidate()
+    const valid = await reassignFormRef.value?.validate().catch(() => false)
+    if (!valid) return
     const orderId = reassignRow.value.orderId
     await reassignOrder(orderId, {
-      companionId: reassignTarget.value,
-      reason
+      companionId: reassignForm.companionId,
+      reason: reassignForm.reason.trim()
     })
     ElMessage.success('已改派，三方将收到站内通知')
     reassignVisible.value = false
@@ -409,10 +424,12 @@ onMounted(() => {
       订单 {{ reassignRow.orderNo }} · 当前 {{ reassignRow.fulfillmentRiskLabel }}
     </p>
 
-    <el-form label-width="84px">
-      <el-form-item label="目标陪诊员">
+    <!-- 校验走 rules（最终复盘 FE-08）：此前两个字段都靠 submit 里手写 if + 顶部 toast，
+         错误不落在字段上，全空格也能走到后端。 -->
+    <el-form ref="reassignFormRef" :model="reassignForm" :rules="reassignRules" label-width="84px">
+      <el-form-item label="目标陪诊员" prop="companionId">
         <el-select
-          v-model="reassignTarget"
+          v-model="reassignForm.companionId"
           placeholder="选择陪诊员"
           filterable
           :loading="companionsLoading"
@@ -427,9 +444,9 @@ onMounted(() => {
         </el-select>
       </el-form-item>
 
-      <el-form-item label="改派理由">
+      <el-form-item label="改派理由" prop="reason">
         <el-input
-          v-model="reassignReason"
+          v-model="reassignForm.reason"
           type="textarea"
           :rows="3"
           maxlength="200"

@@ -88,6 +88,19 @@ export function completeService(orderId, data) {
   return request({ url: `/order/${orderId}/complete`, method: 'post', data })
 }
 
+/**
+ * 履约详情（V3.1 · T4）：风险等级 + 等待时长 + 催单次数 + **完整事件流水**。
+ *
+ * 可见性与订单详情完全一致（下单家属 / 接单陪诊员 / 就诊老人 / 管理员，其余 3004）。
+ * 事件流为空时后端返回空数组，不会给 null。
+ *
+ * ⚠️ 此前前端没有调用点，家属只能看到列表里的「风险等级」三个字，
+ *    看不到「它是怎么变成这样的」—— 催了没催、谁操作的、多久没接（最终复盘 FE-01）。
+ */
+export function getOrderFulfillment(orderId) {
+  return request({ url: `/order/${orderId}/fulfillment`, method: 'get' })
+}
+
 /** 状态流转时间线 */
 export function getOrderTimeline(orderId) {
   return request({ url: `/order/${orderId}/timeline`, method: 'get' })

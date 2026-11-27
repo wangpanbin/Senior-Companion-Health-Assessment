@@ -268,7 +268,14 @@ async function submit() {
     <el-button type="primary" class="vital-form__submit" :loading="submitting" @click="submit">
       保存记录
     </el-button>
-    <p class="vital-form__note">仅保存测量数值与测量时间，不做任何判断</p>
+    <!--
+      合规声明（最终复盘 FE-03）：表单本体也要有一条，不能只靠父页面的页脚。
+      这里刻意不用页级 `NlComplianceBar`（它是 sticky footer，塞进卡片会变成一条色带），
+      而是就地一行 role="note" —— 文案口径与页脚完全一致：只记录、不判断、不构成建议。
+    -->
+    <p class="vital-form__note" role="note">
+      仅保存测量数值与测量时间，不做任何判断，也不构成医疗建议；数值异常请及时就医。
+    </p>
   </div>
 </template>
 

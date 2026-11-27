@@ -27,6 +27,7 @@ const logsLoading = ref(false)
 
 const dialogVisible = ref(false)
 const saving = ref(false)
+const editFormRef = ref(null)
 const editing = ref({ code: '', label: '', value: 0, min: 1, max: 100, unit: '', remark: '' })
 
 const paramColumns = [
@@ -81,6 +82,34 @@ async function loadLogs() {
   }
 }
 
+/**
+ * 参数编辑的校验规则（最终复盘 FE-08）。
+ *
+ * 此前是「submit 里手写 if + 顶部 toast」，且提示只说范围不说字段。
+ * 现在落到 rules：错误显示在「新值」输入框下方，且**范围从当前行读**，
+ * 不在模板里再抄一遍 min/max —— 两处副本迟早漂移。
+ */
+const editRules = {
+  value: [
+    {
+      validator: (_rule, value, cb) => {
+        const n = Number(value)
+        if (!Number.isInteger(n)) {
+          cb(new Error('请输入整数'))
+          return
+        }
+        if (n < editing.value.min || n > editing.value.max) {
+          cb(new Error(`取值必须是 ${editing.value.min} 到 ${editing.value.max} 之间的整数`))
+          return
+        }
+        cb()
+      },
+      trigger: ['blur', 'change']
+    }
+  ],
+  remark: [{ max: 200, message: '备注不能超过 200 个字符', trigger: ['blur', 'change'] }]
+}
+
 function openEdit(row) {
   editing.value = {
     code: row.code,
@@ -92,18 +121,18 @@ function openEdit(row) {
     remark: ''
   }
   dialogVisible.value = true
+  editFormRef.value?.clearValidate()
 }
 
 async function submitEdit() {
   if (saving.value) return
-  const value = Number(editing.value.value)
-  if (!Number.isInteger(value) || value < editing.value.min || value > editing.value.max) {
-    ElMessage.error(`取值必须是 ${editing.value.min} 到 ${editing.value.max} 之间的整数`)
-    return
-  }
-
+  // 锁先于任何 await 置位（下面 validate() 是 await），否则连点会发两次
   saving.value = true
   try {
+    editFormRef.value?.clearValidate()
+    const valid = await editFormRef.value?.validate().catch(() => false)
+    if (!valid) return
+    const value = Number(editing.value.value)
     await updateOperationParam(editing.value.code, {
       value,
       remark: editing.value.remark.trim() || undefined
@@ -179,7 +208,7 @@ onMounted(() => {
   </NlCard>
 
   <el-dialog v-model="dialogVisible" title="修改参数" width="520px" destroy-on-close>
-    <el-form label-width="90px">
+    <el-form ref="editFormRef" :model="editing" :rules="editRules" label-width="90px">
       <el-form-item label="参数">{{ editing.label }}</el-form-item>
       <el-form-item label="键">
         <code class="param-code">{{ editing.code }}</code>
@@ -187,7 +216,7 @@ onMounted(() => {
       <el-form-item label="可调范围">
         {{ editing.min }} – {{ editing.max }} {{ editing.unit }}
       </el-form-item>
-      <el-form-item label="新值" required>
+      <el-form-item label="新值" prop="value" required>
         <el-input-number
           v-model="editing.value"
           :min="editing.min"
@@ -198,7 +227,7 @@ onMounted(() => {
           style="width: 200px"
         />
       </el-form-item>
-      <el-form-item label="备注">
+      <el-form-item label="备注" prop="remark">
         <el-input
           v-model="editing.remark"
           type="textarea"

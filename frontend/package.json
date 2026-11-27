@@ -15,6 +15,9 @@
     "lint": "eslint . --ext .js,.vue --fix --max-warnings 0",
     "lint:check": "eslint . --ext .js,.vue --max-warnings 0",
     "format": "prettier --write \"src/**/*.{js,vue,scss,json}\"",
+    "format:check": "prettier --check \"src/**/*.{js,vue,scss,json}\"",
+    "test:e2e": "playwright test",
+    "test:e2e:critical": "playwright test e2e/specs/02-access-matrix.spec.js e2e/specs/03-elder.spec.js e2e/specs/04-family-order.spec.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

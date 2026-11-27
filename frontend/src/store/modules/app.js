@@ -15,13 +15,21 @@ export const useAppStore = defineStore('app', {
     elderlyMode: getElderlyMode(),
     /** admin 侧栏模式：'auto' / 'expanded' / 'collapsed'（desktop-adapt-v2 T-03）
      *  仅 admin 路由使用；client 路由无侧栏。 */
-    sidebarMode: getSidebarMode(),
-    /** 全局 loading 计数（并发请求时避免闪烁） */
-    loadingCount: 0
+    sidebarMode: getSidebarMode()
+    /**
+     * ⚠️ 这里**刻意没有** loadingCount / startLoading / stopLoading（最终复盘 FE-07）。
+     *
+     * 曾有一整套「全局 loading 计数」，但全仓 0 调用、`utils/request.js` 也没接，
+     * 实际上谁都拿不到它的值 —— 留着只会让人以为「有全局进度条」，
+     * 排查「点了没反应」时白翻一遍 store。
+     *
+     * 本项目的三态反馈口径是**页内承担**：加载中 `NlSkeleton`、空 `NlEmpty`、失败 `NlEmpty type="network"` + 重试。
+     * 要加全局进度就做成真正的可观察实现（在 request 拦截器里计数 + 顶部条），
+     * 不要再往 store 里放一个没人订阅的计数器。
+     */
   }),
 
   getters: {
-    loading: (state) => state.loadingCount > 0,
     /** 传给 <el-config-provider :size> 的值 */
     elementSize: (state) => (state.elderlyMode ? 'large' : 'default')
   },
@@ -76,14 +84,6 @@ export const useAppStore = defineStore('app', {
     /** 应用启动时调用一次，恢复上次的偏好 */
     initElderlyMode() {
       this.applyElderlyClass()
-    },
-
-    startLoading() {
-      this.loadingCount += 1
-    },
-
-    stopLoading() {
-      this.loadingCount = Math.max(0, this.loadingCount - 1)
     }
   }
 })

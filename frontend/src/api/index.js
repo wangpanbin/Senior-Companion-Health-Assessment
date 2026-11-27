@@ -9,6 +9,9 @@ export * as healthApi from './health'
 export * as authApi from './auth'
 export * as userApi from './user'
 export * as elderHealthApi from './elderHealth'
+// 体征记录（V4 · P2-2）：此前漏了这一个，4 个页面只能按路径 `@/api/vitalSign` 直接 import，
+// 与「业务代码从 @/api 引入」的约定不一致（最终复盘 FE-10）。
+export * as vitalSignApi from './vitalSign'
 export * as orderApi from './order'
 export * as executionApi from './execution'
 export * as medicationApi from './medication'

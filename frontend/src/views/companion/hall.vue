@@ -5,6 +5,8 @@
  * 数据来源：
  *   - GET /order/hall        → listOrderHall（待接单订单，sortBy 决定排序维度）
  *   - POST /order/{id}/accept → acceptOrder（接单，乐观锁）
+ *   - POST /order/{id}/reject → rejectOrder（显式拒单，需填原因；最终复盘 FE-01 的第 3 个断点：
+ *     此前陪诊员只能"不接"，拒单原因沉淀不下来，运营看不到「为什么没人接」）
  *   - GET /user/companion/application → getMyCompanionApplication（资质状态）
  *
  * 排序口径（V3.4）：可选维度由后端白名单决定（RECOMMEND / DISTANCE / TIME_MATCH），
@@ -17,7 +19,7 @@
  *
  * 列表口径：大厅会返回医院地址（address），但不返回距离/医院等级，故页面不展示这两项。
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -25,7 +27,7 @@ import {
   NlUserMenu
 } from '@/components'
 import { useDevice } from '@/composables/useDevice'
-import { listOrderHall, acceptOrder } from '@/api/order'
+import { listOrderHall, acceptOrder, rejectOrder } from '@/api/order'
 import { getMyCompanionApplication, getCompanionProfile, updateCompanionWorkStatus } from '@/api/user'
 import { useUserStore } from '@/store/modules/user'
 import { formatVisitTime, formatMoney } from '@/utils/format'
@@ -247,6 +249,68 @@ async function grab(o) {
   }
 }
 
+/* ================================================================== */
+/* 显式拒单（POST /order/{id}/reject）                                 */
+/* ================================================================== */
+
+/**
+ * 拒单**不改变订单状态**：单子仍留在大厅等其他陪诊员，只是不再对当前陪诊员展示。
+ * 原因必填（后端 `OrderRejectDTO` 的 @NotBlank + ≤200），用于后续统计与风控 ——
+ * 这正是此前缺的那块数据：只能"不接"，就永远不知道"为什么没人接"。
+ */
+const rejectVisible = ref(false)
+const rejectSaving = ref(false)
+const rejectTarget = ref(null)
+const rejectFormRef = ref(null)
+const rejectForm = reactive({ reason: '' })
+
+const REJECT_REASONS = [
+  '当天已有其他订单，时间冲突',
+  '距离太远，无法按时到达',
+  '服务内容超出我的能力范围',
+  '身体不适，暂不接单'
+]
+
+const rejectRules = {
+  reason: [
+    { required: true, message: '请填写拒单原因', trigger: ['blur', 'change'] },
+    { min: 2, max: 200, message: '拒单原因需在 2-200 个字符之间', trigger: ['blur', 'change'] }
+  ]
+}
+
+function openReject(o) {
+  if (grabbingId.value !== null) return
+  if (certStatus.value !== 'APPROVED') {
+    ElMessage.warning('资质未通过，暂不可操作大厅订单')
+    return
+  }
+  rejectTarget.value = o
+  rejectForm.reason = ''
+  rejectVisible.value = true
+  rejectFormRef.value?.clearValidate()
+}
+
+async function submitReject() {
+  if (rejectSaving.value) return
+  rejectSaving.value = true
+  try {
+    rejectFormRef.value?.clearValidate()
+    const valid = await rejectFormRef.value?.validate().catch(() => false)
+    if (!valid) return
+    await rejectOrder(rejectTarget.value.id, { reason: rejectForm.reason.trim() })
+    rejectVisible.value = false
+    ElMessage.success('已拒绝该订单，不会影响您的接单率')
+    // 后端已把该单从本人大厅列表排除，重新拉一次即可（不在前端本地删除，
+    // 否则分页 total 与实际条数会对不上）
+    loadHall()
+  } catch {
+    // 拦截器已弹错（如订单已被他人接走 3003）
+    loadHall()
+  } finally {
+    rejectSaving.value = false
+  }
+}
+
 function goEntry() {
   router.push('/companion/entry')
 }
@@ -412,17 +476,28 @@ onMounted(async () => {
               <span class="order__addr">{{ o.address }}</span>
             </li>
           </ul>
-          <el-button
-            type="primary"
-            round
-            size="large"
-            class="order__grab"
-            :loading="grabbingId === o.id"
-            :disabled="grabbingId !== null && grabbingId !== o.id"
-            @click="grab(o)"
-          >
-            抢 单
-          </el-button>
+          <div class="order__ops">
+            <el-button
+              round
+              size="large"
+              class="order__reject"
+              :disabled="grabbingId !== null"
+              @click="openReject(o)"
+            >
+              拒绝
+            </el-button>
+            <el-button
+              type="primary"
+              round
+              size="large"
+              class="order__grab"
+              :loading="grabbingId === o.id"
+              :disabled="grabbingId !== null && grabbingId !== o.id"
+              @click="grab(o)"
+            >
+              抢 单
+            </el-button>
+          </div>
         </li>
       </ul>
 
@@ -557,15 +632,20 @@ onMounted(async () => {
               </div>
             </div>
             <span class="is-num desktop-orders__fee">{{ formatMoney(o.fee) }}</span>
-            <el-button
-              type="primary"
-              round
-              :loading="grabbingId === o.id"
-              :disabled="grabbingId !== null && grabbingId !== o.id"
-              @click="grab(o)"
-            >
-              抢单
-            </el-button>
+            <div class="desktop-orders__ops">
+              <el-button round size="small" :disabled="grabbingId !== null" @click="openReject(o)">
+                拒绝
+              </el-button>
+              <el-button
+                type="primary"
+                round
+                :loading="grabbingId === o.id"
+                :disabled="grabbingId !== null && grabbingId !== o.id"
+                @click="grab(o)"
+              >
+                抢单
+              </el-button>
+            </div>
           </li>
         </ul>
 
@@ -575,6 +655,39 @@ onMounted(async () => {
       </NlCard>
     </template>
   </NlDesktopShell>
+
+  <!-- 拒单弹窗（FE-01）：原因必填，沉淀为可统计的拒单数据 -->
+  <el-dialog v-model="rejectVisible" title="拒绝该订单" width="90%" align-center>
+    <p v-if="rejectTarget" class="reject__target">
+      {{ rejectTarget.hospital }}<span class="nl-caption nl-text-muted"> · {{ rejectTarget.department }}</span>
+    </p>
+    <el-form ref="rejectFormRef" :model="rejectForm" :rules="rejectRules" label-position="top">
+      <el-form-item label="拒单原因（必填）" prop="reason">
+        <el-input
+          v-model="rejectForm.reason"
+          type="textarea"
+          :rows="3"
+          maxlength="200"
+          show-word-limit
+          placeholder="说明原因后，该单将不再出现在您的接单大厅"
+        />
+      </el-form-item>
+      <div class="reject__quick">
+        <el-button
+          v-for="r in REJECT_REASONS"
+          :key="r"
+          size="small"
+          round
+          plain
+          @click="rejectForm.reason = r"
+        >{{ r }}</el-button>
+      </div>
+    </el-form>
+    <template #footer>
+      <el-button @click="rejectVisible = false">取消</el-button>
+      <el-button type="primary" :loading="rejectSaving" @click="submitReject">确认拒绝</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped lang="scss">
@@ -765,8 +878,23 @@ onMounted(async () => {
     word-break: break-all;
   }
 
+  /*
+   * 底部操作区：拒绝（次要）+ 抢单（主要）。
+   * 拒绝刻意做成 plain 且宽度固定 —— 它不该和「抢单」抢视觉权重，
+   * 但必须**够大**（触控区 ≥ 48px），老人/单手操作点得到。
+   */
+  &__ops {
+    display: flex;
+    gap: var(--nl-space-2);
+  }
+
+  &__reject {
+    flex: 0 0 30%;
+    font-size: var(--nl-font-body);
+  }
+
   &__grab {
-    width: 100%;
+    flex: 1;
     font-size: var(--nl-font-h3);
     font-weight: 500;
   }
@@ -872,5 +1000,27 @@ onMounted(async () => {
     color: var(--nl-primary-text);
     text-align: right;
   }
+
+  /* 桌面端两个按钮并排：拒绝靠左、抢单靠右，间距对齐 8px 栅格 */
+  &__ops {
+    display: flex;
+    flex-shrink: 0;
+    gap: var(--nl-space-2);
+    align-items: center;
+  }
+}
+
+/* 拒单弹窗 */
+.reject__target {
+  margin: 0 0 var(--nl-space-3);
+  font-size: var(--nl-font-h3);
+  font-weight: 600;
+  color: var(--nl-text-1);
+}
+
+.reject__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nl-space-2);
 }
 </style>

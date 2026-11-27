@@ -16,7 +16,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlPageShell, NlEmpty, NlSkeleton, NlCard } from '@/components'
+import { NlPageShell, NlEmpty, NlSkeleton, NlCard, NlComplianceBar } from '@/components'
 import VitalSignForm from '@/components/health/VitalSignForm.vue'
 import VitalTrendChart from '@/components/health/VitalTrendChart.vue'
 import VitalTimeline from '@/components/health/VitalTimeline.vue'
@@ -391,6 +391,9 @@ watch(elderId, () => {
         </NlCard>
       </section>
     </template>
+    <!-- 合规声明（最终复盘 FE-03）：本页展示/录入血压、血糖、体重这类医疗相邻数据，
+         必须明确「只记录数值、不做判断」。全站合规条只出现在用药页是漏挂，不是设计。 -->
+    <NlComplianceBar text="本页仅记录您录入的体征数值，不做任何健康判断，也不构成医疗建议；数值异常请及时就医。" />
   </NlPageShell>
 </template>
 

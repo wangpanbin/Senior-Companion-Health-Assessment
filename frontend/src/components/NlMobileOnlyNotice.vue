@@ -7,7 +7,13 @@
  * 由 `NlDesktopShell` 在检测到 `route.meta.mobileOnly === true` 时整体渲染，
  * **view 内部不为此写 v-if**（计划 §2 关键约束 5）。
  *
- * 结构：居中卡片 420×320 = 图标 + 标题 + 描述 + 二维码占位 + "继续查看"
+ * 结构：居中卡片 420×320 = 图标 + 标题 + 描述 + "继续查看"
+ *
+ * ⚠️ **不要在这里加"扫码"**（最终复盘 FE-04）：此前正文写着「用手机扫描下方二维码继续」，
+ *    下面渲染的却是手绘 SVG + 一行可见文字「二维码占位」—— 让用户去做一件做不到的事，
+ *    还把对内的「占位」措辞摆到用户面前。生成真实二维码要么引入二维码库
+ *    （违反「不自创技术栈」），要么自己写编码器（不值得），所以改为**只保留
+ *    形态切换按钮**：这是本机唯一可靠的动作。
  *
  * "继续查看" 的行为（计划 §2-D）：
  *   写 `sessionStorage['force-mobile'] = 'true'` → 刷新 → `useDevice().isMobile` 恒真
@@ -45,18 +51,8 @@ function continueOnDesktop() {
 
       <p class="nl-mobile-only__desc">
         该功能依赖手机的拍照上传 / 实时定位等能力，电脑上无法完成，因此未做桌面适配。
-        你可以用手机扫描下方二维码继续，或点击下方按钮在电脑上以手机版视图查看。
+        你可以在当前浏览器里切换到手机版视图继续操作；也可以复制地址到手机浏览器打开。
       </p>
-
-      <div class="nl-mobile-only__qr" aria-label="二维码占位（后续接入真实地址）">
-        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="7" height="7" rx="1" />
-          <rect x="14" y="3" width="7" height="7" rx="1" />
-          <rect x="3" y="14" width="7" height="7" rx="1" />
-          <path d="M14 14h3v3h-3zM20 14v1M14 20h1M18 18h3v3h-3z" />
-        </svg>
-        <span class="nl-mobile-only__qr-text">二维码占位</span>
-      </div>
 
       <el-button type="primary" round @click="continueOnDesktop">继续查看（手机版视图）</el-button>
     </div>
@@ -112,21 +108,6 @@ function continueOnDesktop() {
     font-size: var(--nl-font-caption);
     line-height: 1.6;
     color: var(--nl-text-2);
-  }
-
-  &__qr {
-    display: inline-flex;
-    gap: 6px;
-    align-items: center;
-    padding: 6px $nl-space-3;
-    color: var(--nl-text-3);
-    background: var(--nl-bg-sunken);
-    border: 1px dashed var(--nl-border-strong);
-    border-radius: $nl-radius-chip;
-  }
-
-  &__qr-text {
-    font-size: var(--nl-font-micro);
   }
 }
 </style>

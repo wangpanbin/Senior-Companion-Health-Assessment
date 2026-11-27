@@ -29,6 +29,9 @@ vi.mock('@/api/order', () => ({
   acceptOrder: (...a) => acceptOrderMock(...a),
   getOrder: (...a) => getOrderMock(...a),
   getOrderTimeline: () => Promise.resolve([]),
+  // V6.0（FE-01）：订单详情新增履约详情请求，mock 里必须给出实现，
+  // 否则 Promise.all 里会拿到 undefined() 抛错，整个详情不渲染
+  getOrderFulfillment: () => Promise.resolve(null),
   cancelOrder: () => Promise.resolve({}),
   urgeOrder: () => Promise.resolve({}),
   listFeeItems: () => Promise.resolve(null),

@@ -13,6 +13,8 @@
  *   GET /api/order/{id}/timeline        状态流转日志（含操作人快照与备注）
  *   GET /api/execution/{orderId}/checkins  6 节点打卡记录
  *   GET /api/order/{id}/recommend-companions  候选陪诊员推荐（V3.4，仅「待接单」时展示）
+ *   GET /api/order/{id}/fulfillment     履约事件流水（V3.1；此前前端 0 调用，家属看不到催单进展）
+ *   GET /api/exam-prep                  检查准备须知字典（V5；此前整块功能前端零入口）
  *   WS  /ws/progress?token=&orderId=     打卡时实时推送
  *
  * ⚠️ 三处与骨架版的实质差异：
@@ -34,10 +36,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { NlPageShell, NlCard, NlStatusChip, NlTimeline, NlAvatar, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
 import OrderFeeItems from '@/components/OrderFeeItems.vue'
-import { getOrder, getOrderTimeline, cancelOrder, urgeOrder, recommendCompanions } from '@/api/order'
+import {
+  getOrder, getOrderTimeline, getOrderFulfillment, cancelOrder, urgeOrder, recommendCompanions
+} from '@/api/order'
 import { listCheckins, connectProgressSocket } from '@/api/execution'
 import { getReviewByOrder } from '@/api/review'
 import { buildDraftFromOrder } from '@/api/medication'
+import { listExamPrep } from '@/api/examPrep'
 import { getUserInfo } from '@/utils/auth'
 import { saveMedicationDraft } from '@/utils/medicationDraft'
 import { formatDateTime, CHECKIN_NODE_ORDER } from '@/utils/format'
@@ -124,6 +129,59 @@ async function loadCandidates() {
 
 let socket = null
 
+/* ================================================================== */
+/* 履约记录（GET /order/{id}/fulfillment · FE-01 第 4 个断点）           */
+/* ================================================================== */
+
+/**
+ * 履约事件流水：回答「这笔单现在等得怎么样了」与「它是怎么变成这样的」。
+ *
+ * 此前前端只读 `OrderVO` 里的 `fulfillmentRisk`，也就只知道「风险较高」三个字，
+ * 不知道催过几次、谁催的、什么时候升的级。列表页看不出、详情页也看不出。
+ */
+const fulfillmentDetail = ref(null)
+
+/** 只在有内容时展示：没有事件且没催过单，卡片是噪音 */
+const hasFulfillmentRecord = computed(() => {
+  const f = fulfillmentDetail.value
+  if (!f) return false
+  return (f.events?.length || 0) > 0 || (f.urgeCount || 0) > 0
+})
+
+/* ================================================================== */
+/* 检查准备须知（GET /exam-prep · FE-01 第 5 个断点）                   */
+/* ================================================================== */
+
+/**
+ * V5 交付的「检查准备须知」整块功能此前前端**零入口** —— 后端有字典、有接口、
+ * 有免责声明，UI 上却找不到，评审问「检查准备在哪」会当场卡住。
+ *
+ * 这里做成按需拉取的弹层：字典是静态的，没必要进首页请求批次。
+ */
+const examPrepVisible = ref(false)
+const examPrepLoading = ref(false)
+const examPrepError = ref(false)
+const examPrepItems = ref([])
+
+async function openExamPrep() {
+  examPrepVisible.value = true
+  if (examPrepItems.value.length) return   // 已拉过就不重复请求
+  await loadExamPrep()
+}
+
+async function loadExamPrep() {
+  examPrepLoading.value = true
+  examPrepError.value = false
+  try {
+    examPrepItems.value = (await listExamPrep()) || []
+  } catch {
+    examPrepItems.value = []
+    examPrepError.value = true
+  } finally {
+    examPrepLoading.value = false
+  }
+}
+
 async function loadAll() {
   // 记下本次请求针对的订单：请求在途时 URL 可能又换了订单，回来时要能判断响应是否过期
   const target = orderId.value
@@ -133,11 +191,13 @@ async function loadAll() {
   if (!target) return
   try {
     // 四个请求互不依赖，并发拉取，减少首屏等待
-    const [detail, logs, checks, rev] = await Promise.all([
+    const [detail, logs, checks, rev, fulfill] = await Promise.all([
       getOrder(target),
       getOrderTimeline(target).catch(() => []),
       listCheckins(target).catch(() => []),
-      getReviewByOrder(target).catch(() => null)
+      getReviewByOrder(target).catch(() => null),
+      // 履约详情失败只降级这一块，不影响订单主体
+      getOrderFulfillment(target).catch(() => null)
     ])
     // 过期响应直接丢弃：否则会把上一单的数据挂在当前 URL 下（用户以为在看 B，其实在看 A）
     if (String(target) !== String(orderId.value)) return
@@ -145,6 +205,7 @@ async function loadAll() {
     statusLogs.value = logs || []
     checkins.value = checks || []
     review.value = rev || null
+    fulfillmentDetail.value = fulfill || null
     loadError.value = false
   } catch {
     if (String(target) !== String(orderId.value)) return
@@ -557,6 +618,33 @@ onBeforeUnmount(() => {
         </el-button>
       </div>
 
+      <!-- 履约记录（V3.1）：把「等多久 / 催过几次 / 谁催的」摊开给家属看。
+           只在真有内容时出现 —— 刚下单且无人催时这块是噪音。 -->
+      <NlCard v-if="hasFulfillmentRecord" title="履约记录" plain>
+        <div class="fulfil__summary">
+          <span v-if="fulfillmentDetail?.waitMinutes != null" class="nl-caption">
+            当前等待 <b class="is-num">{{ fulfillmentDetail.waitMinutes }}</b> 分钟
+          </span>
+          <span v-if="fulfillmentDetail?.urgeCount != null" class="nl-caption">
+            累计催单 <b class="is-num">{{ fulfillmentDetail.urgeCount }}</b> 次
+          </span>
+        </div>
+        <ol v-if="fulfillmentDetail?.events?.length" class="fulfil__events">
+          <li v-for="(e, i) in fulfillmentDetail.events" :key="`${e.operateTime}-${i}`" class="fulfil__event">
+            <span class="fulfil__dot" aria-hidden="true" />
+            <div class="fulfil__body">
+              <div class="fulfil__label">
+                {{ e.eventLabel || e.eventType }}
+                <span v-if="e.toRiskLabel" class="nl-caption nl-text-muted">→ {{ e.toRiskLabel }}</span>
+              </div>
+              <div v-if="e.remark" class="nl-caption nl-text-weak">{{ e.remark }}</div>
+              <div class="nl-caption nl-text-weak is-num">{{ formatDateTime(e.operateTime) }}</div>
+            </div>
+          </li>
+        </ol>
+        <p v-else class="nl-caption nl-text-muted">暂无履约事件</p>
+      </NlCard>
+
       <!-- 订单概览 -->
       <NlCard>
         <div class="overview">
@@ -573,6 +661,8 @@ onBeforeUnmount(() => {
         <el-button type="primary" plain @click="router.push(`/family/assistant?orderId=${orderId}`)">
           问助手
         </el-button>
+        <!-- FE-01：V5 的「检查准备须知」此前前端零入口，整块已交付功能在 UI 上不存在 -->
+        <el-button plain @click="openExamPrep">检查准备</el-button>
       </NlCard>
 
       <!-- 候选陪诊员推荐（V3.4 · T9）
@@ -809,6 +899,34 @@ onBeforeUnmount(() => {
         </template>
       </el-dialog>
     </template>
+
+      <!-- 检查准备须知（GET /api/exam-prep）：静态字典，每条 remark 自带来源与免责声明。
+           ⚠️ 原样展示，不得截掉免责段 —— 这是本模块的合规要求（docs/api/14-exam-prep.md）。 -->
+      <el-dialog v-model="examPrepVisible" title="检查准备须知" width="92%">
+        <NlSkeleton v-if="examPrepLoading" :count="3" />
+        <NlEmpty
+          v-else-if="examPrepError"
+          type="network"
+          title="须知加载失败"
+          description="请检查网络后重试"
+          action-text="重试"
+          @action="loadExamPrep"
+        />
+        <template v-else>
+          <NlEmpty
+            v-if="!examPrepItems.length"
+            title="暂无检查准备条目"
+            description="当前没有可展示的检查须知"
+          />
+          <ul v-else class="prep">
+            <li v-for="item in examPrepItems" :key="item.code" class="prep__item">
+              <div class="prep__name">{{ item.name }}</div>
+              <div v-if="item.requirement" class="prep__req">{{ item.requirement }}</div>
+              <p v-if="item.remark" class="prep__remark">{{ item.remark }}</p>
+            </li>
+          </ul>
+        </template>
+      </el-dialog>
   </NlPageShell>
 </template>
 
@@ -1194,6 +1312,104 @@ onBeforeUnmount(() => {
 
   :deep(.el-button) {
     flex: 1;
+  }
+}
+/* ---------- 履约记录（FE-01） ---------- */
+.fulfil {
+  &__summary {
+    display: flex;
+    gap: var(--nl-space-4);
+    margin-bottom: var(--nl-space-3);
+  }
+
+  &__events {
+    display: flex;
+    flex-direction: column;
+    gap: var(--nl-space-3);
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  &__event {
+    display: flex;
+    gap: var(--nl-space-2);
+    align-items: flex-start;
+  }
+
+  /* 竖线 + 圆点用伪元素画，避免为一列时间线引入额外 DOM */
+  &__dot {
+    position: relative;
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    margin-top: 6px;
+    background: var(--nl-primary);
+    border-radius: 50%;
+
+    &::after {
+      position: absolute;
+      top: 10px;
+      left: 3px;
+      width: 2px;
+      height: calc(100% + 14px);
+      content: '';
+      background: var(--nl-divider);
+    }
+  }
+
+  &__event:last-child &__dot::after {
+    content: none;
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__label {
+    font-size: var(--nl-font-body);
+    color: var(--nl-text-1);
+  }
+}
+
+/* ---------- 检查准备须知（FE-01） ---------- */
+.prep {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nl-space-4);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+
+  &__item {
+    padding-bottom: var(--nl-space-3);
+    border-bottom: 1px solid var(--nl-divider);
+  }
+
+  &__item:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  &__name {
+    font-size: var(--nl-font-h3);
+    font-weight: 600;
+    color: var(--nl-text-1);
+  }
+
+  &__req {
+    margin-top: 4px;
+    font-size: var(--nl-font-body);
+    color: var(--nl-text-1);
+  }
+
+  /* 来源与免责声明：弱化但不省略 —— 截掉就是合规问题 */
+  &__remark {
+    margin: 6px 0 0;
+    font-size: var(--nl-font-caption);
+    line-height: 1.6;
+    color: var(--nl-text-3);
   }
 }
 </style>
