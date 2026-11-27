@@ -88,8 +88,17 @@ public class FileStorageServiceImpl implements FileStorageService {
         try (InputStream in = file.getInputStream()) {
             byte[] header = in.readNBytes(MIN_HEADER_BYTES);
             ext = detectExtension(header);
-            if (ext == null || ("mp4".equals(ext) && FileBizType.of(bizType) != FileBizType.CHAT)) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "文件类型不允许（mp4 仅限订单聊天）");
+            // 类型闸门分三档：
+            //   1) 非 CHAT 不收 mp4（聊天媒体专用通道）；
+            //   2) FEEDBACK 只收图片 —— 产品反馈截图是「说明问题用的插图」，
+            //      页面用 <img> 直连渲染，pdf 收进来只会得到一张破图
+            //      （docs/api/15-product-feedback.md §一 的「jpg/png/webp」口径）；
+            //   3) 其余非 CHAT 业务（证件 / 头像 / 投诉证据）沿用 application/pdf。
+            if (ext == null
+                    || ("mp4".equals(ext) && FileBizType.of(bizType) != FileBizType.CHAT)
+                    || ("pdf".equals(ext) && FileBizType.of(bizType) == FileBizType.FEEDBACK)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR,
+                        "文件类型不允许（mp4 仅限订单聊天；产品反馈截图仅支持 jpg/png/webp）");
             }
             monthDir = UploadPathLayout.monthDir(LocalDateTime.now());
             storedName = UUID.randomUUID().toString().replace("-", "") + "." + ext;

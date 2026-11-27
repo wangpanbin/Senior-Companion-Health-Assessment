@@ -119,7 +119,7 @@ public class OrderServiceImpl implements OrderService {
 
 错误码是 `ResultCode` 枚举（`org.company.nianglin.common.ResultCode`）与 `docs/api/README.md` 错误码表的镜像。新增错误码必须：
 
-1. 在 `ResultCode` 枚举里按段位（1xxx–10xxx）添加，注释写清楚业务场景。
+1. 在 `ResultCode` 枚举里按段位（1xxx–12xxx）添加，注释写清楚业务场景。
 2. 同步更新 `docs/api/README.md` 的对应段位表格。
 3. **不要**新增跨段位或杂糅语义的码（如把订单相关错误放到 1xxx）。
 

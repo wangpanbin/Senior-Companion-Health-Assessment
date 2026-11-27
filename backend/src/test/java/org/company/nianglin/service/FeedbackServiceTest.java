@@ -1,5 +1,6 @@
 package org.company.nianglin.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.FeedbackStatus;
@@ -49,6 +50,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -152,6 +154,32 @@ class FeedbackServiceTest {
     void illegalTypeShouldBeRejected() {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.create(dto("PRODUCT", VALID_CONTENT)));
+
+        assertEquals(ResultCode.PARAM_ERROR.getCode(), ex.getCode());
+        verify(feedbackMapper, never()).insert(any(ProductFeedback.class));
+    }
+
+    @Test
+    @DisplayName("提交反馈 · 分类非法 → 错误信息带允许取值（契约承诺「响应带允许取值」）")
+    void illegalTypeMessageShouldListAllowedValues() {
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.create(dto("PRODUCT", VALID_CONTENT)));
+
+        // 契约 docs/api/15-product-feedback.md §错误场景 明写「响应带允许取值」：
+        // 只回一句「取值不合法」等于让调用方自己猜枚举。
+        assertTrue(ex.getMessage().contains("FEATURE"),
+                "错误信息应列出允许取值，实际：" + ex.getMessage());
+        assertTrue(ex.getMessage().contains("EXPERIENCE"), "实际：" + ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("提交反馈 · 正文 trim 后不足 10 字 → 400，且不落库")
+    void contentShorterThanLimitAfterTrimShouldBeRejected() {
+        // 12 个空格 + 1 个字：原始串 13 字能过 @Size(min=10)，trim 完只剩 1 个字。
+        // 不在服务层补这道检查，入库的就是一条「1 字反馈」。
+        FeedbackCreateDTO dto = dto("OTHER", "            x");
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.create(dto));
 
         assertEquals(ResultCode.PARAM_ERROR.getCode(), ex.getCode());
         verify(feedbackMapper, never()).insert(any(ProductFeedback.class));
@@ -307,6 +335,22 @@ class FeedbackServiceTest {
     }
 
     @Test
+    @DisplayName("处理反馈 · 处理说明 trim 后不足 10 字 → 400，且不更新、不发信")
+    void handleResultShorterThanLimitAfterTrimShouldBeRejected() {
+        loginAs(RoleConstants.ADMIN, ADMIN_ID);
+        given(feedbackMapper.selectById(FEEDBACK_ID)).willReturn(feedback("PROCESSING", "处理中草稿"));
+
+        // 12 个空格 + 1 个字：原始串 13 字过得了 @Size(min=10)，trim 完只剩 1 个字，
+        // 而库里 handle_result 这一列的约定是「10-500 字」。
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.handle(FEEDBACK_ID, handleDto("RESOLVED", "            y")));
+
+        assertEquals(ResultCode.PARAM_ERROR.getCode(), ex.getCode());
+        verify(feedbackMapper, never()).update(any(), any());
+        verify(messageService, never()).send(anyLong(), any(), anyLong(), any());
+    }
+
+    @Test
     @DisplayName("处理反馈 · 处理说明含医疗建议类表述 → 6003（出参过两套词表，最关键的一条）")
     void medicalAdviceInHandleResultShouldBeRejected() {
         loginAs(RoleConstants.ADMIN, ADMIN_ID);
@@ -429,6 +473,21 @@ class FeedbackServiceTest {
     }
 
     @Test
+    @DisplayName("管理端列表 · 按状态权重排序（PENDING → PROCESSING → RESOLVED → REJECTED），不是字典序")
+    void adminListShouldOrderByStatusWeight() {
+        given(feedbackMapper.selectPage(any(), any())).willReturn(pageOf());
+
+        service.adminList(new AdminFeedbackQuery());
+
+        // 字典序会把「未采纳」(REJECTED) 排在「已采纳」(RESOLVED) 前面，
+        // 与 docs/api/15-product-feedback.md §4 承诺的「status 排序权重」相反。
+        String sql = adminListSql();
+        assertTrue(sql.contains("FIELD(status,'PENDING','PROCESSING','RESOLVED','REJECTED')"),
+                "排序必须按状态权重，实际：" + sql);
+        assertTrue(sql.contains("create_time DESC"), "同状态内按提交时间倒序，实际：" + sql);
+    }
+
+    @Test
     @DisplayName("管理端列表 · 日期格式非法 / 起止颠倒 → 400")
     void adminListIllegalDateRangeShouldBe400() {
         AdminFeedbackQuery bad = new AdminFeedbackQuery();
@@ -446,6 +505,14 @@ class FeedbackServiceTest {
     /* ================================================================== */
     /* 夹具                                                                */
     /* ================================================================== */
+
+    /** 抓管理端列表查询的 SQL 片段（含 last() 里的整段 ORDER BY） */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private String adminListSql() {
+        ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(feedbackMapper, times(1)).selectPage(any(), captor.capture());
+        return captor.getValue().getSqlSegment();
+    }
 
     private FeedbackCreateDTO dto(String type, String content) {
         FeedbackCreateDTO dto = new FeedbackCreateDTO();

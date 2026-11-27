@@ -5,12 +5,14 @@ import java.util.Arrays;
 /**
  * 文件上传业务类型（通用上传端点的白名单）。
  *
- * <p>{@code sys_file.biz_type} 列注释定义了 5 个取值：
+ * <p>{@code sys_file.biz_type} 列注释定义了 7 个取值：
  * {@code COMPANION_CERT}(资质证件) / {@code CHECKIN}(打卡照片) /
- * {@code COMPLAINT}(投诉证据) / {@code AVATAR}(头像) / {@code REVIEW}(评价图片)。
- * M13（ADR-0011）新增 {@code CHAT}(订单聊天媒体)。</p>
+ * {@code COMPLAINT}(投诉证据) / {@code AVATAR}(头像) / {@code REVIEW}(评价图片) /
+ * {@code CHAT}(订单聊天媒体，M13 · ADR-0011) / {@code FEEDBACK}(产品反馈截图，V6)。</p>
  *
- * <p><b>本通用端点只放行其中 5 个</b>，刻意<b>不放行</b> {@code CHECKIN} 与 {@code REVIEW}：</p>
+ * <p><b>本通用端点只放行其中 5 个</b>（{@code COMPANION_CERT} / {@code COMPLAINT} /
+ * {@code AVATAR} / {@code CHAT} / {@code FEEDBACK}），刻意<b>不放行</b> {@code CHECKIN}
+ * 与 {@code REVIEW}：</p>
  * <ul>
  *   <li>{@code CHECKIN}：打卡照片有专属入口
  *       {@code POST /api/execution/{orderId}/photo}，那里会校验「须为本单陪诊员」，
@@ -48,8 +50,10 @@ public enum FileBizType {
      * {@code sys_file.biz_type} 是文件用途的**唯一记录**，把产品截图标成「投诉证据」，
      * 将来的文件清理 / 归档任务、{@code UploadAccessGuardFilter} 的受控读取判断都会误判。</p>
      *
-     * <p>约束与投诉证据同档：jpg / png / webp，单文件 ≤10MB（{@code FileStorageServiceImpl}
-     * 里非 CHAT 业务统一走 {@link #DEFAULT_MAX_BYTES} 那道防线）。
+     * <p>约束：单文件 ≤10MB（{@code FileStorageServiceImpl} 里非 CHAT 业务统一走
+     * {@link #DEFAULT_MAX_BYTES} 那道防线）；类型收窄为 jpg / png / webp ——
+     * 反馈截图是「说明问题用的插图」，页面用 {@code <img>} 直连渲染，
+     * pdf 收进来只会得到一张破图（其余非 CHAT 业务仍放行 pdf）。
      * 本类型**仅 FAMILY / COMPANION** 使用（ELDER 写请求被只读拦截器拦掉），
      * 落盘后与头像 / 打卡照片一样可 {@code <img>} 直连 ——
      * {@code UploadAccessGuardFilter} 只拦 {@link #COMPANION_CERT}。</p>

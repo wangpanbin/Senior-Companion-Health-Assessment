@@ -27,15 +27,15 @@ import { ElMessage } from 'element-plus'
 import { NlPageShell, NlCard, NlStatusChip, NlNoticeBar, NlEmpty, NlSkeleton } from '@/components'
 import { createFeedback, listMyFeedback } from '@/api/feedback'
 import { uploadFile } from '@/api/file'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, FEEDBACK_TYPE_TEXT } from '@/utils/format'
 
-/** 反馈分类（来源：后端 FeedbackType，label 与后端保持一致） */
-const FEEDBACK_TYPES = [
-  { value: 'FEATURE', label: '功能建议' },
-  { value: 'EXPERIENCE', label: '使用体验' },
-  { value: 'DEFECT', label: '缺陷问题' },
-  { value: 'OTHER', label: '其他' }
-]
+/**
+ * 反馈分类（取自 utils/format.js 的 FEEDBACK_TYPE_TEXT）。
+ *
+ * <p>不在本页另抄一份：格式化的那份是 {@code FEEDBACK_STATUS_TEXT /
+ * FEEDBACK_TYPE_TEXT}，抄一份就会两处各改一次、迟早对不上。</p>
+ */
+const FEEDBACK_TYPES = Object.entries(FEEDBACK_TYPE_TEXT).map(([value, label]) => ({ value, label }))
 
 const MAX_IMAGES = 3
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -120,19 +120,38 @@ function removeImage(i) {
 const list = ref([])
 const listLoading = ref(false)
 const listError = ref(false)
+const total = ref(0)
+
+/**
+ * 分页（P1-9 同款）。
+ *
+ * <p>原先固定 `{ page: 1, size: 20 }` 且页面没有任何翻页控件 ——
+ * 第 21 条以后的反馈用户永远看不到，而「我的反馈」听起来是全部。
+ * 现在按后端分页口径（page / size，size 上限 100）取 10 条一页，配 el-pagination。</p>
+ */
+const page = ref(1)
+const size = ref(10)
 
 async function loadList() {
   listLoading.value = true
   try {
-    const data = await listMyFeedback({ page: 1, size: 20 })
+    const data = await listMyFeedback({ page: page.value, size: size.value })
     list.value = data?.records || []
+    total.value = data?.total || 0
     listError.value = false
   } catch {
     list.value = []
+    total.value = 0
     listError.value = true
   } finally {
     listLoading.value = false
   }
+}
+
+/** 翻页：重新向后端要对应页的数据（不在前端切数组） */
+function onPageChange(p) {
+  page.value = p
+  loadList()
 }
 
 async function submit() {
@@ -152,6 +171,8 @@ async function submit() {
     form.type = ''
     form.content = ''
     form.images = []
+    // 新反馈排在最前（create_time DESC），停在旧页码上会看不到刚提交的那条
+    page.value = 1
     await loadList()
   } catch (err) {
     // 6003（敏感词）定位到正文字段：撤掉拦截器的顶部 toast，避免同一错误弹两次，
@@ -292,6 +313,17 @@ onMounted(loadList)
           </span>
         </li>
       </ul>
+
+      <!-- 翻页控件：没有它，第 21 条以后的反馈不可达（P1-9 同款） -->
+      <el-pagination
+        v-if="!listLoading && !listError && total > size"
+        class="hist-pager"
+        layout="prev, pager, next"
+        :total="total"
+        :page-size="size"
+        :current-page="page"
+        @current-change="onPageChange"
+      />
     </NlCard>
   </NlPageShell>
 </template>
@@ -315,13 +347,11 @@ onMounted(loadList)
     border: 1.5px solid var(--nl-border);
     border-radius: 999px;
     cursor: pointer;
-
-    // 老人模式：触控区域不小于 44px（design.md §6）
-    html.elderly-mode & {
-      min-height: 44px;
-      display: inline-flex;
-      align-items: center;
-    }
+    // 触控区下限走 --nl-touch-min（普通形态 48px ≥ 44px 底线，老人形态也是 48px）。
+    // 写死 44px 会让老人模式差 4px —— frontend-conventions §3.5 的 ≥48px 是老人模式的硬约束。
+    min-height: var(--nl-touch-min);
+    display: inline-flex;
+    align-items: center;
 
     &.is-active {
       color: var(--nl-primary-text);
@@ -367,7 +397,8 @@ onMounted(loadList)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
+  // 同上：触控区下限走 --nl-touch-min，不写死 44px
+  min-height: var(--nl-touch-min);
   padding: 0 var(--nl-space-4);
   font-size: var(--nl-font-caption);
   color: var(--nl-primary-text);
@@ -386,6 +417,11 @@ onMounted(loadList)
     background: var(--nl-bg-sunken);
     border-color: var(--nl-border);
   }
+}
+
+.hist-pager {
+  justify-content: center;
+  margin-top: var(--nl-space-4);
 }
 
 .hist {
