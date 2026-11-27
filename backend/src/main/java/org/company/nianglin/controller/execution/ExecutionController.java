@@ -10,6 +10,8 @@ import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.Result;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.CheckinCreateDTO;
+import org.company.nianglin.dto.LocationReportDTO;
+import org.company.nianglin.dto.LocationSharingDTO;
 import org.company.nianglin.dto.VitalSignCreateDTO;
 import org.company.nianglin.dto.VitalSignQuery;
 import org.company.nianglin.service.ExecutionService;
@@ -17,6 +19,7 @@ import org.company.nianglin.service.VitalSignService;
 import org.company.nianglin.vo.CheckinResultVO;
 import org.company.nianglin.vo.CheckinVO;
 import org.company.nianglin.vo.FileUploadVO;
+import org.company.nianglin.vo.LocationVO;
 import org.company.nianglin.vo.ProgressVO;
 import org.company.nianglin.vo.TrackPointVO;
 import org.company.nianglin.vo.VitalSignVO;
@@ -26,6 +29,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -37,14 +41,19 @@ import java.util.List;
 /**
  * 陪诊执行接口。
  *
- * <p>对应 {@code docs/api/04-companion-execution.md} §1 ~ §5。</p>
+ * <p>对应 {@code docs/api/04-companion-execution.md} §1 ~ §5、§7 ~ §9。
+ * 其中 §7～§9（位置上报 / 快照 / 共享开关）与地图可视化见 ADR-0022。</p>
  *
- * <h3>为什么 4 个查询接口不加 {@code @PreAuthorize}</h3>
+ * <h3>为什么 5 个查询接口不加 {@code @PreAuthorize}</h3>
  *
  * <p>「相关方」横跨四个角色 —— 下单家属、接单陪诊员、就诊老人本人、管理员，
  * 用注解要写成四个 {@code hasAnyRole}，而且<b>一个角色都挡不住越权</b>：
  * 家属 A 与家属 B 的角色完全相同。归属判定只能落在
  * {@code OrderService#requireInvolved}，注解加在这里是虚假的安全感。</p>
+ *
+ * <p>其中 {@code GET /location} <b>比其余四个更严</b>：实时位置只给本单家属与陪诊员，
+ * 老人与管理员一律 {@code 3004}（ADR-0022 D10）。这条判定同样在 Service 层
+ * （{@code requireLocationVisible}），因为它是「是不是这一单的家属」，不是「是不是家属」。</p>
  *
  * <h3>老人账号（ELDER）不需要额外处理</h3>
  *
@@ -155,5 +164,49 @@ public class ExecutionController {
     public Result<ProgressVO> progress(
             @Parameter(description = "订单 ID", example = "1001") @PathVariable("orderId") Long orderId) {
         return Result.success(executionService.progress(orderId));
+    }
+
+    /* ==================== 实时位置（ADR-0022） ==================== */
+
+    @Operation(summary = "上报当前位置",
+            description = "须为本单陪诊员（否则 4003），订单须为「已接单 / 服务中」（否则 3002）。"
+                    + "坐标一律 **WGS84**（浏览器 geolocation 原生值），服务端不做坐标转换；"
+                    + "百度地图要 BD09 时由前端渲染前转换。"
+                    + "同一订单两次上报间隔小于阈值返回 4004；位置共享已暂停返回 4005。"
+                    + "每次上报都刷新最新点，companion_track 按抽稀规则写入；"
+                    + "成功后向该订单推送 LOCATION 事件（**只发家属与陪诊员**）")
+    @PreAuthorize("hasRole('" + RoleConstants.COMPANION + "')")
+    @PostMapping("/{orderId}/location")
+    public Result<LocationVO> reportLocation(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("orderId") Long orderId,
+            @Valid @RequestBody LocationReportDTO dto) {
+        return Result.success("位置已更新", executionService.reportLocation(orderId, dto));
+    }
+
+    @Operation(summary = "最新位置快照",
+            description = "**仅本单家属与陪诊员可见**（老人 / 管理员返回 3004，与 LOCATION 推送口径一致）。"
+                    + "进页面先拉一次铺底，之后靠 WebSocket 的 LOCATION 事件增量更新。"
+                    + "从未上报过的订单返回 200 + 坐标字段为 null，前端按「尚未开始共享位置」渲染，"
+                    + "不要当成错误。distanceMeters 为陪诊员到医院坐标的直线距离（与打卡 4001 同口径），"
+                    + "**不是**到老人住址的距离")
+    @GetMapping("/{orderId}/location")
+    public Result<LocationVO> latestLocation(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("orderId") Long orderId) {
+        return Result.success(executionService.latestLocation(orderId));
+    }
+
+    @Operation(summary = "开关位置共享",
+            description = "须为本单陪诊员（否则 4003），订单须为「已接单 / 服务中」（否则 3002）。"
+                    + "关闭后停止对外暴露实时位置，并推送 LOCATION_PAUSED 事件让家属端显示"
+                    + "「已暂停共享」而不是一个冻住的点。**暂停不影响打卡**："
+                    + "共享只决定「是否给家属看实时位置」，不决定「是否记录履约证据」")
+    @PreAuthorize("hasRole('" + RoleConstants.COMPANION + "')")
+    @PutMapping("/{orderId}/location-sharing")
+    public Result<LocationVO> setLocationSharing(
+            @Parameter(description = "订单 ID", example = "1001") @PathVariable("orderId") Long orderId,
+            @Valid @RequestBody LocationSharingDTO dto) {
+        LocationVO view = executionService.setLocationSharing(orderId, dto);
+        return Result.success(Boolean.TRUE.equals(view.getSharingEnabled())
+                ? "已恢复位置共享" : "已暂停位置共享", view);
     }
 }

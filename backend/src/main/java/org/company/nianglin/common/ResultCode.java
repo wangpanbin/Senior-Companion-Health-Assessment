@@ -160,6 +160,21 @@ public enum ResultCode {
     NOT_IN_CHECKIN_RANGE(4001, "未到达陪诊地点，打卡无效"),
     CHECKIN_DUPLICATED(4002, "该节点已打卡，请勿重复提交"),
     NOT_ORDER_COMPANION(4003, "您不是该订单的陪诊员"),
+    /**
+     * 位置上报过于频繁（ADR-0022）。
+     *
+     * <p>前端 30 秒一次，后端用 {@code nianglin.tracking.min-report-interval-seconds}
+     * （默认 10 秒）兜住重复提交与连点。<b>刻意不静默忽略</b>：静默会让
+     * 「为何位置不动」变成无法排查的问题，与仓库「静默截断一律禁」的既有风格相反。</p>
+     */
+    LOCATION_REPORT_TOO_FREQUENT(4004, "位置上报过于频繁，请稍后再试"),
+    /**
+     * 位置共享已关闭（ADR-0022）。
+     *
+     * <p>陪诊员主动暂停后仍在上报时返回。暂停态存 Redis {@code track:share:{orderId}}，
+     * 由 {@code PUT /api/execution/{orderId}/location-sharing} 开关。</p>
+     */
+    LOCATION_SHARING_DISABLED(4005, "位置共享已关闭"),
 
     /* ==================== 5xxx 用药管理 ==================== */
     MEDICINE_NOT_FOUND(5001, "药品不存在"),

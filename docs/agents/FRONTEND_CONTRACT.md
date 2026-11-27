@@ -451,6 +451,11 @@ onBeforeUnmount(() => polling?.stop())
 6. **样式**：色值/字号一律走 CSS 变量（前缀 `--nl-`），**禁止硬编码色值**。
    `@use '@/styles/variables.scss' as *;` 在每个 `<style scoped>` 顶部。
 7. **不要引入新依赖**，不要用 Element Plus 之外的 UI 库。
+   > **已记录的例外（ADR-0022）**：`@baidumap/jsapi-loader`（百度地图 JSAPI 官方加载器）。
+   > 百度 JSAPI **不支持本地打包**，必须从 `api.map.baidu.com` 动态加载；loader 把「脚本单次注入 /
+   > 超时 / 命名空间版本差异」做成了 Promise 语义。该例外**仅限这一个包**，
+   > 回退方案见 [`docs/adr/0022-map-live-tracking.md`](../adr/0022-map-live-tracking.md) D6
+   > （换成自注入 `<script>` 只需改 `src/utils/baiduMap.js` 三行）。
 8. **样式不得大改**：本轮是「接数据」，视觉已按 docs/design/design.md 定稿，只允许为「有/无数据」补状态样式。
    现有的 class 名与布局保持，不要把页面重画一遍。
 
@@ -806,8 +811,17 @@ ms-playwright 缓存里的 ffmpeg 二进制，缺失时**所有用例在 `newPag
 
 - `e2e/fixtures/`：`auth.setup.js`（7 账号真实 UI 登录 → `storageState`）、`login.js`、`captcha.js`（Redis 取验证码明文）。
 - `e2e/helpers/`：`constants.js`（路由 / 种子 id / 阈值）、`api.js`（接口层直连）、`pageAudit.js`（**落地路径**断言 + console/接口收集）、`storage.js`（**与存储位置无关**地读登录态 —— 令牌可能在 `localStorage`（勾选「7 天内自动登录」，默认）或 `sessionStorage`（不勾选），只读一个会把「登录成功」误判成「登录失败」）。
-- `e2e/specs/`：`01`…`22` 按模块分文件（`12-admin-responsive` / `13-client-mobile` 为响应式与移动形态补充；`14`–`21` 为聊天 / 履约 / 老人健康 / 陪诊工作台 / 匹配 / 运营 / 数据闭环 / 智能助手；`22-ux-interaction` 为交互流程回归护栏）。
+- `e2e/specs/`：`01`…`23` 按模块分文件（`12-admin-responsive` / `13-client-mobile`
+  为响应式与移动形态补充；`14`–`21` 为聊天 / 履约 / 老人健康 / 陪诊工作台 / 匹配 / 运营 / 数据闭环 / 智能助手；
+  `22-ux-interaction` 为交互流程回归护栏；`23-map` 为实时位置地图，见下）。
   - `22-ux-interaction.spec.js` 覆盖：订单详情换单后数据刷新、换单后评价目标、下单换选就诊人、老人端三态、连点防重、越权 403、陪诊员入口、管理端姓名脱敏、重置密码文案与响应面。
+  - `23-map.spec.js`（ADR-0022）覆盖：家属端「实时位置」卡的**降级路径**（无 AK →「未配置地图 AK」、
+    加载失败 →「地图暂不可用」）、距离/更新时间文案、`PENDING` 订单不渲染、陪诊员端共享开关、
+    `4004` / `4005`、ELDER/ADMIN 的 `GET /location` 回 `3004`、WS 收到 `LOCATION` 帧。
+    **真实地图渲染断言用 `helpers/mapAk.js` 读 `.env*.local` 守卫**：没配 AK 就 `test.skip`，
+    绝不让「本地没填 AK」变成 CI 或新同学的假红。
+  - `verify-map-ak.spec.js` 是**手工实测脚本**：不做断言，只打印界面事实 + 截图到
+    `reports/playwright/assets/`（未配 AK 时整组 `test.skip`）。
 - `tools/e2e/fixture.py`：`snapshot / restore / verify` 三子命令（17 张被写表水位 + 6 张表白名单影子表 + Redis `order:seq`/`pwd:version` + 上传文件）。
 - 产物全落 `reports/playwright/`（`/reports/` 已 gitignore —— `storageState` 含真实 JWT，**严禁入库**）。
 

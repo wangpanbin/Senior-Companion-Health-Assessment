@@ -12,8 +12,10 @@
  *   GET /api/order/{id}                 详情（全名、地址、备注、结算状态、服务小结、照片）
  *   GET /api/order/{id}/timeline        状态流转日志（含操作人快照与备注）
  *   GET /api/execution/{orderId}/checkins  6 节点打卡记录
+ *   GET /api/execution/{orderId}/track     轨迹（地图折线，ADR-0022）
+ *   GET /api/execution/{orderId}/location  最新位置快照（仅本单家属与陪诊员，ADR-0022）
  *   GET /api/order/{id}/recommend-companions  候选陪诊员推荐（V3.4，仅「待接单」时展示）
- *   WS  /ws/progress?token=&orderId=     打卡时实时推送
+ *   WS  /ws/progress?token=&orderId=     打卡时实时推送（含 LOCATION 位置事件）
  *
  * ⚠️ 三处与骨架版的实质差异：
  *   1. 删掉「已支付的费用将原路退回」—— **一期明令不做在线支付**
@@ -32,10 +34,10 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { NlPageShell, NlCard, NlStatusChip, NlTimeline, NlAvatar, NlNoticeBar, NlSkeleton, NlEmpty } from '@/components'
+import { NlPageShell, NlCard, NlStatusChip, NlTimeline, NlAvatar, NlNoticeBar, NlSkeleton, NlEmpty, NlMapPanel } from '@/components'
 import OrderFeeItems from '@/components/OrderFeeItems.vue'
 import { getOrder, getOrderTimeline, cancelOrder, urgeOrder, recommendCompanions } from '@/api/order'
-import { listCheckins, connectProgressSocket } from '@/api/execution'
+import { listCheckins, getTrack, getLocation, connectProgressSocket } from '@/api/execution'
 import { getReviewByOrder } from '@/api/review'
 import { buildDraftFromOrder } from '@/api/medication'
 import { getUserInfo } from '@/utils/auth'
@@ -70,6 +72,72 @@ const loadError = ref(false)
 const liveConnected = ref(false)
 /** V3.1：催单按钮的 in-flight 态，避免连点 */
 const urging = ref(false)
+
+/* ==================== 实时位置（ADR-0022） ==================== */
+
+/*
+ * 数据源分三块，各司其职：
+ *   ① GET /location   → 最新点（铺底，进页面立刻有东西看）
+ *   ② GET /track      → 轨迹折线（与打卡点一起画）
+ *   ③ WS LOCATION     → 增量更新最新点（不刷新页面）
+ *
+ * ⚠️ 可见性：`/location` 只允许本单家属与陪诊员。老人与管理员调会得 3004，
+ *    所以这个卡片只应该在本页（FAMILY 专属路由）出现，不要往共享组件里搬。
+ */
+const locationInfo = ref(null)
+const track = ref([])
+
+/** 地图上的打卡点：只保留有坐标的（历史数据可能缺坐标） */
+const mapCheckins = computed(() =>
+  (checkins.value || [])
+    .filter((c) => c.longitude && c.latitude)
+    .map((c) => ({
+      nodeLabel: c.nodeLabel,
+      time: formatDateTime(c.checkinTime, ''),
+      lng: c.longitude,
+      lat: c.latitude
+    }))
+)
+
+/** 地图上的陪诊员点；每秒刷新 staleSeconds 太重，直接用后端给的值 + 事件推送覆盖 */
+const mapPoint = computed(() => {
+  const info = locationInfo.value
+  if (!info?.longitude || !info?.latitude) return null
+  return {
+    lng: info.longitude,
+    lat: info.latitude,
+    recordTime: info.recordTime,
+    staleSeconds: info.staleSeconds
+  }
+})
+
+/** 实时位置卡右上角的角标。
+ *
+ * ⚠️ 必须返回空串而不是 `false`：`NlCard` 的 `extra` 插槽是
+ * `<slot name="extra">{{ extra }}</slot>`，插槽内容为空（v-if 全不成立）时
+ * Vue 会回落到 fallback 内容，把 prop 默认值 `false` 直接渲染成文字 `false` ——
+ * 2026-11-27 e2e 在家族订单详情页看到过这句荒唐的“false”。
+ * 用空串做角标时既不会回落出 `false`，也不会多占一行。
+ */
+const liveBadge = computed(() => {
+  if (locationInfo.value?.sharingEnabled === false) return '已暂停共享'
+  return liveConnected.value ? '实时' : ''
+})
+
+/** 是否渲染「实时位置」卡：接单后才有位置可看，待接单时不该出现 */
+async function loadLiveLocation() {
+  const target = orderId.value
+  if (!target) return
+  const info = await getLocation(target).catch(() => null)
+  if (String(target) !== String(orderId.value)) return
+  locationInfo.value = info
+  // 轨迹只在订单活着时拉：历史订单的折线对家属没有增量信息，只增加一次请求
+  if (info) {
+    const points = await getTrack(target).catch(() => [])
+    if (String(target) !== String(orderId.value)) return
+    track.value = (points || []).map((p) => ({ lng: p.longitude, lat: p.latitude }))
+  }
+}
 
 /* ==================== 候选陪诊员推荐（V3.4 · T9） ==================== */
 
@@ -155,6 +223,19 @@ async function loadAll() {
   // 候选推荐依赖详情里的订单状态（只有「待接单」才需要），
   // 故放在详情之后单独拉；它失败只降级候选区，不牵连页面其余部分。
   await loadCandidates()
+
+  // 实时位置（ADR-0022）：接单后才有意义；失败只降级地图卡，不影响页面其余部分。
+  //
+  // ⚠️ **刻意不 await**：这两个请求（/location + /track）与「建立 WS 订阅」无关，
+  //    但排在它们之后会把 openSocket() 往后推 —— 在家属端刚进页面的那一两秒里，
+  //    陪诊员恰好打卡的推送就会落在「还没订阅」的窗口里而丢掉。
+  //    位置是「额外的」信息，不该挡住「进度推送」这条主链路。
+  if (order.value?.companionId) {
+    loadLiveLocation()
+  } else {
+    locationInfo.value = null
+    track.value = []
+  }
 }
 
 /* ==================== 履约状态条（V3.1 · T5） ==================== */
@@ -326,6 +407,27 @@ function openSocket() {
         // PONG 是心跳回应，不是业务事件
         if (payload?.type === 'ORDER_PROGRESS') {
           loadAll()
+          return
+        }
+        // 位置事件：只更新地图相关字段，不重拉整页 ——
+        // 30 秒一次重拉订单详情 + 时间线 + 打卡 + 评价（4 个请求）是浪费，
+        // 而且会把用户正在看的弹窗 / 表单洗掉
+        if (payload?.type === 'LOCATION') {
+          const d = payload.data || {}
+          locationInfo.value = {
+            ...(locationInfo.value || {}),
+            longitude: d.longitude,
+            latitude: d.latitude,
+            recordTime: d.recordTime,
+            distanceMeters: d.distanceMeters,
+            sharingEnabled: d.sharingEnabled !== false,
+            staleSeconds: d.staleSeconds ?? 0
+          }
+          return
+        }
+        if (payload?.type === 'LOCATION_PAUSED') {
+          // 暂停必须显式反映到 UI：冻住的点会被读成「出事了」
+          locationInfo.value = { ...(locationInfo.value || {}), sharingEnabled: false }
         }
       }
     })
@@ -644,6 +746,20 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
+      </NlCard>
+
+      <!-- 实时位置（ADR-0022）：接单后才有位置可看；地图打不开时自动降级为文字卡片 -->
+      <NlCard v-if="order.companionId" title="实时位置" :extra="liveBadge">
+        <NlMapPanel
+          :order-lng="locationInfo?.orderLongitude ?? null"
+          :order-lat="locationInfo?.orderLatitude ?? null"
+          :point="mapPoint"
+          :track="track"
+          :checkins="mapCheckins"
+          :distance-meters="locationInfo?.distanceMeters ?? null"
+          :sharing-enabled="locationInfo?.sharingEnabled !== false"
+          :height="220"
+        />
       </NlCard>
 
       <!-- 服务进度 -->

@@ -1,9 +1,12 @@
 package org.company.nianglin.service;
 
 import org.company.nianglin.dto.CheckinCreateDTO;
+import org.company.nianglin.dto.LocationReportDTO;
+import org.company.nianglin.dto.LocationSharingDTO;
 import org.company.nianglin.vo.CheckinResultVO;
 import org.company.nianglin.vo.CheckinVO;
 import org.company.nianglin.vo.FileUploadVO;
+import org.company.nianglin.vo.LocationVO;
 import org.company.nianglin.vo.ProgressVO;
 import org.company.nianglin.vo.TrackPointVO;
 import org.springframework.web.multipart.MultipartFile;
@@ -57,4 +60,39 @@ public interface ExecutionService {
 
     /** 上传现场照片 / 取药凭证，须为本单陪诊员 */
     FileUploadVO uploadPhoto(Long orderId, MultipartFile file);
+
+    /* ==================== ADR-0022 实时位置 ==================== */
+
+    /**
+     * 上报当前位置（{@code POST /api/execution/{orderId}/location}，ADR-0022）。
+     *
+     * <p>须为本单陪诊员（否则 {@code 4003}），订单状态须为 {@code ACCEPTED} 或 {@code IN_SERVICE}
+     * （否则 {@code 3002}），且位置共享未被暂停（否则 {@code 4005}）。
+     * 同一订单两次上报间隔小于 {@code min-report-interval-seconds} 时回 {@code 4004}。</p>
+     *
+     * <p>每次上报都刷新 Redis 最新点；{@code companion_track} 按抽稀规则写入
+     * （位移 ≥ {@code min-move-meters} 或间隔 ≥ {@code min-record-interval-seconds}）。
+     * 成功后向该订单推送 {@code LOCATION}（只发 FAMILY + COMPANION）。</p>
+     */
+    LocationVO reportLocation(Long orderId, LocationReportDTO dto);
+
+    /**
+     * 最新位置快照（{@code GET /api/execution/{orderId}/location}，ADR-0022）。
+     *
+     * <p>可见性与 {@code LOCATION} 推送严格一致 —— <b>仅本单 FAMILY 与 COMPANION</b>，
+     * ELDER / ADMIN 一律 {@code 3004}。原则：能收到推送的才能查询，能查询的才能收到推送。</p>
+     *
+     * <p>从未上报过的订单返回 HTTP 200 + 三个全 {@code null} 的字段，
+     * 前端据此渲染「尚未开始共享位置」，<b>不要</b>当成错误。</p>
+     */
+    LocationVO latestLocation(Long orderId);
+
+    /**
+     * 开关位置共享（{@code PUT /api/execution/{orderId}/location-sharing}，ADR-0022）。
+     *
+     * <p>须为本单陪诊员。关闭时推 {@code LOCATION_PAUSED}，恢复时若有最新点则补推一条
+     * {@code LOCATION}。暂停<b>不影响打卡</b> —— 共享是「是否给家属看实时位置」，
+     * 不是「是否记录履约证据」。</p>
+     */
+    LocationVO setLocationSharing(Long orderId, LocationSharingDTO dto);
 }

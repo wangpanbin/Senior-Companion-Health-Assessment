@@ -3,6 +3,7 @@ package org.company.nianglin.websocket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.company.nianglin.constant.RoleConstants;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -50,6 +52,35 @@ public class OrderProgressHub {
     /** 打卡 / 订单状态变更 */
     public static final String TYPE_ORDER_PROGRESS = "ORDER_PROGRESS";
 
+    /**
+     * 陪诊员位置上报（ADR-0022）。
+     *
+     * <p><b>只发 FAMILY + COMPANION</b>（见 {@link #LOCATION_AUDIENCE}）。
+     * 位置是一个真实工作者的行踪信息，管理员与老人看到「打卡到哪了」就够了。</p>
+     */
+    public static final String TYPE_LOCATION = "LOCATION";
+
+    /**
+     * 陪诊员暂停位置共享（ADR-0022）。
+     *
+     * <p>同样只发 FAMILY + COMPANION。</p>
+     *
+     * <p><b>为什么暂停要主动推一条，而不是静默停发</b>：
+     * 冻住的红点会被家属读成「出事了」。暂停必须是<b>可解释的空白</b>。</p>
+     */
+    public static final String TYPE_LOCATION_PAUSED = "LOCATION_PAUSED";
+
+    /**
+     * 位置类事件的可见角色集合。
+     *
+     * <p>与 {@code GET /api/execution/{orderId}/location} 的可见性严格一致 ——
+     * <b>能收到推送的才能查询，能查询的才能收到推送</b>。
+     * 两者一旦分叉，「推了但查不到」会让前端拿不到铺底数据，「查得到但不推」会让
+     * 页面永远停在进页面那一刻。</p>
+     */
+    public static final Set<String> LOCATION_AUDIENCE =
+            Set.of(RoleConstants.FAMILY, RoleConstants.COMPANION);
+
     private static final DateTimeFormatter PUSH_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /** orderId → (sessionId → session) */
@@ -88,6 +119,23 @@ public class OrderProgressHub {
      * @param data    事件负载，序列化后放在 {@code data} 字段里
      */
     public void publish(Long orderId, String type, Object data) {
+        publishTo(orderId, type, data, null);
+    }
+
+    /**
+     * 按角色过滤地向某个订单的订阅者推送一条事件（ADR-0022）。
+     *
+     * <p>握手阶段 {@code JwtHandshakeInterceptor} 已把 {@code role} 写进会话属性，
+     * 这里直接读，不做二次查询 —— 每个会话都查一次库会把一次广播变成 N 次 SQ。
+     * 角色在会话期内不会变（改角色要重新登录，令牌会变）。</p>
+     *
+     * @param orderId 订单 ID
+     * @param type    事件类型
+     * @param data    事件负载
+     * @param roles   只发给这些角色（{@code RoleConstants} 枚举名）；
+     *                {@code null} 或空集 = 不限角色（与 {@link #publish} 等价）
+     */
+    public void publishTo(Long orderId, String type, Object data, Set<String> roles) {
         Map<String, WebSocketSession> group = groups.get(orderId);
         if (group == null || group.isEmpty()) {
             return;
@@ -96,10 +144,21 @@ public class OrderProgressHub {
         if (payload == null) {
             return;
         }
+        boolean filtered = roles != null && !roles.isEmpty();
         int sent = 0;
+        int skipped = 0;
         for (WebSocketSession session : group.values()) {
             if (!session.isOpen()) {
                 continue;
+            }
+            if (filtered) {
+                // ⚠️ 先判 null 再 contains：{@code Set.of(...).contains(null)} 会抛 NPE，
+                // 而缺 role 属性的会话（历史版本握手写入的旧会话 / 单测夹具）不能把整轮广播搞崩
+                String role = roleOf(session);
+                if (role == null || !roles.contains(role)) {
+                    skipped++;
+                    continue;
+                }
             }
             try {
                 synchronized (session) {
@@ -111,7 +170,14 @@ public class OrderProgressHub {
                         orderId, session.getId(), e.getMessage());
             }
         }
-        log.debug("进度事件已推送 | orderId={} | type={} | 成功会话数={}", orderId, type, sent);
+        log.debug("进度事件已推送 | orderId={} | type={} | 成功会话数={} | 按角色跳过={}",
+                orderId, type, sent, skipped);
+    }
+
+    /** 读会话角色；缺属性时返回 {@code null}（不被任何白名单命中，即不发） */
+    private static String roleOf(WebSocketSession session) {
+        Object value = session.getAttributes().get(WsAttributes.ROLE);
+        return value instanceof String role ? role : null;
     }
 
     /** 单个会话回一条（PONG 用），不与分组广播混在一起 */

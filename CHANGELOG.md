@@ -17,6 +17,97 @@
 
 ## [Unreleased]
 
+### Added · 家属端实时位置地图（ADR-0022 · 百度地图可视化定位）
+
+**背景**：一期把定位压到「只做距离校验」—— `companion_track` 只会在打卡那一刻写一条，
+家属在「陪诊员已接单、人还在路上」这段最焦虑的时间里，只能看到时间线上「出发 08:20」一行；
+陪诊员打卡前也不知道自己是不是已经进了 2000 米阈值，只能盲点提交再被 `4001` 打回。
+
+**这是对「一期不做地图导航」红线的最小范围扩围**（先例：ADR-0011 放开 IM 聊天），
+决策与坐标系 / 隐私边界全部记录在 [`docs/adr/0022-map-live-tracking.md`](docs/adr/0022-map-live-tracking.md)。
+
+**范围（刻意收窄）**：只有 **FAMILY 订单详情（M-16）** 与 **COMPANION 打卡页（M-11）** 渲染地图；
+ELDER / ADMIN 不渲染。**只显示直线距离**（`GeoUtil` Haversine，与打卡 `4001` 同口径），
+**不做路线规划 / ETA / 导航**。
+
+**接口**（契约见 [`docs/api/04-companion-execution.md`](docs/api/04-companion-execution.md) §7–§9）
+
+| # | 方法 | 路径 | 权限 |
+|---|---|---|---|
+| 7 | POST | `/api/execution/{orderId}/location` | COMPANION（本单） |
+| 8 | GET | `/api/execution/{orderId}/location` | **仅本单 FAMILY + COMPANION**（ELDER / ADMIN 回 `3004`） |
+| 9 | PUT | `/api/execution/{orderId}/location-sharing` | COMPANION（本单） |
+
+**关键决策**
+
+1. **坐标系：库里统一 WGS84，渲染前前端转 BD09**。反向做（落库改 BD09）会让 `4001` 的 2000 米阈值
+   凭空多出约 500 米偏差，且存量数据无坐标系标记、无法区分新旧口径 —— 渲染层偏移错了肉眼能看见，
+   判定层偏移错了只有纠纷时才被翻出来。
+2. **位置流三视图**：Redis 最新点（TTL 300s，每次上报都刷）/ `companion_track` 抽稀轨迹
+   （位移 ≥ 50m **或** 间隔 ≥ 120s 才落库，单均 ~360 条 → ~50 条）/ 打卡节点（`node` 非空，**永不抽稀**）。
+3. **`LOCATION` 事件只推 FAMILY + COMPANION**（`OrderProgressHub#publishTo` 按会话 role 过滤）；
+   `ORDER_PROGRESS` 行为零变更。原则：**能收到推送的才能查询，能查询的才能收到推送**。
+4. **暂停共享是可解释的空白**：`PUT /location-sharing` 落 Redis（无 TTL，与订单同寿）
+   并推 `LOCATION_PAUSED`。冻住的点会被家属读成「出事了」，所以暂停必须主动告知。
+   暂停**不影响打卡** —— 共享决定「是否给家属看实时位置」，不决定「是否记录履约证据」。
+5. **三级降级**：无 AK → 「未配置地图 AK」；加载失败 / 8 秒超时 → 「地图暂不可用，已切换为文字模式」；
+   成功 → 地图。降级卡片仍给出「直线距离 + 多久前更新」—— **地图可以没有，信息不能没有**。
+
+**新增错误码**
+
+| code | 含义 |
+|---|---|
+| `4004` | 位置上报过于频繁（同一订单小于 `min-report-interval-seconds`，默认 10 秒） |
+| `4005` | 位置共享已关闭（陪诊员已暂停） |
+
+**依赖例外（已批准）**：`frontend` 新增生产依赖 `@baidumap/jsapi-loader`（MIT，官方 author `Baidu Maps`）。
+理由与回退方案见 ADR-0022 D6 —— 百度 JSAPI 不支持本地打包，必须从 `api.map.baidu.com` 动态加载。
+
+**环境变量**：`VITE_BAIDU_MAP_AK`。占位写 `frontend/.env.development`（空值 + 申请指引），
+真值写 `frontend/.env.development.local`（`.gitignore` 的 `*.local` 已忽略）。
+未配置时地图自动降级，不影响其它任何功能。
+
+**涉及的坑（都写进了代码注释）**
+
+- `BMap.Symbol` 当 Marker 图标在 JSAPI 4.0 下会抛 `Cannot set properties of null (setting 'id')`，
+  控制台报错且点根本不画 → 改用 `BMap.Circle`（半径按米算，缩放自适应）+ `BMap.Label` 文字标签。
+- 隐藏状态（`display:none`）下 `new BMap.Map(...)` 拿到 0 尺寸容器会静默不渲染 → 先 `state='ready'`
+  让容器可见，`nextTick` 后再建实例，且容器用 `v-if` 而不是 `v-show`。
+- **AK 被百度拒绝时 JSAPI 不报错、只是不干活**：脚本 HTTP 200、`load()` 正常 resolve，
+  随后抛一堆异步的 `Cannot read properties of null (reading 'logCbk…')`，`try/catch` 一个也接不住，
+  页面留下一个**空灰框**不降级（假 AK 实测踩到）→ 新增 **4 秒渲染看门狗**：
+  轮询容器里是否出现了 `canvas` / `.BMap_cpyCtrl`，未出现则拆掉半成品实例并降级为文字卡片。
+  实测：假 AK 下 5.4~5.6 秒内稳定降级，距离与更新时间仍在。
+- `NlCard` 的 `extra` 插槽在内容为空时会回落到 prop 默认值 `false`，把布尔渲染成文字「false」→
+  角标改用 computed 返回空串。
+
+**测试**
+
+- 后端 `mvn -B verify`：**1689 个用例全绿**（新增 `TrackingPropertiesTest` / `ExecutionLocationTest` /
+  `OrderProgressHubRoleFilterTest` 共 28 条）。
+- 前端 `pnpm run test`：**296 个用例全绿**（新增 `coordConvert.test.mjs` / `NlMapPanel.test.mjs` /
+  `useLocationReporter.test.mjs`）。
+- e2e 全量：**288 passed / 1 skipped**（skip 是「失效 AK 手工脚本」，常规环境不该跑）。
+  与地图相关的 6 个 spec：
+
+  | spec | 覆盖 |
+  |---|---|
+  | `23-map` | 降级路径 / `PENDING` 不渲染 / 共享开关 / `4004`·`4005` / 角色 `3004` / 真实地图渲染 |
+  | `23b-map-ws-role` | **线路级**角色过滤：ELDER / ADMIN 订阅同一订单收不到 `LOCATION` 帧 |
+  | `23c-map-distance-parity` | `/location.distanceMeters` 与 `/checkin.distance` **完全相等**；文案写「距医院」不写「距老人」 |
+  | `23d-map-resilience` | 断网 12 秒再恢复自动接上（不重复渲染）/ 老人端无地图入口 / `LOCATION` 负载字段白名单 |
+  | `verify-map-ak` | 真实 AK 双端联动手工实测（打印事实 + 截图，无断言） |
+  | `verify-map-invalid-ak` | 失效 AK 降级实测（需先把 AK 改成 `INVALID_AK…`，默认 skip） |
+
+- 真实 AK 双端联动实测：距医院 1.5 公里 → 564 米，家属端**不刷新页面**更新，
+  上报→界面延迟 8 ms；暂停共享后家属端显示「已暂停位置共享」。
+  截图存 `reports/playwright/assets/s14-*.png`。
+
+**顺手修的一处回归**：`order-detail.vue` 里 `/location` 与 `/track` 改为**不 await**。
+之前把它们放在 `loadAll()` 末尾会推迟 `openSocket()`，让「刚进页面那一两秒内发生打卡」的
+`ORDER_PROGRESS` 推送落在未订阅窗口里 —— `11-realtime` 的 WS 用例当场拍到了（偶发假红）。
+位置是额外信息，不该挡住进度推送这条主链路。
+
 ### Added · 产品反馈渠道：客户端提建议 → 管理端处理闭环（V6）
 
 **背景**：此前两条反馈渠道（评价 / 投诉）**都绑死在订单上**（`uk_order_review(order_id)`、

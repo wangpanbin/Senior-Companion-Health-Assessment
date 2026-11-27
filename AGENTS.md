@@ -41,6 +41,15 @@
    > 不要拿本条豁免去类推其它接口。
 3. **一期不做**：在线支付（改为线上记账 + 线下结算）、地图导航（改为文字地址 + 签到坐标）、IM 聊天（改为站内信）。
    > **二期变更（2026-10-16，ADR-0011）**：IM 聊天已按 **M13 订单聊天** 形态放开——仅限**按陪诊订单**的家属↔陪诊员双向聊天（`/api/chat/**`），ELDER 只读、ADMIN 仲裁只读，**不做**自由加好友式 IM；在线支付与地图导航红线**不变**，涉及仍须主动拒绝或改写。聊天沿用全部合规约束（不做诊断、敏感词拦截、脱敏、免责声明），契约见 `docs/api/11-order-chat.md`。
+   >
+   > **二期变更（2026-11-27，ADR-0022）—— 地图可视化有限放开。**
+   > 「地图导航」红线按**最小范围**放开：仅 **FAMILY 订单详情（M-16）** 与 **COMPANION 打卡页（M-11）**
+   > 渲染百度地图，**只显示直线距离**（`GeoUtil` Haversine），**不做路线规划、不做 ETA、不做语音导航**；
+   > ELDER / ADMIN **不渲染**。位置事件 `LOCATION` / `LOCATION_PAUSED` **只推** FAMILY + COMPANION，
+   > 陪诊员可随时暂停共享。**在线支付红线不变**，涉及仍须主动拒绝或改写。
+   > 契约见 `docs/api/04-companion-execution.md` §7–§9，决策见 [ADR-0022](docs/adr/0022-map-live-tracking.md)。
+   > ⚠️ 本条**不放宽**任何隐私约束：坐标不进日志、位置事件不含姓名 / 手机号 / 身份证、
+   > 库里坐标系仍为 WGS84（BD09 只在渲染前由前端转）。
 
    > **已记录的例外（V3.7 · 2026-10-21）——第二个技术栈。**
    > 项目自 V3.7 起含**第二个技术栈**：Python 助手服务（`ai-service/`，Python 3.12 + FastAPI + LangChain，独立进程、端口 8081，只监听 `127.0.0.1`）。
@@ -57,6 +66,11 @@
 - **不要执行破坏性命令**：`rm -rf`、强制 `git push --force` 到 `main` / `develop`、直接 drop database、`mvn clean install -DskipTests` 之外的危险 Maven 目标。对 `git commit`、`git push`、`git reset`、`git clean`、重启服务、删容器等动作必须**先确认**。
 - **不要在仓库中留下明文密码 / 真实手机号 / 真实身份证号**。所有示例数据用合规占位串（如 `13800000000`、`110101199001010001`）。
 - **不要"自创"技术栈**：不得引入 README / pom.xml / package.json 之外的依赖。需要新增依赖时，在回复中明确说明理由，由人工确认后再写。（V3.7 的 Python 助手服务依赖清单是**已记录的例外**，见 §0.1。）
+  > **已记录的例外（2026-11-27，ADR-0022）—— 前端地图加载器。**
+  > `frontend/package.json` 增加生产依赖 `@baidumap/jsapi-loader`（MIT，官方 author `Baidu Maps`）。
+  > 理由：百度 JSAPI 不支持本地打包，必须从 `api.map.baidu.com` 动态加载，官方 loader 已把
+  > 「脚本单次注入 / 超时 / 命名空间版本差异」三件事做成 Promise 语义。
+  > **该例外仅限这一个包**；回退方案已写在 ADR-0022 D6（换成自注入 `<script>` 只需改 `utils/baiduMap.js` 三行）。
 - **提交前跑该跑的检查**。仓库已有 CI（`.github/workflows/ci.yml`，push / PR 到 `main` 时触发），覆盖后端 `mvn verify`、前端 `lint:check` + `vitest` + `build`、AI 助手服务 `pytest`、密钥体检、指标字典人读面↔机器面一致性、静态门禁（错误码双向一致 + 页面编号双向一致 + 文档三项校验 + 坏字符扫描）。**改后端就跑 `mvn -B verify`，改 `frontend/` 就跑 `pnpm run lint:check` 与 `pnpm run test`** —— 与 CI 同命令，自己先红总比推送后红好。新增检查项时同步改 workflow。
 - **改 `ai-service/` 就跑 `python -m pytest ai-service/tests -q`；改 FAQ 知识库（`ai-service/knowledge/faq.json`）就跑 `python tools/check_faq_anchors.py`。** 助手核心断言**不依赖 LLM 与网络**（没配模型时也要能跑绿）；CI 的 `ai-service` job 跑的是同一套测试（工作目录 `ai-service/`）。
 - **本地能复跑 CI 的静态门禁**：统一入口是 `python tools/ai_flow/gate_check.py`（**纯标准库，不需要装任何依赖**），

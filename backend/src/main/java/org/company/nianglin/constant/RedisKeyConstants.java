@@ -87,6 +87,31 @@ public final class RedisKeyConstants {
     /** 同 IP 小时发送计数：{@code sms:ip:{ip}:{yyyyMMddHH}} → 次数，TTL 1 小时 */
     public static final String SMS_IP_PREFIX = "sms:ip:";
 
+    /* ---------- ADR-0022 实时位置（家属端地图 / 陪诊员打卡） ---------- */
+
+    /**
+     * 订单最新的位置点：{@code track:latest:{orderId}} → 坐标 JSON，TTL = 5 分钟（{@code nianglin.tracking.latest-ttl-seconds}）。
+     *
+     * <p><b>每次上报都覆盖</b>，不受落库抽稀影响 —— 家属看到的永远是最后一次上报的位置，
+     * 而不是「上一条位移足够的点」。</p>
+     */
+    public static final String TRACK_LATEST_PREFIX = "track:latest:";
+
+    /**
+     * 位置共享开关：{@code track:share:{orderId}} → {@code on} / {@code off}，<b>不设 TTL</b>。
+     *
+     * <p>共享状态应与订单同寿，而不是 5 分钟后「自己又打开了」。
+     * 订单终态后由 {@code ExecutionServiceImpl} 主动清理。</p>
+     */
+    public static final String TRACK_SHARE_PREFIX = "track:share:";
+
+    /**
+     * 上报限流标记：{@code track:rate:{orderId}} → 1，SET NX EX = {@code nianglin.tracking.min-report-interval-seconds}。
+     *
+     * <p>已存在即回 {@code 4004}。<b>刻意不静默忽略</b>，否则「为何位置不动」无从排查。</p>
+     */
+    public static final String TRACK_RATE_PREFIX = "track:rate:";
+
     public static String captcha(String captchaKey) {
         return CAPTCHA_PREFIX + captchaKey;
     }
@@ -166,5 +191,20 @@ public final class RedisKeyConstants {
     /** 某 IP 在指定小时的发送计数 */
     public static String smsIpHourlyCount(String ip, String yyyyMMddHH) {
         return SMS_IP_PREFIX + ip + ":" + yyyyMMddHH;
+    }
+
+    /** 某订单的最新位置点（Redis，TTL = latest-ttl-seconds） */
+    public static String trackLatest(Long orderId) {
+        return TRACK_LATEST_PREFIX + orderId;
+    }
+
+    /** 某订单的位置共享开关（{@code on} / {@code off}，无 TTL） */
+    public static String trackShare(Long orderId) {
+        return TRACK_SHARE_PREFIX + orderId;
+    }
+
+    /** 某订单的上报限流标记（SET NX EX，单位为秒） */
+    public static String trackRate(Long orderId) {
+        return TRACK_RATE_PREFIX + orderId;
     }
 }
