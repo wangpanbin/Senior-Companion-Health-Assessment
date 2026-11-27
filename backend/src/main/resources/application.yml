@@ -178,6 +178,22 @@ nianglin:
     recommend-max-limit: 20
     # 档期冲突判定的时间窗（分钟）：一次陪诊从就诊到结束约 2–3 小时
     conflict-window-minutes: 180
+  # 实时位置追踪（ADR-0022）—— 家属端地图 / 陪诊员打卡
+  #
+  # ⚠️ 五个值都会在启动期校验（TrackingProperties#validate），不合法即启动失败。
+  #    理由：配错都不会报错，只会让地图安静地不对（轨迹暴涨 / 位置永远空 / 永远显示「未更新」）。
+  tracking:
+    # 同一订单两次上报的最小间隔（秒）：前端 30s 一次，这里用 10s 兜住重复与连点，否则 4004
+    min-report-interval-seconds: 10
+    # 落库抽稀：与上一条轨迹点的位移达到该值（米）才写 companion_track
+    min-move-meters: 50
+    # 落库抽稀兜底：距上一条超过该秒数也写一条（静止也有时间锚点，供纠纷取证）
+    min-record-interval-seconds: 120
+    # Redis 最新点 TTL（秒）：断连后仍能给出「最后已知位置」
+    latest-ttl-seconds: 300
+    # 超过该秒数未更新即在 UI 上标注「位置已 x 分钟未更新」（不做「假在线」）
+    stale-threshold-seconds: 180
+
   # 家属智能助手（V3.7 · M14）—— 门面配置
   #
   # ⚠️ 这段配置全部在启动期校验（AssistantProperties#validate），不合法即启动失败。

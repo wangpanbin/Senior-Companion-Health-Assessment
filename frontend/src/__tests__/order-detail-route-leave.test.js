@@ -21,6 +21,8 @@ import { nextTick } from 'vue'
 const getOrderMock = vi.fn()
 const getOrderTimelineMock = vi.fn()
 const listCheckinsMock = vi.fn()
+const getLocationMock = vi.fn()
+const getTrackMock = vi.fn()
 const getReviewByOrderMock = vi.fn()
 const recommendCompanionsMock = vi.fn()
 
@@ -34,6 +36,10 @@ vi.mock('@/api/order', () => ({
 
 vi.mock('@/api/execution', () => ({
   listCheckins: (...a) => listCheckinsMock(...a),
+  // ADR-0022：页面接单后会多拉一次位置快照 + 轨迹；
+  // 不在这里给出就必须 fail，否则会被当成 DEF-1 之外的「undefined 请求」假红
+  getLocation: (...a) => getLocationMock(...a),
+  getTrack: (...a) => getTrackMock(...a),
   connectProgressSocket: () => ({ close: () => {} })
 }))
 
@@ -196,6 +202,8 @@ beforeEach(() => {
   getOrderMock.mockResolvedValue(ORDER_REVIEWED)
   getOrderTimelineMock.mockResolvedValue([])
   listCheckinsMock.mockResolvedValue([])
+  getLocationMock.mockResolvedValue(null)
+  getTrackMock.mockResolvedValue([])
   getReviewByOrderMock.mockResolvedValue(null)
   recommendCompanionsMock.mockResolvedValue({ orderId: 1031, total: 0, candidates: [] })
 })
@@ -218,7 +226,9 @@ describe('DEF-1 · 路由离开不得带 undefined 重拉', () => {
         getOrderTimelineMock,
         listCheckinsMock,
         getReviewByOrderMock,
-        recommendCompanionsMock
+        recommendCompanionsMock,
+        getLocationMock,
+        getTrackMock
       )
     ).toEqual([])
   })

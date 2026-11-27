@@ -10,9 +10,11 @@
  *   - uploadExecutionPhoto(...)    → 上传现场照 / 取药凭证（multipart）
  *   - startService / completeService → 状态流转
  *   - connectProgressSocket(...)   → WebSocket 实时进度推送
+ *   - getLocation / setLocationSharing / useLocationReporter → 实时位置（ADR-0022）
  *
  * 注意：
- *   - 一期不做地图导航，坐标只用于距离校验；定位由浏览器 geolocation 取，服务端校验。
+ *   - 定位由浏览器 geolocation 取，服务端校验；地图仅展示直线距离，不做路线规划与导航（ADR-0022）。
+ *   - 服务中每 30 秒上报一次位置（useLocationReporter），家属端因此能实时看到人现在到哪了。
  *   - 订阅前必须先 getProgress 铺底；onBeforeUnmount 必须 socket.close()。
  *   - 打卡节点：DEPART/ARRIVE/IN_CONSULT/TAKE_MEDICINE/LEAVE/FINISH。
  */
@@ -20,16 +22,19 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import {
-  NlPhoneShell, NlMobileOnlyPage, NlTimeline, NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlNoticeBar
+  NlPhoneShell, NlMobileOnlyPage, NlTimeline, NlCard, NlStatusChip, NlSkeleton, NlEmpty, NlNoticeBar,
+  NlMapPanel
 } from '@/components'
 import VitalSignForm from '@/components/health/VitalSignForm.vue'
 import { getOrder, startService, completeService } from '@/api/order'
 import {
-  getProgress, listCheckins, checkin, uploadExecutionPhoto, connectProgressSocket
+  getProgress, listCheckins, checkin, uploadExecutionPhoto, connectProgressSocket,
+  getLocation, setLocationSharing
 } from '@/api/execution'
 import { getCompanionVitals, withdrawCompanionVital } from '@/api/vitalSign'
 import { formatVisitTime, formatMoney, formatTime, formatDateTime } from '@/utils/format'
 import { confirmThen } from '@/utils/confirm'
+import { useLocationReporter } from '@/composables/useLocationReporter'
 
 const route = useRoute()
 /**
@@ -82,9 +87,6 @@ const vitalsLoading = ref(false)
 const withdrawingVital = ref(null)
 const READABLE_STATUSES = ['IN_SERVICE', 'COMPLETED', 'REVIEWED']
 
-/** 设备定位（来自 geolocation，仅用于距离校验） */
-const location = ref({ lng: '', lat: '', addr: '', getting: false })
-
 const orderStatus = computed(
   () => progress.value?.orderStatus || order.value?.status || ''
 )
@@ -95,6 +97,111 @@ const subable = computed(
 const canReadVitals = computed(() => READABLE_STATUSES.includes(orderStatus.value))
 /** 本单体征可写（仅服务中） */
 const canWriteVitals = computed(() => orderStatus.value === 'IN_SERVICE')
+
+/** 设备定位（来自 geolocation，仅用于距离校验与地图展示） */
+const location = ref({ lng: '', lat: '', addr: '', getting: false })
+
+/* ==================== 实时位置（ADR-0022） ==================== */
+
+/*
+ * 三件事：
+ *   ① 地图：把「当前定位」从纯坐标文字升级为地图（无 AK / 加载失败时自动降级为文字卡片）
+ *   ② 上报：服务中每 30 秒推一次位置（只在页面可见时），家属端地图因此会动
+ *   ③ 开关：陪诊员可随时暂停共享（位置是一个真实工作者的行踪信息）
+ *
+ * ⚠️ 打卡与上报的关系：打卡走 `/checkin`（履约证据，永远落库）；
+ *    位置走 `/location`（可被抽稀）。**暂停共享不影响打卡**：
+ *    共享只决定「是否给家属看实时位置」，不决定「是否记录履约证据」。
+ */
+const locationInfo = ref(null)
+const sharingSaving = ref(false)
+
+/** 地图上的打卡点（已打过的节点）；只保留有坐标的 */
+const mapCheckins = computed(() =>
+  (checkins.value || [])
+    .filter((c) => c.longitude && c.latitude)
+    .map((c) => ({
+      nodeLabel: c.nodeLabel,
+      time: formatDateTime(c.checkinTime, ''),
+      lng: c.longitude,
+      lat: c.latitude
+    }))
+)
+
+/**
+ * 地图上的「我」：**优先用刚取到的实时定位**（refreshLocation 的本地结果），
+ * 没有再回落到服务端快照 —— 本地值更新更快，且刚刷新时用户就想看自己现在在哪。
+ *
+ * `staleSeconds` 只在用服务端快照时才有意义；本地定位一律视为 0（刚取的）。
+ */
+const mapPoint = computed(() => {
+  if (location.value.lng && location.value.lat) {
+    return { lng: location.value.lng, lat: location.value.lat, recordTime: null, staleSeconds: 0 }
+  }
+  const info = locationInfo.value
+  if (!info?.longitude || !info?.latitude) return null
+  return {
+    lng: info.longitude,
+    lat: info.latitude,
+    recordTime: info.recordTime,
+    staleSeconds: info.staleSeconds
+  }
+})
+
+/** 地图上的医院点：来自服务端快照（订单坐标只在 /location 里下发） */
+const orderPoint = computed(() => ({
+  lng: locationInfo.value?.orderLongitude ?? null,
+  lat: locationInfo.value?.orderLatitude ?? null
+}))
+
+/** 位置共享开关的 local 状态：`true` 即可上报，`false` 时 useLocationReporter 自动停止 */
+const sharingEnabled = computed(() => locationInfo.value?.sharingEnabled !== false)
+
+/** 是否应当上报位置：接单/服务中 + 共享开着 */
+const shouldReportLocation = computed(() => subable.value && sharingEnabled.value)
+
+/**
+ * 上报调度：`useLocationReporter` 自己会在 enabled 变 true/false 时启停，
+ * 也会在 onBeforeUnmount 里 stop，页面不需要手动调用 start/stop。
+ * 这里保留引用是为了给「刷新定位」按钮手动补报一次（reportNow）。
+ */
+const { reportNow } = useLocationReporter({
+  orderId: () => orderId.value,
+  enabled: () => shouldReportLocation.value,
+  onReported: (vo) => {
+    locationInfo.value = vo
+  },
+  onDegraded: () => {
+    // 连续失败不弹 toast（会打断打卡），只把状态行交给模板渲染
+    locationFailed.value = true
+  }
+})
+const locationFailed = ref(false)
+
+/** 拉一次位置快照（铺底）。失败只降级地图卡，不影响打卡主流程 */
+async function loadLocation() {
+  const target = orderId.value
+  const info = await getLocation(target).catch(() => null)
+  if (String(target) !== String(orderId.value)) return
+  locationInfo.value = info
+  locationFailed.value = false
+}
+
+/** 开关位置共享 */
+async function toggleSharing(enabled) {
+  if (sharingSaving.value) return
+  sharingSaving.value = true
+  try {
+    const vo = await setLocationSharing(orderId.value, enabled)
+    locationInfo.value = vo
+    locationFailed.value = false
+    ElMessage.success(enabled ? '已恢复位置共享' : '已暂停位置共享，家属将看不到你的实时位置')
+  } catch {
+    // 拦截器已弹错
+  } finally {
+    sharingSaving.value = false
+  }
+}
 
 /** 各节点完成时间（来自打卡记录） */
 const checkinTimeMap = computed(() => {
@@ -155,6 +262,12 @@ async function loadAll() {
   } finally {
     if (String(target) === String(orderId.value)) loading.value = false
   }
+  // 实时位置（ADR-0022）：接单后才有意义。单独拉，失败只降级地图卡
+  if (subable.value) {
+    await loadLocation()
+  } else {
+    locationInfo.value = null
+  }
 }
 
 /** 收到推送 / 操作后只重拉进度 + 打卡记录（轻量） */
@@ -171,7 +284,6 @@ async function reloadProgress() {
     maybeCloseSocket()
   }
 }
-
 /* ===================== 体征代录（V4 · P2-2） ===================== */
 
 /**
@@ -263,6 +375,9 @@ async function refreshLocation() {
   const loc = await acquireLocation()
   if (loc) {
     location.value = { ...loc, getting: false }
+    // 手动刷新后立刻上报一次：让家属端即时看到新位置，而不是等下一个 30 秒周期。
+    // 若后端限流（<10 秒）会回 4004，reportNow 内部已把它当作正常答复忽略
+    reportNow()
   } else {
     location.value = { lng: '', lat: '', addr: '', getting: false }
     ElMessage.warning('无法获取定位，请检查浏览器定位权限')
@@ -589,22 +704,28 @@ onBeforeUnmount(() => {
         </ul>
       </NlCard>
 
-      <!-- 定位（仅用于距离校验，不接入地图） -->
-      <NlCard>
-        <template #title>
-          <div class="block-head">
-            <span class="nl-h2">当前定位</span>
-            <span :class="['on-site', location.lng && location.lat ? 'is-ok' : 'is-fail']">
-              <span class="dot" />
-              {{ location.getting ? '定位中…' : location.lng && location.lat ? '已获取' : '未获取' }}
-            </span>
-          </div>
+      <!-- 当前定位 + 地图（ADR-0022）：地图打不开时自动降级为文字卡片 -->
+      <NlCard title="当前定位">
+        <template #extra>
+          <span :class="['on-site', location.lng && location.lat ? 'is-ok' : 'is-fail']">
+            <span class="dot" />
+            {{ location.getting ? '定位中…' : location.lng && location.lat ? '已获取' : '未获取' }}
+          </span>
         </template>
         <div class="loc">
+          <NlMapPanel
+            :order-lng="orderPoint.lng"
+            :order-lat="orderPoint.lat"
+            :point="mapPoint"
+            :checkins="mapCheckins"
+            :distance-meters="locationInfo?.distanceMeters ?? null"
+            :sharing-enabled="sharingEnabled"
+            :height="180"
+            :show-updated-at="false"
+          />
           <div v-if="location.lng && location.lat" class="loc__coord is-num">
             经度 {{ location.lng }} · 纬度 {{ location.lat }}
           </div>
-          <div v-else class="nl-caption nl-text-weak">尚未获取定位，打卡前请先刷新</div>
           <el-button
             type="primary"
             plain
@@ -615,8 +736,32 @@ onBeforeUnmount(() => {
           >
             刷新定位
           </el-button>
+
+          <!--
+            位置共享开关（ADR-0022 D12/D13）：
+            位置是一个真实工作者的行踪信息，陪诊员可随时暂停；
+            **暂停不影响打卡** —— 那是履约证据，不归这个开关管。
+          -->
+          <div v-if="subable" class="loc__share">
+            <div class="loc__share-label">
+              <span>共享实时位置给家属</span>
+              <span class="nl-caption nl-text-weak">
+                关闭后家属看不到你的实时位置，打卡不受影响
+              </span>
+            </div>
+            <el-switch
+              :model-value="sharingEnabled"
+              :loading="sharingSaving"
+              aria-label="共享实时位置给家属"
+              @update:model-value="toggleSharing"
+            />
+          </div>
+          <NlNoticeBar v-if="locationFailed" tone="warning">
+            定位暂时不可用，请检查浏览器定位权限；打卡仍需先刷新定位
+          </NlNoticeBar>
           <p class="nl-caption nl-text-weak loc__note">
-            定位仅用于「是否到达医院附近」的距离校验，由服务端核验，一期不接入地图。
+            地图只显示与医院的直线距离（仅供参考），不做路线规划与导航；
+            位置由本机上报，锁屏或切到后台时会暂停。
           </p>
         </div>
       </NlCard>
@@ -790,6 +935,25 @@ onBeforeUnmount(() => {
     color: var(--nl-text-2);
     background: var(--nl-bg-sunken);
     border-radius: 6px;
+  }
+
+  // 位置共享开关：左边是标签 + 说明，右边是开关（适老化：整个行高 ≥ 48px）
+  &__share {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--nl-space-3);
+    min-height: 48px;
+    padding: var(--nl-space-2) 0;
+    border-top: 1px solid var(--nl-border);
+  }
+
+  &__share-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: var(--nl-font-body);
+    color: var(--nl-text-1);
   }
 
   &__note {

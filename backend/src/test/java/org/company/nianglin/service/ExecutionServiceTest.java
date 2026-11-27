@@ -20,6 +20,7 @@ import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.impl.ExecutionServiceImpl;
+import org.company.nianglin.config.TrackingProperties;
 import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.vo.CheckinResultVO;
 import org.company.nianglin.vo.CheckinVO;
@@ -112,6 +113,9 @@ class ExecutionServiceTest {
     @Mock
     private OrderProgressHub progressHub;
 
+    @Mock
+    private org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
+
     private ExecutionServiceImpl service;
 
     @BeforeEach
@@ -119,7 +123,7 @@ class ExecutionServiceTest {
         MybatisLambdaCache.warmUp();
         service = new ExecutionServiceImpl(orderMapper, checkinMapper, trackMapper, sysUserMapper,
                 companionProfileMapper, orderService, fileStorageService, messageService, progressHub,
-                new ObjectMapper());
+                new ObjectMapper(), redisTemplate, new TrackingProperties());
         // @Value 字段在纯单测里不会被注入，不手动设就是 0 ——
         // 那会让「任何非零距离都超限」，把距离相关的用例全部变成假红
         ReflectionTestUtils.setField(service, "maxDistanceMeters", 2000);
