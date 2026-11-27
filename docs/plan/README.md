@@ -4,7 +4,7 @@
 
 | 文件 | 内容 | 状态 |
 |---|---|---|
-| [`plan.md`](plan.md) | **项目开发计划书** —— 模块拆分（M0 – M15）+ 环境需求 + 验收标准。工程的「总纲」，与 [`../prd/PRD.md`](../prd/PRD.md) 的分层关系见 [ADR-0005](../adr/0005-prd-planmd-layers.md) | 长期有效 |
+| [`plan.md`](plan.md) | **项目开发计划书** —— 模块拆分（M0 – M14，共 15 个）+ 环境需求 + 验收标准。工程的「总纲」，与 [`../prd/PRD.md`](../prd/PRD.md) 的分层关系见 [ADR-0005](../adr/0005-prd-planmd-layers.md) | 长期有效 |
 | [`iteration-plan.md`](iteration-plan.md) | **V3.x 产品迭代规划** —— 逐版本的产品定位、能力范围与节奏（前身是迭代计划，2026-09 文档收敛时并入 `docs/plan/`） | 长期有效 |
 | [`ui-rework.md`](ui-rework.md) | 前端 UI 重构 R4 / R5 / R6 实施计划（原名同上，随迭代计划一起移入 `docs/plan/`） | 已执行 |
 | [`desktop-adapt-2026-09.md`](desktop-adapt-2026-09.md) | 桌面形态适配方案（Q1 – Q12 决策） | 已执行 |

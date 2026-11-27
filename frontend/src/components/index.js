@@ -26,5 +26,7 @@ export { default as NlMobileOnlyNotice } from './NlMobileOnlyNotice.vue'
 export { default as NlUserMenu } from './NlUserMenu.vue'
 export { default as NlMobileOnlyPage } from './NlMobileOnlyPage.vue'
 export { default as NlAdminTable } from './NlAdminTable.vue'
+// ⚠️ 下面两个是**死组件**（0 引用，仅此处导出）：不要在新页面里用。
+//    删除属红线操作，需单独授权 —— 见 docs/plan/ui-rework.md「范围外 · 死代码清理」。
 export { default as PagePlaceholder } from './PagePlaceholder.vue'
 export { default as ModulePlaceholder } from './ModulePlaceholder.vue'

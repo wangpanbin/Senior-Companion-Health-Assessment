@@ -32,12 +32,17 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>对应 {@code docs/api/07-message.md} §1 ~ §7。实时推送端点见
  * {@link MessageSseController}（{@code /sse/message}）。</p>
  *
- * <h3>为什么全部接口都没有 {@code @PreAuthorize}</h3>
+ * <h3>为什么绝大多数接口没有 {@code @PreAuthorize}</h3>
  *
  * <p>站内信的可见范围是「收件人 = 当前登录用户」，与角色无关 ——
  * 老人、家属、陪诊员、管理员都只看自己的消息。
  * 角色注解在这里既不必要也不充分：它挡不住「家属 A 看家属 B 的消息」，
  * 那件事只能靠 {@code receiver_id} 条件 + Service 层归属校验。</p>
+ *
+ * <p>例外只有两个：{@code GET/PUT /api/message/notification-preference}
+ * 带 {@code @PreAuthorize("hasRole('FAMILY')")} —— 通知偏好是**家属专属**配置
+ * （陪诊员与老人不产生漏服提醒，给他们开这个开关只会造出一个不生效的设置项）。
+ * 所以这两条不是「漏了归属校验」，而是「角色本身就是准入条件」。</p>
  *
  * <h3>写操作对 ELDER 的处理</h3>
  *

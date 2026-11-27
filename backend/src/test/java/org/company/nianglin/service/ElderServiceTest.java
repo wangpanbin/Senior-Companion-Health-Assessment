@@ -554,6 +554,8 @@ class ElderServiceTest {
         loginAs(RoleConstants.FAMILY, FAMILY_ID);
         given(sysUserMapper.selectOne(any())).willReturn(elderUser());
         given(elderProfileMapper.selectList(any())).willReturn(List.of(elderProfile()));
+        // 绑定流程会先锁 elder 行（BE-01：串行化「校验 → 写入」），锁不成功就等价于「档案没了」
+        given(elderProfileMapper.selectByIdForUpdate(ELDER_ID)).willReturn(elderProfile());
         given(relationMapper.selectList(any())).willReturn(List.of(relation(ELDER_ID, BindStatus.BOUND, OTHER_FAMILY_ID)));
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -569,6 +571,7 @@ class ElderServiceTest {
         loginAs(RoleConstants.FAMILY, FAMILY_ID);
         given(sysUserMapper.selectOne(any())).willReturn(elderUser());
         given(elderProfileMapper.selectList(any())).willReturn(List.of(elderProfile()));
+        given(elderProfileMapper.selectByIdForUpdate(ELDER_ID)).willReturn(elderProfile());
         // 第一次查「别人绑了吗」→ 空；第二次查「我绑了吗」→ 已绑定
         given(relationMapper.selectList(any()))
                 .willReturn(List.of())
@@ -590,6 +593,7 @@ class ElderServiceTest {
         profile.setUserId(201L);
         profile.setBindStatus(BindStatus.UNBOUND.name());
         given(elderProfileMapper.selectList(any())).willReturn(List.of(profile));
+        given(elderProfileMapper.selectByIdForUpdate(ELDER_ID)).willReturn(profile);
         given(relationMapper.selectList(any())).willReturn(List.of());
 
         Long elderId = elderService.bind(phoneBindDto());

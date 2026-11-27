@@ -141,8 +141,9 @@ service.interceptors.response.use(
     if (status === 401 || data?.code === UNAUTHORIZED_CODE) {
       const refreshToken = getRefreshToken()
 
-      // TODO(M2)：后端刷新接口就绪后，在此调用 /api/auth/refresh 换新 token。
-      //          当前骨架阶段直接登出，避免死循环。
+      // 刷新逻辑就在下面 20 行（POST /api/auth/refresh，刷新中挂起队列、失败统一登出）。
+      // 曾有一条「TODO(M2)：后端刷新接口就绪后再接」的注释留在这里，早已过期 ——
+      // 读到它会以为刷新没做，然后重复实现一遍（最终复盘 FE-12）。
       if (!refreshToken || config?.url?.includes('/auth/refresh')) {
         handleLogout(message)
         return Promise.reject(error)

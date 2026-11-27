@@ -107,7 +107,7 @@ ai-service/
 │   ├── actions.py        # 结构化动作抽取（正则，不用 LLM）
 │   └── service.py        # 编排
 ├── knowledge/
-│   └── faq.json          # 30 条 FAQ，每条带依据引用
+│   └── faq.json          # FAQ 知识库（条数以文件为准，当前 38 条），每条带依据引用
 └── tests/                # pytest（核心断言不依赖 LLM 与网络）
 ```
 
@@ -184,5 +184,5 @@ python tools/check_faq_anchors.py
 必须原样转述 —— 说成「离得近」就是错的（ADR-0016 决策 3）。
 
 **Q：为什么不用向量库？**
-领域只有 30 条 FAQ，语义检索的收益远小于依赖成本（embedding 模型下载、CI 变慢、
+FAQ 规模很小（条数以 `knowledge/faq.json` 为准，当前 38 条），语义检索的收益远小于依赖成本（embedding 模型下载、CI 变慢、
 评审机器装不上），而且语义检索**不可解释**。关键词 + 2-gram 检索说得清楚，也能直接显示给用户看。

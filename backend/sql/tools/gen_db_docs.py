@@ -905,6 +905,24 @@ def main():
         return
 
     counts = load_counts()
+
+    # ---------------------------------------------------------------- 防空库生成
+    # 2026-11-27（最终复盘 D-02）：本脚本曾在**未灌种子的空库**上跑过一次，产物里满篇
+    # 「0 行」，同一页却又写着「92 个账号 / 520 条任务」—— 自相矛盾，且脚本不报错，
+    # 于是这份假快照一直躺在仓库里。这里的断言就是 G-04：目标库总行数为 0 直接 exit 1。
+    # 确实需要「只看结构、不看行数」时显式加 --allow-empty，不要靠删断言绕过。
+    total_rows = sum(counts.get(t["table"], 0) for t in tables)
+    if total_rows == 0 and "--allow-empty" not in sys.argv:
+        sys.stderr.write(
+            "!! 目标库所有表行数均为 0 —— 拒绝生成 docs/db/**。\n"
+            "   这几乎一定是「库还没迁移 / 没灌种子」或「counts.tsv 没导出成功」：\n"
+            "   两份原因都会产出一份写着「0 行」的假数据字典，比不生成更糟。\n"
+            "   正确顺序：mvn flyway:migrate（或启动应用）→ 灌 V2/V3 种子 →\n"
+            "   python gen_db_docs.py counts → mysql 导出 counts.tsv → 再 render。\n"
+            "   若确实只要结构（例如审 DDL），加 --allow-empty 重跑，并在 PR 里说明。\n"
+        )
+        sys.exit(1)
+
     os.makedirs(OUT_DIR, exist_ok=True)
     files = {
         "README.md": doc_readme(tables, counts),

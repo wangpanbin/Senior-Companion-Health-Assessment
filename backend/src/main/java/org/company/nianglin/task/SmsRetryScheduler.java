@@ -37,9 +37,19 @@ public class SmsRetryScheduler {
     private final SmsReminderService smsReminderService;
     private final StringRedisTemplate redisTemplate;
 
+    /**
+     * 扫描节奏与首次延迟是两件事，必须用两个键。
+     *
+     * <p>此前两者共用 {@code nianglin.sms.retry.scan-interval-ms}：运维把间隔调成 30 分钟，
+     * 「启动后多久开始跑」也跟着推迟 30 分钟 —— 静默时段攒下的待发短信会在重启后
+     * 白白多积压半小时，而日志上完全看不出是配置耦合导致的。</p>
+     *
+     * <p>{@code initial-delay-ms} 缺省 30 秒：足够让容器与连接池就绪，
+     * 又不至于把重试拖成「下一次部署才发」。</p>
+     */
     @Scheduled(
             fixedDelayString = "${nianglin.sms.retry.scan-interval-ms:60000}",
-            initialDelayString = "${nianglin.sms.retry.scan-interval-ms:60000}")
+            initialDelayString = "${nianglin.sms.retry.initial-delay-ms:30000}")
     public void scanRetries() {
         try (RedisLockUtil.Lock lock = RedisLockUtil.tryLock(
                 redisTemplate, LOCK_SMS_RETRY, Duration.ofMinutes(2))) {

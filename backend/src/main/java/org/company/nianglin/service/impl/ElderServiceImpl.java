@@ -299,6 +299,19 @@ public class ElderServiceImpl implements ElderService {
             throw new BusinessException(ResultCode.ELDER_NOT_FOUND, "未找到可绑定的老人账号");
         }
 
+        // 并发绑定必须串行化：库里没有能表达「一个老人只能有一条 BOUND 关系」的唯一键
+        // （uk_family_elder(family_id, elder_id) 只约束同一对家属与老人），
+        // 校验与写入之间没有任何锁 —— 两个家属同时请求会双双通过下面的读时校验，
+        // 该老人的档案与订单相关方判定就出现「双主」，解绑时 countBoundRelations 也会失真。
+        // 锁住 elder 行即可把这段串行化（本方法全程 @Transactional，锁到事务结束才释放）。
+        // ⚠️ 不要改成「给 uk_family_elder 拼一列 deleted」那种做法：解绑只改 status 不软删、
+        //    重绑走 upsertBoundRelation 的 UPDATE 复原路径，动唯一键会连带打断那条路径。
+        ElderProfile lockedElder = elderProfileMapper.selectByIdForUpdate(elder.getId());
+        if (lockedElder == null) {
+            // 锁的瞬间被并发删除：对外口径与「找不到可绑定的老人账号」一致，不暴露删除动作
+            throw new BusinessException(ResultCode.ELDER_NOT_FOUND, "未找到可绑定的老人账号");
+        }
+
         // 一个老人只允许被一位主要家属绑定（避免操作权纠纷）
         FamilyElderRelation occupied = findBoundRelationOfOther(elder.getId(), familyId);
         if (occupied != null) {
@@ -472,13 +485,21 @@ public class ElderServiceImpl implements ElderService {
         return list.isEmpty() ? null : list.get(0);
     }
 
-    /** 查是否已被「别人」绑定 */
+    /**
+     * 查是否已被「别人」绑定。
+     *
+     * <p>用加锁读（{@code FOR UPDATE}）而不是普通快照读：绑定流程的调用方已经先锁住
+     * elder 行（见 {@code bind}），但本事务的快照可能早于那次锁定建立 ——
+     * 普通 SELECT 会按旧快照返回「没人绑定」，锁就白加了。加锁读读的是最新已提交版本，
+     * 才能看到「刚抢到锁的那一方」写下的 BOUND 行。</p>
+     */
     private FamilyElderRelation findBoundRelationOfOther(Long elderId, Long familyId) {
         List<FamilyElderRelation> list = relationMapper.selectList(Wrappers.<FamilyElderRelation>lambdaQuery()
                 .eq(FamilyElderRelation::getElderId, elderId)
                 .eq(FamilyElderRelation::getStatus, BindStatus.BOUND.name())
                 .ne(FamilyElderRelation::getFamilyId, familyId)
-                .orderByAsc(FamilyElderRelation::getId));
+                .orderByAsc(FamilyElderRelation::getId)
+                .last("FOR UPDATE"));
         return list.isEmpty() ? null : list.get(0);
     }
 

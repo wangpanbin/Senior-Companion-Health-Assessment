@@ -15,7 +15,7 @@ Senior Companion Health Assessment/
 ├── GLOSSARY.md                      # 领域词汇表（唯一真源）
 ├── CHANGELOG.md                     # 版本变更记录
 ├── docs/
-│   ├── api/                         # 接口契约（全局约定 + 13 个模块）
+│   ├── api/                         # 接口契约（全局约定 + 15 个模块，编号 01–15）
 │   ├── prd/                         # 产品需求（PRD 逐版 + 功能拓展规划）
 │   ├── spec/                        # 工程规格 + 工单 + 指标字典
 │   ├── adr/                         # 架构决策记录（0020 止）
@@ -317,7 +317,7 @@ V3.7 智能助手涉及的环境变量（**全部可留空**：留空即基础�
 |---|---|---|
 | [`docs/prd/`](docs/prd/PRD.md) | 产品 | PRD 逐版（V3.1 – V3.7 + E4）+ 功能拓展规划。顶层入口 [`PRD.md`](docs/prd/PRD.md) |
 | [`docs/plan/`](docs/plan/plan.md) | 工程 | 课程原始计划书 [`银龄伴诊项目计划书.md`](docs/plan/银龄伴诊项目计划书.md) · [`plan.md`](docs/plan/plan.md) 模块拆分与验收标准 · [`iteration-plan.md`](docs/plan/iteration-plan.md) V3.x 迭代规划 · 目录适配 / 收敛迭代存档 |
-| [`docs/api/`](docs/api/README.md) | 接口 | 全局约定 + 错误码 + 13 个模块接口明细（`13` = V3.7 家属智能助手） |
+| [`docs/api/`](docs/api/README.md) | 接口 | 全局约定 + 错误码 + 15 个模块接口明细（编号 01–15；`13` = V3.7 家属智能助手，`14` 检查准备、`15` 产品反馈） |
 | [`docs/spec/`](docs/spec/V3.x-roadmap-spec.md) | 契约 | 各版工程规格 + 工单 + [`metric-dictionary.md`](docs/spec/metric-dictionary.md) 指标字典（人读面） |
 | [`docs/adr/`](docs/adr/) | 架构 | 架构决策记录（0020 止），每条含背景 / 决策 / 后果 |
 | [`docs/design/`](docs/design/design.md) | 视觉 | 前端设计规范（设计令牌 / 组件 / 交互，视觉唯一真源） |

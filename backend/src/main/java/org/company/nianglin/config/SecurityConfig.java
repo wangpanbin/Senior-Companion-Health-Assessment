@@ -199,7 +199,16 @@ public class SecurityConfig {
                         // 会先被参数校验拦成 400，而不是 403（理由同上）
                         .requestMatchers("/api/settlement/**").hasRole(RoleConstants.ADMIN)
                         // 其余全部需要登录。角色细粒度控制在各接口的 @PreAuthorize 上，
-                        // 不在这里堆路径规则 —— 路径规则一多就必然有人漏配，而漏配的那条就是漏洞
+                        // 不在这里堆路径规则 —— 路径规则一多就必然有人漏配，而漏配的那条就是漏洞。
+                        //
+                        // 这条兜底**只保证「登录了」，不保证「该看这条数据」**：
+                        //   - 它盖住的是「整类没有方法级注解」的 controller 的登录要求：
+                        //     AuthController / HealthController / ExamPrepController /
+                        //     MessageSseController / MessageController（各自为何可以不加注解，
+                        //     见 docs/agents/backend-conventions.md §2.8.1 的清单）
+                        //   - 它盖不住归属越权（拿别人的 orderId 查详情），那是
+                        //     OrderServiceImpl#requireInvolved / ElderService#requireAccessible
+                        //     一类守卫的责任，别指望在这里补
                         .anyRequest().authenticated())
                 // JWT 过滤器必须在用户名密码过滤器之前，否则先 401 再认证就晚了
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

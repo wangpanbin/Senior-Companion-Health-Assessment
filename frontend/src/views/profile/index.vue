@@ -5,6 +5,8 @@
  * - 顶部：头像 / 昵称 / 角色徽标（真实，来自 getProfile）
  * - 老人模式开关（本地偏好，非接口）
  * - 角色相关快捷入口（按当前角色渲染）
+ * - 编辑资料（真实接口 `PUT /user/profile`，只改昵称 / 头像；最终复盘 FE-01 的第 2 个断点：
+ *   此前「我的」页只能看不能改）
  * - 修改密码（真实接口 changePassword；ELDER 经 @AllowElderWrite 允许本人修改）
  * - 退出登录（useUserStore().logout()，内部已 clearAuth）
  *
@@ -25,7 +27,7 @@ import {
 import { useResponsive } from '@/composables/useResponsive'
 import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
-import { getProfile, deactivateAccount, exportMyData } from '@/api/user'
+import { getProfile, updateProfile, deactivateAccount, exportMyData } from '@/api/user'
 import { changePassword } from '@/api/auth'
 import { confirmThen } from '@/utils/confirm'
 import { PASSWORD_RE, PASSWORD_MSG } from '@/constants/validation'
@@ -48,6 +50,59 @@ async function loadProfile() {
 }
 
 onMounted(loadProfile)
+
+/* ===== 编辑资料（PUT /user/profile） ===== */
+const profileVisible = ref(false)
+const profileSaving = ref(false)
+const profileFormRef = ref()
+/**
+ * 只有两个字段能改 —— 后端 `ProfileUpdateDTO` 刻意不开放手机号（换绑要走绑定流程）
+ * 与密码（要走 /auth/password 并让旧令牌失效）。这里不要"顺手"多加输入框。
+ */
+const profileForm = reactive({ nickname: '', avatar: '' })
+const profileRules = {
+  nickname: [
+    { required: true, message: '请输入昵称', trigger: ['blur', 'change'] },
+    { min: 2, max: 20, message: '昵称长度需在 2-20 个字符之间', trigger: ['blur', 'change'] }
+  ],
+  avatar: [{ max: 255, message: '头像地址过长', trigger: ['blur', 'change'] }]
+}
+
+function openEditProfile() {
+  profileForm.nickname = me.value?.nickname || ''
+  profileForm.avatar = me.value?.avatar || ''
+  profileVisible.value = true
+  profileFormRef.value?.clearValidate()
+}
+
+async function submitProfile() {
+  if (profileSaving.value) return
+  profileSaving.value = true
+  try {
+    profileFormRef.value?.clearValidate()
+    const valid = await profileFormRef.value?.validate().catch(() => false)
+    if (!valid) return
+    const payload = {}
+    const nickname = profileForm.nickname.trim()
+    const avatar = profileForm.avatar.trim()
+    if (nickname) payload.nickname = nickname
+    if (avatar) payload.avatar = avatar
+    if (!Object.keys(payload).length) {
+      ElMessage.info('没有改动需要保存')
+      return
+    }
+    await updateProfile(payload)
+    profileVisible.value = false
+    ElMessage.success('资料已更新')
+    // 顶栏 / 头像 / 昵称在读 userStore，必须让它重新拉一次，否则页面刷新前都还是旧值
+    await userStore.fetchCurrentUser()
+    me.value = userStore.userInfo || me.value
+  } catch {
+    // 业务错误由拦截器统一提示
+  } finally {
+    profileSaving.value = false
+  }
+}
 
 function toggleElderly() {
   appStore.toggleElderlyMode()
@@ -307,6 +362,8 @@ async function submitDeactivate() {
             <div class="me__name">{{ me?.nickname || '未登录' }}</div>
             <div class="me__role">{{ me?.roleLabel || userStore.roleLabel }}</div>
           </div>
+          <!-- FE-01：此前这一页只能看，改个昵称没有入口 -->
+          <el-button class="me__edit" size="small" round plain @click="openEditProfile">编辑</el-button>
         </div>
       </NlCard>
 
@@ -638,6 +695,25 @@ async function submitDeactivate() {
       </div>
 
       <!-- 修改密码弹窗 -->
+      <!-- 编辑资料（PUT /user/profile）：只有昵称 / 头像两个可改字段 -->
+      <el-dialog v-model="profileVisible" title="编辑资料" width="90%" :fullscreen="isXs" align-center>
+        <el-form ref="profileFormRef" :model="profileForm" :rules="profileRules" label-position="top" size="large">
+          <el-form-item label="昵称" prop="nickname">
+            <el-input v-model="profileForm.nickname" maxlength="20" placeholder="2-20 个字符" />
+          </el-form-item>
+          <el-form-item label="头像地址（选填）" prop="avatar">
+            <el-input v-model="profileForm.avatar" maxlength="255" placeholder="留空则沿用当前头像" />
+          </el-form-item>
+          <p class="nl-caption nl-text-muted">
+            手机号与密码不在此修改：手机号涉及换绑验证，密码请走「修改密码」。
+          </p>
+        </el-form>
+        <template #footer>
+          <el-button @click="profileVisible = false">取消</el-button>
+          <el-button type="primary" :loading="profileSaving" @click="submitProfile">保存</el-button>
+        </template>
+      </el-dialog>
+
       <el-dialog v-model="pwdVisible" title="修改密码" width="90%" :fullscreen="isXs" align-center>
         <el-form
           ref="pwdFormRef"
@@ -743,6 +819,11 @@ async function submitDeactivate() {
 
   &__body {
     flex: 1;
+  }
+
+  /* 编辑入口：小、贴右，不抢头像与昵称；触控区仍由 el-button 的 size 保证 */
+  &__edit {
+    align-self: flex-start;
   }
 
   &__name {

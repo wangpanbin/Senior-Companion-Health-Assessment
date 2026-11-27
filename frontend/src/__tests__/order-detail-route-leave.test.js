@@ -29,6 +29,8 @@ const recommendCompanionsMock = vi.fn()
 vi.mock('@/api/order', () => ({
   getOrder: (...a) => getOrderMock(...a),
   getOrderTimeline: (...a) => getOrderTimelineMock(...a),
+  // V6.0（FE-01）：履约详情已接进 loadAll，mock 必须给实现
+  getOrderFulfillment: () => Promise.resolve(null),
   cancelOrder: () => Promise.resolve({}),
   urgeOrder: () => Promise.resolve({}),
   recommendCompanions: (...a) => recommendCompanionsMock(...a)

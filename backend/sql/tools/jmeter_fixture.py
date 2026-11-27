@@ -15,6 +15,15 @@
     下一次跑 M6 就会「全是 5003」，观察不到「只有一个成功」这一幕；
     更糟的是种子数据被悄悄改掉，别人复现时对不上。
   · 令牌走 Redis 旁路拿验证码答案，与 e2e_*.py / bench_setup.py 同一套做法。
+
+⚠️ **两个「看起来对其实不对」的坑（最终复盘 DB-03，改本文件前必读）**
+  1. **任务 20002 在 V2 里写的是 PENDING，但库里很可能是 MISSED。**
+     它的 `plan_date` 是 `2026-09-10`（早于今天），漏服扫描器跑过一次就会把它改成 MISSED。
+     所以**任何「今日待服 → 应为 PENDING」的断言都不能假设它还是 PENDING**，
+     `setup()` 会先断言 `status == 'PENDING'`，不是就要求先手工复原（下面给了 SQL）。
+  2. **备注列叫 `confirm_remark`，不叫 `remark`。** `medication_task` 里没有 `remark` 列 ——
+     写 SQL 时凭记忆写 `remark` 会直接报 Unknown column，或者更糟：被当成另一张表的列。
+     列名一律以 `SHOW COLUMNS FROM medication_task` 为准，别背。
 """
 import json
 import os
@@ -93,6 +102,18 @@ def setup():
     if not values:
         sys.exit("✗ 找不到 medication_task id=%d，先确认库里有种子数据" % TASK_ID)
     snapshot = dict(zip(COLS, values))
+    # DB-03 断言：任务必须是 PENDING，否则整个压测的前提（「并发确认只有一个成功」）不成立。
+    # 种子里写的是 PENDING，但过期任务会被漏服扫描器改成 MISSED —— 这不是数据坏了，是时间过去了。
+    if snapshot.get("status") != "PENDING":
+        sys.exit(
+            "✗ 任务 %d 当前 status=%s，不是 PENDING。\n"
+            "  原因通常是：V2 种子写的是 PENDING，但它的 plan_date 已过期，漏服扫描器把它改成了 MISSED。\n"
+            "  先手工复原再跑：\n"
+            "    UPDATE medication_task SET status='PENDING', confirm_time=NULL, confirm_by=NULL,\n"
+            "           confirm_remark=NULL, was_missed=0\n"
+            "     WHERE id=%d;\n"
+            "  （注意列名是 confirm_remark，不是 remark）" % (TASK_ID, snapshot.get("status"), TASK_ID)
+        )
     json.dump({"taskId": TASK_ID, "columns": snapshot}, open(SNAPSHOT, "w", encoding="utf-8"),
               ensure_ascii=False, indent=2)
     print("  ✓ 任务快照已存：%s" % SNAPSHOT)

@@ -1,10 +1,24 @@
 /**
- * 医院与科室常量。
+ * 医院与科室常量 —— **这是一份「临时镜像」，不是真源**（最终复盘 FE-02）。
  *
- * ⚠️ **真源是数据库 `sys_dict`**（`dict_type = 'HOSPITAL' | 'DEPARTMENT'`，见 `backend/sql/V2__seed_data.sql`）。
+ * ⚠️ **真源是数据库 `sys_dict`**（`dict_type = 'HOSPITAL' | 'DEPARTMENT'`，见 `backend/sql/V2__seed_data.sql`，
+ *    当前 10 家医院 / 15 个科室，`dict_code` 与本文件的 `code` 一一对应）。
  *    后端一期**没有**暴露字典查询接口（无 `SysDictController`），而 `OrderCreateDTO`
- *    收的是自由文本（`hospital` / `department` / `address`），所以这份清单只能落在前端。
- *    **改动 `sys_dict` 时必须同步改这里**，否则界面上的选项会与统计口径对不上。
+ *    收的是自由文本（`hospital` / `department` / `address`），所以清单只能暂时落在前端。
+ *
+ * ⚠️ **这是一份「双实现」，改一处必须改另一处**（这就是本条被记成 P1 的原因）：
+ *    运营改了 `sys_dict` 或改了服务费规则，**页面上的选项与报价不会跟着变**，
+ *    用户看到的是旧价、旧医院，而账单按新规则记 —— 两边都没报错，只是对不上。
+ *
+ *    改价 / 加医院的**检查清单**（三条全部过一遍，缺一条就会不一致）：
+ *      ① `backend/sql/V2__seed_data.sql` 的 `sys_dict`（HOSPITAL / DEPARTMENT）
+ *      ② 本文件的 `HOSPITALS` / `DEPARTMENTS`
+ *      ③ 下文 `FEE_BASE` / `FEE_OFF_HOURS_EXTRA` / `NIGHT_*` ↔ 后端
+ *         `OrderServiceImpl` 的 `BASE_FEE` / `OFF_HOURS_EXTRA` / `NIGHT_START_HOUR` / `NIGHT_END_HOUR`
+ *         （类常量在 `OrderServiceImpl.java` 第 147–153 行，公式在 `resolveFee` 第 1234–1246 行）
+ *
+ *    彻底解法：加一个字典查询端点（医院 / 科室 / 费用规则同源返回），前端改异步取，
+ *    本文件随之删除。在那之前，上面这份清单就是唯一防线 —— 不要靠记忆。
  *
  * ⚠️ **坐标是必填项，不是装饰**（这是联调时最容易踩的坑）：
  *    `OrderCreateDTO` 的 `longitude` / `latitude` 若不传，订单坐标会被写成 NULL，
@@ -123,15 +137,19 @@ export const DEPARTMENTS = [
 /**
  * 后端 `OrderServiceImpl#resolveFee` 的前端镜像，**仅用于下单前的价格预览**。
  *
- * ⚠️ 真源在后端（`OrderServiceImpl` 第 110-115 行）：
- *      BASE_FEE = 128.00，OFF_HOURS_EXTRA = 30.00 → 夜间/周末 158.00
+ * ⚠️ 真源在后端（`OrderServiceImpl.java` 第 147–153 行的类常量 + 第 1234–1246 行的 `resolveFee`）：
+ *      BASE_FEE = 128.00，OFF_HOURS_EXTRA = 30.00 → 夜间 / 周末 158.00
  *      NIGHT_START_HOUR = 18，NIGHT_END_HOUR = 8
  *    即 `weekend || hour >= 18 || hour < 8` 时加价。
+ *    （本轮已逐字比对：本文件 `estimateFee` 与后端 `resolveFee` 的判据与取值完全一致。
+ *      之所以仍是 P1 而不是 P3，是因为「一致」靠人肉维持，没有任何机制保证下一次也一致。）
  *
  * ⚠️ 这份只做展示，**下单时不传 `fee`**，让后端算 —— 否则会出现
  *    「页面显示 128、入库 158」这类前端算错而无人察觉的问题。
  *    后端 `resolveFee(given, visitTime)` 在 `given != null` 时直接用传入值，
  *    不会替你纠正。
+ *
+ * ⚠️ 改这里 = 改报价。必须同步改后端常量，否则用户看到的价格与实际账单不一致。
  */
 export const FEE_BASE = 128
 export const FEE_OFF_HOURS_EXTRA = 30

@@ -144,10 +144,34 @@ public class OrderServiceImpl implements OrderService {
 
 ## 2.8 鉴权 / Spring Security
 
-- 当前 `SecurityConfig` 是骨架版：`anyRequest().permitAll()`，**M2 起**收紧为角色规则。
+- `SecurityConfig` 早已不是骨架版：匿名白名单在 `PUBLIC_ENDPOINTS`，其余 `anyRequest().authenticated()`，`/api/admin/**` 与 `/api/settlement/**` 在过滤链上收口为 ADMIN。**新增免登录端点必须改 `PUBLIC_ENDPOINTS`，且要在这里说明理由**（白名单是最容易被悄悄放宽的地方）。
 - 接口鉴权用 `@PreAuthorize("hasRole('FAMILY')")`（注意 `hasRole` 会自动拼 `ROLE_` 前缀，与 `RoleConstants.ROLE_PREFIX = "ROLE_"` 对应）。
 - JWT 规格（已写入 `application.yml` 的 `nianglin.jwt`）：`accessToken` 120 分钟，`refreshToken` 7 天，载荷 `sub / role / iat / exp`；登出走 Redis 黑名单。
 - 老人账号写操作必须由家属代操作：服务端要做两层校验（角色 + 资源归属），**不要**只校验角色。
+
+### 2.8.1 三类守卫的适用条件与当前落点（改接口前先对号入座）
+
+同一个「谁能看这条数据」的语义，本仓库有三种实现方式。**加新接口时先选一种并在注释里写明理由**，不要三种混着用还都不写 —— 否则每次审计都要重新取证「这个接口为什么没有注解」。
+
+| 守卫方式 | 适用条件 | 当前落点 | 反例（不要这么写） |
+|---|---|---|---|
+| ① `@PreAuthorize`（方法级 / 类级） | 权限只由**角色**决定，与具体哪条数据无关（如「只有家属能下单」「只有管理员能看审计」） | 绝大多数 controller；`/api/admin/**`、`/api/settlement/**` 另有路径级兜底 | 用角色注解代替归属校验：`hasRole('FAMILY')` 不等于「只能看自己的单」 |
+| ② Service 层 `requireInvolved` / `requireAccessible` 等归属校验 | 权限由**这条数据与当前用户的关系**决定（家属/陪诊员/老人/管理员四方可见性不同） | `OrderServiceImpl#requireInvolved`、`ElderService#requireAccessible`、`OrderFeeItemServiceImpl#checkReadPermission`、`FileController#loadCert` | 在 Controller 里手写 `if (!order.getFamilyId().equals(me))` —— 第二处实现必然与第一处漂移 |
+| ③ 入参强制注入（`receiver_id = 当前用户`） | 收件人 / 归属者**由服务端决定**，客户端无权指定 | `MessageController` 全类（类注释 `:35` 有论证）、聊天消息的 `senderId` | 信任前端传来的 `receiverId` / `senderId` |
+
+**已知的「整类无 `@PreAuthorize`」清单**（都不是漏写，改动前先读对应论证）：
+
+| Controller | 为什么可以没有 | 兜底在哪 |
+|---|---|---|
+| `AuthController` | 登录 / 注册 / 找回密码必须匿名可达 | `PUBLIC_ENDPOINTS` 精确列出；防枚举与频控在 Service 层 |
+| `HealthController` | 探活必须匿名 | 只放行 `/api/health`（**精确匹配**，`/demo-success` 需登录）；prod 不返回环境细节 |
+| `ExamPrepController` | 静态字典，任何已登录角色都要看 | `anyRequest().authenticated()` |
+| `MessageSseController` | `EventSource` 不能带 Authorization 头 | 订阅时自行校验 query 里的 JWT，无效令牌直接关闭通道 |
+| `MessageController` | **绝大多数**方法无注解：收件人由服务端强制注入，无「跨用户查询」接口。**例外**是 `GET/PUT /notification-preference` 两条，带 `hasRole('FAMILY')` —— 通知偏好是家属专属配置 | 类注释 `MessageController.java:35`；若将来新增跨用户查询，必须补注解（见 `AGENTS.md` §8 A-09） |
+
+> `SecurityConfig#filterChain` 的 `.anyRequest().authenticated()` 是**最后一道兜底**，它只保证「登录了」，不保证「该看这条数据」。
+> 归属类越权（拿别人的 orderId 去查）永远不会被它挡住 —— 那是 ② 的责任。
+
 
 ## 2.9 日志与脱敏
 

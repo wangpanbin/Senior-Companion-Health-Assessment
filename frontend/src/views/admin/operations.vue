@@ -43,7 +43,8 @@ import {
   getOperationsTrend,
   getOperationsHealth,
   getOperationsGap,
-  getOperationsEffect
+  getOperationsEffect,
+  getMetricDictionary
 } from '@/api/admin'
 import { lastNDays, addDays } from '@/utils/format'
 
@@ -374,22 +375,20 @@ const gapRangeText = computed(() => {
 /* ============ V3.6 · 干预效果对比（两期同口径） ============ */
 
 /**
- * 可选指标 —— **只列后端已注册的 key**。
+ * 可选指标 —— **从后端指标字典生成，不再手写白名单**（最终复盘 FE-05）。
  *
- * ⚠️ 未注册的 key 会被后端 400 拒掉（不许前端「猜一个算法算出来」），
- *    所以这个清单就是「能选的范围」本身。
- * 清单来源：后端 `service/support/metrics/` 下各 `MetricCalculator#metricKey()`
- * （= `MetricCalculatorRegistry` 的注册内容，13 个计算器）；
- * 名称取自指标字典（backend/src/main/resources/metrics/metric-dictionary.yml），
- * 与后端返回的 metricName 同源，不另写一份名表。
+ * 背景：此前这里硬编码了 13 个 key。后端注册表增删一个计算器，前端不会知道 ——
+ * 少了 → 用户选不到；多了 → 用户选了就 400；名字改了 → 页面上还是旧名。
+ * 项目专门做了「指标字典人读面 ↔ 机器面」门禁，前端却绕过了字典，等于白做。
  *
- * ⚠️ 注册表另有 2 个**别名**（operations.companion_count /
- *    companion.workbench.completion_rate），它们与上面的某一项**指向同一个计算器**，
- *    列进下拉会出现「两个名字、同一组数」的重复项，因此不列。
- * ⚠️ 字典里有但**没有计算器**的指标不在此列 —— 它没注册进注册表，
- *    点了会被后端 400 拒掉。
+ * 现在的口径：
+ *   1. `GET /api/admin/metrics` 返回每条指标的 `calculatorKey`（后端 `MetricDictionaryExporter`
+ *      用 `MetricCalculatorRegistry` 回填）；
+ *   2. `calculatorKey == null` → **没有计算器**，不能用于效果对比（传上去后端 400），不列；
+ *   3. 同一个 `calculatorKey` 只保留一个（别名 key 指向同一计算器，列两个会出现
+ *      「两个名字、同一组数」），标签直接取字典里的 `name`，不再另写名表。
  */
-const EFFECT_METRICS = [
+const EFFECT_METRICS_FALLBACK = [
   { value: 'operations.fulfillment_rate', label: '履约率' },
   { value: 'operations.completion_rate', label: '完成率（按时）' },
   { value: 'operations.complaint_rate', label: '投诉率' },
@@ -405,6 +404,48 @@ const EFFECT_METRICS = [
   { value: 'operations.medication_missed_rate', label: '漏服率' }
 ]
 
+/** 效果对比可选指标（字典生成）；`fallback` 为真表示字典接口没拿到，用的是内置清单 */
+const effectMetrics = ref([])
+const effectMetricsFallback = ref(false)
+
+/**
+ * 拉字典 → 生成下拉项。
+ *
+ * 失败时**不静默**：退回内置清单，并在界面上挂一条可见提示。
+ * 「悄悄用旧清单」比报错更糟 —— 用户会拿一份与后端不一致的指标去比数。
+ */
+async function loadEffectMetrics() {
+  try {
+    const dict = await getMetricDictionary()
+    const seen = new Set()
+    const options = []
+    for (const m of dict?.metrics || []) {
+      if (!m?.calculatorKey) continue          // 没有计算器 → 不可算
+      if (seen.has(m.calculatorKey)) continue   // 别名去重：一个计算器只出一个选项
+      seen.add(m.calculatorKey)
+      options.push({ value: m.key, label: m.name || m.key })
+    }
+    if (!options.length) throw new Error('dictionary has no computable metric')
+    effectMetrics.value = options
+    effectMetricsFallback.value = false
+  } catch {
+    effectMetrics.value = EFFECT_METRICS_FALLBACK
+    effectMetricsFallback.value = true
+  } finally {
+    // 选中项必须落在真实存在的选项上，否则 el-select 显示空值、请求带空 metric
+    if (!effectMetric.value || !effectMetrics.value.some((m) => m.value === effectMetric.value)) {
+      effectMetric.value = effectMetrics.value[0]?.value || ''
+    }
+  }
+}
+
+const effectMetric = ref('')
+const effectRangeMode = ref('DEFAULT')
+const effectFrom = ref('')
+const effectTo = ref('')
+const effectCompareFrom = ref('')
+const effectCompareTo = ref('')
+
 const EFFECT_RANGE_MODES = [
   { value: 'DEFAULT', label: '默认区间' },
   { value: 'CUSTOM', label: '自定义' }
@@ -412,13 +453,6 @@ const EFFECT_RANGE_MODES = [
 
 /** 默认后一期 = 最近 15 天；前一期由后端按「等长且紧邻其前」自动推导 */
 const EFFECT_DEFAULT_DAYS = 15
-
-const effectMetric = ref(EFFECT_METRICS[0].value)
-const effectRangeMode = ref('DEFAULT')
-const effectFrom = ref('')
-const effectTo = ref('')
-const effectCompareFrom = ref('')
-const effectCompareTo = ref('')
 
 /**
  * 预填两期日期。
@@ -551,6 +585,8 @@ async function loadGap() {
 
 /** 效果对比单独一个入口：换指标 / 换区间时只重拉效果对比 */
 async function loadEffect() {
+  // 指标清单是异步来的：还没拿到 metric 就发请求，后端会因 metric 为空/非法返回 400
+  if (!effectMetric.value) return
   effectLoading.value = true
   try {
     effect.value = (await getOperationsEffect(effectParams())) ?? null
@@ -702,8 +738,10 @@ function onEffectCustomDateChange() {
   if (effectCustomReady.value) loadEffect()
 }
 
-onMounted(() => {
+onMounted(async () => {
   initEffectRange()
+  // 顺序不能反：loadAll 里的 loadEffect 依赖 effectMetric 已经选定
+  await loadEffectMetrics()
   loadAll()
   window.addEventListener('resize', handleResize)
 })
@@ -1051,12 +1089,17 @@ onBeforeUnmount(() => {
       <div class="eff__ctrls">
         <el-select v-model="effectMetric" class="eff__select" placeholder="选择指标">
           <el-option
-            v-for="m in EFFECT_METRICS"
+            v-for="m in effectMetrics"
             :key="m.value"
             :label="m.label"
             :value="m.value"
           />
         </el-select>
+
+        <!-- 字典取不到时不静默：明确告诉运营「这份清单可能与后端不一致」 -->
+        <p v-if="effectMetricsFallback" class="nl-caption eff__hint" role="status">
+          ⚠️ 指标清单加载失败，当前使用内置清单（可能与后端注册表不一致，刷新重试）
+        </p>
 
         <div class="seg" role="group" aria-label="对比区间">
           <button
@@ -1456,6 +1499,13 @@ onBeforeUnmount(() => {
 
 .eff__select {
   width: 180px;
+}
+
+/* 字典降级提示：不静默，也不抢视觉（用弱色 + 撑满一行） */
+.eff__hint {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--nl-warning);
 }
 
 .eff__metric {

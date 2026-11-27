@@ -354,11 +354,17 @@
 - 前端用 `ElNotification` 弹提示。
 - 连接前必须校验：当前用户是该订单的家属 / 陪诊员 / 就诊人，否则拒绝（防越权监听）。
 
-### 备选方案（SSE）
+### 备选方案（SSE）— **本版未实现，进度的实时推送一律走 WebSocket**
 
-若 WebSocket 时间紧张，可用 SSE 替代：
-`GET /api/execution/{orderId}/progress/stream`（`text/event-stream`），
-单向推送足够满足「家属看进度」的需求。**二选一即可，不要都做。**
+~~若 WebSocket 时间紧张，可用 SSE 替代：~~
+~~`GET /api/execution/{orderId}/progress/stream`（`text/event-stream`），~~
+~~单向推送足够满足「家属看进度」的需求。**二选一即可，不要都做。**~~
+
+> **⚠️ 结论（2026-11-27 标注）**：选的是 **WebSocket**（`/ws/progress`，见上一节），
+> `GET /api/execution/{orderId}/progress/stream` **代码里不存在，也没有该 handler**。
+> 联调时不要照这一段写出会 404 的代码；需要补拉历史请用 `GET /api/execution/{orderId}/progress`
+> 与 `GET /api/execution/{orderId}/checkins`。
+> 保留原文是为了让「当初为什么二选一」可追溯，**不是契约**。
 
 ---
 

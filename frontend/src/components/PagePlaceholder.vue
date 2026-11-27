@@ -1,6 +1,11 @@
 <script setup>
 /**
- * PagePlaceholder · 未实现页面占位
+ * PagePlaceholder · 未实现页面占位 —— ⚠️ **当前 0 引用（死代码），不要在新页面里用。**
+ *
+ * 全站页面均已高保真化，本组件只在 `components/index.js` 里被导出，没有任何 view 使用。
+ * 保留与删除口径见 docs/plan/ui-rework.md「范围外 · 死代码清理」——删文件需单独授权。
+ *
+ * 原始用途（历史）：
  *
  * 用在路由已挂载但页面尚未高保真化的场景，与 docs/design/design.md §1 的页面清单 1:1 对齐
  * 显示页面编号 / 标题 / 简介 / 优先级，方便开发对照清单补齐
