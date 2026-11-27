@@ -10,6 +10,9 @@
                     与 ERROR 日志，保留 30/60 天滚动。
     - prod profile：所有 logger 与 root 一律 ERROR，磁盘只落 ERROR；
                     排查时临时切回 INFO 但必须恢复，不要把放宽后的配置提交进库。
+    - 无 profile（漏配 SPRING_PROFILES_ACTIVE）：root INFO 只挂控制台 CONSOLE，不落盘。
+                    这一档只是为了让「漏配 profile」从「静默 exit 1」变成「看得见异常」，
+                    详见文件中部「无 profile」块的注释。
   ==========================================================================
 -->
 <configuration scan="true" scanPeriod="60 seconds">
@@ -27,40 +30,56 @@
         </encoder>
     </appender>
 
-    <!-- 全量日志：按天 + 按大小滚动 -->
-    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_HOME}/${APP_NAME}.log</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_HOME}/history/${APP_NAME}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
-            <maxFileSize>50MB</maxFileSize>
-            <maxHistory>30</maxHistory>
-            <totalSizeCap>2GB</totalSizeCap>
-        </rollingPolicy>
-        <encoder>
-            <pattern>${PATTERN}</pattern>
-            <charset>UTF-8</charset>
-        </encoder>
-    </appender>
+    <!-- ========== 文件 appender：按 profile 分文件定义 ==========
+         为什么不能统一定义到外层（2026-11-27 实测）：prod 块里重定义了同名 FILE
+         并改成 ThresholdFilter=ERROR，而外层那份用的是同一个 <file> 与
+         fileNamePattern，logback 会报
+         `Collisions detected with FileAppender/RollingAppender instances defined earlier. Aborting.`
+         随后 Spring Boot 抛 `IllegalStateException: Logback configuration error detected` ——
+         即 **prod 根本无法启动**（与本次加固前就存在的缺陷，已在 main 上复现）。
+         现在 dev / prod 各在自己的 <springProfile> 里定义并引用同名 FILE，
+         同一时刻只会存在一个，既不碰撞也不影响名字对接 root。
 
-    <!-- 错误日志单独一份，排查方便 -->
-    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_HOME}/${APP_NAME}-error.log</file>
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>WARN</level>
-        </filter>
-        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_HOME}/history/${APP_NAME}-error.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
-            <maxFileSize>50MB</maxFileSize>
-            <maxHistory>60</maxHistory>
-        </rollingPolicy>
-        <encoder>
-            <pattern>${PATTERN}</pattern>
-            <charset>UTF-8</charset>
-        </encoder>
-    </appender>
+         为什么 FILE 刻意不定义在「无 profile」那一档能看到的范围内：
+         定义了就会被引用不到 → 又多一条 `Appender named [FILE] not referenced`
+         WARN，刚好把想要消除的噪声又请回来；而漏配 profile 时也确实不该往磁盘写日志。 -->
+
+    <!-- 错误日志单独一份，排查方便（dev / prod 共用；不进漏配兜底，那一档只上控制台） -->
+    <springProfile name="dev | prod">
+        <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_HOME}/${APP_NAME}-error.log</file>
+            <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                <level>WARN</level>
+            </filter>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_HOME}/history/${APP_NAME}-error.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <maxFileSize>50MB</maxFileSize>
+                <maxHistory>60</maxHistory>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+    </springProfile>
 
     <!-- ========== dev：本机开发，看全量日志 ========== -->
     <springProfile name="dev">
+        <!-- 全量日志：按天 + 按大小滚动 -->
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_HOME}/${APP_NAME}.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_HOME}/history/${APP_NAME}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <maxFileSize>50MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>2GB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+
         <logger name="org.company.nianglin" level="DEBUG"/>
         <logger name="org.springframework.web" level="INFO"/>
         <logger name="com.baomidou.mybatisplus" level="INFO"/>
@@ -72,9 +91,31 @@
         </root>
     </springProfile>
 
+    <!-- ========== 无 profile：漏配 SPRING_PROFILES_ACTIVE 时的兜底 ==========
+         为什么需要这一段（2026-11-27 实测）：application.yml 的
+         `spring.profiles.active: ${SPRING_PROFILES_ACTIVE:}` 刻意不给默认值，
+         漏配时既不是 dev 也不是 prod。加固前 CONSOLE / FILE / ERROR_FILE 三个
+         appender 全在 <springProfile> 里，于是它们全部「not referenced」，控制台
+         只剩三条 `Appender named [XXX] not referenced` 的 WARN，真正的启动异常
+         （例：JwtTokenProvider 的 IllegalStateException「jwt.secret 长度不足」）
+         被彻底吞掉，表现为「打完 Spring Boot banner 直接 exit 1，stderr 全空」。
+         这里挂 CONSOLE + root INFO 兜底：宁可多一段日志，也不要静默失败。
+
+         为什么只挂 CONSOLE、不挂 FILE / ERROR_FILE：漏配时不该悄悄往磁盘写日志，
+         否则「没配 profile」这件事会被文件里那份看起来正常的输出进一步掩盖。
+         注意这也是 FILE / ERROR_FILE 必须定义在 `dev` / `dev | prod` 里的原因——
+         定义在本档可见的范围内却不引用，就会把刚消掉的 not referenced 噪声请回来。 -->
+    <springProfile name="!dev &amp; !prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
     <!-- ========== prod：生产，只收 ERROR ========== -->
     <springProfile name="prod">
-        <!-- FILE 收紧到 ERROR，避免 INFO/WARN 噪音落盘 -->
+        <!-- FILE 收紧到 ERROR，避免 INFO/WARN 噪音落盘
+             （prod 的 root 会被 application-prod.yml 的 logging.level 覆盖成 WARN，
+               所以这道 ThresholdFilter 是**真在干活**的，不是冗余保险） -->
         <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
             <file>${LOG_HOME}/${APP_NAME}.log</file>
             <filter class="ch.qos.logback.classic.filter.ThresholdFilter">

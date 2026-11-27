@@ -157,7 +157,7 @@ SELECT dict_code, dict_value, status FROM sys_dict WHERE dict_type='OPS_PARAM';
 
 | 症状 | 根因 | 处理 |
 |---|---|---|
-| 后端打完 banner 就退出、无报错 | `SPRING_PROFILES_ACTIVE` 未设置（见 §2.2 ⚠️） | 显式设置 `dev` / `prod` |
+| 后端打完 banner 就退出 | `SPRING_PROFILES_ACTIVE` 未设置（见 §2.2 ⚠️）；控制台会打出真实异常（如 `jwt.secret 长度不足`），`logback` 的兜底档只上控制台、不落盘 | 显式设置 `dev` / `prod` |
 | 启动报 `Access denied for user` | `MYSQL_PASSWORD` 还是占位串 `CHANGE_ME` | 按 README 三种方式之一注入真实口令 |
 | 所有 `@SpringBootTest` 报 `Unable to connect to Redis` | Windows Redis 服务壳「Running」但进程已死 | `redis-cli ping` 验证；无响应则直接起 `redis-server.exe --port 6379` |
 | `mvn verify` 有 2 条真实库测试红 | 库处于**演示态**（`visit_time` 被挪出断言窗口） | `python presentation/scripts/seed-hall-demo.py --rollback` 后重跑 |

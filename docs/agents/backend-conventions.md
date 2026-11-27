@@ -176,8 +176,16 @@ public class OrderServiceImpl implements OrderService {
 ## 2.9 日志与脱敏
 
 - 统一 `Logback`（`logback-spring.xml`），用 `<springProfile>` 分环境，**不要拆成两个 xml 文件**：
-  - `dev`（默认）：业务包 `DEBUG`、框架 `INFO`、MyBatis-Plus `INFO`，root `INFO`；两个 appender 都启用，保留 30 / 60 天滚动。
+  - `dev`（本地开发）：业务包 `DEBUG`、框架 `INFO`、MyBatis-Plus `INFO`，root `INFO`；`CONSOLE` / `FILE` / `ERROR_FILE` 三个 appender 都启用，保留 30 / 60 天滚动。
   - `prod`：所有 logger 与 root 一律 `ERROR`；`nianglin.log` 的 `ThresholdFilter` 双保险收紧到 `ERROR`，避免 INFO/WARN 噪音污染磁盘。
+  - **无 profile（漏配 `SPRING_PROFILES_ACTIVE`）**：root `INFO` 只挂 `CONSOLE`，**故意不落盘**。
+    这一档存在的唯一理由是把「静默 exit 1」变成「看得见异常」—— 加固前三个 appender 全在
+    `<springProfile>` 里，漏配时全部 `not referenced`，控制台只剩三条 WARN，真正的启动异常被吞掉。
+- ⚠️ **`FILE` / `ERROR_FILE` 必须定义在会同时引用它们的那个 `<springProfile>` 里**：
+  `prod` 块重定义了同 `<file>` / `fileNamePattern` 的 `FILE`，若外层还留一份，logback 会报
+  `Collisions detected with FileAppender/RollingAppender instances defined earlier. Aborting.`
+  并让 Spring Boot 抛 `Logback configuration error detected`（**prod 直接起不来**，2026-11-27 在 main 上复现）；
+  反过来，定义在「无 profile」档可见范围内却不引用，又会把 `not referenced` 噪声请回来。
   - 临时排查时**临时**改 `prod` 分块切回 INFO，**排查完必须恢复 ERROR**，不要把放宽后的配置提交进库。
 - 业务代码打日志**先脱敏再拼接**，禁止先拼后脱敏（容易漏字段）。
 - 现有脱敏工具 `MaskUtil`（`org.company.nianglin.util.MaskUtil`）：
