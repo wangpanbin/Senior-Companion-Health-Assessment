@@ -3,6 +3,7 @@ package org.company.nianglin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.MessageType;
+import org.company.nianglin.constant.RedisKeyConstants;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.SysUser;
@@ -34,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -172,6 +174,84 @@ class CompanionCertReminderTest {
         int sent = service.scanExpiring();
 
         assertEquals(1, sent);
+    }
+
+    /* ================================================================== */
+    /* 失败隔离：主提醒与管理员抄送的不对称处理（V3.8）                     */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("主提醒失败 → 释放幂等键并继续下一条，下一轮能重试")
+    void mainReminderFailureShouldReleaseKeySoNextRoundRetries() {
+        LocalDate expire = LocalDate.now().plusDays(3);
+        String expectedKey = RedisKeyConstants.CERT_EXPIRE_REMIND_PREFIX + 601L + ":" + expire;
+        given(companionProfileMapper.selectList(any())).willReturn(List.of(approvedProfile(expire)));
+        given(sysUserMapper.selectList(any())).willReturn(admins());
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                .willReturn(true);
+        willThrow(new RuntimeException("站内信写入失败"))
+                .given(messageService).send(anyLong(), any(MessageType.class), anyLong(), any());
+
+        int sent = service.scanExpiring();
+
+        // 主提醒没发出去，不计入 sent；但整批不能因此中断（这里只有一条）
+        assertEquals(0, sent, "主提醒失败不计入已提醒数");
+        // 关键：键必须还回去，否则这一份到期日 30 天内再也不会提醒
+        verify(redisTemplate).delete(expectedKey);
+        // 主提醒失败时不该再去打扰管理员
+        verify(messageService, never()).sendBatch(anyCollection(), any(MessageType.class), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("管理员抄送失败 → 保留幂等键，不重发主提醒（免得陪诊员被重复打扰）")
+    void adminCopyFailureShouldKeepKeyAndNotResendMainReminder() {
+        LocalDate expire = LocalDate.now().plusDays(3);
+        String key = RedisKeyConstants.CERT_EXPIRE_REMIND_PREFIX + 601L + ":" + expire;
+        given(companionProfileMapper.selectList(any())).willReturn(List.of(approvedProfile(expire)));
+        given(sysUserMapper.selectList(any())).willReturn(admins());
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                .willReturn(true);
+        willThrow(new RuntimeException("管理员群发失败"))
+                .given(messageService).sendBatch(anyCollection(), any(MessageType.class), anyLong(), any());
+
+        int sent = service.scanExpiring();
+
+        // 主提醒已经发出去了，这份到期日就算处理过
+        assertEquals(1, sent, "主提醒成功即计入已提醒，抄送失败不改这个事实");
+        verify(messageService).send(eq(COMPANION_USER_ID), eq(MessageType.HEALTH_CERT_EXPIRING),
+                anyLong(), any());
+        // ★ 这条是本次修复的核心：抄送失败绝不能释放键。
+        //   释放了的话下一轮会重新抢到键、把同一条提醒再发给陪诊员一次 ——
+        //   管理员侧持续失败时，陪诊员会在整个 7 天窗口里每天被重复提醒。
+        verify(redisTemplate, never()).delete(key);
+    }
+
+    @Test
+    @DisplayName("多条档案：一条主提醒失败不阻断其它的，且只有失败那条的键被释放")
+    void failureOnOneProfileShouldNotBlockOthers() {
+        LocalDate expireA = LocalDate.now().plusDays(3);
+        LocalDate expireB = LocalDate.now().plusDays(4);
+        CompanionProfile first = approvedProfile(expireA);
+        CompanionProfile second = approvedProfile(expireB);
+        second.setId(602L);
+        second.setUserId(302L);
+        given(companionProfileMapper.selectList(any())).willReturn(List.of(first, second));
+        given(sysUserMapper.selectList(any())).willReturn(admins());
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                .willReturn(true);
+        // 只有第一份（601）的站内信失败，第二份（602）成功
+        willThrow(new RuntimeException("站内信写入失败"))
+                .given(messageService).send(eq(COMPANION_USER_ID), any(MessageType.class), anyLong(), any());
+
+        int sent = service.scanExpiring();
+
+        assertEquals(1, sent, "第二条不该被第一条的失败拦住");
+        verify(redisTemplate).delete(RedisKeyConstants.CERT_EXPIRE_REMIND_PREFIX + 601L + ":" + expireA);
+        verify(redisTemplate, never())
+                .delete(RedisKeyConstants.CERT_EXPIRE_REMIND_PREFIX + 602L + ":" + expireB);
     }
 
     private CompanionProfile approvedProfile(LocalDate expire) {

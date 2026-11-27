@@ -181,6 +181,14 @@ public class MessageSseHub {
      * <p>摘除时<b>不调用 complete()</b>：理由同 {@link #push} —— 对一条状态不确定的
      * 响应调 complete() 只会多触发一轮容器错误分发，在日志里留下与故障无关的 ERROR。
      * 连接最终由容器回收，客户端下一次重连会自己建新通道。</p>
+     *
+     * <p><b>已知代价（有意接受）</b>：被摘掉的通道不再收到推送，但它的 TCP 连接
+     * 还开着，浏览器端的 {@code EventSource} 认为自己健康、不会重连 ——
+     * 那个标签页的红点从此不再更新，直到用户刷新。这里之所以不选「拒绝新连接」，
+     * 是因为那样一来<b>最新打开的那个页面</b>（用户此刻正在看的）才是坏的；
+     * 相比之下让一个早已被遗忘的旧标签页静默过期，代价更小。
+     * 若日后要改成拒绝新连接，只需在这里反过来：不再入队、直接
+     * {@code emitter.complete()}（与 {@code MessageSseController} 拒绝无效令牌同法）。</p>
      */
     private void evictOldestIfOverLimit(Long userId, Deque<SseEmitter> emitters) {
         while (emitters.size() > MAX_CHANNELS_PER_USER) {
