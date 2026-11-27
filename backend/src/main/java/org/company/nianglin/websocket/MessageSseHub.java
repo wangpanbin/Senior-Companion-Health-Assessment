@@ -9,10 +9,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 /**
  * 站内信 SSE 推送中心（按用户分组）。
@@ -52,6 +53,15 @@ public class MessageSseHub {
     /** 连接超时：30 分钟。到点由前端 EventSource 自动重连，比服务端无限挂着更健康 */
     private static final long TIMEOUT_MILLIS = 30 * 60 * 1000L;
 
+    /**
+     * 同一用户允许同时存在的推送通道数上限。
+     *
+     * <p>多标签页 + {@code EventSource} 自动重连会让通道数持续累积 —— 每条都还占着
+     * 容器里的一个挂起响应与一份内存。真实使用中一个人同时开 3~4 个标签页已经够用，
+     * 取 5 是留一点余量，又不至于让异常客户端把连接数撑爆。</p>
+     */
+    private static final int MAX_CHANNELS_PER_USER = 5;
+
     /** 通道建立确认事件 */
     public static final String EVENT_CONNECTED = "CONNECTED";
 
@@ -70,7 +80,14 @@ public class MessageSseHub {
 
     private static final DateTimeFormatter PUSH_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    private final ConcurrentHashMap<Long, Set<SseEmitter>> groups = new ConcurrentHashMap<>();
+    /**
+     * 用户 → 通道队列。
+     *
+     * <p>用<b>队列</b>而不是 Set：摘除超限通道时必须知道哪一条建立得最早，
+     * 而 {@code ConcurrentHashMap.newKeySet()} 的遍历顺序是不确定的。
+     * 队列的插入序 = 建立序，{@code pollFirst()} 就是「最早的那一条」。</p>
+     */
+    private final ConcurrentHashMap<Long, Deque<SseEmitter>> groups = new ConcurrentHashMap<>();
 
     private final ObjectMapper objectMapper;
 
@@ -87,7 +104,9 @@ public class MessageSseHub {
      * 却正是那堆日志噪声的根因。同包可见，生产路径只走上面那个重载。</p>
      */
     SseEmitter subscribe(Long userId, SseEmitter emitter) {
-        groups.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet()).add(emitter);
+        Deque<SseEmitter> emitters = groups.computeIfAbsent(userId, k -> new ConcurrentLinkedDeque<>());
+        emitters.addLast(emitter);
+        evictOldestIfOverLimit(userId, emitters);
 
         emitter.onCompletion(() -> remove(userId, emitter));
         emitter.onTimeout(() -> {
@@ -126,7 +145,7 @@ public class MessageSseHub {
      * 那会在日志里留下两条与故障无关的 ERROR，理由见循环内注释。</p>
      */
     public void push(Long userId, String event, Object data) {
-        Set<SseEmitter> emitters = groups.get(userId);
+        Deque<SseEmitter> emitters = groups.get(userId);
         if (emitters == null || emitters.isEmpty()) {
             return;
         }
@@ -153,9 +172,30 @@ public class MessageSseHub {
         }
     }
 
+    /**
+     * 通道数超上限时，摘除<b>最早建立</b>的那一条。
+     *
+     * <p>摘最旧的一条而不是随机一条：重连场景下旧连接最可能已经被客户端放弃
+     * （只是还没到超时窗口），留着它不如留着新连接。</p>
+     *
+     * <p>摘除时<b>不调用 complete()</b>：理由同 {@link #push} —— 对一条状态不确定的
+     * 响应调 complete() 只会多触发一轮容器错误分发，在日志里留下与故障无关的 ERROR。
+     * 连接最终由容器回收，客户端下一次重连会自己建新通道。</p>
+     */
+    private void evictOldestIfOverLimit(Long userId, Deque<SseEmitter> emitters) {
+        while (emitters.size() > MAX_CHANNELS_PER_USER) {
+            SseEmitter oldest = emitters.pollFirst();
+            if (oldest == null) {
+                return;
+            }
+            log.warn("站内信推送通道数超上限，已摘除最早的一条 | userId={} | 当前通道数={} | 上限={}",
+                    userId, emitters.size(), MAX_CHANNELS_PER_USER);
+        }
+    }
+
     /** 当前该用户的活跃通道数（测试与运维观察用） */
     public int connectionCount(Long userId) {
-        Set<SseEmitter> emitters = groups.get(userId);
+        Deque<SseEmitter> emitters = groups.get(userId);
         return emitters == null ? 0 : emitters.size();
     }
 
@@ -184,7 +224,7 @@ public class MessageSseHub {
     }
 
     private void remove(Long userId, SseEmitter emitter) {
-        Set<SseEmitter> emitters = groups.get(userId);
+        Deque<SseEmitter> emitters = groups.get(userId);
         if (emitters == null) {
             return;
         }

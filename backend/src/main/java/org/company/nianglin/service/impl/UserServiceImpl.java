@@ -84,6 +84,16 @@ public class UserServiceImpl implements UserService {
     /** 导出单元格内的时间格式，与接口全局约定一致 */
     private static final DateTimeFormatter CELL_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /**
+     * 个人数据导出单个页签的行数上限。
+     *
+     * <p>导出走的是「先把数据全量读进内存、再写 Excel」的路径：一个用了三年的账号
+     * 订单可能上万条，全量读进来既吃内存又会把导出接口拖成超时。
+     * 截断比「导出账号的全部历史」更贴合「个人数据导出」的用途；
+     * 但截断必须留痕（记 warn），静默截断会让人以为那就是全部。</p>
+     */
+    private static final int MAX_EXPORT_ROWS = 10000;
+
     private final SysUserMapper sysUserMapper;
     private final ElderService elderService;
     private final CompanionOrderMapper companionOrderMapper;
@@ -329,10 +339,16 @@ public class UserServiceImpl implements UserService {
 
     /** 本人作为下单家属或接单陪诊员的全部订单（不含对方姓名 / 详细地址 / 坐标） */
     private List<DataExportOrderVO> orderRows(Long userId) {
+        // 多查一行：够判断是否超限，又不必先 COUNT 一次（与 AdminServiceImpl#queryOrdersForExport 同法）
         List<CompanionOrder> orders = companionOrderMapper.selectList(Wrappers.<CompanionOrder>lambdaQuery()
                 .and(w -> w.eq(CompanionOrder::getFamilyId, userId)
                         .or().eq(CompanionOrder::getCompanionId, userId))
-                .orderByDesc(CompanionOrder::getId));
+                .orderByDesc(CompanionOrder::getId)
+                .last("LIMIT " + (MAX_EXPORT_ROWS + 1)));
+        if (orders.size() > MAX_EXPORT_ROWS) {
+            log.warn("个人数据导出的「订单」页已截断到 {} 行 | userId={}", MAX_EXPORT_ROWS, userId);
+            orders = new ArrayList<>(orders.subList(0, MAX_EXPORT_ROWS));
+        }
         List<DataExportOrderVO> rows = new ArrayList<>(orders.size());
         for (CompanionOrder order : orders) {
             DataExportOrderVO row = new DataExportOrderVO();
@@ -355,7 +371,12 @@ public class UserServiceImpl implements UserService {
         List<OrderReview> reviews = orderReviewMapper.selectList(Wrappers.<OrderReview>lambdaQuery()
                 .and(w -> w.eq(OrderReview::getFamilyId, userId)
                         .or().eq(OrderReview::getCompanionId, userId))
-                .orderByDesc(OrderReview::getId));
+                .orderByDesc(OrderReview::getId)
+                .last("LIMIT " + (MAX_EXPORT_ROWS + 1)));
+        if (reviews.size() > MAX_EXPORT_ROWS) {
+            log.warn("个人数据导出的「评价」页已截断到 {} 行 | userId={}", MAX_EXPORT_ROWS, userId);
+            reviews = new ArrayList<>(reviews.subList(0, MAX_EXPORT_ROWS));
+        }
         List<DataExportReviewVO> rows = new ArrayList<>(reviews.size());
         for (OrderReview review : reviews) {
             DataExportReviewVO row = new DataExportReviewVO();
@@ -374,7 +395,12 @@ public class UserServiceImpl implements UserService {
     private List<DataExportMessageVO> messageRows(Long userId) {
         List<InternalMessage> messages = internalMessageMapper.selectList(Wrappers.<InternalMessage>lambdaQuery()
                 .eq(InternalMessage::getReceiverId, userId)
-                .orderByDesc(InternalMessage::getId));
+                .orderByDesc(InternalMessage::getId)
+                .last("LIMIT " + (MAX_EXPORT_ROWS + 1)));
+        if (messages.size() > MAX_EXPORT_ROWS) {
+            log.warn("个人数据导出的「消息」页已截断到 {} 行 | userId={}", MAX_EXPORT_ROWS, userId);
+            messages = new ArrayList<>(messages.subList(0, MAX_EXPORT_ROWS));
+        }
         List<DataExportMessageVO> rows = new ArrayList<>(messages.size());
         for (InternalMessage message : messages) {
             DataExportMessageVO row = new DataExportMessageVO();

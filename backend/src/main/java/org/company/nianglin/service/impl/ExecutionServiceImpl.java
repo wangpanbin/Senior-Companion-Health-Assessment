@@ -46,6 +46,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -94,6 +95,14 @@ import java.util.Objects;
 @Service
 @RequiredArgsConstructor
 public class ExecutionServiceImpl implements ExecutionService {
+
+    /**
+     * 轨迹点返回条数上限。
+     *
+     * <p>长期陪诊订单能攒下上万条轨迹点，全量返回既拖慢接口又撑爆前端地图；
+     * 家属真正要看的本来就是「最近的一段」。参数是常量、无注入面，拼接进 SQL 是安全的。</p>
+     */
+    private static final int MAX_TRACK_POINTS = 2000;
 
     /** 允许上传的扩展名与其文件头特征 */
     private final CompanionOrderMapper orderMapper;
@@ -266,11 +275,16 @@ public class ExecutionServiceImpl implements ExecutionService {
     public List<TrackPointVO> track(Long orderId) {
         orderService.requireInvolved(orderId);
 
-        return trackMapper.selectList(Wrappers.<CompanionTrack>lambdaQuery()
+        // 取最近 MAX_TRACK_POINTS 条再翻回正序：倒序查 + 反转，
+        // 既能只取最近的一段，又保持既有返回顺序语义不变（先记录时间、再 id 升序）
+        List<CompanionTrack> rows = new ArrayList<>(trackMapper.selectList(
+                Wrappers.<CompanionTrack>lambdaQuery()
                         .eq(CompanionTrack::getOrderId, orderId)
-                        .orderByAsc(CompanionTrack::getRecordTime)
-                        .orderByAsc(CompanionTrack::getId))
-                .stream()
+                        .orderByDesc(CompanionTrack::getRecordTime)
+                        .orderByDesc(CompanionTrack::getId)
+                        .last("LIMIT " + MAX_TRACK_POINTS)));
+        Collections.reverse(rows);
+        return rows.stream()
                 .map(TrackPointVO::of)
                 .toList();
     }

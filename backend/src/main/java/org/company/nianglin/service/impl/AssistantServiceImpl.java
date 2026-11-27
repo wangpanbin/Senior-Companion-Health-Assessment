@@ -17,6 +17,7 @@ import org.company.nianglin.service.OrderService;
 import org.company.nianglin.service.support.AssistantFallbackFaq;
 import org.company.nianglin.util.ComplianceCheckUtil;
 import org.company.nianglin.util.MaskUtil;
+import org.company.nianglin.util.RedisCounterUtil;
 import org.company.nianglin.vo.AssistantActionVO;
 import org.company.nianglin.vo.AssistantChatVO;
 import org.company.nianglin.vo.CompanionMatchVO;
@@ -158,11 +159,10 @@ public class AssistantServiceImpl implements AssistantService {
                 SecurityUtils.currentUserId(), LocalDateTime.now().format(MINUTE_FORMAT));
         long count;
         try {
-            Long incremented = redisTemplate.opsForValue().increment(key);
-            count = incremented == null ? 0L : incremented;
-            if (count == 1L) {
-                redisTemplate.expire(key, Duration.ofSeconds(120));
-            }
+            // INCR 与 EXPIRE 用 Lua 原子执行（RedisCounterUtil）：分两次调用时
+            // EXPIRE 失败会留下永不过期的计数键，窗口一过限流就再也打不开了。
+            // 与 AuthServiceImpl#incrementWithTtl 共用同一段脚本，避免两处语义漂移。
+            count = RedisCounterUtil.incrementWithTtl(redisTemplate, key, Duration.ofSeconds(120));
         } catch (RuntimeException e) {
             log.warn("助手限流计数失败，本次放行：{}", e.getMessage());
             return;

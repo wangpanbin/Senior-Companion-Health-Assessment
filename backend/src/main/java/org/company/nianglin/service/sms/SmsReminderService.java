@@ -36,6 +36,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 漏服站外短信编排（V4 · P1-3）。
@@ -151,6 +152,13 @@ public class SmsReminderService {
         String content = MessageTemplateUtil.content(contentTemplate, params);
         String complianceHit = ComplianceCheckUtil.firstHit(content);
 
+        // 一次漏服任务的收件人往往不止一位（家属 + 当天陪诊员）。
+        // 偏好与手机号若在循环里逐个查，就是 N+1：收件人越多，查询次数线性增长。
+        // 这里各查一次建 Map，循环内只查 Map —— 语义完全不变：
+        // 「无偏好记录 = 默认开启」「用户不存在 = UNKNOWN_PHONE」都照旧。
+        Map<Long, NotificationPreference> preferences = loadPreferences(recipients);
+        Map<Long, SysUser> users = loadUsers(recipients);
+
         for (Long recipientId : recipients) {
             if (recipientId == null) {
                 continue;
@@ -158,14 +166,15 @@ public class SmsReminderService {
             // 幂等键按「任务 + 级别 + 收件人 + 日期」生成：同任务同日各发一次，但 L1/L2 不互相吞
             String dedupKey = buildDedupKey(task.getId(), recipientId, level, today);
             try {
-                NotificationPreference preference = loadPreference(recipientId);
+                NotificationPreference preference = preferences.get(recipientId);
                 if (isSmsDisabled(preference)) {
                     log.info("收件人已关闭漏服站外短信，跳过发送 | taskId={} | recipientId={}",
                             task.getId(), recipientId);
                     continue;
                 }
                 if (complianceHit != null) {
-                    if (insertComplianceDead(task, recipientId, dedupKey, complianceHit, now)) {
+                    if (insertComplianceDead(task, recipientId, dedupKey, complianceHit, now,
+                            users.get(recipientId))) {
                         log.error("漏服短信文案命中合规词「{}」，已进入死信 | taskId={} | recipientId={}",
                                 complianceHit, task.getId(), recipientId);
                     }
@@ -176,7 +185,7 @@ public class SmsReminderService {
                             task.getId(), recipientId, level, effectiveMissedDoseDailyCap());
                     continue;
                 }
-                SmsSendLog row = buildPendingRow(task, recipientId, dedupKey, now);
+                SmsSendLog row = buildPendingRow(task, recipientId, dedupKey, now, users.get(recipientId));
                 if (!insertIgnoreDuplicate(row)) {
                     log.info("漏服短信已入队（幂等键冲突），跳过重复发送 | taskId={} | dedupKey={}",
                             task.getId(), dedupKey);
@@ -189,7 +198,7 @@ public class SmsReminderService {
                             task.getId(), recipientId, row.getNextRetryAt());
                     continue;
                 }
-                attemptSend(row, params);
+                attemptSend(row, params, users.get(recipientId));
             } catch (Exception e) {
                 // 单收件人失败不能影响其它收件人，更不能影响已完成的站内信
                 log.warn("漏服短信编排失败（已隔离） | taskId={} | recipientId={} | {}",
@@ -232,7 +241,7 @@ public class SmsReminderService {
                     handled++;
                     continue;
                 }
-                attemptSend(row, buildContentParams(task));
+                attemptSend(row, buildContentParams(task), sysUserMapper.selectById(row.getUserId()));
                 handled++;
             } catch (Exception e) {
                 log.warn("漏服短信重试失败（已隔离） | logId={} | taskId={} | {}",
@@ -276,10 +285,55 @@ public class SmsReminderService {
     /* 入队与发送                                                          */
     /* ------------------------------------------------------------------ */
 
+    /** 重试扫描用：单条取偏好（一次只处理一行，没有批量上下文） */
     private NotificationPreference loadPreference(Long familyId) {
         return preferenceMapper.selectOne(
                 Wrappers.<NotificationPreference>lambdaQuery()
                         .eq(NotificationPreference::getUserId, familyId));
+    }
+
+    /**
+     * 批量取收件人的通知偏好。
+     *
+     * <p>一条 {@code IN} 查询换掉 N 次单查 —— 收件人有多位时，查询次数不再随人数线性增长。
+     * 没有偏好记录的收件人不会出现在 Map 里，判定时按「无记录 = 默认开启」处理，
+     * 与原来单查返回 null 的语义完全一致。</p>
+     */
+    private Map<Long, NotificationPreference> loadPreferences(List<Long> recipientIds) {
+        List<Long> ids = recipientIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<NotificationPreference> rows = preferenceMapper.selectList(
+                Wrappers.<NotificationPreference>lambdaQuery()
+                        .in(NotificationPreference::getUserId, ids));
+        Map<Long, NotificationPreference> byUserId = new HashMap<>(rows.size());
+        for (NotificationPreference row : rows) {
+            byUserId.put(row.getUserId(), row);
+        }
+        return byUserId;
+    }
+
+    /**
+     * 批量取收件人的手机号。
+     *
+     * <p>只 select id 与 phone：{@code sys_user} 里还有密码哈希等用不上的列，
+     * 整行取回来既费内存也没必要（手机号落库前还会再脱敏一次）。
+     * 刻意不用 {@code selectBatchIds}：它只能取整行，取不到「只取两列」这种口径。</p>
+     */
+    private Map<Long, SysUser> loadUsers(List<Long> recipientIds) {
+        List<Long> ids = recipientIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<SysUser> rows = sysUserMapper.selectList(Wrappers.<SysUser>lambdaQuery()
+                .in(SysUser::getId, ids)
+                .select(SysUser::getId, SysUser::getPhone));
+        Map<Long, SysUser> byUserId = new HashMap<>(rows.size());
+        for (SysUser row : rows) {
+            byUserId.put(row.getId(), row);
+        }
+        return byUserId;
     }
 
     private static boolean isSmsDisabled(NotificationPreference preference) {
@@ -359,8 +413,14 @@ public class SmsReminderService {
                 : operationParamService.getInt(OperationParam.SMS_MISSED_DOSE_DAILY_CAP);
     }
 
-    private SmsSendLog buildPendingRow(MedicationTask task, Long familyId, String dedupKey, LocalDateTime now) {
-        SysUser user = sysUserMapper.selectById(familyId);
+    /**
+     * 构造待发送行。
+     *
+     * <p>{@code user} 由调用方给出（入队路径来自批量预取）：用户不存在时 phone 为 null，
+     * 走原有的 {@link #UNKNOWN_PHONE} 分支，语义与原来单查一致。</p>
+     */
+    private SmsSendLog buildPendingRow(MedicationTask task, Long familyId, String dedupKey, LocalDateTime now,
+                                       SysUser user) {
         String phone = user == null ? null : user.getPhone();
         SmsSendLog row = new SmsSendLog();
         row.setBizType(BIZ_TYPE_MEDICATION_MISSED);
@@ -377,8 +437,8 @@ public class SmsReminderService {
     }
 
     private boolean insertComplianceDead(MedicationTask task, Long familyId, String dedupKey,
-                                         String complianceHit, LocalDateTime now) {
-        SmsSendLog row = buildPendingRow(task, familyId, dedupKey, now);
+                                         String complianceHit, LocalDateTime now, SysUser user) {
+        SmsSendLog row = buildPendingRow(task, familyId, dedupKey, now, user);
         row.setStatus(STATUS_DEAD);
         row.setLastError(truncate("compliance:" + complianceHit));
         row.setNextRetryAt(null);
@@ -400,8 +460,13 @@ public class SmsReminderService {
         }
     }
 
-    private void attemptSend(SmsSendLog row, Map<String, Object> contentParams) {
-        SysUser user = sysUserMapper.selectById(row.getUserId());
+    /**
+     * 发送一条回执。
+     *
+     * <p>{@code user} 由调用方解析：入队路径用批量预取的结果，重试扫描路径单查。
+     * 用户不存在 → 永久失败（user-not-found），与原实现一致。</p>
+     */
+    private void attemptSend(SmsSendLog row, Map<String, Object> contentParams, SysUser user) {
         if (user == null) {
             markPermanentFailure(row, "user-not-found");
             return;

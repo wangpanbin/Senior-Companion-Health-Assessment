@@ -25,6 +25,8 @@ import org.company.nianglin.websocket.MessageSseHub;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -259,12 +261,22 @@ public class MessageServiceImpl implements MessageService {
 
         // 缓存存在才 INCR：不存在说明当前没有可信的缓存值，
         // 保持「不存在」比写一个可能错的数字更好 —— 读的时候会从库里算
+        //
+        // ⚠️ 缓存抖动不能连带回滚消息。Redis 在这里只是未读数的加速层，
+        // 数据库才是唯一真源；一旦把 Redis 异常抛出去，@Transactional 会把刚插进去的
+        // message 一起回滚 —— 站内信会因为一次缓存超时而发不出去，这是错误的取舍。
+        // 失败只记 warn，未读数在下次读取时自愈。
         String key = RedisKeyConstants.messageUnread(receiverId);
-        if (Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
-            redisTemplate.opsForValue().increment(key);
+        try {
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
+                redisTemplate.opsForValue().increment(key);
+            }
+        } catch (RuntimeException e) {
+            log.warn("未读数缓存更新失败（不影响消息落库） | receiverId={} | {}", receiverId, e.getMessage());
         }
 
-        pushNewMessage(receiverId, row);
+        // 推送挪到事务提交之后，理由见 pushAfterCommit
+        pushAfterCommit(receiverId, row);
         log.info("站内信已发送 | messageId={} | receiverId={} | type={}", row.getId(), receiverId, type);
         return row.getId();
     }
@@ -356,6 +368,29 @@ public class MessageServiceImpl implements MessageService {
     /* ================================================================== */
     /* 内部工具：推送与校验                                                */
     /* ================================================================== */
+
+    /**
+     * 事务提交之后再推 SSE。
+     *
+     * <p>为什么不能在事务里直接推：{@code pushNewMessage} 带的 unreadCount 来自数据库聚合，
+     * 事务尚未提交时这条消息可能随事务一起回滚 —— 前端就会收到一条
+     * 「本来不存在的消息」，并把它计入未读数。提交之后再推，推出去的一定是已落库的事实。</p>
+     *
+     * <p>没有事务上下文时（纯单测 / 非事务调用）直接同步推送，
+     * 否则后台任务与单测永远收不到推送。</p>
+     */
+    private void pushAfterCommit(Long receiverId, InternalMessage row) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            pushNewMessage(receiverId, row);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                pushNewMessage(receiverId, row);
+            }
+        });
+    }
 
     /** 新消息推给收件人的 SSE 通道；失败不影响已经被 {@code @Transactional} 保护的主流程 */
     private void pushNewMessage(Long receiverId, InternalMessage row) {

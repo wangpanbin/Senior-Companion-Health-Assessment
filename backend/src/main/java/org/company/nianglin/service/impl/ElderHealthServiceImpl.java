@@ -83,6 +83,15 @@ public class ElderHealthServiceImpl implements ElderHealthService {
     /** 时间线默认单页条数 */
     private static final int DEFAULT_LIMIT = 50;
 
+    /**
+     * 概览预览的取数上限。
+     *
+     * <p>预览只要 {@value #PREVIEW_LIMIT} 条，却要先把四类事件全部取回来排序。
+     * 给一个小上限（预览条数 × 4）就够排序后取到前几条，
+     * 又不至于把 200 条订单与四类各 200 条事件拉进内存。</p>
+     */
+    private static final int PREVIEW_FETCH_LIMIT = PREVIEW_LIMIT * 4;
+
     /** 每类事件的最大取数条数；超出按时间倒序截断 */
     private static final int MAX_EVENTS_PER_CATEGORY = 200;
 
@@ -311,11 +320,25 @@ public class ElderHealthServiceImpl implements ElderHealthService {
      */
     private CollectedEvents collectEvents(ElderProfile elder, DateRange range,
                                           Set<HealthTimelineCategory> categories, boolean selfMode) {
+        return collectEvents(elder, range, categories, selfMode, MAX_EVENTS_PER_CATEGORY);
+    }
+
+    /**
+     * 收集四类事件（取数上限可调）。
+     *
+     * <p>为什么上限要可调：概览页只想显示 5 条预览，却要为此把四类事件各 200 条
+     * 拉进内存再排序（200 单 + 4 次分类查询 + 全量排序）。预览走小上限即可。
+     * <b>时间线仍走完整上限，返回内容与 {@code truncated} 语义完全不变</b>
+     * （上面那个重载就是原实现，只是把上限参数化）。</p>
+     */
+    private CollectedEvents collectEvents(ElderProfile elder, DateRange range,
+                                          Set<HealthTimelineCategory> categories, boolean selfMode,
+                                          int perCategoryLimit) {
         List<TimelineEvent> events = new ArrayList<>();
         boolean truncated = false;
         Long elderId = elder.getId();
 
-        List<CompanionOrder> orders = elderOrders(elderId, range);
+        List<CompanionOrder> orders = elderOrders(elderId, range, perCategoryLimit);
         List<Long> orderIds = orders.stream().map(CompanionOrder::getId).toList();
 
         if (categories.contains(HealthTimelineCategory.ORDER)) {
@@ -323,28 +346,34 @@ public class ElderHealthServiceImpl implements ElderHealthService {
             // 200 单能产出 1000 条事件。这里按<b>事件条数</b>封顶。
             List<TimelineEvent> orderEvents = new ArrayList<>();
             orderEvents(orderEvents, orders, range, selfMode);
-            reviewEvents(orderEvents, orderIds, range, selfMode);
-            if (orderEvents.size() > MAX_EVENTS_PER_CATEGORY) {
+            reviewEvents(orderEvents, orderIds, range, selfMode, perCategoryLimit);
+            if (orderEvents.size() > perCategoryLimit) {
                 truncated = true;
                 orderEvents.sort(EVENT_ORDER);
-                orderEvents = new ArrayList<>(orderEvents.subList(0, MAX_EVENTS_PER_CATEGORY));
+                orderEvents = new ArrayList<>(orderEvents.subList(0, perCategoryLimit));
             }
             events.addAll(orderEvents);
         }
         if (categories.contains(HealthTimelineCategory.CHECKIN)) {
-            truncated |= checkinEvents(events, orderIds, range) >= MAX_EVENTS_PER_CATEGORY;
+            truncated |= checkinEvents(events, orderIds, range, perCategoryLimit) >= perCategoryLimit;
         }
         if (categories.contains(HealthTimelineCategory.MEDICATION)) {
-            truncated |= medicationEvents(events, elderId, range) >= MAX_EVENTS_PER_CATEGORY;
+            truncated |= medicationEvents(events, elderId, range, perCategoryLimit) >= perCategoryLimit;
         }
         if (categories.contains(HealthTimelineCategory.MESSAGE)) {
-            truncated |= messageEvents(events, elder, orderIds, range, selfMode) >= MAX_EVENTS_PER_CATEGORY;
+            truncated |= messageEvents(events, elder, orderIds, range, selfMode, perCategoryLimit) >= perCategoryLimit;
         }
         return new CollectedEvents(events, truncated);
     }
 
-    /** 该老人参与、且与区间沾边的订单 */
-    private List<CompanionOrder> elderOrders(Long elderId, DateRange range) {
+    /**
+     * 该老人参与、且与区间沾边的订单。
+     *
+     * <p>上限取「事件上限」与 {@value #MAX_ORDERS} 的较小者：概览预览只给 20，
+     * 就不必把 200 条订单拉进来；时间线上限仍是 200，行为不变。</p>
+     */
+    private List<CompanionOrder> elderOrders(Long elderId, DateRange range, int perCategoryLimit) {
+        int limit = Math.min(MAX_ORDERS, perCategoryLimit);
         return companionOrderMapper.selectList(Wrappers.<CompanionOrder>lambdaQuery()
                 .eq(CompanionOrder::getElderId, elderId)
                 .and(w -> w.nested(n -> n.ge(CompanionOrder::getCreateTime, range.startTime())
@@ -352,7 +381,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
                         .or().nested(n -> n.ge(CompanionOrder::getVisitTime, range.startTime())
                                 .lt(CompanionOrder::getVisitTime, range.endExclusive())))
                 .orderByDesc(CompanionOrder::getCreateTime)
-                .last("LIMIT " + MAX_ORDERS));
+                .last("LIMIT " + limit));
     }
 
     /** 订单状态事件：下单 / 已接单 / 开始服务 / 服务完成 / 已取消 */
@@ -370,7 +399,8 @@ public class ElderHealthServiceImpl implements ElderHealthService {
     }
 
     /** 评价完成事件 */
-    private int reviewEvents(List<TimelineEvent> events, List<Long> orderIds, DateRange range, boolean selfMode) {
+    private int reviewEvents(List<TimelineEvent> events, List<Long> orderIds, DateRange range,
+                             boolean selfMode, int limit) {
         if (orderIds.isEmpty()) {
             return 0;
         }
@@ -378,7 +408,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
                 .in(OrderReview::getOrderId, orderIds)
                 .ge(OrderReview::getCreateTime, range.startTime())
                 .lt(OrderReview::getCreateTime, range.endExclusive())
-                .last("LIMIT " + MAX_EVENTS_PER_CATEGORY));
+                .last("LIMIT " + limit));
         for (OrderReview review : reviews) {
             String detail = review.getScore() == null ? null : "评分 " + review.getScore() + " 分";
             events.add(new TimelineEvent(
@@ -398,7 +428,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
     }
 
     /** 陪诊打卡事件 */
-    private int checkinEvents(List<TimelineEvent> events, List<Long> orderIds, DateRange range) {
+    private int checkinEvents(List<TimelineEvent> events, List<Long> orderIds, DateRange range, int limit) {
         if (orderIds.isEmpty()) {
             return 0;
         }
@@ -407,7 +437,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
                 .ge(OrderCheckin::getCheckinTime, range.startTime())
                 .lt(OrderCheckin::getCheckinTime, range.endExclusive())
                 .orderByDesc(OrderCheckin::getCheckinTime)
-                .last("LIMIT " + MAX_EVENTS_PER_CATEGORY));
+                .last("LIMIT " + limit));
         for (OrderCheckin checkin : checkins) {
             if (checkin.getCheckinTime() == null) {
                 continue;
@@ -430,13 +460,13 @@ public class ElderHealthServiceImpl implements ElderHealthService {
     }
 
     /** 用药事件：已服按确认时间、漏服按计划时间；待服不是事件（它属于待处理事项） */
-    private int medicationEvents(List<TimelineEvent> events, Long elderId, DateRange range) {
+    private int medicationEvents(List<TimelineEvent> events, Long elderId, DateRange range, int limit) {
         List<MedicationTask> tasks = medicationTaskMapper.selectList(Wrappers.<MedicationTask>lambdaQuery()
                 .eq(MedicationTask::getElderId, elderId)
                 .ge(MedicationTask::getPlanTime, range.startTime())
                 .lt(MedicationTask::getPlanTime, range.endExclusive())
                 .orderByDesc(MedicationTask::getPlanTime)
-                .last("LIMIT " + MAX_EVENTS_PER_CATEGORY));
+                .last("LIMIT " + limit));
         for (MedicationTask task : tasks) {
             MedicationBucket bucket = MedicationBucket.of(task.getStatus(),
                     task.getWasMissed() != null && task.getWasMissed() == 1);
@@ -466,7 +496,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
 
     /** 站内信事件：只取发给当前读者本人的进度与用药提醒 */
     private int messageEvents(List<TimelineEvent> events, ElderProfile elder, List<Long> orderIds,
-                              DateRange range, boolean selfMode) {
+                              DateRange range, boolean selfMode, int limit) {
         Long receiverId = selfMode ? elder.getUserId() : SecurityUtils.currentUserId();
         if (receiverId == null) {
             return 0;
@@ -478,7 +508,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
                 .ge(InternalMessage::getCreateTime, range.startTime())
                 .lt(InternalMessage::getCreateTime, range.endExclusive())
                 .orderByDesc(InternalMessage::getCreateTime)
-                .last("LIMIT " + MAX_EVENTS_PER_CATEGORY));
+                .last("LIMIT " + limit));
         for (InternalMessage message : messages) {
             boolean orderMessage = "ORDER_PROGRESS".equals(message.getType());
             if (orderMessage && !orderIds.contains(message.getBizId())) {
@@ -584,12 +614,17 @@ public class ElderHealthServiceImpl implements ElderHealthService {
     /* 内部工具                                                            */
     /* ================================================================== */
 
-    /** 时间线预览（概览里的「最近发生了什么」） */
+    /**
+     * 时间线预览（概览里的「最近发生了什么」）。
+     *
+     * <p>走<b>小取数上限</b>：预览只要 5 条，没必要为此把 200 条订单与四类各 200 条
+     * 事件拉进内存再排序。排序后取前 5 条的结果与全量口径一致。</p>
+     */
     private List<HealthTimelineVO.Item> previewItems(ElderProfile elder, DateRange range, boolean selfMode) {
         CollectedEvents collected = collectEvents(elder, range,
                 Set.of(HealthTimelineCategory.ORDER, HealthTimelineCategory.CHECKIN,
                         HealthTimelineCategory.MEDICATION, HealthTimelineCategory.MESSAGE),
-                selfMode);
+                selfMode, PREVIEW_FETCH_LIMIT);
         List<TimelineEvent> events = collected.events();
         events.sort(EVENT_ORDER);
         return events.stream().limit(PREVIEW_LIMIT).map(this::toItem).toList();

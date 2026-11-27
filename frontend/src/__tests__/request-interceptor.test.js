@@ -32,7 +32,8 @@ vi.mock('axios', () => {
     get: vi.fn(),
     post: vi.fn()
   }
-  return { default: { create: () => instance } }
+  // 默认导出上的 post 是刷新令牌用的那条通道（request.js 里动态 import axios）
+  return { default: { create: () => instance, post: vi.fn() } }
 })
 
 /* ---------------- mock：element-plus（只记调用） ---------------- */
@@ -58,7 +59,8 @@ vi.mock('@/utils/auth', () => ({
 }))
 
 const { ElMessage, ElMessageBox } = await import('element-plus')
-const { clearAuth } = await import('@/utils/auth')
+const { clearAuth, getRefreshToken } = await import('@/utils/auth')
+const axiosModule = await import('axios')
 // 动态 import：确保上面的 mock 全部注册后再加载被测模块
 await import('@/utils/request')
 
@@ -82,6 +84,10 @@ function err401() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // vi.clearAllMocks() 只清调用记录，不清 mockReturnValue 设过的返回值：
+  // 显式复位，保证「有 refreshToken」的状态不会漏到下一个用例
+  getRefreshToken.mockReturnValue(null)
+  axiosModule.default.post.mockReset()
 })
 
 /* ================================================================== *
@@ -140,5 +146,35 @@ describe('DEF-3 · handleLogout 幂等（并发 401 只弹一个对话框）', (
     // 上一条用例的对话框因 reject 已复位，这里再触发一次应当再弹
     await onError()(err401()).catch(() => {})
     expect(ElMessageBox.alert).toHaveBeenCalledTimes(2)
+  })
+})
+
+/* ================================================================== *
+ * F1：刷新失败时，挂起的请求必须被 reject（不能永远悬挂）
+ * ================================================================== */
+
+describe('F1 · 刷新失败时挂起的请求被 reject，而不是悬挂', () => {
+  it('刷新失败 → 挂起的请求以 401 失败，且不会永远 pending', async () => {
+    getRefreshToken.mockReturnValue('refresh-token')
+    axiosModule.default.post.mockRejectedValue(new Error('refresh failed'))
+
+    // 第一个请求触发刷新（refreshing = true）
+    const first = onError()(err401()).catch((e) => e)
+    // 第二个请求撞上「刷新在途」→ 进 pendingQueue
+    const second = onError()(err401())
+
+    // 用 race 证明「它 settle 了」，而不是「它还挂着」
+    const settled = await Promise.race([
+      second.then(
+        () => 'resolved',
+        (e) => e
+      ),
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 200))
+    ])
+
+    expect(settled).not.toBe('timeout')
+    expect(settled.code).toBe(401)
+    expect(settled.message).toContain('登录状态已失效')
+    await first
   })
 })
