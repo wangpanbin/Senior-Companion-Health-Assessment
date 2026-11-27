@@ -53,4 +53,19 @@ public class MetricDefinitionVO {
     @Schema(description = "返回该指标的端点（端点 ↔ 指标机器面）",
             example = "[\"GET /api/admin/operations/overview\"]")
     private List<String> endpoints = new ArrayList<>();
+
+    /**
+     * 该 key 背后的计算器主 key；{@code null} 表示**没有计算器**（只能读、不能算）。
+     *
+     * <p>为什么字典需要这个字段（V6.0 · 最终复盘 FE-05）：运营驾驶舱的「效果对比」
+     * 只接受<b>已注册计算器</b>的指标，传其它 key 后端返回 400。此前前端只能自己
+     * 抄一份 13 个 key 的白名单 —— 后端注册表增删一个指标，前端不会知道。
+     * 现在字典直接告诉调用方「这个 key 能不能算」，前端不必再维护第二份清单。</p>
+     *
+     * <p>别名 key（同一口径的第二个名字）会返回<b>同一个</b> {@code calculatorKey}，
+     * 前端据此去重即可，不再需要知道哪几个是别名。</p>
+     */
+    @Schema(description = "该指标的计算器主 key；null 表示没有计算器（不可用于效果对比）",
+            example = "operations.fulfillment_rate")
+    private String calculatorKey;
 }

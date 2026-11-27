@@ -55,7 +55,10 @@ public class OrderFeeItemServiceImpl implements OrderFeeItemService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public OrderFeeItemVO create(Long orderId, FeeItemCreateDTO dto) {
-        CompanionOrder order = requireOrder(orderId);
+        // 先锁订单行：本方法要「读全量明细 → 算合计 → 写回 actual_fee」，
+        // 不串行化的话，两笔明细并发录入时后提交的一方可能拿着较旧的合计覆盖较新的合计
+        // （同一张单在收入页与详情页会短暂对不上账）。锁到事务结束才释放。
+        CompanionOrder order = lockOrder(orderId);
         String status = order.getStatus();
         if (!OrderStatus.IN_SERVICE.name().equals(status) && !OrderStatus.COMPLETED.name().equals(status)) {
             throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
@@ -109,7 +112,7 @@ public class OrderFeeItemServiceImpl implements OrderFeeItemService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void applyOnComplete(Long orderId, BigDecimal declaredFee) {
-        CompanionOrder order = requireOrder(orderId);
+        CompanionOrder order = lockOrder(orderId);
         List<OrderFeeItem> items = itemsOf(orderId);
         // dto.fee 申报的是服务费；已有 SERVICE 明细则不重复生成。
         // 判据是「是否存在 SERVICE 明细」而非「SERVICE 求和是否为 0」：
@@ -129,13 +132,41 @@ public class OrderFeeItemServiceImpl implements OrderFeeItemService {
             return;
         }
         // actual_fee 与读路径共用 totalsOf，否则收入页「账单行」与「展开面板」会给出两个总价
-        CompanionOrder patch = new CompanionOrder();
-        patch.setId(orderId);
-        patch.setActualFee(totalsOf(order, items).total());
-        orderMapper.updateById(patch);
+        writeActualFee(orderId, totalsOf(order, items).total());
     }
 
     /* ==================== 内部工具 ==================== */
+
+    /**
+     * 取订单并加行锁（{@code SELECT ... FOR UPDATE}）。
+     *
+     * <p>只有「重算 actual_fee」的写路径用它 —— 需要把「读明细 → 汇总 → 写回」
+     * 这一段串行化。纯读路径仍用 {@link #requireOrder}，不要顺手也加锁。</p>
+     */
+    private CompanionOrder lockOrder(Long orderId) {
+        CompanionOrder order = orderMapper.selectByIdForUpdate(orderId);
+        if (order == null) {
+            throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
+        }
+        return order;
+    }
+
+    /**
+     * 写回 {@code actual_fee}（派生字段）。
+     *
+     * <p><b>不用 {@code updateById(patch)}</b>：{@code CompanionOrder} 上有 {@code @Version}，
+     * 而只带 id + actualFee 的 patch 版本号为 null，MyBatis-Plus 会跳过版本条件，
+     * 等价于「按 id 无条件覆盖」—— 正是本项目铁律里禁止的那种写法。
+     * 这里改成显式的条件更新：只写这一列，不碰 version 与其它业务字段。</p>
+     *
+     * <p>调用方必须已经 {@link #lockOrder} 锁住同一行，否则条件更新仍然挡不住
+     * 「旧合计覆盖新合计」（条件是 {@code actual_fee <> ?}，两次不同的合计都满足）。</p>
+     */
+    private void writeActualFee(Long orderId, BigDecimal total) {
+        orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .eq(CompanionOrder::getId, orderId)
+                .set(CompanionOrder::getActualFee, total));
+    }
 
     private CompanionOrder requireOrder(Long orderId) {
         CompanionOrder order = orderMapper.selectById(orderId);
@@ -171,10 +202,7 @@ public class OrderFeeItemServiceImpl implements OrderFeeItemService {
         if (items.isEmpty()) {
             return;
         }
-        CompanionOrder patch = new CompanionOrder();
-        patch.setId(order.getId());
-        patch.setActualFee(totalsOf(order, items).total());
-        orderMapper.updateById(patch);
+        writeActualFee(order.getId(), totalsOf(order, items).total());
     }
 
     /** 本单全部明细，按发生时间升序 —— 读路径与重算共用，保证两处面对同一份数据 */
