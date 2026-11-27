@@ -45,7 +45,6 @@ main← develop ← feature/<module>-<name>
 
 ## 7.3 AI 输出提交相关动作的硬约束
 
-- **AI 只能** 在用户明确授权后才执行 `git commit` / `git push`。
 - AI **必须** 生成符合上述格式的提交信息再 commit。
 - AI **禁止** `git push --force` 到任何受保护分支。
 - AI **禁止** 直接修改 `main` / `develop`，必须基于 `feature/...` 分支——即**写第一行代码前就先新建独立分支**，所有编辑与提交都发生在该分支上，不允许在主分支上改完再倒签补分支。
