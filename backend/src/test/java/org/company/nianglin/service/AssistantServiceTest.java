@@ -21,10 +21,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -45,6 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -82,8 +84,6 @@ class AssistantServiceTest {
     private ElderService elderService;
     @Mock
     private StringRedisTemplate redisTemplate;
-    @Mock
-    private ValueOperations<String, String> valueOps;
 
     private AssistantProperties properties;
     private AssistantFallbackFaq fallbackFaq;
@@ -97,9 +97,10 @@ class AssistantServiceTest {
         fallbackFaq = new AssistantFallbackFaq(properties, new ObjectMapper());
         service = new AssistantServiceImpl(orderService, elderService, redisTemplate, properties, fallbackFaq);
         login("FAMILY", 101L);
-        // 限流计数默认放行；各用例按需覆盖
-        lenient().when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        lenient().when(valueOps.increment(anyString())).thenReturn(1L);
+        // 限流计数默认放行；各用例按需覆盖。
+        // 计数走 RedisCounterUtil 的 Lua 脚本（原子 INCR + EXPIRE），不再走 opsForValue
+        lenient().when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any()))
+                .thenReturn(1L);
         // 上下文装配默认取到空列表
         lenient().when(elderService.page(any())).thenReturn(PageResult.empty(1L, 20L));
         lenient().when(orderService.myOrders(any())).thenReturn(PageResult.empty(1L, 5L));
@@ -269,7 +270,8 @@ class AssistantServiceTest {
     @Test
     @DisplayName("超过每分钟上限 → 10001")
     void rateLimitExceededShouldThrow10001() {
-        when(valueOps.increment(anyString())).thenReturn(11L);
+        when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any()))
+                .thenReturn(11L);
 
         AssistantChatDTO dto = new AssistantChatDTO();
         dto.setQuestion("陪诊费多少钱");
@@ -284,7 +286,8 @@ class AssistantServiceTest {
         startPython(200, """
                 {"answer":"好的","intent":"FAQ_PLATFORM","actions":[],"sources":[],"degraded":true}
                 """);
-        when(valueOps.increment(anyString())).thenThrow(new RuntimeException("redis down"));
+        when(redisTemplate.execute(ArgumentMatchers.<RedisScript<Long>>any(), anyList(), any()))
+                .thenThrow(new RuntimeException("redis down"));
 
         AssistantChatDTO dto = new AssistantChatDTO();
         dto.setQuestion("陪诊费多少钱");

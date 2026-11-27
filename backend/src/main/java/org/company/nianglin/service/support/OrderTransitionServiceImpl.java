@@ -241,11 +241,14 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
     private String resolveOperatorName(Operator operator) {
         if (RoleConstants.COMPANION.equals(operator.role())) {
             // 与 OrderServiceImpl#findCompanionProfile 保持同一套查询语义
-            // （按 userId 查资质快照，取最早一条），避免日志里的姓名与其它地方对不上
+            // （按 userId 查资质快照，取最早一条），避免日志里的姓名与其它地方对不上。
+            // 刻意不用 selectOne：多行会抛 TooManyResultsException，把「数据脏了」
+            // 升级成「接口 500」；LIMIT 1 则只要首行，不必把全部资质行拉进内存
             List<CompanionProfile> list = companionProfileMapper.selectList(
                     Wrappers.<CompanionProfile>lambdaQuery()
                             .eq(CompanionProfile::getUserId, operator.userId())
-                            .orderByAsc(CompanionProfile::getId));
+                            .orderByAsc(CompanionProfile::getId)
+                            .last("LIMIT 1"));
             if (list != null && !list.isEmpty() && StringUtils.hasText(list.get(0).getRealName())) {
                 return list.get(0).getRealName();
             }

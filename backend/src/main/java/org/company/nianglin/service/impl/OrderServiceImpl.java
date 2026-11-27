@@ -1047,11 +1047,14 @@ public class OrderServiceImpl implements OrderService {
      * <p>用 {@code selectList} 取首行而不是 {@code selectOne}：
      * {@code selectOne} 遇到重复行会抛 {@code TooManyResultsException}，
      * 把「数据脏了」升级成「接口 500」。这里只取 id 最小的一行，接口照常可用。</p>
+     *
+     * <p>{@code LIMIT 1}：既然只要首行，就别把该用户的所有资质行都拉进内存。</p>
      */
     private CompanionProfile findCompanionProfile(Long userId) {
         List<CompanionProfile> list = companionProfileMapper.selectList(Wrappers.<CompanionProfile>lambdaQuery()
                 .eq(CompanionProfile::getUserId, userId)
-                .orderByAsc(CompanionProfile::getId));
+                .orderByAsc(CompanionProfile::getId)
+                .last("LIMIT 1"));
         return list.isEmpty() ? null : list.get(0);
     }
 

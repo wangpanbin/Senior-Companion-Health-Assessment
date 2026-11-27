@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -14,6 +16,7 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -131,5 +134,61 @@ class MessageSseHubTest {
     void pushWithoutSubscribersIsNoop() {
         hub.push(99L, MessageSseHub.EVENT_NEW_MESSAGE, Map.of());
         assertEquals(0, hub.connectionCount(99L));
+    }
+
+    /* ================================================================== */
+    /* 通道数上限（V3.8）：多标签页 + EventSource 自动重连不移除累积        */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("通道数超上限时摘除最早的一条，总数不会无限增长")
+    void channelsBeyondLimitEvictOldest() throws Exception {
+        // 上限 5：连开 8 条，最终只应留下 5 条
+        List<SseEmitter> all = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            SseEmitter emitter = mock(SseEmitter.class);
+            all.add(emitter);
+            hub.subscribe(1L, emitter);
+        }
+
+        assertEquals(5, hub.connectionCount(1L), "通道数必须收敛到上限，不能随重连无限增长");
+
+        // 记下推送前每条通道的交互次数
+        List<Integer> sendsBefore = new ArrayList<>();
+        for (SseEmitter emitter : all) {
+            sendsBefore.add(mockingDetails(emitter).getInvocations().size());
+        }
+
+        hub.push(1L, MessageSseHub.EVENT_NEW_MESSAGE, Map.of("probe", 1));
+
+        // 最早的 3 条被摘除：不再收推送，且绝不被 complete()
+        for (int i = 0; i < 3; i++) {
+            SseEmitter evicted = all.get(i);
+            verify(evicted, never()).complete();
+            assertEquals(sendsBefore.get(i), mockingDetails(evicted).getInvocations().size(),
+                    "被摘除的通道不该再收到推送（序号 " + i + "）");
+        }
+
+        // 后 5 条（最新的）仍在：各比推送前多收一次
+        for (int i = 3; i < 8; i++) {
+            SseEmitter kept = all.get(i);
+            assertEquals(sendsBefore.get(i) + 1, mockingDetails(kept).getInvocations().size(),
+                    "留下的通道应能继续收到推送（序号 " + i + "）");
+        }
+    }
+
+    @Test
+    @DisplayName("已断掉的通道被摘除后不占名额（计数基于活跃通道）")
+    void evictedSlotIsReusableAfterDeadChannelRemoved() throws Exception {
+        SseEmitter dead = mock(SseEmitter.class);
+        willThrow(new IOException("gone")).given(dead).send(any(SseEmitter.SseEventBuilder.class));
+        hub.subscribe(1L, dead);
+        assertEquals(0, hub.connectionCount(1L), "连确认事件都发不出去的通道建立时即摘除");
+
+        // 名额没被死通道占着：再连 5 条仍然全量保留
+        for (int i = 0; i < 5; i++) {
+            hub.subscribe(1L, mock(SseEmitter.class));
+        }
+        assertEquals(5, hub.connectionCount(1L));
     }
 }

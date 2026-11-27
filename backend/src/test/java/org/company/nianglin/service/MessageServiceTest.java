@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.company.nianglin.common.ResultCode;
+import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.dto.MessageQuery;
 import org.company.nianglin.entity.InternalMessage;
@@ -28,17 +29,23 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -69,6 +76,7 @@ import static org.mockito.Mockito.verify;
 class MessageServiceTest {
 
     private static final Long ME_ID = 301L;
+    private static final Long RECEIVER_ID = 302L;
     private static final Long MESSAGE_ID = 40001L;
     private static final Long OTHERS_MESSAGE_ID = 40002L;
 
@@ -336,6 +344,62 @@ class MessageServiceTest {
         assertTrue(whereSql.contains("receiver_id"),
                 "批量已读少了 receiver_id，一次点击就会清空全站红点：" + whereSql);
         assertTrue(whereSql.contains("is_read"), whereSql);
+    }
+
+    /* ================================================================== */
+    /* 发送：Redis 与事务解耦（V3.8）                                      */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("未读数缓存抖动不连带回滚（Redis 异常时消息照常落库）")
+    void sendShouldSurviveRedisFailure() {
+        given(redisTemplate.hasKey(anyString())).willThrow(new RuntimeException("redis down"));
+        given(messageReadMapper.countUnreadGroupByType(any())).willReturn(List.of());
+        // 模拟 insert 回填自增主键，否则返回的 messageId 为空
+        willAnswer(invocation -> {
+            InternalMessage row = invocation.getArgument(0);
+            row.setId(MESSAGE_ID);
+            return 1;
+        }).given(messageMapper).insert(any(InternalMessage.class));
+
+        Long id = service.send(RECEIVER_ID, MessageType.ORDER_ACCEPTED, 1001L, Map.of());
+
+        assertNotNull(id, "Redis 只是未读数的加速层，它挂了不该让站内信发不出去");
+        verify(messageMapper).insert(any(InternalMessage.class));
+    }
+
+    @Test
+    @DisplayName("事务已同步时推送延后到提交之后（避免推出将被回滚的消息）")
+    void pushShouldBeDeferredToAfterCommit() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            given(redisTemplate.hasKey(anyString())).willReturn(false);
+            given(messageReadMapper.countUnreadGroupByType(any())).willReturn(List.of());
+
+            service.send(RECEIVER_ID, MessageType.ORDER_ACCEPTED, 1001L, Map.of());
+
+            verify(sseHub, never()).push(anyLong(), anyString(), any());
+            assertEquals(1, TransactionSynchronizationManager.getSynchronizations().size(),
+                    "推送应注册为事务同步，等提交后再执行");
+
+            // 模拟容器提交事务
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+            verify(sseHub).push(eq(RECEIVER_ID), eq(MessageSseHub.EVENT_NEW_MESSAGE), any());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("无事务上下文时（后台任务 / 单测）立即推送，不能丢推送")
+    void pushShouldHappenImmediatelyWithoutTransaction() {
+        given(redisTemplate.hasKey(anyString())).willReturn(false);
+        given(messageReadMapper.countUnreadGroupByType(any())).willReturn(List.of());
+
+        service.send(RECEIVER_ID, MessageType.ORDER_ACCEPTED, 1001L, Map.of());
+
+        verify(sseHub).push(eq(RECEIVER_ID), eq(MessageSseHub.EVENT_NEW_MESSAGE), any());
     }
 
     /* ================================================================== */

@@ -59,10 +59,20 @@ service.interceptors.request.use(
 
 // 刷新 token 的并发控制：多个请求同时 401 时只刷新一次
 let refreshing = false
+// 挂起的请求：元素是 { resolve, reject }。
+// ⚠️ 必须同时存 reject —— 只存 resolve 的话，刷新失败时这些 Promise 既不 resolve 也不 reject，
+// 调用方的 await 永远等不到结果，页面就一直卡在 loading（用户看到的是「一直转圈」而不是「请重新登录」）。
 let pendingQueue = []
 
+/** 刷新成功：放行所有挂起的请求（用新 token 重放） */
 function flushQueue(token) {
-  pendingQueue.forEach((cb) => cb(token))
+  pendingQueue.forEach((item) => item.resolve(token))
+  pendingQueue = []
+}
+
+/** 刷新失败：让所有挂起的请求以「登录已失效」失败，而不是永远悬挂 */
+function rejectQueue(error) {
+  pendingQueue.forEach((item) => item.reject(error))
   pendingQueue = []
 }
 
@@ -140,10 +150,15 @@ service.interceptors.response.use(
 
       if (refreshing) {
         // 已有刷新请求在途，挂起等待
-        return new Promise((resolve) => {
-          pendingQueue.push((token) => {
-            config.headers.Authorization = `Bearer ${token}`
-            resolve(service(config))
+        // reject 也要一起挂上：刷新失败时走 rejectQueue，
+        // 否则这个 Promise 既不 resolve 也不 reject —— 请求永久悬挂
+        return new Promise((resolve, reject) => {
+          pendingQueue.push({
+            resolve: (token) => {
+              config.headers.Authorization = `Bearer ${token}`
+              resolve(service(config))
+            },
+            reject
           })
         })
       }
@@ -162,7 +177,11 @@ service.interceptors.response.use(
         config.headers.Authorization = `Bearer ${newToken}`
         return service(config)
       } catch {
-        pendingQueue = []
+        // 先让挂起的请求全部失败，再登出：
+        // 否则它们既不 resolve 也不 reject，调用方的 await 永远等不到结果（页面卡在 loading）
+        rejectQueue(
+          Object.assign(new Error('登录状态已失效，请重新登录'), { code: UNAUTHORIZED_CODE })
+        )
         handleLogout(message)
         return Promise.reject(error)
       } finally {

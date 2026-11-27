@@ -126,6 +126,9 @@ class SmsReminderServiceTest {
         secondFamilyUser.setPhone(PHONE_2);
         lenient().when(sysUserMapper.selectById(FAMILY_ID_2)).thenReturn(secondFamilyUser);
 
+        // 入队路径改成批量取（偏好 + 手机号各一次），手机号在批量结果里
+        lenient().when(sysUserMapper.selectList(any())).thenReturn(List.of(familyUser, secondFamilyUser));
+
         lenient().when(templateRouter.resolve(SmsScene.MISSED_DOSE)).thenReturn(TEMPLATE_CODE);
         lenient().when(smsSendLogMapper.insert(any(SmsSendLog.class))).thenAnswer(invocation -> {
             SmsSendLog row = invocation.getArgument(0);
@@ -177,7 +180,7 @@ class SmsReminderServiceTest {
         preference.setUserId(FAMILY_ID);
         preference.setSmsMissedEnabled(1);
         preference.setQuietHoursEnabled(0);
-        when(preferenceMapper.selectOne(any())).thenReturn(preference);
+        when(preferenceMapper.selectList(any())).thenReturn(List.of(preference));
         service = serviceWithClock(LocalDateTime.of(2026, 11, 3, 22, 30));
 
         service.enqueueMissedDose(task, List.of(FAMILY_ID));
@@ -193,7 +196,7 @@ class SmsReminderServiceTest {
         NotificationPreference preference = new NotificationPreference();
         preference.setUserId(FAMILY_ID);
         preference.setSmsMissedEnabled(0);
-        when(preferenceMapper.selectOne(any())).thenReturn(preference);
+        when(preferenceMapper.selectList(any())).thenReturn(List.of(preference));
 
         service.enqueueMissedDose(task, List.of(FAMILY_ID));
 
@@ -339,7 +342,8 @@ class SmsReminderServiceTest {
         off.setUserId(FAMILY_ID);
         off.setSmsMissedEnabled(0);
         // 按收件人遍历顺序：101 关闭 → 跳过；102 无记录 → 默认开启
-        when(preferenceMapper.selectOne(any())).thenReturn(off, (NotificationPreference) null);
+        // （批量取数：只有 101 有偏好记录，102 在 Map 里查不到 = 无记录 = 默认开启）
+        when(preferenceMapper.selectList(any())).thenReturn(List.of(off));
 
         service.enqueueMissedDose(task, List.of(FAMILY_ID, FAMILY_ID_2));
 
@@ -368,7 +372,8 @@ class SmsReminderServiceTest {
     @Test
     @DisplayName("无手机号 / 用户已注销 → FAILED 并留原因，不抛异常")
     void shouldFailPermanentlyWhenUserMissing() {
-        when(sysUserMapper.selectById(FAMILY_ID)).thenReturn(null);
+        // 批量取数里查不到该用户 = 用户已注销：走原有的 user-not-found 分支
+        when(sysUserMapper.selectList(any())).thenReturn(List.of());
 
         service.enqueueMissedDose(task, List.of(FAMILY_ID));
 

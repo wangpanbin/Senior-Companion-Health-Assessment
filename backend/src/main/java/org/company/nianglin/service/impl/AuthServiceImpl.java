@@ -29,6 +29,7 @@ import org.company.nianglin.service.AuthService;
 import org.company.nianglin.service.CaptchaService;
 import org.company.nianglin.service.ElderService;
 import org.company.nianglin.util.MaskUtil;
+import org.company.nianglin.util.RedisCounterUtil;
 import org.company.nianglin.vo.LoginVO;
 import org.company.nianglin.vo.TokenVO;
 import org.company.nianglin.vo.UserInfoVO;
@@ -576,13 +577,23 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
-    /** 首次计数时设置 TTL；返回累加后的次数（Redis 异常返回 0，按未超限放行） */
+    /**
+     * 首次计数时设置 TTL；返回累加后的次数。
+     *
+     * <p>用 Lua 把 {@code INCR} 与 {@code EXPIRE} 原子执行（见 {@link RedisCounterUtil}）。
+     * 分两次调用时，{@code EXPIRE} 失败会留下一个<b>永不过期</b>的计数键 ——
+     * 该手机号 / IP 的短信额度会被永久锁死，只能手工删 Redis 才能恢复。</p>
+     *
+     * <p>Redis 异常时返回 0（按未超限放行）并记 warn：频控是成本保护，不是安全边界，
+     * Redis 挂了不该让所有人发不出验证码。</p>
+     */
     private long incrementWithTtl(String key, Duration ttl) {
-        Long count = redisTemplate.opsForValue().increment(key);
-        if (count != null && count == 1L) {
-            redisTemplate.expire(key, ttl);
+        try {
+            return RedisCounterUtil.incrementWithTtl(redisTemplate, key, ttl);
+        } catch (RuntimeException e) {
+            log.warn("Redis 计数失败，本次按未超限放行 | {}", e.getMessage());
+            return 0L;
         }
-        return count == null ? 0L : count;
     }
 
     private static String generateSmsCode() {
