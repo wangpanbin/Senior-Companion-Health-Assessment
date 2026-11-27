@@ -1085,3 +1085,6 @@ vos:
       - formula
       - caliberVersion
       - endpoints
+      # V6.0 · FE-05：该 key 背后的计算器主 key（null = 没有计算器）。
+      # 是「口径定义的一部分」而非统计值，故按结构字段登记，不进 metrics/endpoints.yml。
+      - calculatorKey
