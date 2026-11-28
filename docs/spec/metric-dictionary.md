@@ -138,7 +138,7 @@ bucket = TAKEN       其余（按时已服）
 |---|---|---|---|---|---|---|
 | `companion.workbench.completed_order_count` | 区间完成单数 | 当前陪诊员在统计区间内「已完成」的陪诊订单数 | 统计区间 | `companion_order(companion_id, status, visit_time)` | `COUNT(status IN ('COMPLETED','REVIEWED'))` | 1 |
 | `companion.workbench.service_duration` | 区间服务时长（分钟） | 当前陪诊员在统计区间内「已完成」订单的服务时长合计 | 统计区间 | `companion_order(companion_id, status, start_time, finish_time)` | `SUM(TIMESTAMPDIFF(MINUTE, start_time, finish_time))`，仅两端均非空 | 1 |
-| `companion.workbench.completion_rate` | 区间完成率 | 当前陪诊员在统计区间内的完成率 | 统计区间 | `companion_order(companion_id, status, visit_time)` | `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)`，**拒单不计入分母** | 1 |
+| `companion.workbench.completion_rate` | 接单完成率（区间，按就诊时间 `visit_time`） | 当前陪诊员在区间内「完成 + 取消」订单里的完成比例；**不是**管理端的订单完成率 | 本区间（按就诊时间 `visit_time`） | `companion_order(companion_id, status, visit_time)` | `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)`，**拒单不计入分母** | 1 |
 | `companion.workbench.period_income` | 区间收入（别名） | **同 `companion.income.actual_income`**；别名保留以兼容既有看板配置，不为它单独定义公式（收口 B · P2-3） | 统计区间 | `companion_order(companion_id, status, fee, actual_fee, visit_time)` | 同 `companion.income.actual_income`：`SUM(COALESCE(actual_fee, fee))`；工作台展示的是**应收**（不看 `payment_status`） | 1 |
 | `companion.trend.series_value` | 趋势序列值 | 当前陪诊员在统计区间内按天/周/月分桶的指标序列 | 统计区间 | `companion_order` + `order_review` | 按 `dimension` 取 ORDER=完成单数 / INCOME=区间收入 / RATING=有效评价平均分（**按条数加权**） | 1 |
 | `companion.income.order_amount` | 区间订单金额 | 区间内「已完成」订单的合同服务费合计 | 统计区间 | `companion_order(companion_id, fee, status, visit_time)` | `SUM(fee)` | 1 |
@@ -215,8 +215,19 @@ bucket = TAKEN       其余（按时已服）
 | `operations.in_service_count` | 区间服务中订单数 | 统计区间内**创建**的陪诊订单中，当前状态为「服务中」的订单数 | 统计区间 | `companion_order(status, create_time)` | `COUNT(status = 'IN_SERVICE')` | 1 |
 | `operations.pending_count` | 区间待接单订单数 | 统计区间内**创建**的陪诊订单中，当前状态为「待接单」的订单数 | 统计区间 | `companion_order(status, create_time)` | `COUNT(status = 'PENDING')` | 1 |
 | `operations.fulfillment_rate` | 履约率 | 统计区间内最终履约（完成）的订单占「完成 + 取消」的比例 | 统计区间 | `companion_order(status, create_time)` | `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)` | 1 |
-| `operations.completion_rate` | 完成率（按时） | 统计区间内**已完成**订单里「没超时」的比例 | 统计区间 | `companion_order(status, visit_time, finish_time, create_time)` | 按时完成单数 / 已完成单数；「按时」= `finish_time ≤ visit_time + 履约时长窗口`（`nianglin.operations.fulfillment-window-minutes`，默认 240 分钟） | 1 |
+| `operations.completion_rate` | 按时完成率 | 本区间（按下单时间 `create_time`）内**已完成**订单里「没超时」的比例 | 本区间（按下单时间 `create_time`） | `companion_order(status, visit_time, finish_time, create_time)` | 按时完成单数 / 已完成单数；「按时」= `finish_time ≤ visit_time + 履约时长窗口`（`nianglin.operations.fulfillment-window-minutes`，默认 240 分钟） | 1 |
 | `operations.avg_accept_minutes` | 平均接单时间 | 统计区间内已接单订单的接单耗时 | 统计区间 | `companion_order(create_time, accept_time)` | `AVG(TIMESTAMPDIFF(MINUTE, create_time, accept_time))`，仅 `accept_time` 非空 | 1 |
+
+> **三个「完成率」互不同名（收口 B · DOC-5）**：同名不同分母是最容易被抓的统计伎俩，故显式区分：
+>
+> | 旧称 | 现名 | 分母 | 时间字段 |
+> |---|---|---|---|
+> | 完成率（管理统计） | **订单完成率** | 全部订单（本区间按下单时间 `create_time`） | `create_time` |
+> | 完成率（陪诊员工作台） | **接单完成率** | 完成 + 取消（按就诊时间 `visit_time`） | `visit_time` |
+> | 完成率（按时，驾驶舱） | **按时完成率** | 已完成订单（按完成时间 `finish_time` 判定是否超时） | `create_time` 筛区间 |
+>
+> 三者的和**不必**为 1，也不是同一个数的不同写法；指标 key 保持不变（看板配置与双向校验依赖它们），
+> 只改人读面的 label。三种时间字段各自合理，是**设计**不是缺陷，不强行统一。
 
 #### 服务与陪诊员
 

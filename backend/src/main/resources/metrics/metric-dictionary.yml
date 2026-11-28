@@ -247,7 +247,7 @@ metrics:
         field: serviceDurationMinutes
 
   - key: companion.workbench.completion_rate
-    name: 区间完成率
+    name: 接单完成率（区间）
     scope: 当前陪诊员在统计区间内的完成率；注意 V3.6 干预效果对比端点（/api/admin/operations/effect）按平台口径给出同公式值（管理端视角），陪诊员个人口径仍由 V3.3 工作台按陪诊员过滤后计算
     period: 统计区间（默认 30 天、最多 366 天、闭区间）
     source: companion_order(companion_id, status, visit_time)
@@ -615,7 +615,7 @@ metrics:
         field: fulfillmentRate
 
   - key: operations.completion_rate
-    name: 完成率（按时）
+    name: 按时完成率
     scope: 已完成订单里「没有超时」的比例；与履约率是两个不同指标
     period: 统计区间（默认 30 天、最多 366 天、闭区间）
     source: companion_order(status, visit_time, finish_time, create_time)
