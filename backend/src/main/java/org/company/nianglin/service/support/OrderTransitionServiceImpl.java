@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.OrderStatus;
+import org.company.nianglin.constant.PaymentStatus;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
@@ -127,6 +128,16 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
         if (target == OrderStatus.COMPLETED && order.getCompanionId() == null) {
             throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL,
                     "该订单尚无陪诊员，无法强制完成，请改用强制取消");
+        }
+
+        // P0-5：已结算的订单不可强制取消。
+        // 结算台账只收「已完成 / 已评价」的订单，把一张已结算的单改成 CANCELLED，
+        // 它就从台账与导出里凭空消失 —— 而线下已经把钱付出去了，对账时这笔差额无法解释。
+        // 管理员须先在结算侧做冲正（本期未实现）才能改订单状态。
+        // target = COMPLETED 不受此限制：已完成本身不会让台账消失。
+        if (target == OrderStatus.CANCELLED
+                && PaymentStatus.SETTLED.name().equals(order.getPaymentStatus())) {
+            throw new BusinessException(ResultCode.ORDER_SETTLED_CANNOT_CANCEL);
         }
 
         order.setStatus(target.name());

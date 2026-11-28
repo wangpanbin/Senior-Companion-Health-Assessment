@@ -160,6 +160,27 @@ class SettlementServiceImplTest {
         verify(operLogRecorder, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
+    /**
+     * P0-5：判定顺序修正。
+     *
+     * <p>旧顺序是「先判已结算（幂等返回）→ 再判状态可结算」，于是「已结算 + 已取消」
+     * 的订单再点核定会拿到 <b>假成功</b>（200 + 已结算），而这张单在台账里根本不存在 ——
+     * 管理员以为核定了，实际上什么都没发生，且再也看不到它。</p>
+     */
+    @Test
+    @DisplayName("已结算 + 已取消的订单再核定 → 8004（不能再是假成功）")
+    void settledButCancelledOrderShouldBeRejected() {
+        CompanionOrder settledCancelled = order(ORDER_ID, OrderStatus.CANCELLED.name(),
+                PaymentStatus.SETTLED.name(), new BigDecimal("120.00"), new BigDecimal("120.00"));
+        given(orderMapper.selectById(ORDER_ID)).willReturn(settledCancelled);
+
+        BusinessException e = assertThrows(BusinessException.class, () -> service.confirm(ORDER_ID));
+
+        assertEquals(ResultCode.SETTLEMENT_STATUS_ILLEGAL.getCode(), e.getCode());
+        verify(orderMapper, never()).update(any(), any());
+        verify(operLogRecorder, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
     @Test
     @DisplayName("订单不存在 → 3001")
     void missingOrderShouldBeNotFound() {
