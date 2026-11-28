@@ -27,10 +27,26 @@ public class ReviewRulingResultVO {
             example = "307")
     private Long companionId;
 
+    @Schema(description = "家属此时是否可以重新评价本单（裁定无效后给出的正向出口，closure-2026-11 · P1-2）",
+            example = "true")
+    private Boolean canReReview;
+
+    /**
+     * 旧的三参构造（{@code canReReview} 缺省为 false）。
+     *
+     * <p>保留它是为了不打断既有调用方；新代码请用四参重载，
+     * 把「还能不能重评」这个事实显式写出来。</p>
+     */
     public static ReviewRulingResultVO of(Long reviewId, boolean isValid, Long companionId) {
+        return of(reviewId, isValid, companionId, false);
+    }
+
+    public static ReviewRulingResultVO of(Long reviewId, boolean isValid, Long companionId,
+                                          boolean canReReview) {
         return new ReviewRulingResultVO()
                 .setReviewId(reviewId)
                 .setIsValid(isValid)
-                .setCompanionId(companionId);
+                .setCompanionId(companionId)
+                .setCanReReview(canReReview);
     }
 }

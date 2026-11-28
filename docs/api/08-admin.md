@@ -591,6 +591,11 @@
 4. 同一事务内：① `order_review.is_valid = 0`（乐观条件 `eq(is_valid, 1)`）② Review module 内部重算陪诊员评分并删除 Redis 缓存 ③ 通过共享审计 module 写 `admin_oper_log`（`OperType.REVIEW_RULING` + `OperTargetType.REVIEW`）④ 向评价家属 + 陪诊员各发一条 `REVIEW_INVALIDATED` 站内信。
 5. 裁定禁止修改 `score` / `content` / `tags` / `companion_reply` 中任何内容。
 6. 不要求存在关联申诉（管理员可主动巡查裁定）。
+7. **裁定无效即给家属一个重评机会**（closure-2026-11 · P1-2）：该订单允许再提交一次评价
+   （`review_seq` 上限 2，重评只给一次，防无限刷分），旧评价保留不删；
+   给家属的 `REVIEW_INVALIDATED` 站内信文案带「您可以重新评价本单。」，
+   陪诊员那条不带（他无权评价，说了会语义错位）。
+   响应里的 `canReReview` 告知前端此时还能不能提示家属重评。
 
 ### 响应
 
@@ -601,10 +606,18 @@
   "data": {
     "reviewId": 30001,
     "isValid": false,
-    "companionId": 307
+    "companionId": 307,
+    "canReReview": true
   }
 }
 ```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `reviewId` | Long | 评价 ID |
+| `isValid` | Boolean | 恒为 `false`（本期只支持裁定无效） |
+| `companionId` | Long | 被裁定陪诊员用户 ID |
+| `canReReview` | Boolean | 家属此时是否还能重新评价本单（closure-2026-11 · P1-2）。重评名额用完时为 `false` |
 
 ---
 

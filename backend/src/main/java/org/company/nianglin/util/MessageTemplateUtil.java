@@ -136,9 +136,14 @@ public final class MessageTemplateUtil {
                 // reasonDigest 由 ReviewService.reviewValidity 截到 30 字以内（含省略号）
                 String orderNo = value(p, "orderNo");
                 String reason = emptyIfMissing(p, "reasonDigest");
-                yield reason.isEmpty()
+                String base = reason.isEmpty()
                         ? "平台裁定订单 %s 中的一条评价为无效，评分已重算。".formatted(orderNo)
                         : "平台裁定订单 %s 中的一条评价为无效（%s），评分已重算。".formatted(orderNo, reason);
+                // P1-2：只有家属能重评，陪诊员那边不需要（也不该）看到这句 ——
+                // 否则被裁定无效的陪诊员会收到一条「您可以重新评价本单」，语义错位。
+                boolean familyCanReReview = "FAMILY".equals(value(p, "audience"))
+                        && truthy(p, "canReReview");
+                yield familyCanReReview ? base + "您可以重新评价本单。" : base;
             }
             case FULFILLMENT_WARNING ->
                     "订单 %s 还在等待陪诊员接单，系统正在为您扩大匹配范围。".formatted(value(p, "orderNo"));
@@ -262,6 +267,15 @@ public final class MessageTemplateUtil {
         }
         String text = String.valueOf(raw).trim();
         return text.isEmpty() ? UNKNOWN : text;
+    }
+
+    /** 布尔占位符：缺失、非布尔、非真值一律当 false */
+    private static boolean truthy(Map<String, ?> p, String key) {
+        Object raw = p.get(key);
+        if (raw instanceof Boolean b) {
+            return b;
+        }
+        return raw != null && "true".equalsIgnoreCase(String.valueOf(raw).trim());
     }
 
     /** 可选占位符：缺失时返回空串（例如驳回原因在「通过」时本就不该出现） */
