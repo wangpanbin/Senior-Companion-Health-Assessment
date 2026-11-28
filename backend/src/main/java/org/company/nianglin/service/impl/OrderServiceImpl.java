@@ -696,6 +696,13 @@ public class OrderServiceImpl implements OrderService {
                 OrderTransitionService.Operator.of(me.userId(), me.role(), false),
                 dto.getReason().trim());
 
+        // 取消不清理下游：见 ADR-0023。
+        //
+        // 打卡、轨迹、聊天、附件、站内信一律保留 —— 取消常常是纠纷的结果或起点，
+        // 删掉过程数据等于让管理员在没有证据的情况下仲裁；
+        // 陪诊员已经到院打卡的记录是他的劳动凭证，家属取消也不该抹掉。
+        // 将来若真要删，必须走独立的数据生命周期策略（归档），不能混进取消逻辑。
+
         // 这里刻意不发 ORDER_CANCELLED：能走到这一行说明订单还是 PENDING，
         // 也就是还没有陪诊员，收件人为 null。给「还不存在的接单人」发取消通知
         // 是纯粹的死代码。已接单后的取消只能走 M9 纠纷处理，

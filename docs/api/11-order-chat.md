@@ -22,6 +22,8 @@
 - 会话双方 = `companion_order.family_id`（下单家属）与 `companion_order.companion_id`（接单陪诊员）；
 - `companion_id` 为空（`PENDING` 未接单）时会话不存在，所有读写返回 `7003`；
 - 可聊状态 = 订单存在且已接单（`ACCEPTED / IN_SERVICE / COMPLETED / REVIEWED / CANCELLED` 均可，含取消后的交涉，见 ADR-0011 决策 D1）。
+- **取消后聊天记录一律保留**（[ADR-0023](./adr/0023-cancel-keeps-downstream-data.md)）：
+  取消不删除任何下游数据 —— 聊天是纠纷交涉与取证的现场，删掉等于让管理员在没有证据的情况下仲裁。
 
 ### ChatMessageVO（消息）
 

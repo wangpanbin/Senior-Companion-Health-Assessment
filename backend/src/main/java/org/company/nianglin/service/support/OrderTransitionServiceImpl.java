@@ -155,6 +155,11 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
         }
 
         order.setStatus(target.name());
+        // 取消不清理下游：见 ADR-0023。
+        //
+        // 强制取消（管理员仲裁 / 订单超时自动取消）与家属自助取消同口径：
+        // 打卡、轨迹、聊天、附件、站内信一律保留，数据库也不引入
+        // ON DELETE CASCADE —— 取消是纠纷的证据链，不是数据销毁信号。
         // 管理员强制终态同样要收敛风险（spec §5.3 第三行）：
         // 强制完成 / 强制取消也是「离开 PENDING」，风险不该继续挂着
         collapseRiskOnLeavingPending(current, target, order);
