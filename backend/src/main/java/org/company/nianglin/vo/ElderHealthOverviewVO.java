@@ -100,10 +100,13 @@ public class ElderHealthOverviewVO {
         @Schema(description = "区间内任务总数", example = "30")
         private Integer total;
 
-        @Schema(description = "已服数量", example = "27")
+        @Schema(description = "按时已服数量（不含补记）", example = "27")
         private Integer taken;
 
-        @Schema(description = "漏服数量（含漏服后补记）", example = "2")
+        @Schema(description = "补记数量（收口 B · P0-8；曾判漏服后补确认）", example = "1")
+        private Integer lateTaken;
+
+        @Schema(description = "漏服数量（不含补记）", example = "2")
         private Integer missed;
 
         @Schema(description = "待服数量", example = "1")

@@ -78,12 +78,12 @@ metrics:
         field: total
 
   - key: elder.medication.taken
-    name: 已服数量
-    scope: 统计区间内「已服且从未漏过」的服药任务数
+    name: 按时已服数量
+    scope: 统计区间内「已服且从未漏过」的服药任务数（不含补记）
     period: 统计区间（默认 30 天、最多 366 天、闭区间）
     source: medication_task(elder_id, plan_date, status, was_missed)
-    formula: "COUNT(bucket = 'TAKEN')，bucket 由 MedicationBucket.of(status, was_missed) 唯一裁定"
-    caliberVersion: 1
+    formula: "COUNT(bucket = 'TAKEN')，bucket 由 MedicationBucket.of(status, was_missed) 唯一裁定；补记在 LATE_TAKEN 桶不计入"
+    caliberVersion: 2
     endpoints:
       - "GET /api/family/elder/{elderId}/health/overview"
     bindings:
@@ -92,11 +92,11 @@ metrics:
 
   - key: elder.medication.missed
     name: 漏服数量
-    scope: 统计区间内漏服的服药任务数（含漏服后补记的记录）
+    scope: 统计区间内一直未补记的漏服任务数（补记另成 LATE_TAKEN 桶）
     period: 统计区间（默认 30 天、最多 366 天、闭区间）
     source: medication_task(elder_id, plan_date, status, was_missed)
-    formula: "COUNT(bucket = 'MISSED')，即 status = 'MISSED' 或 was_missed = 1"
-    caliberVersion: 1
+    formula: "COUNT(bucket = 'MISSED')，即 status = 'MISSED' 且未被补记；补记计入漏服率但不计入本 key"
+    caliberVersion: 2
     endpoints:
       - "GET /api/family/elder/{elderId}/health/overview"
     bindings:
@@ -117,12 +117,12 @@ metrics:
         field: pending
 
   - key: elder.medication.completion_rate
-    name: 用药完成率
-    scope: 统计区间内的服药完成率；分母含漏服与待服
+    name: 用药完成率（按时口径）
+    scope: 统计区间内按时已服 / 总数；补记不计入分子
     period: 统计区间（默认 30 天、最多 366 天、闭区间）
     source: medication_task(elder_id, plan_date, status, was_missed)
-    formula: "taken / total；total = 0 时返回 0.00%"
-    caliberVersion: 1
+    formula: "taken / total；total = 0 时返回 0.00%；补记在 LATE_TAKEN 桶不计入"
+    caliberVersion: 2
     endpoints:
       - "GET /api/family/elder/{elderId}/health/overview"
     bindings:
@@ -145,12 +145,12 @@ metrics:
         field: total
 
   - key: elder.today.taken
-    name: 今日已服数量
-    scope: 该老人今日已服且从未漏过的服药任务数
+    name: 今日按时已服数量
+    scope: 该老人今日按时已服且从未漏过的服药任务数（不含补记）
     period: 当天
     source: medication_task(elder_id, plan_date, status, was_missed)
-    formula: "COUNT(bucket = 'TAKEN')"
-    caliberVersion: 1
+    formula: "COUNT(bucket = 'TAKEN')；补记在 LATE_TAKEN 桶，老人端首页展示 taken + lateTaken"
+    caliberVersion: 2
     endpoints:
       - "GET /api/family/health/summary"
       - "GET /api/family/elder/{elderId}/health/overview"
@@ -176,11 +176,11 @@ metrics:
 
   - key: elder.today.missed
     name: 今日漏服数量
-    scope: 该老人今日漏服的服药任务数（含漏服后补记）
+    scope: 该老人今日一直未补记的漏服任务数（不含补记）
     period: 当天
     source: medication_task(elder_id, plan_date, status, was_missed)
-    formula: "COUNT(bucket = 'MISSED')，即 status = 'MISSED' 或 was_missed = 1"
-    caliberVersion: 1
+    formula: "COUNT(bucket = 'MISSED')，即 status = 'MISSED' 且未被补记"
+    caliberVersion: 2
     endpoints:
       - "GET /api/family/health/summary"
       - "GET /api/family/elder/{elderId}/health/overview"
@@ -875,11 +875,11 @@ metrics:
 
   - key: operations.medication_missed_rate
     name: 漏服率
-    scope: 统计区间内漏服任务占用药任务总数的比例
+    scope: 统计区间内漏服任务占用药任务总数的比例（补记算「曾经漏过」）
     period: 统计区间（默认 30 天、最多 366 天、闭区间）
     source: medication_task(plan_time, status, was_missed)
-    formula: "漏服桶数 / 任务总数；漏服桶由 MedicationBucketSql.CASE_BUCKET 唯一裁定（status = 'MISSED' 或 was_missed = 1），与服药日历同源；分母为 0 时记 0.00%"
-    caliberVersion: 1
+    formula: "(漏服桶数 + 补记桶数) / 任务总数；两桶都由 MedicationBucketSql.CASE_BUCKET 唯一裁定，与服药日历同源；分母为 0 时记 0.00%"
+    caliberVersion: 2
     endpoints:
       - "GET /api/admin/operations/effect"
 

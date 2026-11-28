@@ -29,10 +29,13 @@ public class MedicationTodayVO {
     @Schema(description = "今日任务总数", example = "3")
     private Integer total;
 
-    @Schema(description = "今日已服数量", example = "2")
+    @Schema(description = "今日按时已服数量（不含补记）", example = "2")
     private Integer taken;
 
-    @Schema(description = "今日漏服数量", example = "0")
+    @Schema(description = "今日补记数量（曾判漏服后补确认；计入漏服率，不计入按时完成率）", example = "1")
+    private Integer lateTaken;
+
+    @Schema(description = "今日漏服数量（不含补记）", example = "0")
     private Integer missed;
 
     @Schema(description = "今日待服数量", example = "1")

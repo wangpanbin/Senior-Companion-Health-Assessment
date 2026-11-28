@@ -24,6 +24,7 @@ import org.company.nianglin.support.MybatisLambdaCache;
 import org.company.nianglin.vo.ElderHealthOverviewVO;
 import org.company.nianglin.vo.FamilyHealthSummaryVO;
 import org.company.nianglin.vo.HealthTimelineVO;
+import org.company.nianglin.vo.MedicationTodayVO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -176,6 +177,30 @@ class ElderHealthServiceTest {
                     "「今日已服药」必须用当天口径，不能拿区间口径冒充");
             assertEquals(3, overview.getTodayMedication().getTotal());
             assertEquals(1, overview.getTodayMedication().getPending());
+        }
+
+        @Test
+        @DisplayName("今日用药四栏之和等于 total，补记单独成栏（收口 B · P0-8）")
+        void todayMedicationShouldHaveFourBucketsSummingToTotal() {
+            stubEverythingElseEmpty();
+            given(elderService.requireAccessible(ELDER_ID)).willReturn(elder());
+            given(healthReadMapper.selectMedicationBucketsByElder(anyCollection(), any(), any()))
+                    .willReturn(List.of(row("total", 30, "taken", 26, "lateTaken", 1,
+                            "missed", 2, "pending", 1)));
+            // 今日：3 条任务 = 按时已服 1 + 补记 1 + 待服 1
+            given(healthReadMapper.selectTodayMedicationByElder(anyCollection(), any()))
+                    .willReturn(List.of(row("total", 3, "taken", 1, "lateTaken", 1,
+                            "missed", 0, "pending", 1)));
+
+            ElderHealthOverviewVO overview = service.overview(ELDER_ID, new DateRangeQuery());
+            MedicationTodayVO today = overview.getTodayMedication();
+
+            assertEquals(1, today.getLateTaken(), "补记必须单独成栏，不能并进 taken");
+            assertEquals(3, today.getTotal());
+            assertEquals(today.getTotal(),
+                    today.getTaken() + today.getLateTaken() + today.getMissed() + today.getPending(),
+                    "四栏之和必须等于 total");
+            assertEquals(1, overview.getMedication().getLateTaken(), "区间口径也要带补记栏");
         }
     }
 

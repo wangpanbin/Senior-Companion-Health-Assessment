@@ -399,10 +399,11 @@ key   : nianglin:lock:medication:daily
     "endDate": "2026-09-20",
     "summary": {
       "totalCount": 7,
-      "takenCount": 5,
+      "takenCount": 4,
+      "lateTakenCount": 1,
       "missedCount": 1,
       "pendingCount": 1,
-      "missedRate": "14.29%"
+      "missedRate": "28.57%"
     },
     "days": [
       {
@@ -429,8 +430,14 @@ key   : nianglin:lock:medication:daily
 
 - `summary.missedRate` 是本模块的量化指标，用于答辩展示「漏服率从 X% 降到 Y%」。
 - 日历数据必须与 `SELECT * FROM medication_task WHERE elder_id=? AND plan_time BETWEEN ? AND ?` 逐条一致。
-- **三桶划分以 `MedicationBucket` 为唯一真源**（V3.2 起）：漏服 = `status='MISSED'` **或** `was_missed=1`；
-  待服 = `status='PENDING'`；其余已服。三个桶构成划分，恒有 `taken + missed + pending == total`。
+- **四桶划分以 `MedicationBucket` 为唯一真源**（V3.2 引入，收口 B · P0-8 扩为四桶）：
+  1. `status='MISSED'` → 漏服（一直没补记）；
+  2. `was_missed=1` 且 `status='TAKEN'` → **补记 `LATE_TAKEN`**（漏了之后被确认）；
+  3. `status='PENDING'` → 待服；
+  4. 其余 → 按时已服。
+  四桶构成划分，恒有 `takenCount + lateTakenCount + missedCount + pendingCount == totalCount`。
+  `taken` 的含义在 P0-8 起**不再包含补记**；老人端首页展示「已服 = taken + lateTaken（其中补记 N 次）」，
+  避免补记后数字变小。漏服率分母 = `missed + lateTaken`（补记算「曾经漏过」），按时完成率分母不含补记。
   判定规则与 SQL 表达式分别由 `MedicationBucket.of(...)` 与 `MedicationBucketSql.CASE_BUCKET` 承载，
   两侧由 `MedicationBucketParityTest`（结构层）与 `StatisticsMapperMedicationFixTest`（真库层）锁死。
   详见 [ADR-0014](../adr/0014-medication-bucket-single-source.md)。
@@ -511,7 +518,8 @@ key   : nianglin:lock:medication:daily
 
 ### 实现要点
 
-- 允许补确认（漏服后补记），此时 `status` 置为 `TAKEN`，同时保留 `wasMissed = true` 标记，便于统计。
+- 允许补确认（漏服后补记），此时 `status` 置为 `TAKEN`，同时保留 `wasMissed = true` 标记。
+  补记后任务落在 `LATE_TAKEN` 桶：列表标签显示「补记」，漏服率仍计入，按时完成率不计入（收口 B · P0-8）。
 - 记录 `confirm_by`（操作人）与 `confirm_time`，满足审计要求。
 
 ---

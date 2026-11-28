@@ -43,17 +43,22 @@ public final class MedicationBucketSql {
     /** 待服桶的字面量 */
     public static final String CODE_PENDING = "PENDING";
 
+    /** 补记桶的字面量（收口 B · P0-8：曾判漏服、之后又被确认） */
+    public static final String CODE_LATE_TAKEN = "LATE_TAKEN";
+
     /**
      * 三桶判定的 SQL 表达式。
      *
      * <p>引用的列名固定为 {@code was_missed} 与 {@code status}，
      * 因此只能用在 {@code medication_task} 的查询里（或别名等价的子查询）。</p>
      *
-     * <p>判定顺序与 {@link MedicationBucket#of(String, Boolean)} 一致：
-     * 漏服优先，其次待服，其余已服。</p>
+     * <p>判定顺序与 {@link MedicationBucket#of(String, Boolean)} 一致（收口 B · P0-8）：
+     * 先判 {@code status = MISSED}，再判「{@code was_missed = 1} 且 {@code status = TAKEN}」
+     * 为补记，其次待服，其余已服。顺序反了会把补记算成漏服或已服。</p>
      */
     public static final String CASE_BUCKET =
-            "CASE WHEN (was_missed = 1 OR status = '" + CODE_MISSED + "') THEN '" + CODE_MISSED + "' "
+            "CASE WHEN status = '" + CODE_MISSED + "' THEN '" + CODE_MISSED + "' "
+                    + "WHEN was_missed = 1 AND status = '" + CODE_TAKEN + "' THEN '" + CODE_LATE_TAKEN + "' "
                     + "WHEN status = '" + CODE_PENDING + "' THEN '" + CODE_PENDING + "' "
                     + "ELSE '" + CODE_TAKEN + "' END";
 

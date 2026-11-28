@@ -74,25 +74,32 @@ V3.6 退化为校验与补全（roadmap §7.1-3）。
 
 | 指标 key | 名称 | 统计范围 | 统计时间 | 数据来源 | 计算公式 | 口径版本 |
 |---|---|---|---|---|---|---|
-| `elder.medication.total` | 区间内用药任务总数 | 单个老人档案在统计区间内的服药任务总数（三桶的分母） | 统计区间 | `medication_task(elder_id, plan_date, status, was_missed)` | `COUNT(*)` | 1 |
-| `elder.medication.taken` | 已服数量 | 统计区间内「已服且从未漏过」的服药任务数 | 统计区间 | 同上 | `COUNT(bucket = 'TAKEN')` | 1 |
-| `elder.medication.missed` | 漏服数量 | 统计区间内漏服的服药任务数（含漏服后补记） | 统计区间 | 同上 | `COUNT(bucket = 'MISSED')` | 1 |
+| `elder.medication.total` | 区间内用药任务总数 | 单个老人档案在统计区间内的服药任务总数（四桶的分母） | 统计区间 | `medication_task(elder_id, plan_date, status, was_missed)` | `COUNT(*)` | 1 |
+| `elder.medication.taken` | 按时已服数量 | 统计区间内「已服且从未漏过」的任务数（**不含补记**） | 统计区间 | 同上 | `COUNT(bucket = 'TAKEN')` | 2 |
+| `elder.medication.missed` | 漏服数量 | 统计区间内**一直未补记**的漏服任务数（补记另成 `LATE_TAKEN` 桶） | 统计区间 | 同上 | `COUNT(bucket = 'MISSED')` | 2 |
 | `elder.medication.pending` | 待服数量 | 统计区间内尚未确认的服药任务数 | 统计区间 | 同上 | `COUNT(bucket = 'PENDING')` | 1 |
-| `elder.medication.completion_rate` | 用药完成率 | 统计区间内的服药完成率；分母含漏服与待服 | 统计区间 | 同上 | `taken / total`；`total = 0` 时 `0.00%` | 1 |
+| `elder.medication.completion_rate` | 用药完成率（按时口径） | 统计区间内按时已服 / 总数；**补记不计入分子** | 统计区间 | 同上 | `taken / total`；`total = 0` 时 `0.00%` | 2 |
 | `elder.today.total` | 今日用药任务总数 | 该老人今日的服药任务总数 | **当天**（按 `plan_date` 精确匹配，不随统计区间浮动） | 同上 | `COUNT(*)` | 1 |
-| `elder.today.taken` | 今日已服数量 | 该老人今日已服且从未漏过的任务数 | 当天 | 同上 | `COUNT(bucket = 'TAKEN')` | 1 |
-| `elder.today.missed` | 今日漏服数量 | 该老人今日漏服的任务数（含漏服后补记） | 当天 | 同上 | `COUNT(bucket = 'MISSED')` | 1 |
+| `elder.today.taken` | 今日按时已服数量 | 该老人今日按时已服且从未漏过的任务数（**不含补记**） | 当天 | 同上 | `COUNT(bucket = 'TAKEN')` | 2 |
+| `elder.today.missed` | 今日漏服数量 | 该老人今日一直未补记的漏服任务数（不含补记） | 当天 | 同上 | `COUNT(bucket = 'MISSED')` | 2 |
 | `elder.today.pending` | 今日待服数量 | 该老人今日尚未确认的任务数 | 当天 | 同上 | `COUNT(bucket = 'PENDING')` | 1 |
 
-#### 三桶的唯一定义（`MedicationBucket`）
+#### 四桶的唯一定义（`MedicationBucket` · 收口 B · P0-8）
 
 ```
-bucket = MISSED   当 was_missed = 1 或 status = 'MISSED'
-bucket = PENDING  否则当 status = 'PENDING'
-bucket = TAKEN    其余
+bucket = MISSED      当 status = 'MISSED'（一直没补记）
+bucket = LATE_TAKEN  否则当 was_missed = 1 且 status = 'TAKEN'（补记）
+bucket = PENDING     否则当 status = 'PENDING'
+bucket = TAKEN       其余（按时已服）
 ```
 
-**判定顺序不可调换**：漏服优先于当前状态 —— 否则补记过的任务会被算进「已服」，漏服率立刻被稀释。
+恒等式改为 `total = taken + lateTaken + missed + pending`。
+**补记计入漏服率、不计入按时完成率**：漏服率分子 = `missed + lateTaken`，按时完成率分子只有 `taken`。
+这是刻意口径 —— 补过记说明这一顿确实漏过，但老人端首页展示「已服 = taken + lateTaken（其中补记 N 次）」，
+避免只按时口径让老人看到变小的数字。
+
+**判定顺序不可调换**：先判 `status = MISSED`，再判 `was_missed`（旧实现把两者合并，
+补记过的任务在列表显示「已服」、统计算「漏服」、今日已服数不增，同一任务三个页面三个答案）。
 
 **这一条曾经被写错过**：V3.2 之前 M10 的统计只认 `was_missed = 1`，
 而漏服扫描只写 `status = 'MISSED'`、从不写 `was_missed`，
@@ -284,7 +291,7 @@ bucket = TAKEN    其余
 | `operations.service_duration_minutes` | 平均服务时长（分钟） | 统计区间内已完成订单的服务时长均值 | 统计区间（默认 30 天、最多 366 天、闭区间） | companion_order(status, start_time, finish_time, create_time) | AVG(TIMESTAMPDIFF(MINUTE, start_time, finish_time))，仅 COMPLETED + REVIEWED 且起止时间均非空；无数据时记 0.00 | 1 |
 | `operations.companion_count` | 区间陪诊员数 | 统计区间内服务过订单的陪诊员人数（去重）；与 operations.active_companion_count 同口径同实现（决策 6.2） | 统计区间（默认 30 天、最多 366 天、闭区间） | companion_order(companion_id, create_time) | COUNT(DISTINCT companion_id)，companion_id 非空 | 1 |
 | `operations.medication_task_count` | 区间用药任务数 | 统计区间内的服药任务总数（漏服率的分母） | 统计区间（默认 30 天、最多 366 天、闭区间） | medication_task(plan_time, status, was_missed) | COUNT(*)，三桶判定与 MedicationBucketSql.CASE_BUCKET 同源（ADR-0014） | 1 |
-| `operations.medication_missed_rate` | 漏服率 | 统计区间内漏服任务占用药任务总数的比例 | 统计区间（默认 30 天、最多 366 天、闭区间） | medication_task(plan_time, status, was_missed) | 漏服桶数 / 任务总数；漏服桶由 MedicationBucketSql.CASE_BUCKET 唯一裁定（status = 'MISSED' 或 was_missed = 1），与服药日历同源；分母为 0 时记 0.00% | 1 |
+| `operations.medication_missed_rate` | 漏服率 | 统计区间内漏服任务占用药任务总数的比例（补记算「曾经漏过」） | 统计区间（默认 30 天、最多 366 天、闭区间） | medication_task(plan_time, status, was_missed) | (漏服桶数 + 补记桶数) / 任务总数；两桶都由 MedicationBucketSql.CASE_BUCKET 唯一裁定，与服药日历同源；分母为 0 时记 0.00%（收口 B · P0-8，口径版本 2） | 2 |
 
 ---
 
@@ -314,6 +321,7 @@ bucket = TAKEN    其余
 | 2026-10-20 | v1.4 | 登记 V3.6 数据闭环的 **11** 条指标（供给缺口 4 条 + 其它补登 7 条），本节表格由脚本从机器面生成 | 超时率 / 人工介入率 / 改派率等补齐迭代计划 §48 清单；§2.6 运营端 5 条指标的「数据来源」勘误为 `create_time`（机器面与 SQL 一直是 `create_time`，是人读面滞后） |
 | 2026-10-21 | v1.5 | 供给缺口 2 条指标的「统计范围」措辞精度修正：universe 明确为**资质通过（APPROVED）且当前在线（AVAILABLE）**的陪诊员，与实现一致；新增 `GET /api/admin/metrics` 指标字典只读导出端点 | **口径值未变**（`caliberVersion` 保持 1）—— 原措辞「全部陪诊员中」与实现的过滤条件不符，是**文档写得比实现宽**，实现侧 `OperationsMapper` 的过滤是有意为之（休息 / 离线的人不接新单，算作供给会让缺口被低估）；新端点导出的是**口径定义**而非统计值，故不进 `metrics/endpoints.yml` |
 | 2026-11-27 | v1.6 | 补登 MetricDefinitionVO#calculatorKey 为结构字段（V6.0 · FE-05 随字典导出「该 key 能否计算」）| **口径值未变**（caliberVersion 保持 1）—— 该字段不承载统计值，只声明「这个 key 背后有没有已注册计算器」，属口径定义的一部分；机器面 vos.structural 同步补一行 |
+| 2026-11-28 | v1.7 | 收口 B · P0-8：用药从三桶扩为四桶（新增 `LATE_TAKEN` 补记）；`taken` 不再含补记，漏服率分子含补记 | **口径值已变**：`elder.medication.taken` / `.missed` / `.completion_rate`、`elder.today.taken` / `.missed`、`operations.medication_missed_rate` 升 `caliberVersion` 至 2；**不新增指标 key**（补记通过 `MedicationTodayVO.lateTaken` / `MedicationCalendarVO.lateTakenCount` 字段表达，不破坏看板配置与双向校验） |
 
 > 口径变更 = 改公式 + 升 `caliberVersion` + 在本表留一行。
 > **不改写历史数据**（V3.6 范围外条款）。

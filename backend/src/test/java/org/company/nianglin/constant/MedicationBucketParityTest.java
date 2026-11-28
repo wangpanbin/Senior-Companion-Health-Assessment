@@ -61,8 +61,8 @@ class MedicationBucketParityTest {
 
         assertTrue(sql.contains("SUM(CASE WHEN bucket = 'TAKEN' THEN 1 ELSE 0 END) AS taken"),
                 "taken 必须从已算好的 bucket 派生");
-        assertTrue(sql.contains("SUM(CASE WHEN bucket = 'MISSED' THEN 1 ELSE 0 END) AS missed"),
-                "missed 必须从已算好的 bucket 派生");
+        assertTrue(sql.contains("SUM(CASE WHEN bucket IN ('MISSED', 'LATE_TAKEN') THEN 1 ELSE 0 END) AS missed"),
+                "missed 必须从已算好的 bucket 派生，且补记算「曾经漏过」（收口 B · P0-8）");
         assertTrue(sql.contains("SUM(CASE WHEN bucket = 'PENDING' THEN 1 ELSE 0 END) AS pending"),
                 "pending 必须从已算好的 bucket 派生");
     }
@@ -81,31 +81,33 @@ class MedicationBucketParityTest {
     /* ================================================================== */
 
     @Test
-    @DisplayName("共享 CASE 表达式：三个桶的字面量齐备且顺序为 漏服 → 待服 → 已服")
+    @DisplayName("共享 CASE 表达式：四个桶齐备且顺序为 漏服 → 补记 → 待服 → 已服")
     void caseBucketShouldCoverAllBucketsInRuleOrder() {
         String expression = MedicationBucketSql.CASE_BUCKET;
 
-        int missedAt = expression.indexOf("'" + MedicationBucketSql.CODE_MISSED + "'");
-        int pendingAt = expression.indexOf("'" + MedicationBucketSql.CODE_PENDING + "'");
-        int takenAt = expression.indexOf("'" + MedicationBucketSql.CODE_TAKEN + "'");
+        // 必须取 THEN 结果的位置：桶名同时出现在 WHEN 条件里，直接 indexOf 会抓错
+        int missedAt = expression.indexOf("THEN '" + MedicationBucketSql.CODE_MISSED + "'");
+        int lateAt = expression.indexOf("THEN '" + MedicationBucketSql.CODE_LATE_TAKEN + "'");
+        int pendingAt = expression.indexOf("THEN '" + MedicationBucketSql.CODE_PENDING + "'");
+        int takenAt = expression.lastIndexOf("ELSE '" + MedicationBucketSql.CODE_TAKEN + "'");
 
-        assertTrue(missedAt >= 0, "CASE 表达式必须包含漏服桶");
-        assertTrue(pendingAt >= 0, "CASE 表达式必须包含待服桶");
-        assertTrue(takenAt >= 0, "CASE 表达式必须包含已服桶");
-        assertTrue(missedAt < pendingAt && pendingAt < takenAt,
-                "判定顺序必须与 Java 侧一致：漏服优先，其次待服，其余已服 —— "
-                        + "顺序反了会把补记过的任务算成已服，漏服率被稀释");
+        assertTrue(missedAt >= 0 && lateAt >= 0 && pendingAt >= 0 && takenAt >= 0,
+                "CASE 表达式必须包含全部四个桶");
+        assertTrue(missedAt < lateAt && lateAt < pendingAt && pendingAt < takenAt,
+                "判定顺序必须与 Java 侧一致：漏服 → 补记 → 待服 → 已服 —— "
+                        + "顺序反了会把补记算成漏服或已服，三处口径再次分裂（收口 B · P0-8）");
     }
 
     @Test
-    @DisplayName("共享 CASE 表达式：漏服条件同时覆盖 status=MISSED 与 was_missed=1")
-    void caseBucketShouldCoverBothMissedSignals() {
+    @DisplayName("共享 CASE 表达式：MISSED 只看 status，补记看 was_missed=1 且 status=TAKEN")
+    void caseBucketShouldSplitMissedAndLateTakenSignals() {
         String expression = MedicationBucketSql.CASE_BUCKET;
 
-        assertTrue(expression.contains("was_missed = 1"),
-                "漏服判定必须包含 was_missed = 1（漏服后补记的痕迹）");
         assertTrue(expression.contains("status = '" + MedicationBucketSql.CODE_MISSED + "'"),
-                "漏服判定必须包含 status = 'MISSED'（扫描判定的漏服）");
+                "漏服桶必须由 status = 'MISSED' 单独判定");
+        assertTrue(expression.contains("was_missed = 1 AND status = '" + MedicationBucketSql.CODE_TAKEN + "'"),
+                "补记桶必须由「was_missed = 1 且 status = TAKEN」判定，"
+                        + "不能像旧实现那样把 was_missed=1 并进漏服");
     }
 
     /* ================================================================== */

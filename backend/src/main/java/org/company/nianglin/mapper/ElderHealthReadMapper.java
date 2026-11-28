@@ -77,7 +77,8 @@ public interface ElderHealthReadMapper {
             SELECT elder_id AS elderId,
                    COUNT(*) AS total,
                    SUM(CASE WHEN bucket = 'TAKEN' THEN 1 ELSE 0 END) AS taken,
-                   SUM(CASE WHEN bucket = 'MISSED' THEN 1 ELSE 0 END) AS missed,
+                   SUM(CASE WHEN bucket = 'LATE_TAKEN' THEN 1 ELSE 0 END) AS lateTaken,
+                    SUM(CASE WHEN bucket = 'MISSED' THEN 1 ELSE 0 END) AS missed,
                    SUM(CASE WHEN bucket = 'PENDING' THEN 1 ELSE 0 END) AS pending
             FROM (
               SELECT elder_id,
@@ -107,7 +108,8 @@ public interface ElderHealthReadMapper {
             SELECT elder_id AS elderId,
                    COUNT(*) AS total,
                    SUM(CASE WHEN bucket = 'TAKEN' THEN 1 ELSE 0 END) AS taken,
-                   SUM(CASE WHEN bucket = 'MISSED' THEN 1 ELSE 0 END) AS missed,
+                   SUM(CASE WHEN bucket = 'LATE_TAKEN' THEN 1 ELSE 0 END) AS lateTaken,
+                    SUM(CASE WHEN bucket = 'MISSED' THEN 1 ELSE 0 END) AS missed,
                    SUM(CASE WHEN bucket = 'PENDING' THEN 1 ELSE 0 END) AS pending
             FROM (
               SELECT elder_id,
