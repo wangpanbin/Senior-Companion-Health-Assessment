@@ -204,8 +204,13 @@ onMounted(() => {
       <!-- 今日用药：老人端最重要的一个数 -->
       <section class="pad">
         <div class="today">
-          <span class="today__v is-num">{{ overview.todayMedication?.taken ?? 0 }}</span>
+          <span class="today__v is-num">
+            {{ (overview.todayMedication?.taken ?? 0) + (overview.todayMedication?.lateTaken ?? 0) }}
+          </span>
           <span class="today__k">今日已服药</span>
+          <span v-if="(overview.todayMedication?.lateTaken ?? 0) > 0" class="today__pending">
+            其中补记 {{ overview.todayMedication.lateTaken }} 次
+          </span>
           <span v-if="(overview.todayMedication?.pending ?? 0) > 0" class="today__pending">
             还有 {{ overview.todayMedication.pending }} 次没吃
           </span>

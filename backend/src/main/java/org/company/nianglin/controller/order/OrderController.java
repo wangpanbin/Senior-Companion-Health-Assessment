@@ -36,6 +36,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -121,8 +122,12 @@ public class OrderController {
                     + "老人必须在自己名下（否则 2006）。服务费不传则由后端按规则计算")
     @PreAuthorize("hasRole('" + RoleConstants.FAMILY + "')")
     @PostMapping
-    public Result<OrderCreateResultVO> create(@Valid @RequestBody OrderCreateDTO dto) {
-        return Result.success("下单成功，正在为您匹配陪诊员", orderService.create(dto));
+    public Result<OrderCreateResultVO> create(
+            @Valid @RequestBody OrderCreateDTO dto,
+            @Parameter(description = "幂等键（可选）：弱网重试时传同一个键，只会产生一笔订单",
+                    example = "order-20261128-0001")
+            @RequestHeader(value = "X-Idempotency-Key", required = false) String idempotencyKey) {
+        return Result.success("下单成功，正在为您匹配陪诊员", orderService.create(dto, idempotencyKey));
     }
 
     @Operation(summary = "订单履约详情（V3.1）",

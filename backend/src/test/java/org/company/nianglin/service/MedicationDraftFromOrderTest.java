@@ -210,15 +210,33 @@ class MedicationDraftFromOrderTest {
     }
 
     @Test
-    @DisplayName("转草稿 · 服务小结为空 → 409 且提示「服务小结尚未填写」")
-    void blankSummaryShouldGet409() {
+    @DisplayName("转草稿 · 服务小结为空 → 降级返回空草稿 + summaryMissing=true（收口 B · P0-9）")
+    void blankSummaryShouldDegradeToDraft() {
         given(orderService.requireInvolved(ORDER_ID)).willReturn(completedOrder("   "));
+        given(medicineMapper.selectList(any())).willReturn(List.of(dict(MEDICINE_ID, "苯磺酸氨氯地平片", null)));
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).willReturn(true);
 
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> service.buildDraftFromOrder(ORDER_ID, dto(item("苯磺酸氨氯地平片", 1, "08:00"))));
+        MedicationPlanDraftVO draft = service.buildDraftFromOrder(ORDER_ID, dto(
+                item("苯磺酸氨氯地平片", 1, "08:00")));
 
-        assertEquals(ResultCode.CONFLICT.getCode(), ex.getCode());
-        assertTrue(ex.getMessage().contains("服务小结尚未填写"));
+        assertEquals(ORDER_ID, draft.getOrderId());
+        assertEquals(1, draft.getItems().size());
+        assertTrue(draft.getSummaryMissing(), "空小结必须让前端知道没有预填线索");
+    }
+
+    @Test
+    @DisplayName("转草稿 · 服务小结有内容 → summaryMissing=false（保护现状）")
+    void nonBlankSummaryShouldMarkNotMissing() {
+        given(orderService.requireInvolved(ORDER_ID)).willReturn(completedOrder("已协助取药，老人精神状态良好"));
+        given(medicineMapper.selectList(any())).willReturn(List.of(dict(MEDICINE_ID, "苯磺酸氨氯地平片", null)));
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).willReturn(true);
+
+        MedicationPlanDraftVO draft = service.buildDraftFromOrder(ORDER_ID, dto(
+                item("苯磺酸氨氯地平片", 1, "08:00")));
+
+        assertFalse(draft.getSummaryMissing());
     }
 
     @Test

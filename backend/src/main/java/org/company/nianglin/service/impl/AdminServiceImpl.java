@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.AccountStatus;
+import org.company.nianglin.constant.ActiveOrderAction;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.ComplaintStatus;
 import org.company.nianglin.constant.FulfillmentEventType;
@@ -44,6 +45,7 @@ import org.company.nianglin.entity.Complaint;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.OrderFulfillmentEvent;
 import org.company.nianglin.entity.OrderRejectLog;
+import org.company.nianglin.entity.OrderStatusLog;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
@@ -57,6 +59,7 @@ import org.company.nianglin.mapper.OrderFulfillmentEventMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
 import org.company.nianglin.mapper.OrderRejectLogMapper;
 import org.company.nianglin.mapper.OrderReviewMapper;
+import org.company.nianglin.mapper.OrderStatusLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
@@ -65,6 +68,7 @@ import org.company.nianglin.security.TokenStore;
 import org.company.nianglin.service.AdminService;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderService;
+import org.company.nianglin.service.support.GovernanceTimeoutPolicy;
 import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.ReviewTagCodec;
 import org.company.nianglin.service.support.UserNameResolver;
@@ -89,6 +93,7 @@ import org.company.nianglin.vo.OrderVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
 import org.company.nianglin.vo.UserStatusResultVO;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -173,6 +178,29 @@ public class AdminServiceImpl implements AdminService {
     private final SecurityProperties securityProperties;
     private final TokenStore tokenStore;
     private final ObjectMapper objectMapper;
+    /**
+     * 订单状态流转日志（closure-2026-11 · P0-4）——封禁陪诊员把在手订单放回大厅时，
+     * 要写一条 {@code operator_role = SYSTEM} 的状态日志，说明「不是某个人改的」。
+     *
+     * <p>放在构造参数<b>末尾</b>是为了不改动既有位置参数调用的顺序。</p>
+     */
+    private final OrderStatusLogMapper orderStatusLogMapper;
+
+    /**
+     * 投诉「处理中超时」阈值（天，closure-2026-11 · P1-6）。
+     *
+     * <p>用 {@link Integer} 而不是 {@code int}：纯 Mockito 单测不起容器，字段保持 {@code null}，
+     * 而 {@code null} 必须被当成默认阈值 3 —— 否则同一套判定会随「有没有 Spring 容器」而变。</p>
+     */
+    @Value("${nianglin.complaint.processing-timeout-days:3}")
+    private Integer complaintTimeoutDays;
+
+    /** 投诉超时阈值的实际取值（未注入时回落默认值） */
+    private int complaintTimeoutDays() {
+        return complaintTimeoutDays == null
+                ? GovernanceTimeoutPolicy.DEFAULT_COMPLAINT_TIMEOUT_DAYS
+                : complaintTimeoutDays;
+    }
 
     /* ================================================================== */
     /* 1 / 2 / 3. 资质审核                                                 */
@@ -353,6 +381,28 @@ public class AdminServiceImpl implements AdminService {
         }
 
         String reason = dto.getReason().trim();
+
+        // P0-4：封禁陪诊员前必须先处置他名下的在手订单。
+        //
+        // 不处置就封 = 造出一批无主订单：被封的陪诊员打不了卡、完不成订单，
+        // 家属取消不了（取消只允许待接单），履约风险中心也看不到（只扫待接单），
+        // 而后台没有任何告警 —— 只能靠人发现订单永远停在「服务中」。
+        List<CompanionOrder> activeOrders = activeOrdersOf(id);
+        ActiveOrderAction action = dto.getActiveOrderAction();
+        if (!activeOrders.isEmpty() && action == null) {
+            // 没给处置方式 → 拒绝封禁，并把张数带给前端弹处置选择框
+            throw new BusinessException(ResultCode.COMPANION_HAS_ACTIVE_ORDER,
+                    "该陪诊员名下有 " + activeOrders.size() + " 张在途订单，请先处置后再封禁",
+                    Map.of("activeOrderCount", activeOrders.size()));
+        }
+        for (CompanionOrder order : activeOrders) {
+            if (action == ActiveOrderAction.RELEASE) {
+                releaseOrderToHall(order);
+            } else {
+                cancelActiveOrder(order);
+            }
+        }
+
         sysUserMapper.update(null, Wrappers.<SysUser>lambdaUpdate()
                 .eq(SysUser::getId, id)
                 .eq(SysUser::getStatus, AccountStatus.NORMAL)
@@ -369,10 +419,138 @@ public class AdminServiceImpl implements AdminService {
         messageService.send(id, MessageType.SYSTEM_NOTICE, null, params);
 
         operLogRecorder.record(OperType.DISABLE_USER, OperTargetType.USER, id, user.getUsername(),
-                AccountStatus.NORMAL, AccountStatus.DISABLED, reason);
+                AccountStatus.NORMAL, AccountStatus.DISABLED, operRemark(reason, action, activeOrders));
 
-        log.info("用户已封禁 | userId={} | adminId={}", id, SecurityUtils.currentUserId());
+        log.info("用户已封禁 | userId={} | adminId={} | 处置在途订单={}",
+                id, SecurityUtils.currentUserId(), activeOrders.size());
         return UserStatusResultVO.of(id, AccountStatus.DISABLED);
+    }
+
+    /**
+     * 封禁陪诊员时他名下的在手订单（「已接单」/「服务中」）。
+     *
+     * <p>只取这两种状态：待接单的订单还没有主人，不构成「无主订单」；
+     * 已完成 / 已取消 / 已评价都是终态，不该被一次封禁翻出来。</p>
+     */
+    private List<CompanionOrder> activeOrdersOf(Long companionUserId) {
+        List<CompanionOrder> orders = orderMapper.selectList(Wrappers.<CompanionOrder>lambdaQuery()
+                .eq(CompanionOrder::getCompanionId, companionUserId)
+                .in(CompanionOrder::getStatus,
+                        OrderStatus.ACCEPTED.name(), OrderStatus.IN_SERVICE.name()));
+        return orders == null ? List.of() : orders;
+    }
+
+    /**
+     * 处置方式 RELEASE：把在手订单放回大厅（由别人接手）。
+     *
+     * <p><b>与 P0-1 的改派语义完全一致</b>：同样是
+     * 「`PENDING` + `companion_id IS NULL` + `version + 1`」。
+     * 两处写法若不一致，系统里会出现两种「PENDING 但有 companion_id」的单，
+     * 大厅过滤会漏掉这批单 —— 比现状更糟。</p>
+     *
+     * <p>用条件更新而不是先查后写：条件是「仍指派给他 且 仍是已接单/服务中」，
+     * 并发下已被别人接走或改派的单不会被误改。</p>
+     */
+    private void releaseOrderToHall(CompanionOrder order) {
+        OrderStatus from = OrderStatus.of(order.getStatus());
+        int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .set(CompanionOrder::getStatus, OrderStatus.PENDING.name())
+                .setSql("companion_id = NULL")
+                .setSql("accept_time = NULL")
+                .setSql("start_time = NULL")
+                .setSql("version = version + 1")
+                .eq(CompanionOrder::getId, order.getId())
+                .eq(CompanionOrder::getCompanionId, order.getCompanionId())
+                .in(CompanionOrder::getStatus,
+                        OrderStatus.ACCEPTED.name(), OrderStatus.IN_SERVICE.name()));
+        if (rows == 0) {
+            // 并发下这张单已经不在他名下了 —— 不影响结果，也不该在这里抛错
+            log.warn("放回大厅失败：订单已不在该陪诊员名下 | orderId={} | companionId={}",
+                    order.getId(), order.getCompanionId());
+            return;
+        }
+        writeSystemStatusLog(order.getId(), from, OrderStatus.PENDING,
+                "陪诊员账号被封禁，订单退回待接单");
+        writeReleaseEvent(order);
+        notifyOrderReleased(order);
+    }
+
+    /**
+     * 处置方式 CANCEL：强制取消在手订单。
+     *
+     * <p>走 {@link OrderService#forceTerminal} 这唯一的状态写入入口，
+     * 不在这里另写一份状态 UPDATE —— 强制终态的固有约束（P0-5 已结算不可取消、
+     * P0-7 无陪诊员不可强制完成）都在那一层。</p>
+     */
+    private void cancelActiveOrder(CompanionOrder order) {
+        String cancelReason = "接单陪诊员账号异常，平台强制取消";
+        orderService.forceTerminal(order.getId(), OrderStatus.CANCELLED, cancelReason);
+
+        Map<String, Object> params = new HashMap<>(2);
+        params.put("orderNo", order.getOrderNo());
+        params.put("reason", cancelReason);
+        messageService.send(order.getFamilyId(), MessageType.ORDER_CANCELLED, order.getId(), params);
+    }
+
+    /** 放回大厅的订单状态日志：操作人是系统，不是某个人 */
+    private void writeSystemStatusLog(Long orderId, OrderStatus from, OrderStatus to, String remark) {
+        OrderStatusLog row = new OrderStatusLog();
+        row.setOrderId(orderId);
+        row.setFromStatus(from == null ? null : from.name());
+        row.setToStatus(to.name());
+        row.setOperatorId(null);
+        row.setOperatorName(null);
+        row.setOperatorRole(RoleConstants.SYSTEM);
+        row.setRemark(remark);
+        row.setIsForce(1);
+        row.setOperateTime(LocalDateTime.now());
+        orderStatusLogMapper.insert(row);
+    }
+
+    /** 放回大厅的履约事件：让风险中心与订单详情能看出「因封禁导致的改派」 */
+    private void writeReleaseEvent(CompanionOrder order) {
+        FulfillmentRisk risk = FulfillmentRisk.of(order.getFulfillmentRisk());
+        if (risk == null) {
+            risk = FulfillmentRisk.NORMAL;
+        }
+        OrderFulfillmentEvent event = new OrderFulfillmentEvent();
+        event.setOrderId(order.getId());
+        event.setEventType(FulfillmentEventType.ORDER_REASSIGNED.name());
+        event.setFromRisk(risk.name());
+        event.setToRisk(risk.name());
+        event.setTriggerSource(TriggerSource.ADMIN.name());
+        event.setOperatorId(SecurityUtils.currentUserId());
+        event.setOperatorRole(RoleConstants.ADMIN);
+        event.setRemark("陪诊员账号被封禁，订单退回待接单");
+        event.setOperateTime(LocalDateTime.now());
+        fulfillmentEventMapper.insert(event);
+    }
+
+    /** 通知家属：订单已退回待接单，平台正在重新安排陪诊员 */
+    private void notifyOrderReleased(CompanionOrder order) {
+        Map<String, Object> params = new HashMap<>(1);
+        params.put("content", "您的订单 " + order.getOrderNo()
+                + " 因接单陪诊员账号异常已退回待接单，平台正在重新安排陪诊员。");
+        messageService.send(order.getFamilyId(), MessageType.SYSTEM_NOTICE, order.getId(), params);
+    }
+
+    /**
+     * 封禁审计备注：把「仅封禁」与「封禁并处置 N 张单」区分开，
+     * 并留下处置方式与单号摘要，事后能还原当时怎么处理的。
+     */
+    private static String operRemark(String reason, ActiveOrderAction action, List<CompanionOrder> orders) {
+        if (orders == null || orders.isEmpty()) {
+            return reason;
+        }
+        StringBuilder nos = new StringBuilder();
+        for (CompanionOrder order : orders) {
+            if (nos.length() > 0) {
+                nos.append('、');
+            }
+            nos.append(order.getOrderNo());
+        }
+        return reason + "（封禁并处置在途订单 " + orders.size() + " 张："
+                + (action == null ? "未指定" : action.getLabel()) + "；单号 " + nos + "）";
     }
 
     @Override
@@ -497,17 +675,44 @@ public class AdminServiceImpl implements AdminService {
         String beforeOrderNo = before.getOrderNo();
 
         String result = dto.getResult().trim();
+        boolean refundToFamily = Boolean.TRUE.equals(dto.getRefundToFamily());
+        boolean penaltyToCompanion = Boolean.TRUE.equals(dto.getPenaltyToCompanion());
         StringBuilder remark = new StringBuilder("管理员纠纷处理：").append(result);
-        if (Boolean.TRUE.equals(dto.getRefundToFamily())) {
+        if (refundToFamily) {
             // 一期不做在线支付，这里只是一条记账线索：真要退款走线下，
             // 平台只把「该退」这件事留在状态日志与操作日志里
             remark.append("；标记退费给家属（线下结算）");
         }
-        if (Boolean.TRUE.equals(dto.getPenaltyToCompanion())) {
+        if (penaltyToCompanion) {
             remark.append("；对陪诊员计违规");
         }
 
         CompanionOrder after = orderService.forceTerminal(id, target, remark.toString());
+
+        // P1-3：把两个执法开关落成**结构化字段**。
+        //
+        // 旧实现只往 remark 里追加一句话（「标记退费给家属」「对陪诊员计违规」），
+        // 那是自由文本：事后查不到、统计不了，「累计违规 N 次应限制接单」这类治理动作
+        // 因此没有数据基础 —— 管理员以为自己记下了，系统其实什么都没记。
+        //
+        // 现在两列都是订单行上的事实：
+        //   arbitrate_flag = 1 → 本次仲裁判定**对服务方不利**（对陪诊员计违规）
+        //   refund_flag    = 1 → 本次仲裁判定**需退费给家属**（线下执行，一期不做在线支付）
+        //
+        // 与 forceTerminal 同一事务：强制终态失败（已终态 / 已结算 / 无陪诊员）时，
+        // 这两个标记同样不会留下 —— 否则会出现「订单没仲裁成，却记了陪诊员一笔违规」。
+        int flagRows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .eq(CompanionOrder::getId, id)
+                .set(CompanionOrder::getArbitrateFlag, penaltyToCompanion ? 1 : 0)
+                .set(CompanionOrder::getRefundFlag, refundToFamily ? 1 : 0));
+        if (flagRows == 0) {
+            // 写不进去就整体回滚：仲裁标记丢失比仲裁失败更难解释
+            log.warn("仲裁标记写入影响行数为 0 | orderId={} | adminId={}", id, SecurityUtils.currentUserId());
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "订单状态已变更，仲裁标记未写入，请刷新后重试");
+        }
+        // 内存对象同步：同一事务内后续再读这张单，看到的必须是刚写下的判定
+        before.setArbitrateFlag(penaltyToCompanion ? 1 : 0);
+        before.setRefundFlag(refundToFamily ? 1 : 0);
         LocalDateTime handleTime = LocalDateTime.now();
 
         // 双方各发一条：只通知家属会让陪诊员在事后才知道自己被判定有责任，
@@ -661,11 +866,17 @@ public class AdminServiceImpl implements AdminService {
         Map<Long, String> names = userNameResolver.resolveAll(userIds);
 
         List<ComplaintVO> records = new ArrayList<>(rows.size());
+        LocalDateTime now = LocalDateTime.now();
         for (Complaint complaint : rows) {
+            // 超时标记（P1-6）：只升级可见性，不改状态 ——
+            // 管理员在列表里一眼看到「这条卡住了」，处置权仍然在人手里
+            Integer overdueDays = GovernanceTimeoutPolicy.overdueDays(complaint.getStatus(),
+                    complaint.getUpdateTime(), complaint.getCreateTime(), now, complaintTimeoutDays());
             records.add(ComplaintVO.of(complaint,
                     names.get(complaint.getComplainantId()),
                     names.get(complaint.getTargetUserId()),
-                    parseEvidence(complaint.getEvidence())));
+                    parseEvidence(complaint.getEvidence()),
+                    overdueDays));
         }
         return PageResult.of(page, records);
     }
@@ -912,27 +1123,36 @@ public class AdminServiceImpl implements AdminService {
         // 「订单不存在 + 理由含违禁词」应当报 3001（订单没了，查订单这件事没意义），
         // 而不是先被 6003 拦下 —— 后者会让调用方误以为是自己那句话有问题。
         String reason = normalizeReassignReason(dto.getReason());
-        // ② 只处理「待接单且尚无接单人」的订单
+        // ② 只处理「仍是待接单」的订单（P0-1 放宽：不再要求「尚无接单人」）
+        //
+        // 旧语义是「待接单 **且** 无人接单」，于是两个后果：① 被指派过的单仍留在公共大厅，
+        // 任何人都能抢走，管理员的指派形同虚设；② 被指派人一旦拒单（拒单不清接单人），
+        // 这张单就再也改派不了 —— 管理员只剩打电话协调。
+        // 现在的语义一句话说清：只要订单仍是 PENDING，管理员就可以改派，无论当前有没有被指派人。
         boolean pending = OrderStatus.PENDING.name().equals(order.getStatus());
-        if (!pending || order.getCompanionId() != null) {
+        if (!pending) {
             throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE);
         }
-        // 改派前的接单人快照：按 ② 此刻必然为 null，但仍按字段读取 ——
-        // 将来若放宽前置条件（例如允许改派给已接单但未开工的订单），
-        // 这里不用改，通知逻辑也不会漏掉原陪诊员
+        // 改派前的接单人快照：现在可能非 null（原被指派人），
+        // 通知与事件都要用它 —— 漏掉原陪诊员，他会一直以为自己还背着这一单
         Long fromCompanionId = order.getCompanionId();
 
         // ③-⑥ 目标陪诊员必须合格
         CompanionProfile target = requireReassignableCompanion(dto.getCompanionId(), id);
 
-        // 与陪诊员抢单竞争的唯一保护：条件是「仍是待接单 且 仍无人接单」。
-        // 抢单走的是乐观锁（version），改派走的是这两条 WHERE ——
+        // 与陪诊员抢单竞争的唯一保护：条件是「仍是待接单」。
+        // 抢单走的是乐观锁（version），改派走的是这条 WHERE + 显式递增 version ——
         // 两者更新同一行，数据库保证只有一个能改成功，败者拿 3010 / 3003
+        // （兑现 ADR-0012「改派与抢单只有一个成功」）。
+        // ⚠️ version 用 setSql 递增而不是 updateById 的 @Version：
+        //    这里传的是 null 实体（只更新几列），乐观锁插件拿不到旧版本号，
+        //    用「预读值 + 1」会在并发下把两个请求写成同一个版本 —— 计数少加一次。
+        //    SQL 侧自增由数据库保证原子性，与 FulfillmentServiceImpl 的 urge_count 同理。
         int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
                 .set(CompanionOrder::getCompanionId, target.getUserId())
                 .eq(CompanionOrder::getId, id)
                 .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name())
-                .isNull(CompanionOrder::getCompanionId));
+                .setSql("version = version + 1"));
         if (rows == 0) {
             throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE,
                     "订单刚被接走或已被改派，请刷新后重试");
@@ -945,7 +1165,8 @@ public class AdminServiceImpl implements AdminService {
             risk = FulfillmentRisk.NORMAL;
         }
 
-        writeReassignEvent(id, risk, SecurityUtils.currentUserId(), reason, now);
+        writeReassignEvent(id, risk, SecurityUtils.currentUserId(), reason, now,
+                fromCompanionId, target.getUserId());
 
         // 审计的 before / after 记的是**陪诊员**而不是订单状态：本操作不改状态，
         // 两栏都写 PENDING 会让这条日志读起来像「什么都没发生」
@@ -1027,8 +1248,16 @@ public class AdminServiceImpl implements AdminService {
         return text;
     }
 
+    /**
+     * 改派履约事件。
+     *
+     * <p>备注里带「从谁改到谁」（P0-1）：原接单人为空时记「未指派」。
+     * 只有这一条事件流水能还原调度过程 —— 订单表上的 {@code companion_id} 只留结果，
+     * 不留「谁换掉了谁」。</p>
+     */
     private void writeReassignEvent(Long orderId, FulfillmentRisk risk,
-                                    Long adminId, String reason, LocalDateTime now) {
+                                    Long adminId, String reason, LocalDateTime now,
+                                    Long fromCompanionId, Long toCompanionId) {
         OrderFulfillmentEvent event = new OrderFulfillmentEvent();
         event.setOrderId(orderId);
         event.setEventType(FulfillmentEventType.ORDER_REASSIGNED.name());
@@ -1038,7 +1267,8 @@ public class AdminServiceImpl implements AdminService {
         event.setTriggerSource(TriggerSource.ADMIN.name());
         event.setOperatorId(adminId);
         event.setOperatorRole(RoleConstants.ADMIN);
-        event.setRemark(reason);
+        event.setRemark(reason + " | 指派：" + (fromCompanionId == null ? "未指派" : fromCompanionId)
+                + " → " + toCompanionId);
         event.setOperateTime(now);
         fulfillmentEventMapper.insert(event);
     }
@@ -1126,7 +1356,8 @@ public class AdminServiceImpl implements AdminService {
                     elder == null ? null : elder.getName(),
                     ageOf(elder),
                     companionNames.get(order.getCompanionId()));
-            records.add(AdminOrderVO.of(base, complaintIds.get(order.getId())));
+            records.add(AdminOrderVO.of(base, complaintIds.get(order.getId()),
+                    order.getArbitrateFlag(), order.getRefundFlag()));
         }
         return records;
     }
@@ -1238,6 +1469,12 @@ public class AdminServiceImpl implements AdminService {
                     .or().like(CompanionOrder::getHospital, keyword));
         }
         applyRange(wrapper, CompanionOrder::getCreateTime, query.getStartDate(), query.getEndDate(), "下单时间");
+        // P1-3：按仲裁判定筛选。
+        // arbitrate_flag 的语义是「本次仲裁判了陪诊员有责」（不是「是否经过仲裁」），
+        // 所以这个条件筛出来的是「被判过违规的订单」，正是管理员要批量跟进的那批。
+        if (query.getArbitrateFlag() != null) {
+            wrapper.eq(CompanionOrder::getArbitrateFlag, query.getArbitrateFlag() ? 1 : 0);
+        }
         if (Boolean.TRUE.equals(query.getHasComplaint())) {
             // 用子查询而不是「先查投诉再 IN 订单 ID」：投诉量可能上千，
             // 拼进 IN 列表既慢又可能在极端情况下超出 SQL 长度限制

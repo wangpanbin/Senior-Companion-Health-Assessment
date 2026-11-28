@@ -47,12 +47,15 @@ public final class MessageTemplateUtil {
             case ORDER_PROGRESS -> "陪诊进度更新";
             case ORDER_COMPLETED -> "服务已完成";
             case ORDER_CANCELLED -> "订单已取消";
+            case ORDER_TIMEOUT -> "订单超时提醒";
             case AUDIT_RESULT -> "资质审核结果";
             case MEDICATION_REMIND -> "用药提醒";
             case MEDICATION_MISSED -> "漏服提醒";
             case MEDICATION_ESCALATED -> "漏服升级提醒";
             case COMPLAINT_SUBMITTED -> "新投诉待处理";
             case COMPLAINT_HANDLED -> "投诉处理结果";
+            case COMPLAINT_TIMEOUT -> "投诉处理超时";
+            case FEEDBACK_TIMEOUT -> "反馈处理超时";
             case REVIEW_REPLIED -> "评价被回复";
             case REVIEW_APPEAL_SUBMITTED -> "收到评价申诉";
             case REVIEW_INVALIDATED -> "评价被裁定无效";
@@ -104,6 +107,21 @@ public final class MessageTemplateUtil {
             }
             case ORDER_CANCELLED -> "订单 %s 已取消，原因：%s。".formatted(
                     value(p, "orderNo"), value(p, "reason"));
+            // P1-1：两类超时共用一个类型，用 state 占位符区分口径。
+            // 只陈述事实与下一步动作，不含诊断、不含金额建议（合规红线-1）。
+            case ORDER_TIMEOUT -> {
+                String orderNo = value(p, "orderNo");
+                String state = value(p, "state");
+                yield switch (state) {
+                    case "CANCELLED" ->
+                            "订单 %s 已过就诊时间且无人接单，系统已自动取消，建议您重新下单。".formatted(orderNo);
+                    case "IN_SERVICE" ->
+                            "订单 %s 的陪诊服务已超过 %s 小时仍未完成，我们已通知平台核实，请留意后续进展。".formatted(
+                                    orderNo, value(p, "hours"));
+                    default ->
+                            "订单 %s 已过就诊时间且无人接单，建议您取消后重新下单。".formatted(orderNo);
+                };
+            }
             case AUDIT_RESULT -> "您的陪诊员资质申请%s。%s".formatted(
                     value(p, "result"), emptyIfMissing(p, "rejectReason"));
             case MEDICATION_REMIND -> "%s 的「%s」在 %s 未确认服用，请及时关注。".formatted(
@@ -115,6 +133,14 @@ public final class MessageTemplateUtil {
                     value(p, "elderName"), value(p, "medicineName"), value(p, "planTime"));
             case COMPLAINT_SUBMITTED -> "%s 就订单 %s 提交了投诉（%s），请及时处理。".formatted(
                     value(p, "submitterName"), value(p, "orderNo"), value(p, "typeLabel"));
+            case COMPLAINT_TIMEOUT ->
+                    "投诉 %s 仍在处理中，已超过 %s 天未结案，请尽快处理。".formatted(
+                    value(p, "orderNo"), value(p, "overdueDays"));
+            // 反馈没有订单号，用反馈 ID 定位（管理员后台列表按 ID 可查）；
+            // 与投诉链同一句式，只陈述「卡了多久」，不含任何处置建议
+            case FEEDBACK_TIMEOUT ->
+                    "产品反馈 %s 仍在处理中，已超过 %s 天未结案，请尽快处理。".formatted(
+                    value(p, "feedbackId"), value(p, "overdueDays"));
             case COMPLAINT_HANDLED -> "您提交的投诉（%s）已处理完成：%s".formatted(
                     value(p, "orderNo"), value(p, "handleResult"));
             case REVIEW_REPLIED -> {
@@ -132,9 +158,14 @@ public final class MessageTemplateUtil {
                 // reasonDigest 由 ReviewService.reviewValidity 截到 30 字以内（含省略号）
                 String orderNo = value(p, "orderNo");
                 String reason = emptyIfMissing(p, "reasonDigest");
-                yield reason.isEmpty()
+                String base = reason.isEmpty()
                         ? "平台裁定订单 %s 中的一条评价为无效，评分已重算。".formatted(orderNo)
                         : "平台裁定订单 %s 中的一条评价为无效（%s），评分已重算。".formatted(orderNo, reason);
+                // P1-2：只有家属能重评，陪诊员那边不需要（也不该）看到这句 ——
+                // 否则被裁定无效的陪诊员会收到一条「您可以重新评价本单」，语义错位。
+                boolean familyCanReReview = "FAMILY".equals(value(p, "audience"))
+                        && truthy(p, "canReReview");
+                yield familyCanReReview ? base + "您可以重新评价本单。" : base;
             }
             case FULFILLMENT_WARNING ->
                     "订单 %s 还在等待陪诊员接单，系统正在为您扩大匹配范围。".formatted(value(p, "orderNo"));
@@ -203,7 +234,7 @@ public final class MessageTemplateUtil {
         }
         return switch (type) {
             case ORDER_CREATED, ORDER_ACCEPTED, ORDER_PROGRESS, ORDER_COMPLETED, ORDER_CANCELLED,
-                    REVIEW_REPLIED, REVIEW_INVALIDATED ->
+                    ORDER_TIMEOUT, REVIEW_REPLIED, REVIEW_INVALIDATED ->
                     "/family?orderId=" + bizId;
             // 履约类消息统一指向**路由表里真实存在**的跳点，不新增路由：
             // 家属侧的等级通知落在订单详情（family/order/:id），
@@ -222,7 +253,11 @@ public final class MessageTemplateUtil {
             // MEDICATION_MISSED 的 bizId 是 orderId，指向陪诊员侧真实存在的
             // 订单执行路由（routes.js: companion/execute/:id，M5）
             case MEDICATION_MISSED -> "/companion/execute/" + bizId;
-            case COMPLAINT_SUBMITTED, REVIEW_APPEAL_SUBMITTED -> "/admin?complaintId=" + bizId;
+            case COMPLAINT_SUBMITTED, REVIEW_APPEAL_SUBMITTED, COMPLAINT_TIMEOUT ->
+                    "/admin?complaintId=" + bizId;
+            // 反馈超时提醒的管理员落点：与投诉同款「后台 + 业务 ID」拼法，
+            // 管理页当前不消费该参数时落在后台首页，与投诉链行为一致
+            case FEEDBACK_TIMEOUT -> "/admin?feedbackId=" + bizId;
             // 到期提醒的两侧接收方统一落在陪诊员资质页（AUDIT_RESULT 同一路由）：
             // 本人在该页重新提交材料，管理员从消息中心进入（MessageDetail 不走 linkUrl）
             case HEALTH_CERT_EXPIRING -> "/profile/companion";
@@ -257,6 +292,15 @@ public final class MessageTemplateUtil {
         }
         String text = String.valueOf(raw).trim();
         return text.isEmpty() ? UNKNOWN : text;
+    }
+
+    /** 布尔占位符：缺失、非布尔、非真值一律当 false */
+    private static boolean truthy(Map<String, ?> p, String key) {
+        Object raw = p.get(key);
+        if (raw instanceof Boolean b) {
+            return b;
+        }
+        return raw != null && "true".equalsIgnoreCase(String.valueOf(raw).trim());
     }
 
     /** 可选占位符：缺失时返回空串（例如驳回原因在「通过」时本就不该出现） */

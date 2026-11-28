@@ -210,6 +210,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
 
         int total = toInt(medication == null ? null : medication.get("total"));
         int taken = toInt(medication == null ? null : medication.get("taken"));
+        int lateTaken = toInt(medication == null ? null : medication.get("lateTaken"));
 
         ElderHealthOverviewVO.Elder elderInfo = new ElderHealthOverviewVO.Elder()
                 .setId(elderId)
@@ -227,6 +228,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
         ElderHealthOverviewVO.Medication medicationInfo = new ElderHealthOverviewVO.Medication()
                 .setTotal(total)
                 .setTaken(taken)
+                .setLateTaken(lateTaken)
                 .setMissed(toInt(medication == null ? null : medication.get("missed")))
                 .setPending(toInt(medication == null ? null : medication.get("pending")))
                 .setCompletionRate(ChartDataVO.percent(taken, total));
@@ -253,6 +255,7 @@ public class ElderHealthServiceImpl implements ElderHealthService {
         return new MedicationTodayVO()
                 .setTotal(toInt(row == null ? null : row.get("total")))
                 .setTaken(toInt(row == null ? null : row.get("taken")))
+                .setLateTaken(toInt(row == null ? null : row.get("lateTaken")))
                 .setMissed(toInt(row == null ? null : row.get("missed")))
                 .setPending(toInt(row == null ? null : row.get("pending")));
     }
@@ -473,11 +476,15 @@ public class ElderHealthServiceImpl implements ElderHealthService {
             if (bucket == MedicationBucket.PENDING) {
                 continue;
             }
-            LocalDateTime occurredAt = bucket == MedicationBucket.TAKEN
+            // 收口 B · P0-8：补记也是「吃了」，按确认时间发生，不能再显示成「未确认」
+            boolean confirmed = bucket == MedicationBucket.TAKEN || bucket == MedicationBucket.LATE_TAKEN;
+            LocalDateTime occurredAt = confirmed
                     ? (task.getConfirmTime() == null ? task.getPlanTime() : task.getConfirmTime())
                     : task.getPlanTime();
-            String type = bucket == MedicationBucket.TAKEN ? "TAKEN" : "MISSED";
-            String title = bucket == MedicationBucket.TAKEN ? "已服药" : "服药任务未确认";
+            String type = bucket == MedicationBucket.TAKEN ? "TAKEN"
+                    : bucket == MedicationBucket.LATE_TAKEN ? "LATE_TAKEN" : "MISSED";
+            String title = bucket == MedicationBucket.TAKEN ? "已服药"
+                    : bucket == MedicationBucket.LATE_TAKEN ? "补记服药" : "服药任务未确认";
             events.add(new TimelineEvent(
                     "MEDICATION:" + task.getId(),
                     occurredAt,

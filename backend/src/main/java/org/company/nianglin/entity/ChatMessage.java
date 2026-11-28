@@ -1,5 +1,6 @@
 package org.company.nianglin.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -70,5 +71,16 @@ public class ChatMessage extends BaseEntity {
      */
     @Schema(description = "媒体字节数")
     private Long fileSize;
+
+    /**
+     * 客户端消息 ID（幂等键；closure-2026-11 · P2-4）。
+     *
+     * <p>与 {@code (order_id, sender_id, client_msg_id)} 组成唯一键。
+     * 为 {@code null} 表示客户端没带这个键 —— MySQL 唯一键对 NULL 不约束，
+     * 也就是「不传即不幂等」，老客户端行为不变。</p>
+     */
+    @TableField("client_msg_id")
+    @Schema(description = "客户端消息 ID（幂等键；null 表示不做幂等）")
+    private String clientMsgId;
 
 }

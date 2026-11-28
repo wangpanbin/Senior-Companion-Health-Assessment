@@ -79,6 +79,13 @@ public class FeedbackVO {
     @Schema(description = "处理时间", example = "2026-11-20 10:30:00")
     private LocalDateTime handleTime;
 
+    @Schema(description = "处理中是否超时（收口 A · P1-6 反馈链；由服务层聚合计算，非数据库字段）",
+            example = "true")
+    private Boolean overdue;
+
+    @Schema(description = "已超出的整天数（未超时不返回）", example = "8")
+    private Integer overdueDays;
+
     /**
      * 装配。
      *

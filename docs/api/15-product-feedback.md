@@ -229,6 +229,20 @@
 结构同分页约定，`records` 为 `FeedbackVO` 数组，**待处理优先**排前
 （`status` 排序权重，`PENDING` 最先），同状态内按 `create_time DESC`。
 
+`FeedbackVO` 额外返回两个**超时标记**字段（收口 A · P1-6 反馈链，与投诉链同口径）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `overdue` | Boolean | 处理中是否超时。恒有值（`true` / `false`），终态恒为 `false` |
+| `overdueDays` | Integer | 已超出的整天数；**仅超时时返回**，未超时不下发 |
+
+> **超时口径**：`status = 'PROCESSING'` 且「上次推进时间（`update_time`，从未推进过用
+> `create_time` 兜底）」距今满 `nianglin.feedback.processing-timeout-days`（默认 **7 天**；
+> 投诉链为 3 天 —— 反馈是建议通道不是纠纷通道，容忍度更高）即视为超时。
+> 由服务层聚合计算，**没有数据库列**；超时只升级可见性，**不改状态、不改 `update_time`**，
+> 处置权仍在管理员手里。同一档位的站内信提醒（`FEEDBACK_TIMEOUT`）只发一次，
+> 消息类型表见 `docs/api/07-message.md`。
+
 > 排序权重序是 `PENDING → PROCESSING → RESOLVED → REJECTED`，**不是 `status` 的字典序** ——
 > 字典序会把「未采纳」（`REJECTED`）排在「已采纳」（`RESOLVED`）前面。
 > 实现走 `FIELD(status, ...)`（整段 ORDER BY 塞进 `last()`，与

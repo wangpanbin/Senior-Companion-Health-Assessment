@@ -38,6 +38,22 @@ public enum FulfillmentEventType {
 
     /** 管理员改派陪诊员 */
     ORDER_REASSIGNED("订单改派"),
+
+    /**
+     * 待接单超时（closure-2026-11 · P1-1）：就诊时间已过仍无人接单。
+     *
+     * <p>默认只做「标记」（风险升到 {@code MANUAL_REQUIRED}），自动取消是独立开关、
+     * 默认关闭；两种情形都写本事件，事件类型相同而 {@code remark} 区分。</p>
+     */
+    ORDER_TIMEOUT("待接单超时"),
+
+    /**
+     * 服务中超时（closure-2026-11 · P1-1）：进入「服务中」超过阈值仍未完成。
+     *
+     * <p>只升级风险，<b>不改订单状态</b> —— 服务可能真的还在进行（医院排队、路上堵车），
+     * 系统无权替人判断服务是否结束。</p>
+     */
+    ORDER_IN_SERVICE_TIMEOUT("服务中超时"),
     ;
 
     private final String label;
@@ -50,7 +66,10 @@ public enum FulfillmentEventType {
     public boolean isRiskChange() {
         return this == FULFILLMENT_WARNING
                 || this == FULFILLMENT_URGENT
-                || this == MANUAL_REQUIRED;
+                || this == MANUAL_REQUIRED
+                // P1-1：这两类超时事件同样伴随风险等级变化，from_risk / to_risk 要填
+                || this == ORDER_TIMEOUT
+                || this == ORDER_IN_SERVICE_TIMEOUT;
     }
 
     public static String labelOf(String name) {

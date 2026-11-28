@@ -80,7 +80,7 @@ class AdminServiceReviewListTest {
         service = new AdminServiceImpl(null, null, null, null, null, null,
                 null, null, null, null, orderReviewMapper, null,
                 null, null, userNameResolver, null, null, null,
-                new ObjectMapper());
+                new ObjectMapper(), null);
     }
 
     /* ================================================================== */

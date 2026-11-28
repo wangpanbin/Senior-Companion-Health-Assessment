@@ -59,13 +59,18 @@ const calMap = computed(() => {
   for (const d of days) {
     if (!d?.date) continue
     const tasks = d.tasks || []
-    let missed = 0, pending = 0, taken = 0
+    // 收口 B · P0-8：四态桶，与后端 MedicationBucket 同顺序
+    let missed = 0, lateTaken = 0, pending = 0, taken = 0
     for (const t of tasks) {
-      if (t?.wasMissed || t?.status === 'MISSED') missed++
+      if (t?.status === 'MISSED') missed++
+      else if (t?.wasMissed && t?.status === 'TAKEN') lateTaken++
       else if (t?.status === 'PENDING') pending++
       else taken++
     }
-    map[d.date] = { count: tasks.length, missed, pending, taken, hasMissed: missed > 0, hasPending: pending > 0 }
+    map[d.date] = {
+      count: tasks.length, missed, lateTaken, pending, taken,
+      hasMissed: missed > 0, hasLateTaken: lateTaken > 0, hasPending: pending > 0
+    }
   }
   return map
 })
@@ -174,7 +179,7 @@ onMounted(reloadAll)
 /** 日历格子圆点配色：漏服 > 待服 > 已服 */
 function dotTone(info) {
   if (!info) return ''
-  if (info.hasMissed) return 'danger'
+  if (info.hasMissed || info.hasLateTaken) return 'danger' // 补记算「曾经漏过」
   if (info.hasPending) return 'warning'
   return 'success'
 }
@@ -262,7 +267,7 @@ const calSummary = computed(() => calData.value?.summary || null)
         </div>
 
         <div v-if="calSummary" class="cal-summary nl-caption nl-text-muted">
-          本月共 {{ calSummary.totalCount ?? 0 }} 次 · 已服 {{ calSummary.takenCount ?? 0 }} · 待服 {{ calSummary.pendingCount ?? 0 }} · 漏服 {{ calSummary.missedCount ?? 0 }}（漏服率 {{ calSummary.missedRate || '0.00%' }}）
+          本月共 {{ calSummary.totalCount ?? 0 }} 次 · 按时已服 {{ calSummary.takenCount ?? 0 }} · 补记 {{ calSummary.lateTakenCount ?? 0 }} · 待服 {{ calSummary.pendingCount ?? 0 }} · 漏服 {{ calSummary.missedCount ?? 0 }}（漏服含补记，{{ calSummary.missedRate || '0.00%' }}）
         </div>
 
         <div class="cal-weeks">

@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.OrderStatus;
+import org.company.nianglin.constant.PaymentStatus;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
@@ -99,6 +100,20 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void forceTerminal(CompanionOrder order, OrderStatus target, Long adminId, String remark) {
+        forceTerminalInternal(order, target, Operator.of(adminId, RoleConstants.ADMIN, false), remark);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void forceTerminalAsSystem(CompanionOrder order, OrderStatus target, String remark) {
+        forceTerminalInternal(order, target, Operator.of(null, RoleConstants.SYSTEM, true), remark);
+    }
+
+    /**
+     * 强制终态的共同实现（管理员路径与系统路径判定完全一致，只有操作人不同）。
+     */
+    private void forceTerminalInternal(CompanionOrder order, OrderStatus target,
+                                       Operator operator, String remark) {
         if (target == null || !target.isAdminForceable()) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "只能强制至「已完成」或「已取消」");
         }
@@ -117,7 +132,34 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
             throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
         }
 
+        // P0-7：无陪诊员的订单不可强制完成。
+        // 一张没人接的待接单单被强制完成后会进入 COMPLETED（终态），
+        // 而评价要求订单有陪诊员 —— 于是这张单永远停在「已完成」且永远评价不了，
+        // 家属看到的是「订单数据异常，请联系管理员」，评价率的分母也从此与它永久不匹配。
+        // 家属若确实线下解决了，走强制取消即可（P0-5 的检查也只拦已结算单）。
+        // 复用 3002 而不是新增码：message 已直接指向「改用强制取消」这一下一步动作，
+        // 前端不需要为一条提示语单独映射错误码。
+        if (target == OrderStatus.COMPLETED && order.getCompanionId() == null) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL,
+                    "该订单尚无陪诊员，无法强制完成，请改用强制取消");
+        }
+
+        // P0-5：已结算的订单不可强制取消。
+        // 结算台账只收「已完成 / 已评价」的订单，把一张已结算的单改成 CANCELLED，
+        // 它就从台账与导出里凭空消失 —— 而线下已经把钱付出去了，对账时这笔差额无法解释。
+        // 管理员须先在结算侧做冲正（本期未实现）才能改订单状态。
+        // target = COMPLETED 不受此限制：已完成本身不会让台账消失。
+        if (target == OrderStatus.CANCELLED
+                && PaymentStatus.SETTLED.name().equals(order.getPaymentStatus())) {
+            throw new BusinessException(ResultCode.ORDER_SETTLED_CANNOT_CANCEL);
+        }
+
         order.setStatus(target.name());
+        // 取消不清理下游：见 ADR-0023。
+        //
+        // 强制取消（管理员仲裁 / 订单超时自动取消）与家属自助取消同口径：
+        // 打卡、轨迹、聊天、附件、站内信一律保留，数据库也不引入
+        // ON DELETE CASCADE —— 取消是纠纷的证据链，不是数据销毁信号。
         // 管理员强制终态同样要收敛风险（spec §5.3 第三行）：
         // 强制完成 / 强制取消也是「离开 PENDING」，风险不该继续挂着
         collapseRiskOnLeavingPending(current, target, order);
@@ -126,9 +168,9 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
             throw new BusinessException(ResultCode.CONFLICT, "订单状态已变更，请刷新后重试");
         }
 
-        writeLog(order.getId(), current, target, Operator.of(adminId, RoleConstants.ADMIN, false),
-                remark, 1);
-        log.info("管理员强制终态 | orderId={} | {} -> {} | adminId={}", order.getId(), current, target, adminId);
+        writeLog(order.getId(), current, target, operator, remark, 1);
+        log.info("强制终态 | orderId={} | {} -> {} | 操作人={}({})", order.getId(), current, target,
+                operator.role(), operator.userId());
     }
 
     /**
@@ -239,6 +281,11 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
      * <p>在这里定格成快照，之后操作人改名不会篡改历史记录。</p>
      */
     private String resolveOperatorName(Operator operator) {
+        // 系统操作没有用户可查（operator_id 为 null），
+        // 直接给一个固定显示名，免得去查一个空 id 查出 null 来。
+        if (operator.system()) {
+            return "系统";
+        }
         if (RoleConstants.COMPANION.equals(operator.role())) {
             // 与 OrderServiceImpl#findCompanionProfile 保持同一套查询语义
             // （按 userId 查资质快照，取最早一条），避免日志里的姓名与其它地方对不上。

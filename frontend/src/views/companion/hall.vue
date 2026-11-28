@@ -389,7 +389,7 @@ onMounted(async () => {
           </button>
         </div>
         <p v-if="!isAccepting" class="work-switch__note">
-          新订单不会再出现在你的大厅里，已接的订单照常服务。
+          新订单不会再出现在你的大厅里，也不会推送给你；已接的订单照常服务。切回「可接单」即可看到新订单并抢单。
         </p>
       </section>
 
@@ -492,10 +492,10 @@ onMounted(async () => {
               size="large"
               class="order__grab"
               :loading="grabbingId === o.id"
-              :disabled="grabbingId !== null && grabbingId !== o.id"
+              :disabled="!isAccepting || (grabbingId !== null && grabbingId !== o.id)"
               @click="grab(o)"
             >
-              抢 单
+              {{ isAccepting ? '抢 单' : '切回可接单后抢单' }}
             </el-button>
           </div>
         </li>

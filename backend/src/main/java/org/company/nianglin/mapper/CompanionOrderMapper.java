@@ -35,4 +35,28 @@ public interface CompanionOrderMapper extends BaseMapper<CompanionOrder> {
      */
     @Select("SELECT * FROM companion_order WHERE id = #{id} AND deleted = 0 FOR UPDATE")
     CompanionOrder selectByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * 该陪诊员被判违规的订单数（closure-2026-11 · P1-3）。
+     *
+     * <p><b>刻意不存计数列</b>：违规次数是订单行的聚合结果，
+     * 另存一列就会与订单行产生双写不一致 —— 而「累计违规 N 次限制接单」这类
+     * 治理动作建立在计数上，数字错了就会限制错人 / 解禁错人。</p>
+     *
+     * <p>{@code arbitrate_flag = 1} 的语义是「本次仲裁判了陪诊员有责」，
+     * <b>不是</b>「这单走过仲裁流程」—— 走过仲裁但没判违规的单不计数。</p>
+     *
+     * <p>⚠️ 手写 SQL 不走逻辑删除插件，{@code deleted = 0} 显式写上。</p>
+     *
+     * @param companionId 陪诊员用户 ID
+     * @return 被判违规的订单数
+     */
+    @Select("""
+            SELECT COUNT(*)
+            FROM companion_order
+            WHERE companion_id = #{companionId}
+              AND arbitrate_flag = 1
+              AND deleted = 0
+            """)
+    long countPenaltyOrders(@Param("companionId") Long companionId);
 }

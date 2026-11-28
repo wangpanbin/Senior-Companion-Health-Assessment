@@ -28,6 +28,15 @@ public enum MessageType {
     ORDER_PROGRESS("陪诊进度", MessageBizType.ORDER),
     ORDER_COMPLETED("服务已完成", MessageBizType.ORDER),
     ORDER_CANCELLED("订单已取消", MessageBizType.ORDER),
+    /**
+     * 订单超时提醒（closure-2026-11 · P1-1）。发给<b>下单家属</b>，{@code bizId=orderId}。
+     *
+     * <p>两类超时共用这一个类型，用 {@code state} 占位符区分口径：
+     * {@code MARKED}（待接单超时，仅标记）、{@code CANCELLED}（待接单超时且已自动取消）、
+     * {@code IN_SERVICE}（服务中超时）。文案只陈述事实与下一步动作，
+     * 不含诊断、不含金额建议（合规红线）。</p>
+     */
+    ORDER_TIMEOUT("订单超时", MessageBizType.ORDER),
     AUDIT_RESULT("资质审核结果", MessageBizType.AUDIT),
     MEDICATION_REMIND("用药提醒", MessageBizType.MEDICATION),
     /**
@@ -51,6 +60,25 @@ public enum MessageType {
     MEDICATION_ESCALATED("漏服升级提醒", MessageBizType.MEDICATION),
     COMPLAINT_SUBMITTED("新投诉待处理", MessageBizType.COMPLAINT),
     COMPLAINT_HANDLED("投诉处理结果", MessageBizType.COMPLAINT),
+    /**
+     * 投诉「处理中超时」提醒（closure-2026-11 · P1-6）。
+     *
+     * <p>接收人是<b>全部管理员</b>，{@code bizId=complaintId}。
+     * 「处理中」是一个可以无限期成立的承诺，这条提醒的作用是让管理员看见
+     * 「这条卡住了」—— 但它<b>不改变状态</b>：投诉是否成立仍然只有人能判。</p>
+     *
+     * <p>与 {@link #FEEDBACK_TIMEOUT} 分开成两个类型：两者 bizType 不同
+     * （跳转目标不同），挤在一个类型里就得靠占位符猜业务域。</p>
+     */
+    COMPLAINT_TIMEOUT("投诉处理超时", MessageBizType.COMPLAINT),
+    /**
+     * 产品反馈「处理中超时」提醒（closure-2026-11 · P1-6，反馈链）。
+     *
+     * <p>接收人是<b>全部管理员</b>，{@code bizId=feedbackId}。与投诉链同一套判定
+     * （{@code GovernanceTimeoutPolicy}），但阈值独立（默认 7 天，投诉 3 天）：
+     * 反馈是建议通道不是纠纷通道，容忍度理应更高。</p>
+     */
+    FEEDBACK_TIMEOUT("反馈处理超时", MessageBizType.FEEDBACK),
     /**
      * 陪诊员回复了评价（E4）。
      *

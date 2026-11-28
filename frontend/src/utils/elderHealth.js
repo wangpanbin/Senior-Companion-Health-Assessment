@@ -73,15 +73,16 @@ export function completionRateText(rate) {
 /**
  * 今日用药的「已服 / 总数」文案。
  *
- * 这不是指标计算 —— taken 与 total 都是后端各自下发的计数，
- * 这里只把两个数并排放，中间不引入任何新的除法。
+ * 这不是指标计算 —— 计数都由后端下发，这里只把两个数并排放，中间不引入任何新的除法。
+ * 收口 B · P0-8：后端 taken 已不含补记，这里把 lateTaken 加回来给老人看
+ * 「今天实际吃了几次」，否则补记之后数字会变小反而更困惑。
  *
- * @param {{total?: number, taken?: number}} [medication] 今日用药计数
+ * @param {{total?: number, taken?: number, lateTaken?: number}} [medication] 今日用药计数
  * @returns {string} 形如 "2/3"
  */
 export function todayMedicationText(medication) {
   const total = Number(medication?.total) || 0
-  const taken = Number(medication?.taken) || 0
+  const taken = (Number(medication?.taken) || 0) + (Number(medication?.lateTaken) || 0)
   return `${taken}/${total}`
 }
 

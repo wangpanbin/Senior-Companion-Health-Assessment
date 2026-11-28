@@ -33,6 +33,14 @@ public class MedicationPlanDraftVO {
     @Schema(description = "草稿判重窗口（分钟）；窗口内重复调用返回 409", example = "30")
     private Integer draftTtlMinutes;
 
+    @Schema(description = "订单服务小结是否缺失；true 时前端应提示家属手动填写药名", example = "false")
+    private Boolean summaryMissing;
+
+    /** 兼容旧的三参构造：小结缺失标记为 false，待 Service 显式覆盖 */
+    public MedicationPlanDraftVO(Long orderId, List<Item> items, Integer draftTtlMinutes) {
+        this(orderId, items, draftTtlMinutes, Boolean.FALSE);
+    }
+
     /**
      * 单条草稿：匹配结果 + 家属填写的次数与时间点。
      */

@@ -128,12 +128,16 @@ public class SettlementServiceImpl implements SettlementService {
             throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
         }
 
+        // P0-5：先判「订单状态是否可结算」，再判「是否已结算」。
+        // 顺序反了会出现假成功：一张「已结算 + 已取消」的订单再点核定，
+        // 旧顺序走幂等分支直接返回成功，页面仍显示已结算 —— 而这张单在台账里根本不存在，
+        // 管理员以为核定了，实际上什么都没发生，且再也看不到它。
+        if (!SETTLEABLE_STATUSES.contains(order.getStatus())) {
+            throw new BusinessException(ResultCode.SETTLEMENT_STATUS_ILLEGAL);
+        }
         // 已结算直接返回：幂等，且不重复留痕
         if (PaymentStatus.SETTLED.name().equals(order.getPaymentStatus())) {
             return toConfirmVo(order, false);
-        }
-        if (!SETTLEABLE_STATUSES.contains(order.getStatus())) {
-            throw new BusinessException(ResultCode.SETTLEMENT_STATUS_ILLEGAL);
         }
 
         int updated = companionOrderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()

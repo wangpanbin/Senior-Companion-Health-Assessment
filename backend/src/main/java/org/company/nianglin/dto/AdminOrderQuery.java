@@ -38,6 +38,10 @@ public class AdminOrderQuery extends PageQuery<CompanionOrder> {
     @Schema(description = "只看有投诉的订单（纠纷优先处理）", example = "true")
     private Boolean hasComplaint;
 
+    @Schema(description = "按仲裁判定筛选：true = 只看已判定陪诊员违规的订单；"
+            + "false = 只看未判违规的；不传 = 全部（closure-2026-11 · P1-3）", example = "true")
+    private Boolean arbitrateFlag;
+
     /** MyBatis-Plus 分页对象 */
     public Page<CompanionOrder> toMpPage() {
         return toPage(new Page<>());

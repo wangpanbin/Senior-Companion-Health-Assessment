@@ -37,10 +37,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -485,6 +487,26 @@ class FeedbackServiceTest {
         assertTrue(sql.contains("FIELD(status,'PENDING','PROCESSING','RESOLVED','REJECTED')"),
                 "排序必须按状态权重，实际：" + sql);
         assertTrue(sql.contains("create_time DESC"), "同状态内按提交时间倒序，实际：" + sql);
+    }
+
+    @Test
+    @DisplayName("管理端列表 · 处理中超 7 天的反馈 overdue=true 且带出天数，未超时 overdue=false")
+    void adminListShouldMarkOverdueFeedback() {
+        ProductFeedback stale = feedback(FeedbackStatus.PROCESSING.name(), null);
+        stale.setCreateTime(LocalDateTime.now().minusDays(10));
+        stale.setUpdateTime(LocalDateTime.now().minusDays(8));
+        ProductFeedback fresh = feedback(FeedbackStatus.PROCESSING.name(), null);
+        fresh.setCreateTime(LocalDateTime.now().minusDays(1));
+        fresh.setUpdateTime(LocalDateTime.now().minusDays(1));
+        given(feedbackMapper.selectPage(any(), any())).willReturn(pageOf(stale, fresh));
+        given(userNameResolver.resolveAll(any())).willReturn(Map.of());
+
+        List<FeedbackVO> records = service.adminList(new AdminFeedbackQuery()).getRecords();
+
+        assertTrue(records.get(0).getOverdue(), "处理中超 7 天（阈值默认 7）应标记超时");
+        assertEquals(8, records.get(0).getOverdueDays());
+        assertFalse(records.get(1).getOverdue(), "未超阈值不应标记");
+        assertNull(records.get(1).getOverdueDays());
     }
 
     @Test

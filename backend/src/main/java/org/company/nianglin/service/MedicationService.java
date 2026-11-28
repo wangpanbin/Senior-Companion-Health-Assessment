@@ -11,6 +11,7 @@ import org.company.nianglin.dto.MedicineQuery;
 import org.company.nianglin.vo.MedicationCalendarVO;
 import org.company.nianglin.vo.MedicationConfirmVO;
 import org.company.nianglin.vo.MedicationPlanDraftVO;
+import org.company.nianglin.vo.MedicationPlanIdVO;
 import org.company.nianglin.vo.MedicationPlanVO;
 import org.company.nianglin.vo.MedicationTaskVO;
 import org.company.nianglin.vo.MedicineVO;
@@ -59,14 +60,17 @@ public interface MedicationService {
     /** 用药计划列表（按老人档案，须有权访问） */
     PageResult<MedicationPlanVO> planPage(MedicationPlanQuery query);
 
-    /** 新增用药计划，返回计划 ID */
-    Long createPlan(MedicationPlanCreateDTO dto);
+    /** 新增用药计划，返回计划 ID 与今天的首个生效时点（可能为 null，收口 B · P1-4） */
+    MedicationPlanIdVO createPlan(MedicationPlanCreateDTO dto);
 
     /** 修改用药计划（局部更新；只影响未来未生成的任务） */
     void updatePlan(Long planId, MedicationPlanUpdateDTO dto);
 
-    /** 停用用药计划（不物理删除，服药历史保留） */
+    /** 停用用药计划（计划本身不物理删除；未来 PENDING 任务物理删除，见 P1-5） */
     void disablePlan(Long planId);
+
+    /** 重新启用已停用的计划（收口 B · P1-5；幂等，复用当天任务重建逻辑） */
+    void enablePlan(Long planId);
 
     /**
      * 从已完成订单的服务小结转入用药计划草稿（V4 · P1-2，{@code docs/api/05-medication.md} §10）。

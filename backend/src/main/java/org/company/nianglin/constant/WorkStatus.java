@@ -58,6 +58,11 @@ public enum WorkStatus {
      *
      * <p>注意本方法<b>只回答接单状态这一个维度</b>。完整判定还需要先过资质
      * （{@code auditStatus == APPROVED}）与健康证有效期，顺序是「先资质、再状态」。</p>
+     *
+     * <p>收口 B · P0-2 后的调用点：{@code OrderServiceImpl#hall} / {@code #accept}
+     * 先过资质再调本方法，不接单抛 {@code 2013}；{@code #approvedCompanionUserIds}
+     * 在广播查询上直接用 {@link #AVAILABLE.name()}；{@code MatchingServiceImpl}
+     * 的候选过滤也已收敛到本方法。{@code AdminServiceImpl#reassign} 原本就走本方法，未改。</p>
      */
     public boolean isAccepting() {
         return this == AVAILABLE;

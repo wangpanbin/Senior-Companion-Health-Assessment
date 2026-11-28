@@ -23,11 +23,13 @@ endpoints:
       - elder.visit.companion_count
       - elder.medication.total
       - elder.medication.taken
+      - elder.medication.late_taken
       - elder.medication.missed
       - elder.medication.pending
       - elder.medication.completion_rate
       - elder.today.total
       - elder.today.taken
+      - elder.today.late_taken
       - elder.today.pending
       - elder.today.missed
       - elder.pending_item.count
@@ -36,6 +38,7 @@ endpoints:
       - elder.summary.recent_visit_count
       - elder.today.total
       - elder.today.taken
+      - elder.today.late_taken
       - elder.today.pending
       - elder.today.missed
       - elder.summary.pending_item_count
@@ -43,6 +46,7 @@ endpoints:
     metrics:
       - elder.today.total
       - elder.today.taken
+      - elder.today.late_taken
       - elder.today.pending
       - elder.today.missed
   - endpoint: "GET /api/statistics/companion/me"

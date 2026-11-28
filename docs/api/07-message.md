@@ -37,12 +37,15 @@
 | `ORDER_PROGRESS` | 陪诊进度 | 陪诊员打卡（M5） | 下单家属 |
 | `ORDER_COMPLETED` | 服务已完成 | 陪诊员完成服务 | 下单家属 |
 | `ORDER_CANCELLED` | 订单已取消 | 取消 / 纠纷处理 | 双方 |
+| `ORDER_TIMEOUT` | 订单超时 | 订单超时扫描（closure-2026-11 · P1-1）：待接单超时 / 服务中超时 | 下单家属 |
 | `AUDIT_RESULT` | 资质审核结果 | 管理员审核（M9） | 申请人 |
 | `MEDICATION_REMIND` | 用药提醒 | 漏服扫描（M6） | 全部绑定家属 |
 | `MEDICATION_MISSED` | 漏服提醒 | 漏服扫描（V4 · E1a） | 该老人**当天** `ACCEPTED` / `IN_SERVICE` 陪诊订单的接单陪诊员 |
 | `MEDICATION_ESCALATED` | 漏服升级提醒 | 漏服三级升级的 L3：判漏服 24 小时仍无 `confirm`（V5 · A2） | **全部管理员**（仅站内信，不入短信队列） |
 | `COMPLAINT_SUBMITTED` | 新投诉待处理 | 家属提交投诉（M7） | **全部管理员** + 被投诉方 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 管理员处理（M9） | 投诉双方 |
+| `COMPLAINT_TIMEOUT` | 投诉处理超时 | 治理链超时扫描（closure-2026-11 · P1-6） | **全部管理员** |
+| `FEEDBACK_TIMEOUT` | 反馈处理超时 | 治理链超时扫描 · 反馈链（closure-2026-11 · P1-6） | **全部管理员** |
 | `REVIEW_REPLIED` | 评价被回复 | 陪诊员回复评价（E4） | 评价人（家属） |
 | `REVIEW_APPEAL_SUBMITTED` | 收到评价申诉 | 陪诊员对评价申诉（E4） | 被申诉家属 + **全部管理员** |
 | `REVIEW_INVALIDATED` | 评价被裁定无效 | 管理员裁定（E4） | 评价家属 + 陪诊员 |
@@ -274,6 +277,8 @@
 
 - 服务端按 `userId` 维护 `Map<Long, Set<SseEmitter>>`，多端登录各自独立收推送。
 - 连接超时 **30 分钟**，由浏览器 `EventSource` 自动重连；重连后先调 `/api/message/unread-count` 对齐数字，避免漏更新。
+  **服务端不为事件设置 id、也没有事件缓冲**，因此浏览器不会带 `Last-Event-ID`，离线期间的事件不做补投；
+  断线补齐只能由客户端主动调 `unread-count` 完成（收口 B · DOC-1，文档与实现对齐）。
 - 前端收到后：红点数字更新 + `ElNotification` 弹提示。
 - **双通道读同一份数据库状态**：SSE 负责「3 秒内看到红点变化」，60 秒轮询负责在 Nginx 未配
   `proxy_buffering off`、企业代理掐长连接等环境下仍然可用。两条通道不会出现数字打架。
@@ -444,12 +449,15 @@ dedup_key = "medication-missed:" + taskId + ":" + level + ":" + userId + ":" + y
 | `ORDER_PROGRESS` | 陪诊进度更新 | 备注为空：陪诊员已完成「{nodeLabel}」打卡（订单 {orderNo}）。<br>备注非空：陪诊员已完成「{nodeLabel}」打卡：{remark}（订单 {orderNo}）。 |
 | `ORDER_COMPLETED` | 服务已完成 | 备注为空：订单 {orderNo} 已完成，感谢您的信任，欢迎评价。<br>**仲裁路径**（M9 强制完成，`reason` 非空）：订单 {orderNo} 已由平台仲裁完成（仲裁说明：{reason}）。感谢您的信任，欢迎评价。 |
 | `ORDER_CANCELLED` | 订单已取消 | 订单 {orderNo} 已取消，原因：{reason}。 |
+| `ORDER_TIMEOUT` | 订单超时提醒 | 待接单超时（只标记，`state=MARKED`）：订单 {orderNo} 已过就诊时间且无人接单，建议您取消后重新下单。<br>待接单超时（已自动取消，`state=CANCELLED`）：订单 {orderNo} 已过就诊时间且无人接单，系统已自动取消，建议您重新下单。<br>服务中超时（`state=IN_SERVICE`）：订单 {orderNo} 的陪诊服务已超过 {hours} 小时仍未完成，我们已通知平台核实，请留意后续进展。 |
 | `AUDIT_RESULT` | 资质审核结果 | 您的陪诊员资质申请{result}。{rejectReason} |
 | `MEDICATION_REMIND` | 用药提醒 | {elderName} 的「{medicineName}」在 {planTime} 未确认服用，请及时关注。 |
 | `MEDICATION_MISSED` | 漏服提醒 | 您正在陪诊的 {elderName} 在 {planTime} 未确认服用「{medicineName}」，请留意。 |
 | `MEDICATION_ESCALATED` | 漏服升级提醒 | {elderName} 的「{medicineName}」在 {planTime} 已超过 24 小时未确认服用，请关注。（动态参数发送前过 `ComplianceCheckUtil` 词表） |
 | `COMPLAINT_SUBMITTED` | 新投诉待处理 | {submitterName} 就订单 {orderNo} 提交了投诉（{typeLabel}），请及时处理。 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 您提交的投诉（{orderNo}）已处理完成：{handleResult} |
+| `COMPLAINT_TIMEOUT` | 投诉处理超时 | 投诉 {orderNo} 仍在处理中，已超过 {overdueDays} 天未结案，请尽快处理。 |
+| `FEEDBACK_TIMEOUT` | 反馈处理超时 | 产品反馈 {feedbackId} 仍在处理中，已超过 {overdueDays} 天未结案，请尽快处理。 |
 | `SYSTEM_NOTICE` | 系统公告 | {content} |
 | `HEALTH_CERT_EXPIRING` | 健康证到期提醒 | `audience=COMPANION`：您的健康证有效期至 {expireDate}，到期后将无法接单，请及时更新证件并重新提交资质材料。<br>`audience=ADMIN`：陪诊员 {companionName} 的健康证有效期至 {expireDate}，请关注其证件更新情况。（姓名已脱敏） |
 | `ORDER_EXAM_PREP` | 检查准备提醒 | 固定事实句「明天（{visitDate}）{hospital}（{department}）有就诊安排」+ 分受众尾句：`audience=FAMILY` →「可在智能助手中查询「检查准备」」（助手仅 FAMILY 可用）；`audience=ELDER` →「具体以就诊医院要求为准」（不给死胡同）。两侧出站前各过 `ComplianceCheckUtil` 词表 |

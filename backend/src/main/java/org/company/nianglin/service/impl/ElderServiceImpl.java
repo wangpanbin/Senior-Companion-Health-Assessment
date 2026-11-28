@@ -472,10 +472,12 @@ public class ElderServiceImpl implements ElderService {
     /**
      * 查某对「家属-老人」的关系行。
      *
-     * <p>刻意不用 {@code selectOne}：{@code family_elder_relation} 没有
-     * {@code (family_id, elder_id)} 唯一索引，并发下可能出现重复行，
-     * 而 {@code selectOne} 遇到多行会直接抛 {@code TooManyResultsException} ——
-     * 那会把一个「数据脏了」的问题放大成「接口 500」。取 ID 最小的一行即可。</p>
+     * <p>刻意不用 {@code selectOne}（收口 B · DOC-4 注释订正）：DDL 里其实<b>有</b>
+     * {@code uk_family_elder(family_id, elder_id)}（见 V1__init_schema.sql），
+     * 旧注释说「没有唯一索引」是错的。但取 {@code selectList} + 最小 ID 仍然更稳：
+     * ① 历史脏数据或手工导入可能绕过索引；② 逻辑删除后的同名关系行仍可能被查到；
+     * ③ {@code selectOne} 遇到多行会抛 {@code TooManyResultsException}，
+     * 把「数据脏了」放大成「接口 500」。取 ID 最小的一行即可。</p>
      */
     private FamilyElderRelation findRelation(Long familyId, Long elderId) {
         List<FamilyElderRelation> list = relationMapper.selectList(Wrappers.<FamilyElderRelation>lambdaQuery()

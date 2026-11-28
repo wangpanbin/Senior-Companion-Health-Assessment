@@ -267,6 +267,7 @@
 | 字段 | 类型 | 必填 | 约束 | 说明 |
 |---|---|---|---|---|
 | `reason` | String | ✓ | 5–200 字符 | 封禁原因 |
+| `activeOrderAction` | String | 否 | `RELEASE` / `CANCEL` | 陪诊员在手订单的处置方式（closure-2026-11 · P0-4）。**封禁陪诊员时若他名下有「已接单 / 服务中」的订单，必填其一**，否则回 `2012` |
 
 ### 响应
 
@@ -280,6 +281,7 @@
 |---|---|
 | 8002 | 不能封禁管理员账号 |
 | 2004 | 该用户已处于封禁状态 |
+| 2012 | 该陪诊员名下有「已接单 / 服务中」的在途订单且未指定 `activeOrderAction`；响应 `data.activeOrderCount` 给出张数 |
 
 ### 实现要点（M9 验收关键项）
 
@@ -289,6 +291,29 @@
   ② 封禁时把该用户所有在线 token 的 `jti` 批量加入 Redis 黑名单。
 - 封禁时向该用户发站内信说明原因。
 - 写 `admin_oper_log`：`DISABLE_USER`，`beforeStatus = NORMAL`，`afterStatus = DISABLED`。
+
+### 陪诊员在手订单的处置（closure-2026-11 · P0-4）
+
+> ⚠️ **封禁陪诊员是不可逆操作，已在途订单必须先处置。**
+
+管理员封禁一个正在服务中的陪诊员之后，他名下的「已接单 / 服务中」订单会变成**无主订单**：
+他打不了卡、完不成订单；家属无法取消（取消只允许「待接单」）；履约风险中心看不到（只扫「待接单」）；
+唯一的出路是管理员手动仲裁强制终态 —— 而后台**没有任何告警**，必须靠人发现。
+
+因此封禁时必须先处置：
+
+| `activeOrderAction` | 行为 |
+|---|---|
+| `RELEASE`（放回大厅） | 每张单 `status: ACCEPTED\|IN_SERVICE → PENDING`、`companion_id = NULL`、`accept_time = NULL`、`start_time = NULL`、`version = version + 1`；写 `order_status_log`（`operator_role = SYSTEM`）；写履约事件；通知家属 |
+| `CANCEL`（强制取消） | 每张单走 `forceTerminal → CANCELLED`（复用唯一的状态写入入口）；`cancel_reason` = 「接单陪诊员账号异常，平台强制取消」；通知家属 |
+
+- **未指定处置方式且有在途单** → 回 `2012 COMPANION_HAS_ACTIVE_ORDER`，
+  响应 `data = { "activeOrderCount": n }`，前端据此弹处置选择框。
+- 处置与封禁**同事务**：任一单处置失败整体回滚，不留「半封禁」状态。
+- 两种处置都写 `admin_oper_log`（`target_type = USER`），备注里带处置方式与单号摘要 ——
+  审计要能区分「仅封禁」与「封禁并处置 N 张单」。
+- **RELEASE 语义与 P0-1 改派完全一致**：都是「`PENDING` + `companion_id IS NULL` + `version + 1`」。
+  两处写法若不一致，系统里会出现两种「PENDING 但有 `companion_id`」的单，大厅过滤会漏掉这批单。
 
 ---
 
@@ -364,10 +389,12 @@
 | `keyword` | String | 否 | 订单号 / 医院 / 姓名 |
 | `startDate` / `endDate` | String | 否 | 下单时间区间 |
 | `hasComplaint` | Boolean | 否 | 只看有投诉的订单（纠纷优先） |
+| `arbitrateFlag` | Boolean | 否 | 按仲裁判定筛选：`true` = 只看**已判定陪诊员违规**的订单；`false` = 只看未判违规的；不传 = 全部（closure-2026-11 · P1-3） |
 
 ### 响应
 
-结构同分页约定，`records` 为 `OrderVO`，额外包含 `hasComplaint` 与 `complaintId`。
+结构同分页约定，`records` 为 `OrderVO`，额外包含 `hasComplaint`、`complaintId`、
+`arbitrateFlag` 与 `refundFlag`（后两个是仲裁判定结果，closure-2026-11 · P1-3）。
 
 ---
 
@@ -408,12 +435,29 @@
 }
 ```
 
+### 业务规则
+
+1. 目标状态只能是 `COMPLETED` / `CANCELLED`（终态封闭，管理员也不得把订单拉回中间态）。
+2. `refundToFamily` / `penaltyToCompanion` 两个执法开关**落成订单行上的结构化字段**
+   （closure-2026-11 · P1-3），备注文本只作为人读线索保留，不再是唯一事实来源：
+   - `penaltyToCompanion = true` → `companion_order.arbitrate_flag = 1`
+     （语义：**本次仲裁判了陪诊员有责**；注意**不是**「是否经过仲裁」）；
+   - `refundToFamily = true` → `companion_order.refund_flag = 1`
+     （**线下执行**，一期不做在线支付，平台不发起任何资金操作）。
+3. 两个标记与强制终态**同一事务**：强制终态失败（已终态 / 已结算 / 无陪诊员）时，
+   标记同样不会留下 —— 否则会出现「订单没仲裁成，却记了陪诊员一笔违规」。
+4. 两个开关都不选时两列写 `0`（不留上一笔的残留值）。
+5. 陪诊员的违规次数**从订单行聚合**（`arbitrate_flag = 1` 的订单数），
+   不维护计数列 —— 双写不一致会让「累计违规 N 次」这类治理动作做错人。
+
 ### 错误场景
 
 | code | 场景 |
 |---|---|
 | 3001 | 订单不存在 |
 | 3002 | 订单**已是终态**（`REVIEWED` / `CANCELLED`），不可再处理 |
+| 3002 | 订单**尚无陪诊员**（`companion_id` 为空）且 `targetStatus = COMPLETED` —— 无陪诊员的单只能强制取消（见下方实现要点 5） |
+| 3011 | 订单**已结算**（`payment_status = SETTLED`）且 `targetStatus = CANCELLED` —— 已付出的钱不能从台账里消失（见下方实现要点 6） |
 | 400 | `targetStatus` 不是 `COMPLETED` / `CANCELLED` |
 
 ### 实现要点（M9 验收关键项）
@@ -428,6 +472,18 @@
    - **写入 `admin_oper_log`**，含 `beforeStatus` / `afterStatus`；
    - 向家属与陪诊员**各发一条站内信**（`ORDER_CANCELLED` / 结果通知）。
 4. 已被强制终态化的订单，后续不能再走正向流转。
+5. **无陪诊员的单不可强制完成**（`3002`，message = 「该订单尚无陪诊员，无法强制完成，请改用强制取消」）。
+   一张没人接的单被强制完成后进入 `COMPLETED`（终态），而评价要求订单有陪诊员 ——
+   于是这张单永远停在「已完成」且永远评价不了，评价率的分母也从此与它永久不匹配。
+   家属若确实线下解决了，走强制取消（`targetStatus = CANCELLED`）即可。
+   前端配套建议：仲裁弹窗里若订单 `companionId` 为空，应直接把「强制完成」置灰并说明原因。
+6. **已结算的单不可强制取消**（`3011`）。
+   结算台账只收「已完成 / 已评价」的订单，把一张已结算的单改成 `CANCELLED` 会让它
+   从台账与导出里凭空消失，而钱已经付出去了。管理员须先在结算侧做冲正（本期未实现）才能改状态。
+   `targetStatus = COMPLETED` **不**受此限制（已完成本身不会让台账消失）。
+7. 强制完成与正常完成走同一套费用汇总：强制完成会调用 `orderFeeItemService.applyOnComplete(orderId, null)`，
+   把申报服务费落成费用明细并重算 `actual_fee`。传 `null` 表示「陪诊员可能没申报服务费」，
+   此时不凭空造 0 元明细，只重算已存在明细的合计。
 
 ---
 
@@ -552,6 +608,11 @@
 4. 同一事务内：① `order_review.is_valid = 0`（乐观条件 `eq(is_valid, 1)`）② Review module 内部重算陪诊员评分并删除 Redis 缓存 ③ 通过共享审计 module 写 `admin_oper_log`（`OperType.REVIEW_RULING` + `OperTargetType.REVIEW`）④ 向评价家属 + 陪诊员各发一条 `REVIEW_INVALIDATED` 站内信。
 5. 裁定禁止修改 `score` / `content` / `tags` / `companion_reply` 中任何内容。
 6. 不要求存在关联申诉（管理员可主动巡查裁定）。
+7. **裁定无效即给家属一个重评机会**（closure-2026-11 · P1-2）：该订单允许再提交一次评价
+   （`review_seq` 上限 2，重评只给一次，防无限刷分），旧评价保留不删；
+   给家属的 `REVIEW_INVALIDATED` 站内信文案带「您可以重新评价本单。」，
+   陪诊员那条不带（他无权评价，说了会语义错位）。
+   响应里的 `canReReview` 告知前端此时还能不能提示家属重评。
 
 ### 响应
 
@@ -562,10 +623,18 @@
   "data": {
     "reviewId": 30001,
     "isValid": false,
-    "companionId": 307
+    "companionId": 307,
+    "canReReview": true
   }
 }
 ```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `reviewId` | Long | 评价 ID |
+| `isValid` | Boolean | 恒为 `false`（本期只支持裁定无效） |
+| `companionId` | Long | 被裁定陪诊员用户 ID |
+| `canReReview` | Boolean | 家属此时是否还能重新评价本单（closure-2026-11 · P1-2）。重评名额用完时为 `false` |
 
 ---
 
@@ -689,16 +758,40 @@
 |---|---|---|
 | ① | 理由过合规词表 | `6003`（`CONTENT_SENSITIVE`） |
 | ② | 订单存在 | `3001` |
-| ③ | `status == PENDING` 且 `companionId IS NULL` | `3010` |
+| ③ | `status == PENDING`（**不再要求** `companionId IS NULL`，见下方「改派语义」） | `3010` |
 | ④ | 目标陪诊员存在 | `2007` |
 | ⑤ | 目标 `auditStatus == APPROVED` | `2003` |
 | ⑥ | 目标健康证未过期（`health_cert_expire ≥ 今天`，未补录放行） | `2011` |
 | ⑦ | 目标 `workStatus == AVAILABLE` | `3010` |
 | ⑧ | 目标未拒过该单 | `3010` |
 
+### 改派语义（closure-2026-11 · P0-1）
+
+**一句话：只要订单仍是 `PENDING`，管理员就可以改派，无论当前有没有被指派人。**
+
+旧语义是「`PENDING` **且** `companionId IS NULL`」，带来两个后果：
+
+1. 被指派过的单**仍留在公共大厅**，任何人都能抢走 —— 管理员的指派形同虚设，
+   被指派人从头到尾收不到任何「你的单被抢了」的信号；
+2. 被指派人一旦拒单（拒单不清接单人），这张单**再也改派不了** ——
+   管理员只剩打电话协调，系统帮不上忙。
+
+现在：
+
+- **改派可以重复发生**：被指派人拒单或被换掉之后，管理员能再次指派给第三人，
+  系统留下 `A → C` 的完整轨迹。
+- **改派与抢单只有一个能成功**：条件更新同时递增 `version`（兑现 ADR-0012）。
+- **拒单会清空接单人**：被指派人拒单后，这张单回到「无指派」状态，
+  重新可被改派（见 [03-order.md §7](./03-order.md)）。
+- **改派事件留痕带「从谁改到谁」**：`ORDER_REASSIGNED` 事件的备注里记原接单人与新接单人，
+  原接单人为空时记「未指派」。
+
+> ⚠️ **已知空窗**：指派单不进大厅之后，被指派人<b>只能通过站内信链接</b>进入订单详情接单，
+> 大厅里看不到。本期未做「我的指派」独立入口。
+
 ### 边界（改动前必读）
 
-**本端点只处理「还没人接」的订单。** 已 `ACCEPTED` / `IN_SERVICE` 的订单要换人属纠纷处理，
+**本端点只处理「仍是待接单」的订单。** 已 `ACCEPTED` / `IN_SERVICE` 的订单要换人属纠纷处理，
 走 §9 的管理员仲裁通道（强制终态并通知双方），**不在本端点处理** ——
 同一件事只允许存在一条改变订单归属的路径，否则事后没人说得清这笔单是怎么换的人。
 
@@ -706,8 +799,8 @@
 
 同一事务内四件事，任一步失败整体回滚：
 
-1. **条件更新** `companion_id`，条件是「`status = PENDING` **且** `companion_id IS NULL`」；
-2. 写履约事件 `ORDER_REASSIGNED`（`trigger_source = ADMIN`，理由入备注）；
+1. **条件更新** `companion_id`，条件是「`status = PENDING`」，并递增 `version = version + 1`；
+2. 写履约事件 `ORDER_REASSIGNED`（`trigger_source = ADMIN`，理由 + 「从谁改到谁」入备注）；
 3. 写操作审计（`OperType.REASSIGN_ORDER`，**before / after 记的是陪诊员**而不是订单状态 ——
    本操作不改状态，两栏都写 `PENDING` 会让这条日志读起来像「什么都没发生」）；
 4. 发三方站内信：下单家属 / 目标陪诊员 / 原陪诊员（`fromCompanionId` 非空时）。
@@ -1190,7 +1283,8 @@ V3.6 起，「哪个端点返回了哪些指标」由
 |---|---|---|
 | 订单不存在 | `3001` | 失败 |
 | 订单状态不在 `COMPLETED` / `REVIEWED` | `8004` | 失败 |
-| 已是 `SETTLED` | `200` | 成功，`settledNow=false`，**不重复写操作日志** |
+| 已是 `SETTLED` 且状态合法 | `200` | 成功，`settledNow=false`，**不重复写操作日志** |
+| 已是 `SETTLED` 但状态已不可结算（如已被强制取消） | `8004` | 失败（**不是**假成功，见下方说明） |
 | `UNPAID` 且状态合法 | `200` | 成功，`settledNow=true`，写一条 `admin_oper_log` |
 
 留痕内容：`operType=SETTLE_ORDER`、`targetType=ORDER`、`targetId=orderId`、
@@ -1215,6 +1309,11 @@ V3.6 起，「哪个端点返回了哪些指标」由
 
 > 幂等语义：同一订单重复调用始终返回 `200`，第二次起 `settledNow=false`，
 > 不会再产生第二条日志。客户端可安全重试。
+>
+> ⚠️ **判定顺序（closure-2026-11 · P0-5）**：先判「订单状态是否可结算」，再判「是否已结算」。
+> 顺序反了会出现假成功 —— 一张「已结算 + 已取消」的订单再点核定会拿到 `200` + 「已结算」，
+> 而这张单在台账里根本不存在，管理员以为核定了，实际上什么都没发生，且再也看不到它。
+> 现在这类组合一律回 `8004`。
 
 ---
 

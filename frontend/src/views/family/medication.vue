@@ -96,6 +96,7 @@ const calendar = computed(() => {
     const dots = info
       ? [
           info.hasTaken && 'taken',
+          info.hasLateTaken && 'late-taken',
           info.hasPending && 'pending',
           info.hasMissed && 'missed'
         ].filter(Boolean)
@@ -295,9 +296,11 @@ async function loadCalendar() {
     ;(data?.days || []).forEach((day) => {
       const key = day.date != null ? String(day.date) : ''
       const tasks = day.tasks || []
-      const info = { hasTaken: false, hasPending: false, hasMissed: false }
+      // 收口 B · P0-8：四态桶，补记不再显示为普通「已服」
+      const info = { hasTaken: false, hasLateTaken: false, hasPending: false, hasMissed: false }
       tasks.forEach((t) => {
-        if (t.wasMissed || t.status === 'MISSED') info.hasMissed = true
+        if (t.status === 'MISSED') info.hasMissed = true
+        else if (t.wasMissed && t.status === 'TAKEN') info.hasLateTaken = true
         else if (t.status === 'PENDING') info.hasPending = true
         else info.hasTaken = true
       })
@@ -643,14 +646,16 @@ onMounted(async () => {
       </div>
 
       <div v-if="!calendarLoading && calendarSummary" class="cal-summary nl-caption nl-text-muted">
-        本区间 已服 {{ calendarSummary.takenCount != null ? calendarSummary.takenCount : 0 }}
+        本区间 按时已服 {{ calendarSummary.takenCount != null ? calendarSummary.takenCount : 0 }}
+        · 补记 {{ calendarSummary.lateTakenCount != null ? calendarSummary.lateTakenCount : 0 }}
         · 待服 {{ calendarSummary.pendingCount != null ? calendarSummary.pendingCount : 0 }}
         · 漏服 {{ calendarSummary.missedCount != null ? calendarSummary.missedCount : 0 }}
-        <template v-if="calendarSummary.missedRate">（漏服率 {{ calendarSummary.missedRate }}）</template>
+        <template v-if="calendarSummary.missedRate">（漏服含补记，{{ calendarSummary.missedRate }}）</template>
       </div>
 
       <div class="cal-legend">
-        <span><i class="dot is-taken" />已服</span>
+        <span><i class="dot is-taken" />按时已服</span>
+        <span><i class="dot is-late-taken" />补记</span>
         <span><i class="dot is-pending" />待服</span>
         <span><i class="dot is-missed" />漏服</span>
       </div>
@@ -687,7 +692,12 @@ onMounted(async () => {
                 {{ m.dosage }} · {{ m.mealRelationLabel || labelOf(MEAL_RELATION_TEXT, m.mealRelation) }}<template v-if="m.planTime"> · {{ formatTime(m.planTime) }}</template>
               </div>
             </div>
-            <NlStatusChip scope="task" :status="m.status" :text="m.statusLabel" :dot="m.status !== 'TAKEN'" />
+            <NlStatusChip
+              scope="task"
+              :status="m.status"
+              :text="m.wasMissed && m.status === 'TAKEN' ? '补记' : m.statusLabel"
+              :dot="m.status !== 'TAKEN'"
+            />
           </div>
           <p v-if="m.confirmRemark" class="nl-caption nl-text-muted med-item__desc">备注：{{ m.confirmRemark }}</p>
           <div class="med-item__row">
@@ -1065,6 +1075,7 @@ onMounted(async () => {
       background: var(--nl-success);
 
       &.is-taken { background: var(--nl-success); }
+      &.is-late-taken { background: var(--nl-info); }
       &.is-pending { background: var(--nl-warning); }
       &.is-missed { background: var(--nl-danger); }
     }
@@ -1091,6 +1102,7 @@ onMounted(async () => {
     border-radius: 50%;
   }
   .is-taken { background: var(--nl-success); }
+  .is-late-taken { background: var(--nl-info); }
   .is-pending { background: var(--nl-warning); }
   .is-missed { background: var(--nl-danger); }
 }

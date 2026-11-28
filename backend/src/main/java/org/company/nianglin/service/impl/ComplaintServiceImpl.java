@@ -26,6 +26,7 @@ import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.ComplaintService;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderService;
+import org.company.nianglin.service.support.GovernanceTimeoutPolicy;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.MaskUtil;
 import org.company.nianglin.util.SensitiveWordUtil;
@@ -91,6 +92,22 @@ public class ComplaintServiceImpl implements ComplaintService {
     @Value("${nianglin.review.appeal-deadline-days:15}")
     private int appealDeadlineDays;
 
+    /**
+     * 投诉「处理中超时」阈值（天，closure-2026-11 · P1-6）。
+     *
+     * <p>用 {@link Integer} 而不是 {@code int}：纯 Mockito 单测不起容器，字段保持 {@code null}，
+     * 而 {@code null} 必须被当成默认阈值 3 —— 否则同一套判定会随「有没有 Spring 容器」而变。</p>
+     */
+    @Value("${nianglin.complaint.processing-timeout-days:3}")
+    private Integer complaintTimeoutDays;
+
+    /** 投诉超时阈值的实际取值（未注入时回落默认值） */
+    private int complaintTimeoutDays() {
+        return complaintTimeoutDays == null
+                ? GovernanceTimeoutPolicy.DEFAULT_COMPLAINT_TIMEOUT_DAYS
+                : complaintTimeoutDays;
+    }
+
     /* ================================================================== */
     /* 5. 提交投诉                                                         */
     /* ================================================================== */
@@ -133,17 +150,28 @@ public class ComplaintServiceImpl implements ComplaintService {
         }
 
         // 评价申诉（E4）专属校验：归属三方一致 + 时限 + 同评价未结案唯一。
-        // 必须排在「订单未结案投诉」之前：若已有同订单未结案投诉（普通投诉或别的申诉），
-        // 应当走那条共用的「已有未结案」409，本分支的同评价唯一约束只针对同 reviewId 增量检查。
         if (type == ComplaintType.REVIEW_APPEAL) {
             validateReviewAppeal(dto, order, complainantId);
         }
 
-        Long openCount = complaintMapper.selectCount(Wrappers.<Complaint>lambdaQuery()
-                .eq(Complaint::getOrderId, order.getId())
-                .in(Complaint::getStatus, ComplaintStatus.PENDING.name(), ComplaintStatus.PROCESSING.name()));
-        if (openCount != null && openCount > 0) {
-            throw new BusinessException(ResultCode.CONFLICT, "该订单已有未处理完的投诉，请等待管理员处理");
+        // P1-6：占用判定按 type 隔离。
+        //
+        // 旧口径是「同一订单已有未结案投诉就 409」，申诉因此被普通投诉挡住 ——
+        // 家属先就同一订单提了普通投诉，陪诊员就再也申诉不了那条差评，
+        // 而申诉正是 E4 的核心能力。
+        //
+        // 现在两边都不互相占位：
+        // · 申诉（REVIEW_APPEAL）只看「同一 reviewId 的未结案申诉」（上面已查）；
+        // · 普通投诉只看「同一订单的未结案**非申诉**投诉」。
+        if (type != ComplaintType.REVIEW_APPEAL) {
+            Long openCount = complaintMapper.selectCount(Wrappers.<Complaint>lambdaQuery()
+                    .eq(Complaint::getOrderId, order.getId())
+                    .ne(Complaint::getType, ComplaintType.REVIEW_APPEAL.name())
+                    .in(Complaint::getStatus,
+                            ComplaintStatus.PENDING.name(), ComplaintStatus.PROCESSING.name()));
+            if (openCount != null && openCount > 0) {
+                throw new BusinessException(ResultCode.CONFLICT, "该订单已有未处理完的投诉，请等待管理员处理");
+            }
         }
 
         String hit = SensitiveWordUtil.firstHit(dto.getContent());
@@ -332,10 +360,15 @@ public class ComplaintServiceImpl implements ComplaintService {
     /* ================================================================== */
 
     private ComplaintVO toVO(Complaint complaint, Map<Long, String> names) {
+        // 超时标记（P1-6）：只升级可见性，不改状态
+        Integer overdueDays = GovernanceTimeoutPolicy.overdueDays(complaint.getStatus(),
+                complaint.getUpdateTime(), complaint.getCreateTime(), LocalDateTime.now(),
+                complaintTimeoutDays());
         return ComplaintVO.of(complaint,
                 names.get(complaint.getComplainantId()),
                 names.get(complaint.getTargetUserId()),
-                parseEvidence(complaint.getEvidence()));
+                parseEvidence(complaint.getEvidence()),
+                overdueDays);
     }
 
     /** 证据 URL 去重、截断；空白项直接丢掉（前端多传一个空串很常见） */
