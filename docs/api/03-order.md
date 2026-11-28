@@ -932,6 +932,10 @@ WHERE id = ?
 - 中文文案全部由枚举翻译（`FulfillmentRisk#getLabel` / `FulfillmentEventType#labelOf`），装配处不拼串。
 - 履约服务本身**不做鉴权**：鉴权归 `OrderService#requireInvolved`。
   这是为了避开循环依赖 —— `OrderService` 建单时要请履约服务登记事件，履约服务不能反过来依赖订单服务。
+- **强制完成也会写费用明细**（closure-2026-11 · P0-6）：管理员强制完成时同样调用
+  `orderFeeItemService.applyOnComplete(orderId, null)`，把申报服务费落成费用明细并重算 `actual_fee`。
+  结算金额取 `COALESCE(actual_fee, fee)`，若强制完成不汇总，陪诊员代垫的挂号费、药费就不进结算 ——
+  系统一声不响，陪诊员少收钱。传 `null` 表示「陪诊员可能没申报服务费」，此时不凭空造 0 元明细。
 
 ---
 

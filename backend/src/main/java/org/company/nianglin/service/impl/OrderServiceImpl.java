@@ -827,6 +827,18 @@ public class OrderServiceImpl implements OrderService {
         orderTransitionService.forceTerminal(order, target,
                 SecurityUtils.currentUser().userId(), "管理员强制变更：" + remark);
 
+        // P0-6：强制完成与正常完成走同一套费用汇总。
+        // 正常完成会调 applyOnComplete 把申报服务费落成费用明细并重算 actual_fee，
+        // 而强制完成原本什么都不算 —— 结算金额取 COALESCE(actual_fee, fee)，
+        // 于是陪诊员先垫的挂号费、药费不进结算，系统一声不响，陪诊员少收钱。
+        // 传 null 而不是 0：applyOnComplete 在 declaredFee == null 时不插入服务费明细，
+        // 只重算已存在明细的合计 —— 管理员强制完成时陪诊员可能压根没申报服务费，
+        // 系统不该凭空造一条 0 元明细。
+        // 调用位置在状态写入之后（与正常完成一致），同一事务内。
+        if (target == OrderStatus.COMPLETED) {
+            orderFeeItemService.applyOnComplete(orderId, null);
+        }
+
         log.info("管理员强制变更订单终态 | orderId={} | {} → {} | operator={}",
                 orderId, current == null ? null : current.name(), target.name(),
                 SecurityUtils.currentUser().userId());
