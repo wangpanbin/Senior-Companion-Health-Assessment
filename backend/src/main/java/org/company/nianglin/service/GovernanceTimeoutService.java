@@ -24,4 +24,15 @@ public interface GovernanceTimeoutService {
      * @return 本轮实际提醒的条数
      */
     int scanOverdueComplaints();
+
+    /**
+     * 扫描「处理中超时」的产品反馈并提醒管理员（closure-2026-11 · P1-6 反馈链）。
+     *
+     * <p>与投诉链同一套判定与幂等口径（{@code GovernanceTimeoutPolicy} +
+     * Redis {@code SET NX}），但阈值独立：反馈默认 7 天，投诉默认 3 天。
+     * 反馈是建议通道不是纠纷通道，容忍度理应更高。</p>
+     *
+     * @return 本轮实际提醒的条数
+     */
+    int scanOverdueFeedback();
 }

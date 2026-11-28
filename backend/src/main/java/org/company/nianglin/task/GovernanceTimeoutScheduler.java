@@ -60,9 +60,14 @@ public class GovernanceTimeoutScheduler {
             if (!lock.acquired()) {
                 return;
             }
-            int notified = governanceTimeoutService.scanOverdueComplaints();
+            // 一个类扫两条链（P1-6）：投诉 3 天、反馈 7 天，判定与去重共用一份策略。
+            // 两条链各自独立计数 —— 一条链空转不应掩盖另一条链的提醒数。
+            int complaintNotified = governanceTimeoutService.scanOverdueComplaints();
+            int feedbackNotified = governanceTimeoutService.scanOverdueFeedback();
+            int notified = complaintNotified + feedbackNotified;
             if (notified > 0) {
-                log.info("治理链超时扫描任务结束 | 本轮提醒={} 条", notified);
+                log.info("治理链超时扫描任务结束 | 投诉链提醒={} 条 | 反馈链提醒={} 条",
+                        complaintNotified, feedbackNotified);
             }
         } catch (Exception e) {
             log.error("治理链超时扫描失败 | {}", e.getMessage(), e);

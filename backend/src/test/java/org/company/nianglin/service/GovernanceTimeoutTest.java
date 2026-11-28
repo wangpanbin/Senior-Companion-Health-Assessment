@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.ComplaintStatus;
+import org.company.nianglin.constant.FeedbackStatus;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.RoleConstants;
@@ -14,10 +15,12 @@ import org.company.nianglin.dto.ComplaintQuery;
 import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.Complaint;
 import org.company.nianglin.entity.OrderReview;
+import org.company.nianglin.entity.ProductFeedback;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.ComplaintMapper;
 import org.company.nianglin.mapper.OrderReviewMapper;
+import org.company.nianglin.mapper.ProductFeedbackMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.service.impl.ComplaintServiceImpl;
@@ -57,7 +60,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
- * P1-6 · 投诉超时升级 + 申诉占用按 type 隔离。
+ * P1-6 · 投诉超时升级 + 申诉占用按 type 隔离（含反馈超时链）。
  *
  * <p>两个独立的治理闭环缺口：</p>
  * <ol>
@@ -66,6 +69,9 @@ import static org.mockito.Mockito.verify;
  *   <li><b>申诉被普通投诉占位</b>：家属先就同一订单提了普通投诉，
  *       陪诊员对差评的申诉就被 409 挡住 —— 而申诉正是 E4 的核心能力。</li>
  * </ol>
+ *
+ * <p>「处理中超时」的判定与扫描对<b>投诉与产品反馈两条链</b>共用同一份策略
+ * （阈值独立：投诉 3 天 / 反馈 7 天）；反馈链的用例在本类 E 段。</p>
  *
  * @author 银龄伴诊团队
  * @since closure-2026-11
@@ -79,10 +85,14 @@ class GovernanceTimeoutTest {
     private static final Long COMPANION_ID = 309L;
     private static final Long REVIEW_ID = 30003L;
     private static final Long COMPLAINT_ID = 5001L;
+    private static final Long FEEDBACK_ID = 6001L;
     private static final Long ADMIN_ID = 1L;
 
     @Mock
     private ComplaintMapper complaintMapper;
+
+    @Mock
+    private ProductFeedbackMapper feedbackMapper;
 
     @Mock
     private SysUserMapper sysUserMapper;
@@ -113,10 +123,11 @@ class GovernanceTimeoutTest {
         MybatisLambdaCache.warmUp();
         complaintService = new ComplaintServiceImpl(complaintMapper, sysUserMapper, orderService,
                 messageService, userNameResolver, new ObjectMapper(), orderReviewMapper);
-        timeoutService = new GovernanceTimeoutServiceImpl(complaintMapper, sysUserMapper,
-                messageService, redisTemplate);
+        timeoutService = new GovernanceTimeoutServiceImpl(complaintMapper, feedbackMapper,
+                sysUserMapper, messageService, redisTemplate);
         ReflectionTestUtils.setField(complaintService, "appealDeadlineDays", 15);
         ReflectionTestUtils.setField(timeoutService, "complaintTimeoutDays", 3);
+        ReflectionTestUtils.setField(timeoutService, "feedbackTimeoutDays", 7);
         ReflectionTestUtils.setField(timeoutService, "scanBatch", 200);
         loginAs(RoleConstants.COMPANION, COMPANION_ID);
     }
@@ -285,6 +296,69 @@ class GovernanceTimeoutTest {
     }
 
     /* ================================================================== */
+    /* E · 反馈超时链（与投诉链同一策略，阈值独立：7 天）                    */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("反馈链 · 处理中超 7 天的反馈应提醒管理员，且不改状态、不改 update_time")
+    void feedbackScanShouldNotifyAdminsWithoutTouchingState() {
+        given(feedbackMapper.selectList(any()))
+                .willReturn(List.of(processingFeedback(LocalDateTime.now().minusDays(8))));
+        given(sysUserMapper.selectList(any())).willReturn(List.of(adminUser()));
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(any(), any(), any(Duration.class))).willReturn(true);
+
+        int notified = timeoutService.scanOverdueFeedback();
+
+        assertEquals(1, notified);
+        verify(messageService).send(eq(ADMIN_ID), eq(MessageType.FEEDBACK_TIMEOUT),
+                eq(FEEDBACK_ID), any());
+        // 只升级可见性：既不改状态，也不碰 update_time
+        verify(feedbackMapper, never()).update(any(), any());
+        verify(feedbackMapper, never()).updateById(any(ProductFeedback.class));
+    }
+
+    @Test
+    @DisplayName("反馈链 · 处理中未超 7 天的反馈不提醒（反馈容忍度高于投诉）")
+    void feedbackScanShouldNotNotifyRecentFeedback() {
+        given(feedbackMapper.selectList(any()))
+                .willReturn(List.of(processingFeedback(LocalDateTime.now().minusDays(2))));
+
+        assertEquals(0, timeoutService.scanOverdueFeedback());
+        verify(messageService, never()).send(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("反馈链 · 去重 key 必须带 feedback 段（两条链不共用同一把去重锁）")
+    void feedbackScanReminderKeyShouldContainFeedbackType() {
+        given(feedbackMapper.selectList(any()))
+                .willReturn(List.of(processingFeedback(LocalDateTime.now().minusDays(8))));
+        given(sysUserMapper.selectList(any())).willReturn(List.of(adminUser()));
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(any(), any(), any(Duration.class))).willReturn(true);
+
+        timeoutService.scanOverdueFeedback();
+
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(valueOperations).setIfAbsent(keyCaptor.capture(), any(), any(Duration.class));
+        assertTrue(keyCaptor.getValue().contains("governance:timeout:feedback:"),
+                "反馈链去重 key 必须带 feedback 段，否则两条链会互相顶掉对方的提醒：" + keyCaptor.getValue());
+    }
+
+    @Test
+    @DisplayName("反馈链 · 非处理中状态一律不算超时（策略层口径，与投诉链共用）")
+    void feedbackPolicyShouldIgnoreNonProcessingStatuses() {
+        // 扫描查出的行即使状态被并发改成终态，策略层也不应再判超时：
+        // 用 PENDING（刚到管理员手上的活）验证「非 PROCESSING 一律不算」
+        ProductFeedback pending = processingFeedback(LocalDateTime.now().minusDays(8));
+        pending.setStatus(FeedbackStatus.PENDING.name());
+
+        LocalDateTime now = LocalDateTime.now();
+        assertNull(GovernanceTimeoutPolicy.overdueDays(pending.getStatus(),
+                pending.getUpdateTime(), pending.getCreateTime(), now, 7));
+    }
+
+    /* ================================================================== */
 
     private void givenPage(Complaint complaint) {
         Page<Complaint> page = new Page<>(1, 10);
@@ -307,6 +381,19 @@ class GovernanceTimeoutTest {
         complaint.setCreateTime(updateTime.minusDays(2));
         complaint.setUpdateTime(updateTime);
         return complaint;
+    }
+
+    private ProductFeedback processingFeedback(LocalDateTime updateTime) {
+        ProductFeedback feedback = new ProductFeedback();
+        feedback.setId(FEEDBACK_ID);
+        feedback.setSubmitterId(FAMILY_ID);
+        feedback.setSubmitterRole(RoleConstants.FAMILY);
+        feedback.setType("EXPERIENCE");
+        feedback.setContent("希望老人模式的字体再大一圈，签字确认页面看不清。");
+        feedback.setStatus(FeedbackStatus.PROCESSING.name());
+        feedback.setCreateTime(updateTime.minusDays(1));
+        feedback.setUpdateTime(updateTime);
+        return feedback;
     }
 
     private SysUser adminUser() {

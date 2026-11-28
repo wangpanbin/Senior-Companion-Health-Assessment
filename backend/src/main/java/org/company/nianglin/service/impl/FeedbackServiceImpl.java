@@ -26,6 +26,7 @@ import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityUtils;
 import org.company.nianglin.service.FeedbackService;
 import org.company.nianglin.service.MessageService;
+import org.company.nianglin.service.support.GovernanceTimeoutPolicy;
 import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.UserNameResolver;
 import org.company.nianglin.util.ComplianceCheckUtil;
@@ -33,6 +34,7 @@ import org.company.nianglin.util.SensitiveWordUtil;
 import org.company.nianglin.vo.FeedbackCreateResultVO;
 import org.company.nianglin.vo.FeedbackHandleResultVO;
 import org.company.nianglin.vo.FeedbackVO;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -104,6 +106,15 @@ public class FeedbackServiceImpl implements FeedbackService {
     private final UserNameResolver userNameResolver;
     private final OperLogRecorder operLogRecorder;
     private final ObjectMapper objectMapper;
+
+    /**
+     * 反馈「处理中超时」阈值（天，收口 A · P1-6 反馈链）。
+     *
+     * <p>用 {@link Integer}：纯 Mockito 单测不起容器时为 {@code null}，
+     * 按默认阈值 7 处理（与 {@code GovernanceTimeoutServiceImpl} 的默认一致）。</p>
+     */
+    @Value("${nianglin.feedback.processing-timeout-days:7}")
+    private Integer feedbackTimeoutDays;
 
     /* ================================================================== */
     /* 1. 提交反馈                                                         */
@@ -236,7 +247,37 @@ public class FeedbackServiceImpl implements FeedbackService {
         wrapper.last("ORDER BY FIELD(status," + FeedbackStatus.fieldOrder() + "), create_time DESC, id DESC");
 
         var page = feedbackMapper.selectPage(query.toMpPage(), wrapper);
-        return PageResult.of(page, toVOList(page.getRecords()));
+        List<FeedbackVO> records = toVOList(page.getRecords());
+        applyOverdueMarks(records, page.getRecords());
+        return PageResult.of(page, records);
+    }
+
+    /**
+     * 管理端列表的超时标记（收口 A · P1-6 反馈链）：只升级可见性，不改状态。
+     *
+     * <p>口径与投诉链同一份策略（{@link GovernanceTimeoutPolicy}）：{@code PROCESSING}
+     * 且「上次推进时间（{@code update_time}，从未推进用 {@code create_time} 兜底）」
+     * 距今满阈值天数才算超时。阈值独立于投诉链（默认 7 天）—— 反馈是建议通道
+     * 不是纠纷通道，容忍度理应更高。</p>
+     *
+     * <p>聚合计算、不加数据库列：超时是「列表此刻的样子」，不是一笔需要审计的事实；
+     * 落列反而会把「未处理」伪装成「刚处理过」（扫描器也不改 {@code update_time}）。</p>
+     */
+    private void applyOverdueMarks(List<FeedbackVO> records, List<ProductFeedback> rows) {
+        if (records.isEmpty()) {
+            return;
+        }
+        int threshold = feedbackTimeoutDays == null
+                ? GovernanceTimeoutPolicy.DEFAULT_FEEDBACK_TIMEOUT_DAYS
+                : feedbackTimeoutDays;
+        LocalDateTime now = LocalDateTime.now();
+        for (int i = 0; i < records.size(); i++) {
+            ProductFeedback row = rows.get(i);
+            Integer overdueDays = GovernanceTimeoutPolicy.overdueDays(row.getStatus(),
+                    row.getUpdateTime(), row.getCreateTime(), now, threshold);
+            // 与 ComplaintVO 同一口径：overdue 恒有值（true / false），overdueDays 仅超时时返回
+            records.get(i).setOverdue(overdueDays != null).setOverdueDays(overdueDays);
+        }
     }
 
     /* ================================================================== */

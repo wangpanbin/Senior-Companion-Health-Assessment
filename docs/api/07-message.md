@@ -45,6 +45,7 @@
 | `COMPLAINT_SUBMITTED` | 新投诉待处理 | 家属提交投诉（M7） | **全部管理员** + 被投诉方 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 管理员处理（M9） | 投诉双方 |
 | `COMPLAINT_TIMEOUT` | 投诉处理超时 | 治理链超时扫描（closure-2026-11 · P1-6） | **全部管理员** |
+| `FEEDBACK_TIMEOUT` | 反馈处理超时 | 治理链超时扫描 · 反馈链（closure-2026-11 · P1-6） | **全部管理员** |
 | `REVIEW_REPLIED` | 评价被回复 | 陪诊员回复评价（E4） | 评价人（家属） |
 | `REVIEW_APPEAL_SUBMITTED` | 收到评价申诉 | 陪诊员对评价申诉（E4） | 被申诉家属 + **全部管理员** |
 | `REVIEW_INVALIDATED` | 评价被裁定无效 | 管理员裁定（E4） | 评价家属 + 陪诊员 |
@@ -456,6 +457,7 @@ dedup_key = "medication-missed:" + taskId + ":" + level + ":" + userId + ":" + y
 | `COMPLAINT_SUBMITTED` | 新投诉待处理 | {submitterName} 就订单 {orderNo} 提交了投诉（{typeLabel}），请及时处理。 |
 | `COMPLAINT_HANDLED` | 投诉处理结果 | 您提交的投诉（{orderNo}）已处理完成：{handleResult} |
 | `COMPLAINT_TIMEOUT` | 投诉处理超时 | 投诉 {orderNo} 仍在处理中，已超过 {overdueDays} 天未结案，请尽快处理。 |
+| `FEEDBACK_TIMEOUT` | 反馈处理超时 | 产品反馈 {feedbackId} 仍在处理中，已超过 {overdueDays} 天未结案，请尽快处理。 |
 | `SYSTEM_NOTICE` | 系统公告 | {content} |
 | `HEALTH_CERT_EXPIRING` | 健康证到期提醒 | `audience=COMPANION`：您的健康证有效期至 {expireDate}，到期后将无法接单，请及时更新证件并重新提交资质材料。<br>`audience=ADMIN`：陪诊员 {companionName} 的健康证有效期至 {expireDate}，请关注其证件更新情况。（姓名已脱敏） |
 | `ORDER_EXAM_PREP` | 检查准备提醒 | 固定事实句「明天（{visitDate}）{hospital}（{department}）有就诊安排」+ 分受众尾句：`audience=FAMILY` →「可在智能助手中查询「检查准备」」（助手仅 FAMILY 可用）；`audience=ELDER` →「具体以就诊医院要求为准」（不给死胡同）。两侧出站前各过 `ComplianceCheckUtil` 词表 |
