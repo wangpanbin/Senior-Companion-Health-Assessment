@@ -405,15 +405,18 @@ public class MedicationServiceImpl implements MedicationService {
                 && !OrderStatus.REVIEWED.name().equals(order.getStatus())) {
             throw new BusinessException(ResultCode.CONFLICT, "订单完成后才能转入用药计划");
         }
-        if (!StringUtils.hasText(order.getServiceSummary())) {
-            throw new BusinessException(ResultCode.CONFLICT, "服务小结尚未填写");
-        }
-
-        // 3) 防御性复查：完成时虽已校验过，但小结可能被其它路径改写；命中即拒
-        String hit = ComplianceCheckUtil.firstHit(order.getServiceSummary());
-        if (hit != null) {
-            throw new BusinessException(ResultCode.ORDER_SUMMARY_ILLEGAL,
-                    "服务小结不能包含「" + hit + "」这类诊断或用药建议");
+        // 3) 收口 B · P0-9：小结是**可选**信息且没有补写入口，空小结不再拒绝。
+        //    降级为空草稿 + summaryMissing=true，让家属仍进入「填药名 / 次数 / 时间点」表单；
+        //    V4 转化链依赖的是「订单已完成、家属想建计划」这个意愿，不依赖小结内容。
+        //    注意：只放宽「为空」，不放宽「含违规词」——合规红线不受降级波及。
+        String summary = order.getServiceSummary();
+        boolean summaryMissing = !StringUtils.hasText(summary);
+        if (!summaryMissing) {
+            String hit = ComplianceCheckUtil.firstHit(summary);
+            if (hit != null) {
+                throw new BusinessException(ResultCode.ORDER_SUMMARY_ILLEGAL,
+                        "服务小结不能包含「" + hit + "」这类诊断或用药建议");
+            }
         }
 
         // 4) 防止跨老人串档：草稿必须落在订单就诊老人名下
@@ -450,9 +453,9 @@ public class MedicationServiceImpl implements MedicationService {
             log.warn("用药计划草稿判重缓存不可用，本次放行 | orderId={} | error={}", orderId, ex.getMessage());
         }
 
-        log.info("从订单生成用药计划草稿 | orderId={} | operator={} | items={}",
-                orderId, me.userId(), items.size());
-        return new MedicationPlanDraftVO(orderId, items, DRAFT_TTL_MINUTES);
+        log.info("从订单生成用药计划草稿 | orderId={} | operator={} | items={} | summaryMissing={}",
+                orderId, me.userId(), items.size(), summaryMissing);
+        return new MedicationPlanDraftVO(orderId, items, DRAFT_TTL_MINUTES, summaryMissing);
     }
 
     /**

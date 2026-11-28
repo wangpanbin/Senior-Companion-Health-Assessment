@@ -123,7 +123,7 @@ key   : nianglin:lock:medication:daily
 | 7 | GET | `/api/medication/task/calendar` | 相关方 | 服药日历 |
 | 8 | GET | `/api/medication/task/today` | 相关方 | 今日待服任务 |
 | 9 | POST | `/api/medication/task/{id}/confirm` | FAMILY / COMPANION | 确认服药 |
-| 10 | POST | `/api/medication/plan/from-order/{orderId}` | FAMILY（下单家属本人） | 从已完成订单的服务小结转入用药计划草稿（不落库、不含剂量） |
+| 10 | POST | `/api/medication/plan/from-order/{orderId}` | FAMILY（下单家属本人） | 从已完成订单转入用药计划草稿（小结可为空，不落库、不含剂量） |
 
 ---
 
@@ -528,9 +528,13 @@ key   : nianglin:lock:medication:daily
 
 `POST /api/medication/plan/from-order/{orderId}`　权限：FAMILY，且须为本单下单家属本人
 
-陪诊员完成订单并提交服务小结后，家属可在订单详情页点「转入用药计划」，
-由**家属自己**填写药品名 / 每日次数 / 时间点；本接口只把这些输入解析成**草稿**返回，
-**不落库**。家属在用药计划页补齐用量后，再走既有的 [`POST /api/medication/plan`](#4-新增用药计划)。
+陪诊员完成订单后，家属可在订单详情页点「转入用药计划」，由**家属自己**填写药品名 / 每日次数 / 时间点；
+本接口只把这些输入解析成**草稿**返回，**不落库**。家属在用药计划页补齐用量后，
+再走既有的 [`POST /api/medication/plan`](#4-新增用药计划)。
+
+> **收口 B · P0-9：服务小结是可选信息**。陪诊员没填小结就完成时，本接口不再 `409` 拒绝，
+> 而是照常返回草稿并置 `summaryMissing = true`，由家属手动填写药名。
+> 转化链依赖的是「订单已完成、家属想建计划」这个意愿，不依赖小结内容。
 
 ### 请求参数
 
@@ -583,11 +587,14 @@ key   : nianglin:lock:medication:daily
         "timePoint": "12:00"
       }
     ],
-    "draftTtlMinutes": 30
+    "draftTtlMinutes": 30,
+    "summaryMissing": false
   }
 }
 ```
 
+- `summaryMissing = true` 表示订单没有服务小结、系统没有预填线索；前端应提示
+  「本次订单没有服务小结，请手动填写药名」。有小结时为 `false`。
 - `matched=false` **不是错误**：药名未匹配到药品字典时原样返回，由家属在用药计划页核对并选择药品；
   前端应提示「未匹配到药品字典」。
 - 响应**不含** `dosage`，前端预填时用量字段必须保持空白且必填。
@@ -600,7 +607,6 @@ key   : nianglin:lock:medication:daily
 | 3004 | 当前家属不是该订单的下单家属本人 |
 | 3007 | 服务小结命中诊断 / 用药建议词（防御性复查） |
 | 409 | 订单状态不是 `COMPLETED` / `REVIEWED`（服务未完成或被取消） |
-| 409 | 服务小结尚未填写（提示「服务小结尚未填写」） |
 | 11002 | 该订单 30 分钟内已生成过草稿（一单一转；前端据此引导去用药计划页继续填写） |
 | 400 | `elderId` 与订单不一致 / `items` 为空或超过 10 项 / `frequency` 越界 / `timePoint` 格式非法 |
 | 403 | 非 FAMILY 角色调用（COMPANION / ELDER / ADMIN） |
@@ -611,8 +617,9 @@ key   : nianglin:lock:medication:daily
   `order.familyId == 当前登录用户`——只有下单家属本人可转，其它相关方也一律 `3004`。
 - **状态**：订单必须为 `COMPLETED` 或 `REVIEWED`（V4 起放开已评价订单——家属评价后仍常需补建用药计划）；
   其余状态（`PENDING` / `ACCEPTED` / `IN_SERVICE` / `CANCELLED`）一律 `409`。本接口**不触发任何订单状态流转**。
-- **小结兜底**：`serviceSummary` 为空返回 `409`；即便完成时已查过，仍再用
-  `ComplianceCheckUtil#firstHit` 复查一次，命中返回 `3007`。
+- **小结兜底（收口 B · P0-9）**：`serviceSummary` 为空**不拒绝**，返回草稿并置 `summaryMissing=true`；
+  仅当小结非空时才用 `ComplianceCheckUtil#firstHit` 复查，命中返回 `3007`。
+  **只放宽「为空」，不放宽「含违规词」**；不新增「修改服务小结」端点（避免引入新的权限与审计面）。
 - **药名解析**：对 `medicine_dict` 依次做「去空白后精确匹配 → 忽略大小写精确匹配 → 包含匹配（取第一条）」，
   匹配到即回填 `medicineId` / `medicineName` 且 `matched=true`；匹配不到保留原文、`medicineId=null`、`matched=false`。
   该过程**只做字典比对，不解析服务小结、不推断适应症**。
