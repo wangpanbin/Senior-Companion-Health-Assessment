@@ -122,7 +122,7 @@ class AdminReassignTest {
         service = new AdminServiceImpl(null, companionProfileMapper, null, null, orderMapper,
                 operLogMapper, new OperLogRecorderImpl(operLogMapper, userNameResolver), null, null,
                 orderRejectLogMapper, null, fulfillmentEventMapper,
-                messageService, orderService, null, null, null, null, new ObjectMapper());
+                messageService, orderService, null, null, null, null, new ObjectMapper(), null);
         loginAsAdmin();
     }
 

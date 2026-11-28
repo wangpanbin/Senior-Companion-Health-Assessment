@@ -108,7 +108,7 @@ class OrderForceTerminalCompanionTest {
                 new OperLogRecorderImpl(operLogMapper, userNameResolver), null, null,
                 null, null, null,
                 messageService, orderService, userNameResolver, null, null, null,
-                new ObjectMapper());
+                new ObjectMapper(), null);
     }
 
     @AfterEach

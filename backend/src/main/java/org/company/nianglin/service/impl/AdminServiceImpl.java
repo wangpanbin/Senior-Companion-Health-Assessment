@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.company.nianglin.common.PageResult;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.AccountStatus;
+import org.company.nianglin.constant.ActiveOrderAction;
 import org.company.nianglin.constant.AuditStatus;
 import org.company.nianglin.constant.ComplaintStatus;
 import org.company.nianglin.constant.FulfillmentEventType;
@@ -44,6 +45,7 @@ import org.company.nianglin.entity.Complaint;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.OrderFulfillmentEvent;
 import org.company.nianglin.entity.OrderRejectLog;
+import org.company.nianglin.entity.OrderStatusLog;
 import org.company.nianglin.entity.OrderReview;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
@@ -57,6 +59,7 @@ import org.company.nianglin.mapper.OrderFulfillmentEventMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
 import org.company.nianglin.mapper.OrderRejectLogMapper;
 import org.company.nianglin.mapper.OrderReviewMapper;
+import org.company.nianglin.mapper.OrderStatusLogMapper;
 import org.company.nianglin.mapper.SysUserMapper;
 import org.company.nianglin.security.LoginUser;
 import org.company.nianglin.security.SecurityProperties;
@@ -173,6 +176,13 @@ public class AdminServiceImpl implements AdminService {
     private final SecurityProperties securityProperties;
     private final TokenStore tokenStore;
     private final ObjectMapper objectMapper;
+    /**
+     * 订单状态流转日志（closure-2026-11 · P0-4）——封禁陪诊员把在手订单放回大厅时，
+     * 要写一条 {@code operator_role = SYSTEM} 的状态日志，说明「不是某个人改的」。
+     *
+     * <p>放在构造参数<b>末尾</b>是为了不改动既有位置参数调用的顺序。</p>
+     */
+    private final OrderStatusLogMapper orderStatusLogMapper;
 
     /* ================================================================== */
     /* 1 / 2 / 3. 资质审核                                                 */
@@ -353,6 +363,28 @@ public class AdminServiceImpl implements AdminService {
         }
 
         String reason = dto.getReason().trim();
+
+        // P0-4：封禁陪诊员前必须先处置他名下的在手订单。
+        //
+        // 不处置就封 = 造出一批无主订单：被封的陪诊员打不了卡、完不成订单，
+        // 家属取消不了（取消只允许待接单），履约风险中心也看不到（只扫待接单），
+        // 而后台没有任何告警 —— 只能靠人发现订单永远停在「服务中」。
+        List<CompanionOrder> activeOrders = activeOrdersOf(id);
+        ActiveOrderAction action = dto.getActiveOrderAction();
+        if (!activeOrders.isEmpty() && action == null) {
+            // 没给处置方式 → 拒绝封禁，并把张数带给前端弹处置选择框
+            throw new BusinessException(ResultCode.COMPANION_HAS_ACTIVE_ORDER,
+                    "该陪诊员名下有 " + activeOrders.size() + " 张在途订单，请先处置后再封禁",
+                    Map.of("activeOrderCount", activeOrders.size()));
+        }
+        for (CompanionOrder order : activeOrders) {
+            if (action == ActiveOrderAction.RELEASE) {
+                releaseOrderToHall(order);
+            } else {
+                cancelActiveOrder(order);
+            }
+        }
+
         sysUserMapper.update(null, Wrappers.<SysUser>lambdaUpdate()
                 .eq(SysUser::getId, id)
                 .eq(SysUser::getStatus, AccountStatus.NORMAL)
@@ -369,10 +401,138 @@ public class AdminServiceImpl implements AdminService {
         messageService.send(id, MessageType.SYSTEM_NOTICE, null, params);
 
         operLogRecorder.record(OperType.DISABLE_USER, OperTargetType.USER, id, user.getUsername(),
-                AccountStatus.NORMAL, AccountStatus.DISABLED, reason);
+                AccountStatus.NORMAL, AccountStatus.DISABLED, operRemark(reason, action, activeOrders));
 
-        log.info("用户已封禁 | userId={} | adminId={}", id, SecurityUtils.currentUserId());
+        log.info("用户已封禁 | userId={} | adminId={} | 处置在途订单={}",
+                id, SecurityUtils.currentUserId(), activeOrders.size());
         return UserStatusResultVO.of(id, AccountStatus.DISABLED);
+    }
+
+    /**
+     * 封禁陪诊员时他名下的在手订单（「已接单」/「服务中」）。
+     *
+     * <p>只取这两种状态：待接单的订单还没有主人，不构成「无主订单」；
+     * 已完成 / 已取消 / 已评价都是终态，不该被一次封禁翻出来。</p>
+     */
+    private List<CompanionOrder> activeOrdersOf(Long companionUserId) {
+        List<CompanionOrder> orders = orderMapper.selectList(Wrappers.<CompanionOrder>lambdaQuery()
+                .eq(CompanionOrder::getCompanionId, companionUserId)
+                .in(CompanionOrder::getStatus,
+                        OrderStatus.ACCEPTED.name(), OrderStatus.IN_SERVICE.name()));
+        return orders == null ? List.of() : orders;
+    }
+
+    /**
+     * 处置方式 RELEASE：把在手订单放回大厅（由别人接手）。
+     *
+     * <p><b>与 P0-1 的改派语义完全一致</b>：同样是
+     * 「`PENDING` + `companion_id IS NULL` + `version + 1`」。
+     * 两处写法若不一致，系统里会出现两种「PENDING 但有 companion_id」的单，
+     * 大厅过滤会漏掉这批单 —— 比现状更糟。</p>
+     *
+     * <p>用条件更新而不是先查后写：条件是「仍指派给他 且 仍是已接单/服务中」，
+     * 并发下已被别人接走或改派的单不会被误改。</p>
+     */
+    private void releaseOrderToHall(CompanionOrder order) {
+        OrderStatus from = OrderStatus.of(order.getStatus());
+        int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .set(CompanionOrder::getStatus, OrderStatus.PENDING.name())
+                .setSql("companion_id = NULL")
+                .setSql("accept_time = NULL")
+                .setSql("start_time = NULL")
+                .setSql("version = version + 1")
+                .eq(CompanionOrder::getId, order.getId())
+                .eq(CompanionOrder::getCompanionId, order.getCompanionId())
+                .in(CompanionOrder::getStatus,
+                        OrderStatus.ACCEPTED.name(), OrderStatus.IN_SERVICE.name()));
+        if (rows == 0) {
+            // 并发下这张单已经不在他名下了 —— 不影响结果，也不该在这里抛错
+            log.warn("放回大厅失败：订单已不在该陪诊员名下 | orderId={} | companionId={}",
+                    order.getId(), order.getCompanionId());
+            return;
+        }
+        writeSystemStatusLog(order.getId(), from, OrderStatus.PENDING,
+                "陪诊员账号被封禁，订单退回待接单");
+        writeReleaseEvent(order);
+        notifyOrderReleased(order);
+    }
+
+    /**
+     * 处置方式 CANCEL：强制取消在手订单。
+     *
+     * <p>走 {@link OrderService#forceTerminal} 这唯一的状态写入入口，
+     * 不在这里另写一份状态 UPDATE —— 强制终态的固有约束（P0-5 已结算不可取消、
+     * P0-7 无陪诊员不可强制完成）都在那一层。</p>
+     */
+    private void cancelActiveOrder(CompanionOrder order) {
+        String cancelReason = "接单陪诊员账号异常，平台强制取消";
+        orderService.forceTerminal(order.getId(), OrderStatus.CANCELLED, cancelReason);
+
+        Map<String, Object> params = new HashMap<>(2);
+        params.put("orderNo", order.getOrderNo());
+        params.put("reason", cancelReason);
+        messageService.send(order.getFamilyId(), MessageType.ORDER_CANCELLED, order.getId(), params);
+    }
+
+    /** 放回大厅的订单状态日志：操作人是系统，不是某个人 */
+    private void writeSystemStatusLog(Long orderId, OrderStatus from, OrderStatus to, String remark) {
+        OrderStatusLog row = new OrderStatusLog();
+        row.setOrderId(orderId);
+        row.setFromStatus(from == null ? null : from.name());
+        row.setToStatus(to.name());
+        row.setOperatorId(null);
+        row.setOperatorName(null);
+        row.setOperatorRole(RoleConstants.SYSTEM);
+        row.setRemark(remark);
+        row.setIsForce(1);
+        row.setOperateTime(LocalDateTime.now());
+        orderStatusLogMapper.insert(row);
+    }
+
+    /** 放回大厅的履约事件：让风险中心与订单详情能看出「因封禁导致的改派」 */
+    private void writeReleaseEvent(CompanionOrder order) {
+        FulfillmentRisk risk = FulfillmentRisk.of(order.getFulfillmentRisk());
+        if (risk == null) {
+            risk = FulfillmentRisk.NORMAL;
+        }
+        OrderFulfillmentEvent event = new OrderFulfillmentEvent();
+        event.setOrderId(order.getId());
+        event.setEventType(FulfillmentEventType.ORDER_REASSIGNED.name());
+        event.setFromRisk(risk.name());
+        event.setToRisk(risk.name());
+        event.setTriggerSource(TriggerSource.ADMIN.name());
+        event.setOperatorId(SecurityUtils.currentUserId());
+        event.setOperatorRole(RoleConstants.ADMIN);
+        event.setRemark("陪诊员账号被封禁，订单退回待接单");
+        event.setOperateTime(LocalDateTime.now());
+        fulfillmentEventMapper.insert(event);
+    }
+
+    /** 通知家属：订单已退回待接单，平台正在重新安排陪诊员 */
+    private void notifyOrderReleased(CompanionOrder order) {
+        Map<String, Object> params = new HashMap<>(1);
+        params.put("content", "您的订单 " + order.getOrderNo()
+                + " 因接单陪诊员账号异常已退回待接单，平台正在重新安排陪诊员。");
+        messageService.send(order.getFamilyId(), MessageType.SYSTEM_NOTICE, order.getId(), params);
+    }
+
+    /**
+     * 封禁审计备注：把「仅封禁」与「封禁并处置 N 张单」区分开，
+     * 并留下处置方式与单号摘要，事后能还原当时怎么处理的。
+     */
+    private static String operRemark(String reason, ActiveOrderAction action, List<CompanionOrder> orders) {
+        if (orders == null || orders.isEmpty()) {
+            return reason;
+        }
+        StringBuilder nos = new StringBuilder();
+        for (CompanionOrder order : orders) {
+            if (nos.length() > 0) {
+                nos.append('、');
+            }
+            nos.append(order.getOrderNo());
+        }
+        return reason + "（封禁并处置在途订单 " + orders.size() + " 张："
+                + (action == null ? "未指定" : action.getLabel()) + "；单号 " + nos + "）";
     }
 
     @Override

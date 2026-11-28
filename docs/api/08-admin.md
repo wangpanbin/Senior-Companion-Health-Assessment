@@ -267,6 +267,7 @@
 | 字段 | 类型 | 必填 | 约束 | 说明 |
 |---|---|---|---|---|
 | `reason` | String | ✓ | 5–200 字符 | 封禁原因 |
+| `activeOrderAction` | String | 否 | `RELEASE` / `CANCEL` | 陪诊员在手订单的处置方式（closure-2026-11 · P0-4）。**封禁陪诊员时若他名下有「已接单 / 服务中」的订单，必填其一**，否则回 `2012` |
 
 ### 响应
 
@@ -280,6 +281,7 @@
 |---|---|
 | 8002 | 不能封禁管理员账号 |
 | 2004 | 该用户已处于封禁状态 |
+| 2012 | 该陪诊员名下有「已接单 / 服务中」的在途订单且未指定 `activeOrderAction`；响应 `data.activeOrderCount` 给出张数 |
 
 ### 实现要点（M9 验收关键项）
 
@@ -289,6 +291,29 @@
   ② 封禁时把该用户所有在线 token 的 `jti` 批量加入 Redis 黑名单。
 - 封禁时向该用户发站内信说明原因。
 - 写 `admin_oper_log`：`DISABLE_USER`，`beforeStatus = NORMAL`，`afterStatus = DISABLED`。
+
+### 陪诊员在手订单的处置（closure-2026-11 · P0-4）
+
+> ⚠️ **封禁陪诊员是不可逆操作，已在途订单必须先处置。**
+
+管理员封禁一个正在服务中的陪诊员之后，他名下的「已接单 / 服务中」订单会变成**无主订单**：
+他打不了卡、完不成订单；家属无法取消（取消只允许「待接单」）；履约风险中心看不到（只扫「待接单」）；
+唯一的出路是管理员手动仲裁强制终态 —— 而后台**没有任何告警**，必须靠人发现。
+
+因此封禁时必须先处置：
+
+| `activeOrderAction` | 行为 |
+|---|---|
+| `RELEASE`（放回大厅） | 每张单 `status: ACCEPTED\|IN_SERVICE → PENDING`、`companion_id = NULL`、`accept_time = NULL`、`start_time = NULL`、`version = version + 1`；写 `order_status_log`（`operator_role = SYSTEM`）；写履约事件；通知家属 |
+| `CANCEL`（强制取消） | 每张单走 `forceTerminal → CANCELLED`（复用唯一的状态写入入口）；`cancel_reason` = 「接单陪诊员账号异常，平台强制取消」；通知家属 |
+
+- **未指定处置方式且有在途单** → 回 `2012 COMPANION_HAS_ACTIVE_ORDER`，
+  响应 `data = { "activeOrderCount": n }`，前端据此弹处置选择框。
+- 处置与封禁**同事务**：任一单处置失败整体回滚，不留「半封禁」状态。
+- 两种处置都写 `admin_oper_log`（`target_type = USER`），备注里带处置方式与单号摘要 ——
+  审计要能区分「仅封禁」与「封禁并处置 N 张单」。
+- **RELEASE 语义与 P0-1 改派完全一致**：都是「`PENDING` + `companion_id IS NULL` + `version + 1`」。
+  两处写法若不一致，系统里会出现两种「PENDING 但有 `companion_id`」的单，大厅过滤会漏掉这批单。
 
 ---
 
