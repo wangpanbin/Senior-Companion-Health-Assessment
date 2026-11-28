@@ -37,6 +37,7 @@
 | `ORDER_PROGRESS` | 陪诊进度 | 陪诊员打卡（M5） | 下单家属 |
 | `ORDER_COMPLETED` | 服务已完成 | 陪诊员完成服务 | 下单家属 |
 | `ORDER_CANCELLED` | 订单已取消 | 取消 / 纠纷处理 | 双方 |
+| `ORDER_TIMEOUT` | 订单超时 | 订单超时扫描（closure-2026-11 · P1-1）：待接单超时 / 服务中超时 | 下单家属 |
 | `AUDIT_RESULT` | 资质审核结果 | 管理员审核（M9） | 申请人 |
 | `MEDICATION_REMIND` | 用药提醒 | 漏服扫描（M6） | 全部绑定家属 |
 | `MEDICATION_MISSED` | 漏服提醒 | 漏服扫描（V4 · E1a） | 该老人**当天** `ACCEPTED` / `IN_SERVICE` 陪诊订单的接单陪诊员 |
@@ -445,6 +446,7 @@ dedup_key = "medication-missed:" + taskId + ":" + level + ":" + userId + ":" + y
 | `ORDER_PROGRESS` | 陪诊进度更新 | 备注为空：陪诊员已完成「{nodeLabel}」打卡（订单 {orderNo}）。<br>备注非空：陪诊员已完成「{nodeLabel}」打卡：{remark}（订单 {orderNo}）。 |
 | `ORDER_COMPLETED` | 服务已完成 | 备注为空：订单 {orderNo} 已完成，感谢您的信任，欢迎评价。<br>**仲裁路径**（M9 强制完成，`reason` 非空）：订单 {orderNo} 已由平台仲裁完成（仲裁说明：{reason}）。感谢您的信任，欢迎评价。 |
 | `ORDER_CANCELLED` | 订单已取消 | 订单 {orderNo} 已取消，原因：{reason}。 |
+| `ORDER_TIMEOUT` | 订单超时提醒 | 待接单超时（只标记，`state=MARKED`）：订单 {orderNo} 已过就诊时间且无人接单，建议您取消后重新下单。<br>待接单超时（已自动取消，`state=CANCELLED`）：订单 {orderNo} 已过就诊时间且无人接单，系统已自动取消，建议您重新下单。<br>服务中超时（`state=IN_SERVICE`）：订单 {orderNo} 的陪诊服务已超过 {hours} 小时仍未完成，我们已通知平台核实，请留意后续进展。 |
 | `AUDIT_RESULT` | 资质审核结果 | 您的陪诊员资质申请{result}。{rejectReason} |
 | `MEDICATION_REMIND` | 用药提醒 | {elderName} 的「{medicineName}」在 {planTime} 未确认服用，请及时关注。 |
 | `MEDICATION_MISSED` | 漏服提醒 | 您正在陪诊的 {elderName} 在 {planTime} 未确认服用「{medicineName}」，请留意。 |

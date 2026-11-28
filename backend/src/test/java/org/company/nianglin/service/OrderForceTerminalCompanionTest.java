@@ -175,6 +175,8 @@ class OrderForceTerminalCompanionTest {
         given(orderMapper.selectById(ORDER_ID)).willReturn(order);
         // lenient：被拒的两条用例走不到 updateById，strict 模式会把它判成多余桩
         lenient().when(orderMapper.updateById(any(CompanionOrder.class))).thenReturn(1);
+        // P1-3：仲裁标记走一条独立的条件更新，写不进去会整体回滚
+        lenient().when(orderMapper.update(any(), any())).thenReturn(1);
     }
 
     private CompanionOrder order(OrderStatus status) {

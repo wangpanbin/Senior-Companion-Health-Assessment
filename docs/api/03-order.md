@@ -932,6 +932,9 @@ WHERE id = ?
 - 中文文案全部由枚举翻译（`FulfillmentRisk#getLabel` / `FulfillmentEventType#labelOf`），装配处不拼串。
 - 履约服务本身**不做鉴权**：鉴权归 `OrderService#requireInvolved`。
   这是为了避开循环依赖 —— `OrderService` 建单时要请履约服务登记事件，履约服务不能反过来依赖订单服务。
+- **超时也会写事件**（closure-2026-11 · P1-1）：订单超时扫描会写两种新事件 ——
+  `ORDER_TIMEOUT`（待接单超时）与 `ORDER_IN_SERVICE_TIMEOUT`（服务中超时），
+  两者的 `from_risk` / `to_risk` 都要填（它们确实伴随风险等级变化）。
 - **强制完成也会写费用明细**（closure-2026-11 · P0-6）：管理员强制完成时同样调用
   `orderFeeItemService.applyOnComplete(orderId, null)`，把申报服务费落成费用明细并重算 `actual_fee`。
   结算金额取 `COALESCE(actual_fee, fee)`，若强制完成不汇总，陪诊员代垫的挂号费、药费就不进结算 ——
@@ -1062,8 +1065,19 @@ WHERE id = ?
    依赖家属填地址时写全了。这是一期用文字地址替代地图导航的直接后果，不假装它是准确的地理筛选。
 2. **管理员强制改终态未实现**（M9）。因此「已接单之后家属想取消」目前无解，
    返回 `3006` 并提示走纠纷处理，但纠纷处理入口在 M9 才交付。
-3. **没有自动取消过期订单的任务**。就诊时间已过的 `PENDING` 单只是从大厅消失，
-   状态仍停在 `PENDING`，需要 M9 的定时任务或管理员介入。
+3. **订单超时已有闭环，但自动取消默认关闭**（closure-2026-11 · P1-1）。
+   定时任务每 10 分钟扫一轮（`OrderTimeoutScheduler`，Redis 锁粒度 = 本轮）：
+   - `PENDING` 单的就诊时间过去超过 `nianglin.order.pending-timeout-hours`（默认 2 小时）
+     仍无人接单 → **只标记**：风险升到「需要人工介入」、写事件 `ORDER_TIMEOUT`、通知家属；
+   - `IN_SERVICE` 单进入服务中超过 `nianglin.order.in-service-timeout-hours`（默认 12 小时）
+     仍未完成 → 风险升到 `URGENT`、写事件 `ORDER_IN_SERVICE_TIMEOUT`、通知家属，
+     **不改订单状态**（医院排队也可能超时，系统无权替人判断服务是否结束）；
+   - **自动取消是独立开关** `nianglin.order.pending-auto-cancel`（默认 `false`）：
+     打开后 `PENDING` 超时单会被强制取消，取消原因写明「就诊时间已过且无人接单，系统自动取消」。
+     默认关闭是刻意的 —— 误伤「家属其实还想等服务」的订单，代价高于「多挂一会儿」。
+   - ⚠️ **已知冲突**：履约风险中心的候选集只含 `PENDING`（V3.1 口径），
+     所以**服务中超时**的单虽然升了风险，却不会出现在风险中心列表里，
+     管理员只能从履约事件与家属反馈看到它。
 4. **拒单无风控**：不限制拒单次数、不计算拒单率，只记录数据。
 5. **站内信 / WebSocket 推送未实现**（M8 / M5）：下单、接单、完成都不会触发任何通知。
 6. **`version` 只在接单时递增**。开始服务 / 完成服务用条件更新，不改 `version`。
@@ -1084,4 +1098,5 @@ WHERE id = ?
 | v1.1.2 | 2026-10-15 | 汇总口径收口（评审 P2）：`serviceTotal` 判据由「SERVICE 求和是否为 0」改为「是否存在 SERVICE 明细」（`0.00` 明细不再被误判成未录入）；`total` 与 `actual_fee` 统一由同一处口径算出，消除同一单两个总价 | — |
 | v1.2.0 | 2026-10-20 | V3.4 智能调度：新增「§13 候选陪诊员推荐」（`GET /api/order/{id}/recommend-companions`，仅下单家属，他人 `3004`）；大厅排序开放 `DISTANCE` / `TIME_MATCH`（`INCOME` 仍 `400`） | — |
 | v1.3.0 | 2026-10-21 | 候选可解释性拆三段（评审发现）：新增 `mismatches` 字段承载「该维度得 0 分」的原因（跨城市 / 超出服务半径），`reasons` 收窄为「得分大于 0 的命中理由」；`notes`（降级说明）语义不变 | — |
+| v1.5.0 | 2026-11-28 | **closure-2026-11 · P1-1 订单超时闭环**：新增定时任务 `OrderTimeoutScheduler`（每 10 分钟一轮，Redis 锁粒度 = 本轮，异常自接住）；`PENDING` 超时**只标记**（风险升 `MANUAL_REQUIRED` + 事件 `ORDER_TIMEOUT` + 通知家属），自动取消是独立开关 `nianglin.order.pending-auto-cancel` 且默认关闭；`IN_SERVICE` 超时只升风险到 `URGENT`（事件 `ORDER_IN_SERVICE_TIMEOUT`），**不改订单状态**。新增站内信类型 `ORDER_TIMEOUT`；订单状态机新增「系统身份强制终态」入口（操作人记 `SYSTEM`，不冒充管理员） | — |
 | v1.4.0 | 2026-11-28 | **closure-2026-11 · P0-1 改派语义**：拒单后**清空接单人**（§7）——被指派人拒单后该单回到「无指派」，可再次改派，不再出现「这张单永远改派不了、且一直挂在他名下」；改派前置条件放宽为「仍是 `PENDING`」、改派时递增 `version`、事件备注留「从谁改到谁」。详见 [08-admin.md §16](./08-admin.md)。同批还改了 §9 完成服务（新增 `3012` 打卡留痕前置）与 §12 履约详情（强制完成也写费用明细） | — |

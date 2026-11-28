@@ -28,6 +28,15 @@ public enum MessageType {
     ORDER_PROGRESS("陪诊进度", MessageBizType.ORDER),
     ORDER_COMPLETED("服务已完成", MessageBizType.ORDER),
     ORDER_CANCELLED("订单已取消", MessageBizType.ORDER),
+    /**
+     * 订单超时提醒（closure-2026-11 · P1-1）。发给<b>下单家属</b>，{@code bizId=orderId}。
+     *
+     * <p>两类超时共用这一个类型，用 {@code state} 占位符区分口径：
+     * {@code MARKED}（待接单超时，仅标记）、{@code CANCELLED}（待接单超时且已自动取消）、
+     * {@code IN_SERVICE}（服务中超时）。文案只陈述事实与下一步动作，
+     * 不含诊断、不含金额建议（合规红线）。</p>
+     */
+    ORDER_TIMEOUT("订单超时", MessageBizType.ORDER),
     AUDIT_RESULT("资质审核结果", MessageBizType.AUDIT),
     MEDICATION_REMIND("用药提醒", MessageBizType.MEDICATION),
     /**

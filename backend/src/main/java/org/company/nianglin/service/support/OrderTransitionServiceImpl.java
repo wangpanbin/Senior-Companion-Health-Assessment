@@ -100,6 +100,20 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void forceTerminal(CompanionOrder order, OrderStatus target, Long adminId, String remark) {
+        forceTerminalInternal(order, target, Operator.of(adminId, RoleConstants.ADMIN, false), remark);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void forceTerminalAsSystem(CompanionOrder order, OrderStatus target, String remark) {
+        forceTerminalInternal(order, target, Operator.of(null, RoleConstants.SYSTEM, true), remark);
+    }
+
+    /**
+     * 强制终态的共同实现（管理员路径与系统路径判定完全一致，只有操作人不同）。
+     */
+    private void forceTerminalInternal(CompanionOrder order, OrderStatus target,
+                                       Operator operator, String remark) {
         if (target == null || !target.isAdminForceable()) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "只能强制至「已完成」或「已取消」");
         }
@@ -149,9 +163,9 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
             throw new BusinessException(ResultCode.CONFLICT, "订单状态已变更，请刷新后重试");
         }
 
-        writeLog(order.getId(), current, target, Operator.of(adminId, RoleConstants.ADMIN, false),
-                remark, 1);
-        log.info("管理员强制终态 | orderId={} | {} -> {} | adminId={}", order.getId(), current, target, adminId);
+        writeLog(order.getId(), current, target, operator, remark, 1);
+        log.info("强制终态 | orderId={} | {} -> {} | 操作人={}({})", order.getId(), current, target,
+                operator.role(), operator.userId());
     }
 
     /**
@@ -262,6 +276,11 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
      * <p>在这里定格成快照，之后操作人改名不会篡改历史记录。</p>
      */
     private String resolveOperatorName(Operator operator) {
+        // 系统操作没有用户可查（operator_id 为 null），
+        // 直接给一个固定显示名，免得去查一个空 id 查出 null 来。
+        if (operator.system()) {
+            return "系统";
+        }
         if (RoleConstants.COMPANION.equals(operator.role())) {
             // 与 OrderServiceImpl#findCompanionProfile 保持同一套查询语义
             // （按 userId 查资质快照，取最早一条），避免日志里的姓名与其它地方对不上。

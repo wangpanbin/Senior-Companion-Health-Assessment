@@ -47,6 +47,7 @@ public final class MessageTemplateUtil {
             case ORDER_PROGRESS -> "陪诊进度更新";
             case ORDER_COMPLETED -> "服务已完成";
             case ORDER_CANCELLED -> "订单已取消";
+            case ORDER_TIMEOUT -> "订单超时提醒";
             case AUDIT_RESULT -> "资质审核结果";
             case MEDICATION_REMIND -> "用药提醒";
             case MEDICATION_MISSED -> "漏服提醒";
@@ -105,6 +106,21 @@ public final class MessageTemplateUtil {
             }
             case ORDER_CANCELLED -> "订单 %s 已取消，原因：%s。".formatted(
                     value(p, "orderNo"), value(p, "reason"));
+            // P1-1：两类超时共用一个类型，用 state 占位符区分口径。
+            // 只陈述事实与下一步动作，不含诊断、不含金额建议（合规红线-1）。
+            case ORDER_TIMEOUT -> {
+                String orderNo = value(p, "orderNo");
+                String state = value(p, "state");
+                yield switch (state) {
+                    case "CANCELLED" ->
+                            "订单 %s 已过就诊时间且无人接单，系统已自动取消，建议您重新下单。".formatted(orderNo);
+                    case "IN_SERVICE" ->
+                            "订单 %s 的陪诊服务已超过 %s 小时仍未完成，我们已通知平台核实，请留意后续进展。".formatted(
+                                    orderNo, value(p, "hours"));
+                    default ->
+                            "订单 %s 已过就诊时间且无人接单，建议您取消后重新下单。".formatted(orderNo);
+                };
+            }
             case AUDIT_RESULT -> "您的陪诊员资质申请%s。%s".formatted(
                     value(p, "result"), emptyIfMissing(p, "rejectReason"));
             case MEDICATION_REMIND -> "%s 的「%s」在 %s 未确认服用，请及时关注。".formatted(
@@ -212,7 +228,7 @@ public final class MessageTemplateUtil {
         }
         return switch (type) {
             case ORDER_CREATED, ORDER_ACCEPTED, ORDER_PROGRESS, ORDER_COMPLETED, ORDER_CANCELLED,
-                    REVIEW_REPLIED, REVIEW_INVALIDATED ->
+                    ORDER_TIMEOUT, REVIEW_REPLIED, REVIEW_INVALIDATED ->
                     "/family?orderId=" + bizId;
             // 履约类消息统一指向**路由表里真实存在**的跳点，不新增路由：
             // 家属侧的等级通知落在订单详情（family/order/:id），
