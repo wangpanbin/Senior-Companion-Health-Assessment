@@ -326,8 +326,13 @@ key   : nianglin:lock:medication:daily
 ### 响应
 
 ```json
-{ "code": 200, "message": "添加成功", "data": { "planId": 7001 } }
+{ "code": 200, "message": "添加成功", "data": { "planId": 7001, "effectiveFrom": "2026-11-28 20:00:00" } }
 ```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `planId` | Long | 新建的用药计划 ID |
+| `effectiveFrom` | LocalDateTime | 今天的首个生效时点（收口 B · P1-4）。**可能为 `null`**：计划不含今天，或当天的时点已全部过完。前端据此提示「今天的 08:00 已过，从 20:00 开始」；为 `null` 时提示「明天开始生效」。该字段与任务生成的「跳过已过时点」判定同源（同一个 `isPast`），两边不会各说各话 |
 
 ### 错误场景
 
@@ -345,6 +350,8 @@ key   : nianglin:lock:medication:daily
   边界：`planTime < now - generate-grace-minutes` 才跳过（配置 `nianglin.medication.generate-grace-minutes`，默认 1 分钟，
   给建计划操作本身留宽容）。**只对「今天」生效**：补跑历史日期仍生成全部时点，那是补数据。
   因此晚上 21:00 建「每日 2 次 08:00 / 20:00」的计划，当天不会凭空多出两条漏服。
+- **创建响应带 `effectiveFrom`**（收口 B · P1-4）：今天的首个未过时点，与跳过判定同源；
+  可能（见上）为 `null` —— 计划不含今天或当天时点全部过完。
 - 系统**不校验也不建议**用量是否合理 —— 那是医嘱的范畴，系统只做记录。
 
 ---

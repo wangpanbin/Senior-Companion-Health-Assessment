@@ -52,6 +52,7 @@ import org.company.nianglin.util.MessageTemplateUtil;
 import org.company.nianglin.vo.MedicationCalendarVO;
 import org.company.nianglin.vo.MedicationConfirmVO;
 import org.company.nianglin.vo.MedicationPlanDraftVO;
+import org.company.nianglin.vo.MedicationPlanIdVO;
 import org.company.nianglin.vo.MedicationPlanVO;
 import org.company.nianglin.vo.MedicationTaskVO;
 import org.company.nianglin.vo.MedicineVO;
@@ -255,7 +256,7 @@ public class MedicationServiceImpl implements MedicationService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Long createPlan(MedicationPlanCreateDTO dto) {
+    public MedicationPlanIdVO createPlan(MedicationPlanCreateDTO dto) {
         LoginUser me = SecurityUtils.currentUser();
 
         // 写路径同样要过归属校验：控制器上的 hasRole('FAMILY') 只说明「你是家属」，
@@ -298,8 +299,34 @@ public class MedicationServiceImpl implements MedicationService {
         }
 
         log.info("用药计划已创建 | planId={} | elderId={} | medicineId={} | operator={}",
-                plan.getId(), dto.getElderId(), dto.getMedicineId(), me.userId());
-        return plan.getId();
+                plan.getId(), dto.getElderId(), medicine.getId(), me.userId());
+        // 收口 B · P1-4：把「今天从哪个时点开始」直接告诉前端，
+        // 家属不必对着空日历猜「我 21:00 建的计划今天还吃不吃」
+        return new MedicationPlanIdVO()
+                .setPlanId(plan.getId())
+                .setEffectiveFrom(firstEffectiveTimePointToday(plan));
+    }
+
+    /**
+     * 今天的首个生效时点（收口 B · P1-4）。
+     *
+     * <p>计划覆盖今天时，取第一个「未过」（含 {@code generate-grace-minutes} 宽容）的
+     * 时间点；计划不含今天、或当天时点已全部过完时为 {@code null} ——
+     * 前端据此提示「今天的 08:00 已过，从 20:00 开始」或「明天开始生效」。
+     * 与 {@link #generateTasksForPlan} 的跳过判定走同一个 {@link #isPast}，两边不会各说各话。</p>
+     */
+    private LocalDateTime firstEffectiveTimePointToday(MedicationPlan plan) {
+        LocalDate today = today();
+        if (!covers(plan, today)) {
+            return null;
+        }
+        for (String point : parseTimePoints(plan.getTimePoints())) {
+            LocalDateTime planTime = today.atTime(LocalTime.parse(point, TIME_POINT_FORMAT));
+            if (!isPast(planTime)) {
+                return planTime;
+            }
+        }
+        return null;
     }
 
     @Override

@@ -104,8 +104,7 @@ public class MedicationController {
     @PreAuthorize("hasRole('FAMILY')")
     @PostMapping("/plan")
     public Result<MedicationPlanIdVO> createPlan(@Valid @RequestBody MedicationPlanCreateDTO dto) {
-        Long planId = medicationService.createPlan(dto);
-        return Result.success("添加成功", new MedicationPlanIdVO(planId));
+        return Result.success("添加成功", medicationService.createPlan(dto));
     }
 
     @Operation(summary = "从订单转入用药计划草稿（V4）",

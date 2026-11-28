@@ -24,6 +24,7 @@ import org.company.nianglin.service.impl.MedicationServiceImpl;
 import org.company.nianglin.service.sms.SmsReminderService;
 import org.company.nianglin.service.support.medication.ReminderDispatcher;
 import org.company.nianglin.support.MybatisLambdaCache;
+import org.company.nianglin.vo.MedicationPlanIdVO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,6 +43,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doAnswer;
@@ -124,6 +126,34 @@ class MedicationPlanTaskSyncTest {
         List<MedicationTask> inserted = captureInsertedTasks();
         assertEquals(1, inserted.size(), "已过时点不该生成任务");
         assertEquals(22, inserted.get(0).getPlanTime().getHour());
+    }
+
+    @Test
+    @DisplayName("晚上建计划：effectiveFrom 应为今天的首个未过时点（前端据此提示）")
+    void createPlanShouldReturnFirstFuturePointAsEffectiveFrom() {
+        doReturn(TODAY).when(service).today();
+        // 当前 21:00：08:00 已过，22:00 未到 —— 与生成任务的跳过判定同一 isPast，两边同源
+        doAnswer(inv -> ((LocalDateTime) inv.getArgument(0)).isBefore(TODAY.atTime(21, 0)))
+                .when(service).isPast(any(LocalDateTime.class));
+        stubCreate();
+
+        MedicationPlanIdVO vo = service.createPlan(createDto("2026-11-28", null, "08:00", "22:00"));
+
+        assertEquals(PLAN_ID, vo.getPlanId());
+        assertEquals(TODAY.atTime(22, 0), vo.getEffectiveFrom(),
+                "今天的 08:00 已过，创建响应应指向 22:00 这个未过时点");
+    }
+
+    @Test
+    @DisplayName("当天时点已全部过完：effectiveFrom 为 null（提示明天开始）")
+    void createPlanShouldReturnNullEffectiveFromWhenAllPointsPast() {
+        doReturn(TODAY).when(service).today();
+        doReturn(true).when(service).isPast(any(LocalDateTime.class));
+        stubCreate();
+
+        MedicationPlanIdVO vo = service.createPlan(createDto("2026-11-28", null, "08:00", "20:00"));
+
+        assertNull(vo.getEffectiveFrom(), "全部时点已过时不应编造一个过去的生效时点");
     }
 
     @Test

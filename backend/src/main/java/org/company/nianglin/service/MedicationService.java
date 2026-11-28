@@ -11,6 +11,7 @@ import org.company.nianglin.dto.MedicineQuery;
 import org.company.nianglin.vo.MedicationCalendarVO;
 import org.company.nianglin.vo.MedicationConfirmVO;
 import org.company.nianglin.vo.MedicationPlanDraftVO;
+import org.company.nianglin.vo.MedicationPlanIdVO;
 import org.company.nianglin.vo.MedicationPlanVO;
 import org.company.nianglin.vo.MedicationTaskVO;
 import org.company.nianglin.vo.MedicineVO;
@@ -59,8 +60,8 @@ public interface MedicationService {
     /** 用药计划列表（按老人档案，须有权访问） */
     PageResult<MedicationPlanVO> planPage(MedicationPlanQuery query);
 
-    /** 新增用药计划，返回计划 ID */
-    Long createPlan(MedicationPlanCreateDTO dto);
+    /** 新增用药计划，返回计划 ID 与今天的首个生效时点（可能为 null，收口 B · P1-4） */
+    MedicationPlanIdVO createPlan(MedicationPlanCreateDTO dto);
 
     /** 修改用药计划（局部更新；只影响未来未生成的任务） */
     void updatePlan(Long planId, MedicationPlanUpdateDTO dto);
