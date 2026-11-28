@@ -55,6 +55,20 @@ public interface OrderService {
     /** 创建订单（FAMILY，老人须在自己名下），返回订单号与初始状态 */
     OrderCreateResultVO create(OrderCreateDTO dto);
 
+    /**
+     * 创建订单（带幂等键；closure-2026-11 · P2-4）。
+     *
+     * <p>弱网下前端重试「提交订单」会产生两笔独立订单 —— 订单号每次都新生成，
+     * 两笔单都是合法的，系统挡不住。幂等键让同一个键的重复提交
+     * <b>返回同一笔订单</b>，而不是产生第二笔。</p>
+     *
+     * <p>键为空（老客户端不传）时行为与 {@link #create(OrderCreateDTO)} 完全一致。</p>
+     *
+     * @param dto           下单入参
+     * @param idempotencyKey 幂等键（可空；≤ 64 字符）
+     */
+    OrderCreateResultVO create(OrderCreateDTO dto, String idempotencyKey);
+
     /** 我的订单列表：按当前角色自动决定数据范围（家属看自己下的、陪诊员看自己接的、老人看自己就诊的） */
     PageResult<OrderVO> myOrders(OrderQuery query);
 

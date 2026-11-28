@@ -217,6 +217,52 @@ class ChatServiceTest {
         verifyNoInteractions(messages);
     }
 
+    /* ================================================================== */
+    /* P2-4 · 消息幂等（clientMsgId）                                       */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("同一 clientMsgId 重复发送只落一条，返回已存在的那条")
+    void sendShouldBeIdempotentByClientMsgId() {
+        involved();
+        // 唯一键冲突：库里已经有同 (order_id, sender_id, client_msg_id) 的那条
+        when(messages.insert(any(ChatMessage.class)))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException(
+                        "uk_order_sender_client_msg"));
+        ChatMessage existing = new ChatMessage();
+        existing.setId(901L);
+        existing.setOrderId(101L);
+        existing.setSenderId(11L);
+        existing.setMsgType("TEXT");
+        existing.setContent("已到医院");
+        when(messages.selectOne(any())).thenReturn(existing);
+
+        ChatSendDTO dto = dto("TEXT", "已到医院");
+        dto.setClientMsgId("m-20261128-0001");
+
+        ChatMessageVO vo = service.send(101L, dto);
+
+        assertEquals(901L, vo.getMessageId(), "幂等命中应返回已存在那条的消息 ID");
+        verify(messages, times(1)).insert(any(ChatMessage.class));
+    }
+
+    @Test
+    @DisplayName("不同 clientMsgId 落两条（不能误合并）")
+    void sendShouldNotMergeDifferentClientMsgIds() {
+        involved();
+        stored();
+        TransactionSynchronizationManager.initSynchronization();
+
+        ChatSendDTO first = dto("TEXT", "已到医院");
+        first.setClientMsgId("m-1");
+        ChatSendDTO second = dto("TEXT", "已到医院");
+        second.setClientMsgId("m-2");
+        service.send(101L, first);
+        service.send(101L, second);
+
+        verify(messages, times(2)).insert(any(ChatMessage.class));
+    }
+
     private void involved() {
         when(orderService.requireInvolved(eq(101L), any(LoginUser.class))).thenReturn(order);
     }

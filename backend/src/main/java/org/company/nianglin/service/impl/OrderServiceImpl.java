@@ -211,9 +211,68 @@ public class OrderServiceImpl implements OrderService {
     /* 1. 创建订单                                                         */
     /* ================================================================== */
 
+    /**
+     * 下单幂等键的 TTL（10 分钟）。
+     *
+     * <p>权衡：太短挡不住长重试，太长占内存。「弱网下用户重试」通常在 1 分钟内，
+     * 10 分钟足够。</p>
+     */
+    private static final Duration IDEMPOTENCY_TTL = Duration.ofMinutes(10);
+
+    /** 幂等键长度上限（与聊天侧 clientMsgId 一致） */
+    private static final int MAX_IDEMPOTENCY_KEY_LENGTH = 64;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public OrderCreateResultVO create(OrderCreateDTO dto) {
+        return create(dto, null);
+    }
+
+    /**
+     * 创建订单（带幂等键；closure-2026-11 · P2-4）。
+     *
+     * <p>弱网下前端重试会产生两笔独立订单 —— 订单号每次都新生成，两笔单都是合法的，
+     * 唯一约束挡不住。幂等键让同一个键的重复提交<b>返回同一笔订单</b>。</p>
+     *
+     * <p>三个分支：</p>
+     * <ol>
+     *   <li>抢到锁 → 正常下单，把 orderId 写进结果缓存；</li>
+     *   <li>没抢到锁 + 有结果缓存 → 返回<b>同一笔</b>订单（幂等成功）；</li>
+     *   <li>没抢到锁 + 无结果缓存 → 第一次还在处理中 → {@code 409}。</li>
+     * </ol>
+     *
+     * <p><b>Redis 不可用时放行</b>（与用药草稿的 {@code SET NX} 降级口径一致）：
+     * 「因为缓存故障下单不了」比「可能重复下单」糟糕得多。</p>
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OrderCreateResultVO create(OrderCreateDTO dto, String idempotencyKey) {
+        String key = normalizeIdempotencyKey(idempotencyKey);
+        if (key == null) {
+            return doCreate(dto);
+        }
+        LoginUser me = SecurityUtils.currentUser();
+        String lockKey = RedisKeyConstants.orderIdempotency(me.userId(), key);
+        if (!acquireIdempotencyLock(lockKey)) {
+            OrderCreateResultVO cached = readIdempotentResult(me.userId(), key);
+            if (cached != null) {
+                return cached;
+            }
+            throw new BusinessException(ResultCode.CONFLICT, "请求正在处理中，请稍候再试");
+        }
+        try {
+            OrderCreateResultVO result = doCreate(dto);
+            cacheIdempotentResult(me.userId(), key, result.getOrderId());
+            return result;
+        } catch (RuntimeException e) {
+            // 第一次就失败：释放锁，否则这个键在 TTL 内都下单不了
+            releaseIdempotencyLock(lockKey);
+            throw e;
+        }
+    }
+
+    /** 真正的下单逻辑（幂等分支之外） */
+    private OrderCreateResultVO doCreate(OrderCreateDTO dto) {
         LoginUser me = SecurityUtils.currentUser();
 
         // 归属校验复用 M3：家属只能给自己绑定的老人下单（不是自己家的 → 2006 / 档案不存在 → 2001）
@@ -268,6 +327,104 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /* ================================================================== */
+    /* ================================================================== */
+    /* 内部：下单幂等（P2-4）                                              */
+    /* ================================================================== */
+
+    /**
+     * 归一化幂等键：空白视为「没传」，超长直接拒。
+     *
+     * <p>超长不截断 —— 截断会让两个不同的键撞成同一个，
+     * 于是两笔不相干的订单被合并成同一笔，那比重复下单严重得多。</p>
+     */
+    private String normalizeIdempotencyKey(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String key = raw.trim();
+        if (key.length() > MAX_IDEMPOTENCY_KEY_LENGTH) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "幂等键长度不能超过 " + MAX_IDEMPOTENCY_KEY_LENGTH + " 个字符");
+        }
+        return key;
+    }
+
+    /**
+     * 抢幂等锁。
+     *
+     * <p>Redis 不可用时返回 {@code true}（放行）：缓存故障不该阻断下单 ——
+     * 重复下单的后果是用户自己取消一笔，缓存故障的后果是用户下不了单。</p>
+     */
+    private boolean acquireIdempotencyLock(String lockKey) {
+        try {
+            return Boolean.TRUE.equals(redisTemplate.opsForValue()
+                    .setIfAbsent(lockKey, "1", IDEMPOTENCY_TTL));
+        } catch (Exception e) {
+            log.warn("下单幂等锁不可用，本次放行 | key={} | {}", lockKey, e.getMessage());
+            return true;
+        }
+    }
+
+    /** 读回第一次下单的结果；没有结果 / 订单已不存在都返回 {@code null} */
+    private OrderCreateResultVO readIdempotentResult(Long familyId, String key) {
+        String cached;
+        try {
+            cached = redisTemplate.opsForValue()
+                    .get(RedisKeyConstants.orderIdempotencyResult(familyId, key));
+        } catch (Exception e) {
+            log.warn("下单幂等结果读取失败，本次按未命中处理 | key={} | {}", key, e.getMessage());
+            return null;
+        }
+        if (!StringUtils.hasText(cached)) {
+            return null;
+        }
+        Long orderId;
+        try {
+            orderId = Long.valueOf(cached.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        CompanionOrder order = orderMapper.selectById(orderId);
+        if (order == null) {
+            // 缓存指向的订单不存在（极少见：下单事务回滚）→ 自愈，删掉缓存
+            deleteQuietly(RedisKeyConstants.orderIdempotencyResult(familyId, key));
+            return null;
+        }
+        return OrderCreateResultVO.of(order);
+    }
+
+    /** 缓存第一次下单的订单 ID */
+    private void cacheIdempotentResult(Long familyId, String key, Long orderId) {
+        if (orderId == null) {
+            return;
+        }
+        try {
+            redisTemplate.opsForValue().set(
+                    RedisKeyConstants.orderIdempotencyResult(familyId, key),
+                    String.valueOf(orderId), IDEMPOTENCY_TTL);
+        } catch (Exception e) {
+            // 缓存失败不影响下单本身：最坏是下一次重试回 409，而不是下单失败
+            log.warn("下单幂等结果缓存失败 | key={} | {}", key, e.getMessage());
+        }
+    }
+
+    /** 释放幂等锁（第一次下单失败时调用） */
+    private void releaseIdempotencyLock(String lockKey) {
+        try {
+            redisTemplate.delete(lockKey);
+        } catch (Exception e) {
+            log.warn("下单幂等锁释放失败（将由 TTL 兜底） | key={} | {}", lockKey, e.getMessage());
+        }
+    }
+
+    private void deleteQuietly(String redisKey) {
+        try {
+            redisTemplate.delete(redisKey);
+        } catch (Exception e) {
+            log.warn("下单幂等结果缓存删除失败 | key={} | {}", redisKey, e.getMessage());
+        }
+    }
+
     /* 2. 我的订单列表                                                     */
     /* ================================================================== */
 
