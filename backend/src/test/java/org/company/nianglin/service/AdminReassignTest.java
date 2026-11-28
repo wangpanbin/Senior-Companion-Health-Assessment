@@ -47,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -81,6 +82,8 @@ class AdminReassignTest {
     private static final Long ADMIN_ID = 1L;
     private static final Long FAMILY_ID = 300L;
     private static final Long TARGET_ID = 302L;
+    /** 原被指派人（P0-1：改派可重复发生，必须能追溯「从谁改到谁」） */
+    private static final Long FORMER_COMPANION_ID = 401L;
     /** 目标陪诊员的档案主键，与 {@link #TARGET_ID}（用户 ID）刻意不是同一个数 */
     private static final Long TARGET_PROFILE_PK = 602L;
     private static final String REASON = "原陪诊员临时有事无法前往，已协调另一位陪诊员接单";
@@ -201,17 +204,78 @@ class AdminReassignTest {
         verify(orderMapper, never()).update(any(), any(LambdaUpdateWrapper.class));
     }
 
+    /**
+     * P0-1：改派前置条件从「待接单 <b>且</b>无人接单」放宽为「仍是待接单」。
+     *
+     * <p>旧语义下，被指派的人一拒单，这张单就再也改派不了 ——
+     * 管理员只剩打电话协调，系统帮不上忙。</p>
+     */
     @Test
-    @DisplayName("已有接单人 → 3010")
-    void reassignShouldRejectAssignedOrder() {
+    @DisplayName("已有接单人的待接单订单 → 允许改派（P0-1：管理员能二次改派）")
+    void reassignShouldAllowReassigningAssignedPendingOrder() {
         CompanionOrder order = pendingOrder();
-        order.setCompanionId(401L);
+        order.setCompanionId(FORMER_COMPANION_ID);
         given(orderMapper.selectById(ORDER_ID)).willReturn(order);
+        given(companionProfileMapper.selectOne(any())).willReturn(targetProfile());
+        given(orderRejectLogMapper.selectCount(any())).willReturn(0L);
+        given(orderMapper.update(any(), any(LambdaUpdateWrapper.class))).willReturn(1);
 
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> service.reassign(ORDER_ID, reassignDto()));
+        ReassignResultVO vo = service.reassign(ORDER_ID, reassignDto());
 
-        assertEquals(ResultCode.ORDER_NOT_REASSIGNABLE.getCode(), ex.getCode());
+        assertEquals(FORMER_COMPANION_ID, vo.getFromCompanionId(),
+                "响应要能看出「从谁改到谁」");
+        assertEquals(TARGET_ID, vo.getToCompanionId());
+    }
+
+    @Test
+    @DisplayName("改派时版本号必须递增（兑现 ADR-0012：改派与抢单只有一个成功）")
+    void reassignShouldIncrementVersion() {
+        given(orderMapper.selectById(ORDER_ID)).willReturn(pendingOrder());
+        given(companionProfileMapper.selectOne(any())).willReturn(targetProfile());
+        given(orderRejectLogMapper.selectCount(any())).willReturn(0L);
+        given(orderMapper.update(any(), any(LambdaUpdateWrapper.class))).willReturn(1);
+
+        service.reassign(ORDER_ID, reassignDto());
+
+        String sql = captureUpdateWrapper().getSqlSet();
+        assertTrue(sql.contains("version = version + 1"),
+                "改派必须递增 version，否则与抢单的竞争失去原子性保护：" + sql);
+    }
+
+    @Test
+    @DisplayName("改派事件备注带「从谁改到谁」（订单表只留结果，事件流水才留过程）")
+    void reassignEventShouldRecordFromAndTo() {
+        CompanionOrder order = pendingOrder();
+        order.setCompanionId(FORMER_COMPANION_ID);
+        given(orderMapper.selectById(ORDER_ID)).willReturn(order);
+        given(companionProfileMapper.selectOne(any())).willReturn(targetProfile());
+        given(orderRejectLogMapper.selectCount(any())).willReturn(0L);
+        given(orderMapper.update(any(), any(LambdaUpdateWrapper.class))).willReturn(1);
+
+        service.reassign(ORDER_ID, reassignDto());
+
+        String remark = captureEvent().getRemark();
+        assertTrue(remark.contains(String.valueOf(FORMER_COMPANION_ID)),
+                "事件备注要带原接单人：" + remark);
+        assertTrue(remark.contains(String.valueOf(TARGET_ID)),
+                "事件备注要带新接单人：" + remark);
+    }
+
+    @Test
+    @DisplayName("改派要通知原被指派人（他得知道自己被换掉了，不能还以为自己背着这单）")
+    void reassignShouldNotifyFormerCompanion() {
+        CompanionOrder order = pendingOrder();
+        order.setCompanionId(FORMER_COMPANION_ID);
+        given(orderMapper.selectById(ORDER_ID)).willReturn(order);
+        given(companionProfileMapper.selectOne(any())).willReturn(targetProfile());
+        given(orderRejectLogMapper.selectCount(any())).willReturn(0L);
+        given(orderMapper.update(any(), any(LambdaUpdateWrapper.class))).willReturn(1);
+
+        service.reassign(ORDER_ID, reassignDto());
+
+        verify(messageService, times(1)).send(eq(FAMILY_ID), eq(MessageType.ORDER_REASSIGNED), eq(ORDER_ID), any());
+        verify(messageService, times(1)).send(eq(TARGET_ID), eq(MessageType.ORDER_REASSIGNED), eq(ORDER_ID), any());
+        verify(messageService, times(1)).send(eq(FORMER_COMPANION_ID), eq(MessageType.ORDER_REASSIGNED), eq(ORDER_ID), any());
     }
 
     @Test

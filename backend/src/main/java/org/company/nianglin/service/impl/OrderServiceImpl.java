@@ -613,6 +613,25 @@ public class OrderServiceImpl implements OrderService {
         rejectRow.setRejectTime(LocalDateTime.now());
         rejectLogMapper.insert(rejectRow);
 
+        // P0-1：拒单后清空接单人。
+        // 旧语义下拒单不清 companion_id，于是「被指派的人拒了单」之后这张单既不能改派
+        // （改派前置是「接单人为空」），又仍挂在他名下 —— 管理员只剩打电话协调，
+        // 陪诊员则被一张自己已拒的单无限期占用。
+        //
+        // 用**条件更新**而不是先查后写：条件是「这单现在仍指派给我且仍是待接单」。
+        // 条件不满足（已被别人接走 / 已被改派给别人）就不影响订单，但仍写拒单日志 ——
+        // 拒单这件事确实发生过，记录不能丢。
+        int released = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .setSql("companion_id = NULL")
+                .setSql("version = version + 1")
+                .eq(CompanionOrder::getId, orderId)
+                .eq(CompanionOrder::getCompanionId, me.userId())
+                .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name()));
+        if (released == 0) {
+            log.info("拒单时订单已不再指派给当前陪诊员，接单人未清空 | orderId={} | companionId={}",
+                    orderId, me.userId());
+        }
+
         // 刻意不写 order_status_log：拒单没有改变订单状态，
         // 往状态日志里塞一条"状态没变"的记录会把时间线搞乱
         log.info("陪诊员拒单 | orderId={} | companionId={}", orderId, me.userId());

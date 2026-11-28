@@ -992,7 +992,14 @@ class OrderServiceTest {
         assertEquals("当天已有其他订单", captor.getValue().getReason());
 
         // 拒单没改状态，就不该往状态时间线里塞记录
-        verify(orderMapper, never()).update(any(), any());
+        // P0-1：拒单现在会发一条**条件更新**把接单人清空（该单回到「无指派」），
+        // 但仍然不改 status、不走状态流转入口 —— 时间线不该被污染。
+        ArgumentCaptor<LambdaUpdateWrapper<CompanionOrder>> updateCaptor =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(orderMapper).update(any(), updateCaptor.capture());
+        String sqlSet = updateCaptor.getValue().getSqlSet();
+        assertFalse(sqlSet.contains("status"),
+                "拒单只清接单人，不能改订单状态：" + sqlSet);
         verify(orderMapper, never()).updateById(any(CompanionOrder.class));
         verify(statusLogMapper, never()).insert(any(OrderStatusLog.class));
     }

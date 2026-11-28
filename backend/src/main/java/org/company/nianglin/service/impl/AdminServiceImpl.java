@@ -912,27 +912,36 @@ public class AdminServiceImpl implements AdminService {
         // 「订单不存在 + 理由含违禁词」应当报 3001（订单没了，查订单这件事没意义），
         // 而不是先被 6003 拦下 —— 后者会让调用方误以为是自己那句话有问题。
         String reason = normalizeReassignReason(dto.getReason());
-        // ② 只处理「待接单且尚无接单人」的订单
+        // ② 只处理「仍是待接单」的订单（P0-1 放宽：不再要求「尚无接单人」）
+        //
+        // 旧语义是「待接单 **且** 无人接单」，于是两个后果：① 被指派过的单仍留在公共大厅，
+        // 任何人都能抢走，管理员的指派形同虚设；② 被指派人一旦拒单（拒单不清接单人），
+        // 这张单就再也改派不了 —— 管理员只剩打电话协调。
+        // 现在的语义一句话说清：只要订单仍是 PENDING，管理员就可以改派，无论当前有没有被指派人。
         boolean pending = OrderStatus.PENDING.name().equals(order.getStatus());
-        if (!pending || order.getCompanionId() != null) {
+        if (!pending) {
             throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE);
         }
-        // 改派前的接单人快照：按 ② 此刻必然为 null，但仍按字段读取 ——
-        // 将来若放宽前置条件（例如允许改派给已接单但未开工的订单），
-        // 这里不用改，通知逻辑也不会漏掉原陪诊员
+        // 改派前的接单人快照：现在可能非 null（原被指派人），
+        // 通知与事件都要用它 —— 漏掉原陪诊员，他会一直以为自己还背着这一单
         Long fromCompanionId = order.getCompanionId();
 
         // ③-⑥ 目标陪诊员必须合格
         CompanionProfile target = requireReassignableCompanion(dto.getCompanionId(), id);
 
-        // 与陪诊员抢单竞争的唯一保护：条件是「仍是待接单 且 仍无人接单」。
-        // 抢单走的是乐观锁（version），改派走的是这两条 WHERE ——
+        // 与陪诊员抢单竞争的唯一保护：条件是「仍是待接单」。
+        // 抢单走的是乐观锁（version），改派走的是这条 WHERE + 显式递增 version ——
         // 两者更新同一行，数据库保证只有一个能改成功，败者拿 3010 / 3003
+        // （兑现 ADR-0012「改派与抢单只有一个成功」）。
+        // ⚠️ version 用 setSql 递增而不是 updateById 的 @Version：
+        //    这里传的是 null 实体（只更新几列），乐观锁插件拿不到旧版本号，
+        //    用「预读值 + 1」会在并发下把两个请求写成同一个版本 —— 计数少加一次。
+        //    SQL 侧自增由数据库保证原子性，与 FulfillmentServiceImpl 的 urge_count 同理。
         int rows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
                 .set(CompanionOrder::getCompanionId, target.getUserId())
                 .eq(CompanionOrder::getId, id)
                 .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name())
-                .isNull(CompanionOrder::getCompanionId));
+                .setSql("version = version + 1"));
         if (rows == 0) {
             throw new BusinessException(ResultCode.ORDER_NOT_REASSIGNABLE,
                     "订单刚被接走或已被改派，请刷新后重试");
@@ -945,7 +954,8 @@ public class AdminServiceImpl implements AdminService {
             risk = FulfillmentRisk.NORMAL;
         }
 
-        writeReassignEvent(id, risk, SecurityUtils.currentUserId(), reason, now);
+        writeReassignEvent(id, risk, SecurityUtils.currentUserId(), reason, now,
+                fromCompanionId, target.getUserId());
 
         // 审计的 before / after 记的是**陪诊员**而不是订单状态：本操作不改状态，
         // 两栏都写 PENDING 会让这条日志读起来像「什么都没发生」
@@ -1027,8 +1037,16 @@ public class AdminServiceImpl implements AdminService {
         return text;
     }
 
+    /**
+     * 改派履约事件。
+     *
+     * <p>备注里带「从谁改到谁」（P0-1）：原接单人为空时记「未指派」。
+     * 只有这一条事件流水能还原调度过程 —— 订单表上的 {@code companion_id} 只留结果，
+     * 不留「谁换掉了谁」。</p>
+     */
     private void writeReassignEvent(Long orderId, FulfillmentRisk risk,
-                                    Long adminId, String reason, LocalDateTime now) {
+                                    Long adminId, String reason, LocalDateTime now,
+                                    Long fromCompanionId, Long toCompanionId) {
         OrderFulfillmentEvent event = new OrderFulfillmentEvent();
         event.setOrderId(orderId);
         event.setEventType(FulfillmentEventType.ORDER_REASSIGNED.name());
@@ -1038,7 +1056,8 @@ public class AdminServiceImpl implements AdminService {
         event.setTriggerSource(TriggerSource.ADMIN.name());
         event.setOperatorId(adminId);
         event.setOperatorRole(RoleConstants.ADMIN);
-        event.setRemark(reason);
+        event.setRemark(reason + " | 指派：" + (fromCompanionId == null ? "未指派" : fromCompanionId)
+                + " → " + toCompanionId);
         event.setOperateTime(now);
         fulfillmentEventMapper.insert(event);
     }
