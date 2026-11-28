@@ -53,6 +53,7 @@ public final class MessageTemplateUtil {
             case MEDICATION_ESCALATED -> "漏服升级提醒";
             case COMPLAINT_SUBMITTED -> "新投诉待处理";
             case COMPLAINT_HANDLED -> "投诉处理结果";
+            case COMPLAINT_TIMEOUT -> "投诉处理超时";
             case REVIEW_REPLIED -> "评价被回复";
             case REVIEW_APPEAL_SUBMITTED -> "收到评价申诉";
             case REVIEW_INVALIDATED -> "评价被裁定无效";
@@ -115,6 +116,9 @@ public final class MessageTemplateUtil {
                     value(p, "elderName"), value(p, "medicineName"), value(p, "planTime"));
             case COMPLAINT_SUBMITTED -> "%s 就订单 %s 提交了投诉（%s），请及时处理。".formatted(
                     value(p, "submitterName"), value(p, "orderNo"), value(p, "typeLabel"));
+            case COMPLAINT_TIMEOUT ->
+                    "投诉 %s 仍在处理中，已超过 %s 天未结案，请尽快处理。".formatted(
+                    value(p, "orderNo"), value(p, "overdueDays"));
             case COMPLAINT_HANDLED -> "您提交的投诉（%s）已处理完成：%s".formatted(
                     value(p, "orderNo"), value(p, "handleResult"));
             case REVIEW_REPLIED -> {
@@ -222,7 +226,8 @@ public final class MessageTemplateUtil {
             // MEDICATION_MISSED 的 bizId 是 orderId，指向陪诊员侧真实存在的
             // 订单执行路由（routes.js: companion/execute/:id，M5）
             case MEDICATION_MISSED -> "/companion/execute/" + bizId;
-            case COMPLAINT_SUBMITTED, REVIEW_APPEAL_SUBMITTED -> "/admin?complaintId=" + bizId;
+            case COMPLAINT_SUBMITTED, REVIEW_APPEAL_SUBMITTED, COMPLAINT_TIMEOUT ->
+                    "/admin?complaintId=" + bizId;
             // 到期提醒的两侧接收方统一落在陪诊员资质页（AUDIT_RESULT 同一路由）：
             // 本人在该页重新提交材料，管理员从消息中心进入（MessageDetail 不走 linkUrl）
             case HEALTH_CERT_EXPIRING -> "/profile/companion";

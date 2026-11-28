@@ -68,6 +68,7 @@ import org.company.nianglin.security.TokenStore;
 import org.company.nianglin.service.AdminService;
 import org.company.nianglin.service.MessageService;
 import org.company.nianglin.service.OrderService;
+import org.company.nianglin.service.support.GovernanceTimeoutPolicy;
 import org.company.nianglin.service.support.OperLogRecorder;
 import org.company.nianglin.service.support.ReviewTagCodec;
 import org.company.nianglin.service.support.UserNameResolver;
@@ -92,6 +93,7 @@ import org.company.nianglin.vo.OrderVO;
 import org.company.nianglin.vo.ResetPasswordResultVO;
 import org.company.nianglin.vo.UserStatusResultVO;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -183,6 +185,22 @@ public class AdminServiceImpl implements AdminService {
      * <p>放在构造参数<b>末尾</b>是为了不改动既有位置参数调用的顺序。</p>
      */
     private final OrderStatusLogMapper orderStatusLogMapper;
+
+    /**
+     * 投诉「处理中超时」阈值（天，closure-2026-11 · P1-6）。
+     *
+     * <p>用 {@link Integer} 而不是 {@code int}：纯 Mockito 单测不起容器，字段保持 {@code null}，
+     * 而 {@code null} 必须被当成默认阈值 3 —— 否则同一套判定会随「有没有 Spring 容器」而变。</p>
+     */
+    @Value("${nianglin.complaint.processing-timeout-days:3}")
+    private Integer complaintTimeoutDays;
+
+    /** 投诉超时阈值的实际取值（未注入时回落默认值） */
+    private int complaintTimeoutDays() {
+        return complaintTimeoutDays == null
+                ? GovernanceTimeoutPolicy.DEFAULT_COMPLAINT_TIMEOUT_DAYS
+                : complaintTimeoutDays;
+    }
 
     /* ================================================================== */
     /* 1 / 2 / 3. 资质审核                                                 */
@@ -821,11 +839,17 @@ public class AdminServiceImpl implements AdminService {
         Map<Long, String> names = userNameResolver.resolveAll(userIds);
 
         List<ComplaintVO> records = new ArrayList<>(rows.size());
+        LocalDateTime now = LocalDateTime.now();
         for (Complaint complaint : rows) {
+            // 超时标记（P1-6）：只升级可见性，不改状态 ——
+            // 管理员在列表里一眼看到「这条卡住了」，处置权仍然在人手里
+            Integer overdueDays = GovernanceTimeoutPolicy.overdueDays(complaint.getStatus(),
+                    complaint.getUpdateTime(), complaint.getCreateTime(), now, complaintTimeoutDays());
             records.add(ComplaintVO.of(complaint,
                     names.get(complaint.getComplainantId()),
                     names.get(complaint.getTargetUserId()),
-                    parseEvidence(complaint.getEvidence())));
+                    parseEvidence(complaint.getEvidence()),
+                    overdueDays));
         }
         return PageResult.of(page, records);
     }

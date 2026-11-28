@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -114,7 +115,9 @@ class ComplaintServiceAppealTest {
     void appealShouldPersistWhenAllChecksPass() {
         given(orderService.requireInvolved(ORDER_ID)).willReturn(order());
         given(orderReviewMapper.selectById(REVIEW_ID)).willReturn(review(LocalDateTime.now().minusDays(2)));
-        given(complaintMapper.selectCount(any())).willReturn(0L);
+        // P1-6：申诉路径不再查「同订单未结案投诉」（那是普通投诉的占用判定），
+        // 所以这里没有 selectCount 的桩 —— 若哪天它又被查回来，这里会立刻报
+        // UnnecessaryStubbing 而不会让两条路径悄悄恢复互相占位
         given(complaintMapper.countOpenAppealByReviewId(REVIEW_ID)).willReturn(0L);
 
         ComplaintCreateDTO dto = appealDto(REVIEW_ID,
@@ -209,6 +212,23 @@ class ComplaintServiceAppealTest {
         assertEquals(ResultCode.CONFLICT.getCode(), ex.getCode());
         assertEquals(true, ex.getMessage().contains("申诉"));
         verify(complaintMapper, never()).insert(any(Complaint.class));
+    }
+
+    @Test
+    @DisplayName("申诉 · 同订单已有普通未结案投诉 → 仍可申诉（占用按 type 隔离，P1-6）")
+    void appealShouldNotBeBlockedByOpenNonAppealComplaint() {
+        given(orderService.requireInvolved(ORDER_ID)).willReturn(order());
+        given(orderReviewMapper.selectById(REVIEW_ID)).willReturn(review(LocalDateTime.now().minusDays(2)));
+        given(complaintMapper.countOpenAppealByReviewId(REVIEW_ID)).willReturn(0L);
+        // 同订单已存在 1 条未结案的「普通投诉」：旧口径下它会把申诉一起挡住（409），
+        // 家属先投诉、陪诊员就再也申诉不了那条差评 —— 而申诉正是 E4 的核心能力。
+        // 用 lenient 是因为隔离生效后 selectCount 根本不会被调用，
+        // 若哪天它又被调回来，本用例会立刻因 409 失败，而不是被 UnnecessaryStubbing 掩盖。
+        lenient().when(complaintMapper.selectCount(any())).thenReturn(1L);
+
+        service.create(appealDto(REVIEW_ID, "家属先提了普通投诉，我这条评价仍要申诉"));
+
+        verify(complaintMapper).insert(any(Complaint.class));
     }
 
     /* ================================================================== */

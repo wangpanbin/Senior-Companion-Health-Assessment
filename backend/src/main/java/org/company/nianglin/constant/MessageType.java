@@ -52,6 +52,14 @@ public enum MessageType {
     COMPLAINT_SUBMITTED("新投诉待处理", MessageBizType.COMPLAINT),
     COMPLAINT_HANDLED("投诉处理结果", MessageBizType.COMPLAINT),
     /**
+     * 投诉 / 反馈「处理中超时」提醒（closure-2026-11 · P1-6）。
+     *
+     * <p>接收人是<b>全部管理员</b>，{@code bizId=complaintId}。
+     * 「处理中」是一个可以无限期成立的承诺，这条提醒的作用是让管理员看见
+     * 「这条卡住了」—— 但它<b>不改变状态</b>：投诉是否成立仍然只有人能判。</p>
+     */
+    COMPLAINT_TIMEOUT("投诉处理超时", MessageBizType.COMPLAINT),
+    /**
      * 陪诊员回复了评价（E4）。
      *
      * <p>接收人是评价人（家属），{@code bizId=orderId}；文案携带订单号与

@@ -87,6 +87,19 @@ public class ComplaintVO {
     private LocalDateTime handleTime;
 
     /**
+     * 是否「处理中超时」（closure-2026-11 · P1-6）。
+     *
+     * <p>只升级可见性，不改状态：超时只是让管理员在列表里看到「这条卡住了」，
+     * 处置权仍然在人手里。</p>
+     */
+    @Schema(description = "是否处理中超时（仅 PROCESSING 且超过阈值天数）", example = "false")
+    private Boolean overdue;
+
+    /** 已超出的天数；未超时为 {@code null} */
+    @Schema(description = "已超出的天数（未超时不下发）", example = "5")
+    private Integer overdueDays;
+
+    /**
      * 装配。
      *
      * @param entity            投诉实体
@@ -96,6 +109,20 @@ public class ComplaintVO {
      */
     public static ComplaintVO of(Complaint entity, String complainantName, String targetUserName,
                                  List<String> evidence) {
+        return of(entity, complainantName, targetUserName, evidence, null);
+    }
+
+    /**
+     * 装配（带超时标记）。
+     *
+     * @param entity            投诉实体
+     * @param complainantName   投诉人姓名（本方法内就地脱敏）
+     * @param targetUserName    被投诉人姓名（本方法内就地脱敏）
+     * @param evidence          已解析的证据 URL 列表；传 {@code null} 按空列表返回
+     * @param overdueDays       已超出的天数；{@code null} 表示未超时
+     */
+    public static ComplaintVO of(Complaint entity, String complainantName, String targetUserName,
+                                 List<String> evidence, Integer overdueDays) {
         if (entity == null) {
             return null;
         }
@@ -119,6 +146,8 @@ public class ComplaintVO {
                 // 用户会以为投诉已经有结果了
                 .setHandleResult(closed ? entity.getHandleResult() : null)
                 .setCreateTime(entity.getCreateTime())
-                .setHandleTime(entity.getHandleTime());
+                .setHandleTime(entity.getHandleTime())
+                .setOverdue(overdueDays != null)
+                .setOverdueDays(overdueDays);
     }
 }
