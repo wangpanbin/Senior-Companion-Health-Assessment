@@ -90,6 +90,19 @@ metrics:
       - vo: ElderHealthOverviewVO$Medication
         field: taken
 
+  - key: elder.medication.late_taken
+    name: 补记数量（区间）
+    scope: 统计区间内曾判漏服后又被确认的任务数（收口 B · P0-8）
+    period: 统计区间（默认 30 天、最多 366 天、闭区间）
+    source: medication_task(elder_id, plan_date, status, was_missed)
+    formula: "COUNT(bucket = 'LATE_TAKEN')，即 status = 'TAKEN' 且 was_missed = 1"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/elder/{elderId}/health/overview"
+    bindings:
+      - vo: ElderHealthOverviewVO$Medication
+        field: lateTaken
+
   - key: elder.medication.missed
     name: 漏服数量
     scope: 统计区间内一直未补记的漏服任务数（补记另成 LATE_TAKEN 桶）
@@ -158,6 +171,21 @@ metrics:
     bindings:
       - vo: MedicationTodayVO
         field: taken
+
+  - key: elder.today.late_taken
+    name: 今日补记数量
+    scope: 该老人今日曾判漏服后又被确认的任务数（收口 B · P0-8）
+    period: 当天
+    source: medication_task(elder_id, plan_date, status, was_missed)
+    formula: "COUNT(bucket = 'LATE_TAKEN')，即 status = 'TAKEN' 且 was_missed = 1"
+    caliberVersion: 1
+    endpoints:
+      - "GET /api/family/health/summary"
+      - "GET /api/family/elder/{elderId}/health/overview"
+      - "GET /api/elder/health/overview"
+    bindings:
+      - vo: MedicationTodayVO
+        field: lateTaken
 
   - key: elder.today.pending
     name: 今日待服数量
