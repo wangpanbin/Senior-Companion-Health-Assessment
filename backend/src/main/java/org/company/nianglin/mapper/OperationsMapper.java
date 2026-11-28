@@ -220,7 +220,7 @@ public interface OperationsMapper {
     @Select("""
             SELECT d, COUNT(*) AS total,
                    SUM(CASE WHEN bucket = 'TAKEN' THEN 1 ELSE 0 END) AS taken,
-                   SUM(CASE WHEN bucket = 'MISSED' THEN 1 ELSE 0 END) AS missed,
+                   SUM(CASE WHEN bucket IN ('MISSED', 'LATE_TAKEN') THEN 1 ELSE 0 END) AS missed,
                    SUM(CASE WHEN bucket = 'PENDING' THEN 1 ELSE 0 END) AS pending
             FROM (
               SELECT DATE_FORMAT(plan_time, '%Y-%m-%d') AS d,
@@ -277,7 +277,7 @@ public interface OperationsMapper {
               FROM medication_task
               WHERE deleted = 0 AND plan_time BETWEEN #{start} AND #{end}
             ) t
-            WHERE t.bucket = 'MISSED'
+            WHERE t.bucket IN ('MISSED', 'LATE_TAKEN')
             """)
     Integer selectMissedMedicationCount(@Param("start") LocalDateTime start,
                                          @Param("end") LocalDateTime end);
@@ -304,7 +304,7 @@ public interface OperationsMapper {
               WHERE deleted = 0 AND plan_time BETWEEN #{start} AND #{end}
             ) x
             JOIN companion_order o ON o.deleted = 0 AND o.elder_id = x.elder_id
-            WHERE x.bucket = 'MISSED'
+            WHERE x.bucket IN ('MISSED', 'LATE_TAKEN')
             GROUP BY o.id
             ORDER BY lastPlanTime DESC
             LIMIT #{limit}
@@ -330,7 +330,7 @@ public interface OperationsMapper {
     @Select("""
             SELECT COUNT(*) AS total,
                    COALESCE(SUM(CASE WHEN bucket = 'TAKEN' THEN 1 ELSE 0 END), 0) AS taken,
-                   COALESCE(SUM(CASE WHEN bucket = 'MISSED' THEN 1 ELSE 0 END), 0) AS missed,
+                   COALESCE(SUM(CASE WHEN bucket IN ('MISSED', 'LATE_TAKEN') THEN 1 ELSE 0 END), 0) AS missed,
                    COALESCE(SUM(CASE WHEN bucket = 'PENDING' THEN 1 ELSE 0 END), 0) AS pending
             FROM (
               SELECT

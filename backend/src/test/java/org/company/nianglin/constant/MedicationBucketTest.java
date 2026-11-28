@@ -49,14 +49,14 @@ class MedicationBucketTest {
                 "MISSED,  false, MISSED",
                 // 一直没吃 + 补记痕迹都有
                 "MISSED,  true,  MISSED",
-                // 漏了之后被补记：status 已变成 TAKEN，只有 was_missed 还留着痕迹
-                "TAKEN,   true,  MISSED",
+                // 收口 B · P0-8：漏了之后被补记 → 独立的第三态「补记」
+                "TAKEN,   true,  LATE_TAKEN",
                 // 正常吃了，且从未漏过
                 "TAKEN,   false, TAKEN",
                 // 还没到确认时点
                 "PENDING, false, PENDING",
-                // 待服 + 曾漏服：漏服优先
-                "PENDING, true,  MISSED",
+                // PENDING 的 was_missed=true 是脏数据：按当前状态归待服
+                "PENDING, true,  PENDING",
         })
         @DisplayName("状态组合 → 桶")
         void statusAndWasMissedShouldDecideBucket(String status, boolean wasMissed, MedicationBucket expected) {
@@ -113,8 +113,9 @@ class MedicationBucketTest {
                 // 穷尽性：三个桶之外不存在第四个可能值
                 assertTrue(bucket == MedicationBucket.TAKEN
                                 || bucket == MedicationBucket.MISSED
+                                || bucket == MedicationBucket.LATE_TAKEN
                                 || bucket == MedicationBucket.PENDING,
-                        "判定结果必须落在三个桶之内");
+                        "判定结果必须落在四个桶之内");
             }
         }
     }
@@ -125,5 +126,6 @@ class MedicationBucketTest {
         assertEquals(MedicationBucketSql.CODE_TAKEN, MedicationBucket.TAKEN.name());
         assertEquals(MedicationBucketSql.CODE_MISSED, MedicationBucket.MISSED.name());
         assertEquals(MedicationBucketSql.CODE_PENDING, MedicationBucket.PENDING.name());
+        assertEquals(MedicationBucketSql.CODE_LATE_TAKEN, MedicationBucket.LATE_TAKEN.name());
     }
 }

@@ -124,8 +124,10 @@ public class MatchingServiceImpl implements MatchingService {
             if (companionId == null) {
                 continue;
             }
-            // ① 工作状态
-            if (!WorkStatus.AVAILABLE.name().equals(text(row.get("workStatus")))) {
+            // ① 工作状态（收口 B · P0-2：统一走 isAccepting()，兑现枚举注释的
+            // 「唯一判定入口」承诺；of() 对未知字面量返回 null，按不可接单安全跳过）
+            WorkStatus workStatus = WorkStatus.of(text(row.get("workStatus")));
+            if (workStatus == null || !workStatus.isAccepting()) {
                 continue;
             }
             // ② 资质

@@ -276,6 +276,8 @@
 
 - 服务端按 `userId` 维护 `Map<Long, Set<SseEmitter>>`，多端登录各自独立收推送。
 - 连接超时 **30 分钟**，由浏览器 `EventSource` 自动重连；重连后先调 `/api/message/unread-count` 对齐数字，避免漏更新。
+  **服务端不为事件设置 id、也没有事件缓冲**，因此浏览器不会带 `Last-Event-ID`，离线期间的事件不做补投；
+  断线补齐只能由客户端主动调 `unread-count` 完成（收口 B · DOC-1，文档与实现对齐）。
 - 前端收到后：红点数字更新 + `ElNotification` 弹提示。
 - **双通道读同一份数据库状态**：SSE 负责「3 秒内看到红点变化」，60 秒轮询负责在 Nginx 未配
   `proxy_buffering off`、企业代理掐长连接等环境下仍然可用。两条通道不会出现数字打架。

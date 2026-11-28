@@ -100,6 +100,9 @@ public class MedicationServiceImpl implements MedicationService {
     /** 订单转草稿的判重窗口（分钟）：窗口内同一订单只允许生成一次草稿 */
     private static final int DRAFT_TTL_MINUTES = 30;
 
+    /** 单轮任务生成唯一键冲突告警阈值（收口 B · P1-5：静默吞改为可观测） */
+    private static final int DUPLICATE_CONFLICT_ALERT_THRESHOLD = 5;
+
     private final MedicineDictMapper medicineMapper;
     private final MedicationPlanMapper planMapper;
     private final MedicationTaskMapper taskMapper;
@@ -154,6 +157,34 @@ public class MedicationServiceImpl implements MedicationService {
     /** 服药日历允许的最大区间天数 */
     @Value("${nianglin.medication.max-calendar-days:31}")
     private int maxCalendarDays;
+
+    /** 当天生成时点允许的宽容窗口（分钟）：建计划本身要花时间，卡在整点不该被判已过 */
+    @Value("${nianglin.medication.generate-grace-minutes:1}")
+    private int generateGraceMinutes = 1;
+
+    /** 漏服升级扫描的时间下界（天）：只升级最近 N 天的漏服（收口 B · P2-1） */
+    @Value("${nianglin.medication.escalation-floor-days:30}")
+    private int escalationFloorDays = 30;
+
+    /**
+     * 「今天」的时间缝（收口 B · P1-4）。
+     *
+     * <p>只抽这两个方法而不是全局注入 {@code Clock}：本类大量 {@code LocalDateTime.now()}，
+     * 全局改时钟影响面远超本单；{@code protected} 让单测用 {@code spy} 覆盖即可。</p>
+     */
+    protected LocalDate today() {
+        return LocalDate.now();
+    }
+
+    /** 当前时刻的时间缝，供漏服扫描与「是否已过」共用 */
+    protected LocalDateTime now() {
+        return LocalDateTime.now();
+    }
+
+    /** 该时点是否已经过去（含宽容窗口）；只对「今天」的生成生效 */
+    protected boolean isPast(LocalDateTime planTime) {
+        return planTime.isBefore(now().plusMinutes(generateGraceMinutes));
+    }
 
     /* ================================================================== */
     /* 1. 药品字典                                                         */
@@ -261,7 +292,7 @@ public class MedicationServiceImpl implements MedicationService {
         // 这里把「今天」这一步即时做掉：否则家属刚建完计划，
         // 今日待服里空空如也，要等到明天 07:00 的定时任务看起来才生效，
         // 而实际上老人今天确实该吃药。
-        LocalDate today = LocalDate.now();
+        LocalDate today = today();
         if (covers(plan, today)) {
             generateTasksForPlan(plan, today);
         }
@@ -337,6 +368,10 @@ public class MedicationServiceImpl implements MedicationService {
         // 于是「只想改备注」的请求会把剂量、时间点全清空
         applyPatch(planId, plan, patch);
 
+        // 收口 B · P1-4：同事务重算当天未到点的任务。
+        // 已过时点（含 TAKEN / MISSED）是历史事实，绝不删除。
+        rebuildTodayPendingTasks(effectivePlan(plan, patch));
+
         log.info("用药计划已修改 | planId={} | operator={}", planId, me.userId());
     }
 
@@ -375,10 +410,15 @@ public class MedicationServiceImpl implements MedicationService {
                 .map(MedicationTask::getId)
                 .toList();
 
-        int removed = taskMapper.delete(Wrappers.<MedicationTask>lambdaQuery()
+        // 先保留既有的软删语义（下一行物理删除会把这些行彻底清掉），
+        // 再按收口 B · P1-5 方案 2 物理删除未来 PENDING 任务：
+        // @TableLogic 对先查后插护栏不可见，软删行仍占 uk_plan_time，
+        // 重新启用时必然撞唯一键并被静默吞掉（那种失败没有任何错误码）。
+        taskMapper.delete(Wrappers.<MedicationTask>lambdaQuery()
                 .eq(MedicationTask::getPlanId, planId)
                 .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
                 .gt(MedicationTask::getPlanTime, cutoff));
+        int removed = taskMapper.deleteFuturePendingPhysically(planId, cutoff);
 
         // 回执与任务同生共死：任务删了，未发送的短信也必须作废。
         // 否则这些孤儿回执会继续占用家属当日频控额度，导致后续真正需要提醒的任务被静默跳过。
@@ -386,6 +426,35 @@ public class MedicationServiceImpl implements MedicationService {
 
         log.info("用药计划已停用 | planId={} | 清理未到期任务={} 条 | 作废未发送回执={} 条 | operator={}",
                 planId, removed, voided, me.userId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void enablePlan(Long planId) {
+        LoginUser me = SecurityUtils.currentUser();
+        MedicationPlan plan = requirePlan(planId);
+        elderService.requireAccessible(plan.getElderId());
+
+        // 幂等：已启用（ACTIVE）的计划不重复重建，否则会删掉用户刚确认过的未来任务
+        if (!MedicationPlanStatus.DISABLED.name().equals(plan.getStatus())) {
+            log.info("用药计划已处于启用状态，忽略重复请求 | planId={}", planId);
+            return;
+        }
+
+        int rows = planMapper.update(null, Wrappers.<MedicationPlan>lambdaUpdate()
+                .eq(MedicationPlan::getId, planId)
+                .eq(MedicationPlan::getStatus, MedicationPlanStatus.DISABLED.name())
+                .set(MedicationPlan::getStatus, MedicationPlanStatus.ACTIVE.name()));
+        if (rows == 0) {
+            // 并发下另一个请求已经启用：同样幂等返回，不重建
+            log.info("用药计划已被其它请求启用，跳过重复重建 | planId={}", planId);
+            return;
+        }
+
+        // 复用 P1-4 建立的同一份重建逻辑（删未来 PENDING + 按新计划补生成）
+        plan.setStatus(MedicationPlanStatus.ACTIVE.name());
+        rebuildTodayPendingTasks(plan);
+        log.info("用药计划已重新启用 | planId={} | operator={}", planId, me.userId());
     }
 
     @Override
@@ -405,15 +474,18 @@ public class MedicationServiceImpl implements MedicationService {
                 && !OrderStatus.REVIEWED.name().equals(order.getStatus())) {
             throw new BusinessException(ResultCode.CONFLICT, "订单完成后才能转入用药计划");
         }
-        if (!StringUtils.hasText(order.getServiceSummary())) {
-            throw new BusinessException(ResultCode.CONFLICT, "服务小结尚未填写");
-        }
-
-        // 3) 防御性复查：完成时虽已校验过，但小结可能被其它路径改写；命中即拒
-        String hit = ComplianceCheckUtil.firstHit(order.getServiceSummary());
-        if (hit != null) {
-            throw new BusinessException(ResultCode.ORDER_SUMMARY_ILLEGAL,
-                    "服务小结不能包含「" + hit + "」这类诊断或用药建议");
+        // 3) 收口 B · P0-9：小结是**可选**信息且没有补写入口，空小结不再拒绝。
+        //    降级为空草稿 + summaryMissing=true，让家属仍进入「填药名 / 次数 / 时间点」表单；
+        //    V4 转化链依赖的是「订单已完成、家属想建计划」这个意愿，不依赖小结内容。
+        //    注意：只放宽「为空」，不放宽「含违规词」——合规红线不受降级波及。
+        String summary = order.getServiceSummary();
+        boolean summaryMissing = !StringUtils.hasText(summary);
+        if (!summaryMissing) {
+            String hit = ComplianceCheckUtil.firstHit(summary);
+            if (hit != null) {
+                throw new BusinessException(ResultCode.ORDER_SUMMARY_ILLEGAL,
+                        "服务小结不能包含「" + hit + "」这类诊断或用药建议");
+            }
         }
 
         // 4) 防止跨老人串档：草稿必须落在订单就诊老人名下
@@ -450,9 +522,9 @@ public class MedicationServiceImpl implements MedicationService {
             log.warn("用药计划草稿判重缓存不可用，本次放行 | orderId={} | error={}", orderId, ex.getMessage());
         }
 
-        log.info("从订单生成用药计划草稿 | orderId={} | operator={} | items={}",
-                orderId, me.userId(), items.size());
-        return new MedicationPlanDraftVO(orderId, items, DRAFT_TTL_MINUTES);
+        log.info("从订单生成用药计划草稿 | orderId={} | operator={} | items={} | summaryMissing={}",
+                orderId, me.userId(), items.size(), summaryMissing);
+        return new MedicationPlanDraftVO(orderId, items, DRAFT_TTL_MINUTES, summaryMissing);
     }
 
     /**
@@ -623,7 +695,7 @@ public class MedicationServiceImpl implements MedicationService {
     @Transactional(rollbackFor = Exception.class)
     public int scanMissedTasks() {
         int thresholdMinutes = effectiveMissedThresholdMinutes();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = now();
         LocalDateTime deadline = now.minusMinutes(thresholdMinutes);
 
         // ① 认领：PENDING 超时 → MISSED（V4 原语义）。认领本身不再直接派发 ——
@@ -649,10 +721,15 @@ public class MedicationServiceImpl implements MedicationService {
 
         // ② 升级（V5 多级升级）：已 MISSED、未到顶的任务每轮重查 —— confirm 会把状态
         //    改成 TAKEN，自然离开本集合；notify_level 到 3 后不再进集合，扫描成本收敛
+        // 收口 B · P2-1：升级扫描加时间下界，历史漏服不再被回溯升级并打扰管理员。
+        // ①段（PENDING → MISSED）不加 —— 那条确实没吃，加下界会让它永远停在 PENDING。
+        // 现有 idx_status_plan_time(status, plan_time) 正好覆盖这两个条件。
+        LocalDateTime floor = now.minusDays(escalationFloorDays);
         List<MedicationTask> escalating = taskMapper.selectPage(new Page<>(1, missScanBatch),
                 Wrappers.<MedicationTask>lambdaQuery()
                         .eq(MedicationTask::getStatus, MedicationTaskStatus.MISSED.name())
                         .lt(MedicationTask::getNotifyLevel, ReminderLevelPolicy.LEVEL_ADMIN)
+                        .ge(MedicationTask::getPlanTime, floor)
                         .orderByAsc(MedicationTask::getPlanTime)).getRecords();
 
         int dispatched = 0;
@@ -690,7 +767,7 @@ public class MedicationServiceImpl implements MedicationService {
      * <ol>
      *   <li><b>先查后插</b>：先取出该日期已有的任务，跳过已存在的 (planId, planTime)。
      *       这挡住了「同一实例重复执行」。</li>
-     *   <li><b>唯一索引</b> {@code uk_plan_date_time}：挡住并发实例之间的竞争。</li>
+     *   <li><b>唯一索引</b> {@code uk_plan_time(plan_id, plan_time)}：挡住并发实例之间的竞争。</li>
      *   <li><b>Redis 分布式锁</b>（在调用方 {@code MedicationScheduler}）：让正常情况下
      *       只有一个实例真的执行，前两道只是兜底。</li>
      * </ol>
@@ -716,8 +793,16 @@ public class MedicationServiceImpl implements MedicationService {
         }
 
         int created = 0;
+        int conflicts = 0;
+        LocalDate today = today();
         for (String point : timePoints) {
             LocalDateTime planTime = date.atTime(LocalTime.parse(point, TIME_POINT_FORMAT));
+            // 收口 B · P1-4：只对「今天」跳过已过时点。补跑历史日期仍是补数据，
+            // 那时全部时点都要生成，否则历史用药记录会缺块。
+            if (date.equals(today) && isPast(planTime)) {
+                log.info("建计划当天已过时间点，跳过 | planId={} | planTime={}", plan.getId(), planTime);
+                continue;
+            }
             if (!existing.add(plan.getId() + "|" + planTime)) {
                 continue;
             }
@@ -744,11 +829,75 @@ public class MedicationServiceImpl implements MedicationService {
                 created++;
             } catch (DuplicateKeyException e) {
                 // 唯一索引兜住了并发写入。这属于「正常但需要留痕」的情况：
-                // 如果频繁出现，说明分布式锁没生效，要去看 Redis 配置
+                // 如果频繁出现，说明删除策略或唯一键定义有问题（P1-5）
+                conflicts++;
                 log.warn("服药任务已存在（唯一索引拦截） | planId={} | planTime={}", plan.getId(), planTime);
             }
         }
+        if (conflicts > DUPLICATE_CONFLICT_ALERT_THRESHOLD) {
+            // 收口 B · P1-5：旧实现只 log.warn，软删占位导致 100% 静默失败。
+            // 超阈值升为 error，让运维能看到「启用成功但今天没药」这类故障。
+            log.error("唯一键冲突超阈值，请检查任务删除策略与唯一键定义 | planId={} | conflicts={}",
+                    plan.getId(), conflicts);
+        }
         return created;
+    }
+
+    /**
+     * 重算当天「未到点且未确认」的任务（收口 B · P1-4；P1-5 的重新启用复用本方法）。
+     *
+     * <p>删未来 + 重建，而不是原地改：时间点本身可能变化，原地改无法覆盖。
+     * 已过时点的任务是历史事实（哪怕还是 PENDING），一律不动；TAKEN / MISSED 也不动。
+     * 被删任务的未发送短信回执同步作废，否则它们会继续占用家属当日频控额度。</p>
+     */
+    private void rebuildTodayPendingTasks(MedicationPlan plan) {
+        LocalDate today = today();
+        if (!covers(plan, today)) {
+            return;
+        }
+        LocalDateTime cutoff = LocalDateTime.now();
+        var query = Wrappers.<MedicationTask>lambdaQuery()
+                .eq(MedicationTask::getPlanId, plan.getId())
+                .eq(MedicationTask::getPlanDate, today)
+                .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
+                .gt(MedicationTask::getPlanTime, cutoff);
+
+        List<Long> futureTaskIds = taskMapper.selectList(query).stream()
+                .map(MedicationTask::getId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        if (!futureTaskIds.isEmpty()) {
+            // 与 disablePlan 同一删除策略：保留软删语义后立即物理清除，避免软删行占唯一键（P1-5）
+            taskMapper.delete(Wrappers.<MedicationTask>lambdaQuery()
+                    .eq(MedicationTask::getPlanId, plan.getId())
+                    .eq(MedicationTask::getPlanDate, today)
+                    .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
+                    .gt(MedicationTask::getPlanTime, cutoff));
+            taskMapper.deleteFuturePendingPhysically(plan.getId(), cutoff);
+            int voided = smsReminderService.voidUnsentForTasks(futureTaskIds, "plan-updated");
+            log.info("用药计划变更：重建当天任务 | planId={} | 删除={} | 作废回执={}",
+                    plan.getId(), futureTaskIds.size(), voided);
+        }
+        // 即便没有删掉任何任务，也要按新时间点补齐可能缺失的未来任务
+        generateTasksForPlan(plan, today);
+    }
+
+    /** 把 patch 叠加到内存中的计划上，供同事务的任务重建使用（不改数据库实体） */
+    private static MedicationPlan effectivePlan(MedicationPlan current, MedicationPlan patch) {
+        MedicationPlan effective = new MedicationPlan();
+        effective.setId(current.getId());
+        effective.setElderId(current.getElderId());
+        effective.setMedicineId(patch.getMedicineId() == null ? current.getMedicineId() : patch.getMedicineId());
+        effective.setMedicineName(patch.getMedicineName() == null ? current.getMedicineName() : patch.getMedicineName());
+        effective.setDosage(patch.getDosage() == null ? current.getDosage() : patch.getDosage());
+        effective.setFrequency(patch.getFrequency() == null ? current.getFrequency() : patch.getFrequency());
+        effective.setTimePoints(patch.getTimePoints() == null ? current.getTimePoints() : patch.getTimePoints());
+        effective.setMealRelation(patch.getMealRelation() == null ? current.getMealRelation() : patch.getMealRelation());
+        effective.setStartDate(patch.getStartDate() == null ? current.getStartDate() : patch.getStartDate());
+        // patch.endDate 为 null 在 applyPatch 里已表达「清空」，这里同口径
+        effective.setEndDate(patch.getEndDate());
+        return effective;
     }
 
     /** 计划在指定日期是否生效（长期用药的 endDate 为 null 视为永远生效） */

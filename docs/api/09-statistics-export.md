@@ -371,7 +371,7 @@
 ## 四、验收标准（M10）
 
 - [ ] 看板「订单总量」与 `SELECT COUNT(*) FROM companion_order` 手工核对一致
-- [ ] 「完成率」= 已完成 / 总订单，与 SQL 计算值一致（保留 2 位小数）
+- [ ] **订单完成率** = 已完成 / 全部订单（本区间按下单时间 `create_time`），与 SQL 计算值一致（保留 2 位小数）；不要与陪诊员工作台的「接单完成率」或驾驶舱的「按时完成率」混用
 - [ ] 切换时间区间后图表数据随之变化，且**区间外数据不混入**
 - [ ] 订单趋势的 `categories` 与 `series[].data` 长度一致，**无数据日期补 0**
 - [ ] 状态分布返回全部 6 种状态（数量为 0 的也返回）
@@ -404,7 +404,7 @@
 | 金额 | 两位小数字符串，如 `"3680.00"` |
 | 「已完成」 | `COMPLETED` + `REVIEWED`（评价只是完成之后的后续动作，把已评价的单排除会让完成率随着用户评价而下降） |
 | 区间口径 | 概览 / 趋势 / 收入 = **统计区间内**；画像 = **历史累计**（字段名带 `total` 前缀） |
-| 时间字段 | 区间口径的订单一律按 **`visit_time`** 过滤（与 V3.2 家属端 `elder.visit.order_count` 同一时间字段，两端必须同源） |
+| 时间字段 | 本区间（**按就诊时间 `visit_time`**）过滤订单（与 V3.2 家属端 `elder.visit.order_count` 同一时间字段，两端必须同源）；管理统计的「本区间」按 `create_time`、结算台账按 `finish_time`，三个字段各自合理，不强行统一 |
 
 ### 8.1 工作台概览
 
@@ -439,9 +439,9 @@
 |---|---|
 | `completedOrderCount` | 区间内 `COMPLETED` + `REVIEWED` 的订单数 |
 | `serviceDurationMinutes` | 区间内已完成订单的 `finish_time − start_time` 之和（分钟） |
-| `completionRate` | `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)`，**拒单不计入分母** |
+| `completionRate` | **接单完成率**（收口 B · DOC-5）：`(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)`，**拒单不计入分母**。与管理端「订单完成率」（÷全部订单）和驾驶舱「按时完成率」是三个不同的数，不要混用 |
 | `averageScore` | `companion_profile.score`（**累计口径，不重算**） |
-| `periodIncome` | 区间内已完成订单的 `SUM(COALESCE(actual_fee, fee))` |
+| `periodIncome` | 区间内已完成订单的 `SUM(COALESCE(actual_fee, fee))`。**它是 `actualIncome` 的别名**（收口 B · P2-3），两者取数同源、恒相等；保留此字段只为兼容既有看板配置 |
 
 ### 8.2 工作台趋势
 
@@ -554,7 +554,8 @@
 | `advanceTotal` | `order_fee_item` 中 `item_type = 'ADVANCE'`（代垫）的合计 |
 | `serviceTotal` | `order_fee_item` 中 `item_type = 'SERVICE'`（服务费）的合计 |
 
-**恒等式**：`unsettledAmount + settledAmount == actualIncome`。
+**恒等式**：`unsettledAmount + settledAmount == actualIncome`；且 `periodIncome == actualIncome`（别名，不是第二个口径）。
+这里展示的是**应收**（按 `visit_time`、不计 `payment_status`），与结算台账的「已实收」不是同一个数。
 
 > ⚠️ 本接口**没有「平台服务费」这个字段** —— 现有费用模型里只有 `fee`（合同服务费）、
 > `actualFee`（结算金额）与费用项 `ADVANCE` / `SERVICE` 两型（ADR-0009）。

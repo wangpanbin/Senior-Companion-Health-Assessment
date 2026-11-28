@@ -107,6 +107,11 @@ key   : nianglin:lock:medication:daily
   陪诊员侧与管理员侧（动态参数）发送前过 `ComplianceCheckUtil` 词表，命中即拦截（宁可不发）；家属侧为 M6 既定模板，不含动态医疗表述。
 - **触达失败不回滚漏服判定**：提醒是通知动作，漏服是事实判定，两者解耦。
 - **扫描节奏与锁粒度不变**：30 分钟一轮、`nianglin:lock:medication:*` 的 Redis 锁口径与 M6 一致；升级派发并入同一轮扫描，既有压测结论不失效。
+- **升级时间下界（收口 B · P2-1）**：升级扫描只处理 `plan_time >= now - N 天`，默认 `N = 30`
+  （配置 `nianglin.medication.escalation-floor-days`）。历史漏服不再被回溯升级打扰管理员，
+  其 `notify_level` 保持原值（审计可见「本来该升没升」）。
+  **判漏服扫描不受下界影响**：确实没吃的历史 `PENDING` 任务仍会被判为 `MISSED`，只是不再升级。
+  现有 `idx_status_plan_time(status, plan_time)` 覆盖新条件。
 
 ---
 
@@ -119,11 +124,12 @@ key   : nianglin:lock:medication:daily
 | 3 | GET | `/api/medication/plan` | 相关方 | 用药计划列表 |
 | 4 | POST | `/api/medication/plan` | FAMILY | 新增用药计划 |
 | 5 | PUT | `/api/medication/plan/{id}` | FAMILY | 修改用药计划 |
+| 5.1 | PUT | `/api/medication/plan/{id}/enable` | FAMILY | 重新启用已停用的计划（收口 B · P1-5，幂等） |
 | 6 | DELETE | `/api/medication/plan/{id}` | FAMILY | 停用用药计划 |
 | 7 | GET | `/api/medication/task/calendar` | 相关方 | 服药日历 |
 | 8 | GET | `/api/medication/task/today` | 相关方 | 今日待服任务 |
 | 9 | POST | `/api/medication/task/{id}/confirm` | FAMILY / COMPANION | 确认服药 |
-| 10 | POST | `/api/medication/plan/from-order/{orderId}` | FAMILY（下单家属本人） | 从已完成订单的服务小结转入用药计划草稿（不落库、不含剂量） |
+| 10 | POST | `/api/medication/plan/from-order/{orderId}` | FAMILY（下单家属本人） | 从已完成订单转入用药计划草稿（小结可为空，不落库、不含剂量） |
 
 ---
 
@@ -335,6 +341,10 @@ key   : nianglin:lock:medication:daily
 ### 实现要点
 
 - 新增计划后**不需要**立即生成历史任务；只生成从今天起的任务（由定时任务或即时补生成处理）。
+- **收口 B · P1-4：当天已过去的时点不生成任务**（不生成、不补判漏服）。
+  边界：`planTime < now - generate-grace-minutes` 才跳过（配置 `nianglin.medication.generate-grace-minutes`，默认 1 分钟，
+  给建计划操作本身留宽容）。**只对「今天」生效**：补跑历史日期仍生成全部时点，那是补数据。
+  因此晚上 21:00 建「每日 2 次 08:00 / 20:00」的计划，当天不会凭空多出两条漏服。
 - 系统**不校验也不建议**用量是否合理 —— 那是医嘱的范畴，系统只做记录。
 
 ---
@@ -353,7 +363,11 @@ key   : nianglin:lock:medication:daily
 
 ### 实现要点
 
-- 修改 `timePoints` 或 `frequency` 后，**只影响未来未生成的任务**，已生成的历史任务不变（保留服药记录的真实性）。
+- 修改任何字段后，计划记录与**当天已生成任务同源**（收口 B · P1-4）：
+  同事务内找出当天 `status = PENDING` 且 `planTime > now` 的任务，删除后按新计划重建（删除策略见 §6.1），
+  并作废这些被删任务的未发送短信回执（避免占用家属当日频控额度）。
+  已过时点的任务（哪怕仍是 PENDING）与 `TAKEN` / `MISSED` 任务**一律不动** —— 那是历史事实。
+  换药名后当天未吃的任务会跟着变成新药名，老人不会照着旧提示吃药。
 
 ---
 
@@ -369,8 +383,28 @@ key   : nianglin:lock:medication:daily
 
 ### 实现要点
 
-- **不物理删除**，状态改为 `DISABLED`，历史服药记录必须保留。
-- 停用后不再生成新的服药任务；已生成的未确认任务标记为失效。
+- **计划本身不物理删除**，状态改为 `DISABLED`，历史服药记录必须保留。
+- 停用后不再生成新的服药任务；**未来 `PENDING` 任务物理删除**（收口 B · P1-5 方案 2）。
+  理由：唯一键 `uk_plan_time(plan_id, plan_time)` 不含 `deleted`，软删行仍占键；
+  而先查后插护栏走 `selectList` 会被 `@TableLogic` 自动过滤掉软删行，重新启用时必然撞键并被静默吞掉。
+  这些任务从未发生，硬删是正确语义，**无需数据库迁移**。
+  已发生的 `TAKEN` / `MISSED` 与已过时点任务一律保留。
+
+### 6.1 重新启用用药计划（收口 B · P1-5）
+
+`PUT /api/medication/plan/{id}/enable`　权限：FAMILY（须为该老人绑定人）
+
+```json
+{ "code": 200, "message": "已恢复", "data": null }
+```
+
+- 条件更新 `status: DISABLED → ACTIVE`；影响 0 行时幂等返回成功（已启用 / 并发下他人先启用），
+  **不重复重建**，避免打断用户刚确认过的任务状态。
+- 仅首次启用时复用 P1-4 的 `rebuildTodayPendingTasks(plan)` 重建当天未到点任务；
+  当天已过时点与已发生的任务不补生成、不改动。
+- 计划不存在返回 `404`。复用既有错误码，不新增。
+
+> 验收锚点：**停用 → 启用**之后，老人端首页当天必须立刻出现未到点的服药任务。
 
 ---
 
@@ -399,10 +433,11 @@ key   : nianglin:lock:medication:daily
     "endDate": "2026-09-20",
     "summary": {
       "totalCount": 7,
-      "takenCount": 5,
+      "takenCount": 4,
+      "lateTakenCount": 1,
       "missedCount": 1,
       "pendingCount": 1,
-      "missedRate": "14.29%"
+      "missedRate": "28.57%"
     },
     "days": [
       {
@@ -429,8 +464,14 @@ key   : nianglin:lock:medication:daily
 
 - `summary.missedRate` 是本模块的量化指标，用于答辩展示「漏服率从 X% 降到 Y%」。
 - 日历数据必须与 `SELECT * FROM medication_task WHERE elder_id=? AND plan_time BETWEEN ? AND ?` 逐条一致。
-- **三桶划分以 `MedicationBucket` 为唯一真源**（V3.2 起）：漏服 = `status='MISSED'` **或** `was_missed=1`；
-  待服 = `status='PENDING'`；其余已服。三个桶构成划分，恒有 `taken + missed + pending == total`。
+- **四桶划分以 `MedicationBucket` 为唯一真源**（V3.2 引入，收口 B · P0-8 扩为四桶）：
+  1. `status='MISSED'` → 漏服（一直没补记）；
+  2. `was_missed=1` 且 `status='TAKEN'` → **补记 `LATE_TAKEN`**（漏了之后被确认）；
+  3. `status='PENDING'` → 待服；
+  4. 其余 → 按时已服。
+  四桶构成划分，恒有 `takenCount + lateTakenCount + missedCount + pendingCount == totalCount`。
+  `taken` 的含义在 P0-8 起**不再包含补记**；老人端首页展示「已服 = taken + lateTaken（其中补记 N 次）」，
+  避免补记后数字变小。漏服率分母 = `missed + lateTaken`（补记算「曾经漏过」），按时完成率分母不含补记。
   判定规则与 SQL 表达式分别由 `MedicationBucket.of(...)` 与 `MedicationBucketSql.CASE_BUCKET` 承载，
   两侧由 `MedicationBucketParityTest`（结构层）与 `StatisticsMapperMedicationFixTest`（真库层）锁死。
   详见 [ADR-0014](../adr/0014-medication-bucket-single-source.md)。
@@ -511,7 +552,8 @@ key   : nianglin:lock:medication:daily
 
 ### 实现要点
 
-- 允许补确认（漏服后补记），此时 `status` 置为 `TAKEN`，同时保留 `wasMissed = true` 标记，便于统计。
+- 允许补确认（漏服后补记），此时 `status` 置为 `TAKEN`，同时保留 `wasMissed = true` 标记。
+  补记后任务落在 `LATE_TAKEN` 桶：列表标签显示「补记」，漏服率仍计入，按时完成率不计入（收口 B · P0-8）。
 - 记录 `confirm_by`（操作人）与 `confirm_time`，满足审计要求。
 
 ---
@@ -520,9 +562,13 @@ key   : nianglin:lock:medication:daily
 
 `POST /api/medication/plan/from-order/{orderId}`　权限：FAMILY，且须为本单下单家属本人
 
-陪诊员完成订单并提交服务小结后，家属可在订单详情页点「转入用药计划」，
-由**家属自己**填写药品名 / 每日次数 / 时间点；本接口只把这些输入解析成**草稿**返回，
-**不落库**。家属在用药计划页补齐用量后，再走既有的 [`POST /api/medication/plan`](#4-新增用药计划)。
+陪诊员完成订单后，家属可在订单详情页点「转入用药计划」，由**家属自己**填写药品名 / 每日次数 / 时间点；
+本接口只把这些输入解析成**草稿**返回，**不落库**。家属在用药计划页补齐用量后，
+再走既有的 [`POST /api/medication/plan`](#4-新增用药计划)。
+
+> **收口 B · P0-9：服务小结是可选信息**。陪诊员没填小结就完成时，本接口不再 `409` 拒绝，
+> 而是照常返回草稿并置 `summaryMissing = true`，由家属手动填写药名。
+> 转化链依赖的是「订单已完成、家属想建计划」这个意愿，不依赖小结内容。
 
 ### 请求参数
 
@@ -575,11 +621,14 @@ key   : nianglin:lock:medication:daily
         "timePoint": "12:00"
       }
     ],
-    "draftTtlMinutes": 30
+    "draftTtlMinutes": 30,
+    "summaryMissing": false
   }
 }
 ```
 
+- `summaryMissing = true` 表示订单没有服务小结、系统没有预填线索；前端应提示
+  「本次订单没有服务小结，请手动填写药名」。有小结时为 `false`。
 - `matched=false` **不是错误**：药名未匹配到药品字典时原样返回，由家属在用药计划页核对并选择药品；
   前端应提示「未匹配到药品字典」。
 - 响应**不含** `dosage`，前端预填时用量字段必须保持空白且必填。
@@ -592,7 +641,6 @@ key   : nianglin:lock:medication:daily
 | 3004 | 当前家属不是该订单的下单家属本人 |
 | 3007 | 服务小结命中诊断 / 用药建议词（防御性复查） |
 | 409 | 订单状态不是 `COMPLETED` / `REVIEWED`（服务未完成或被取消） |
-| 409 | 服务小结尚未填写（提示「服务小结尚未填写」） |
 | 11002 | 该订单 30 分钟内已生成过草稿（一单一转；前端据此引导去用药计划页继续填写） |
 | 400 | `elderId` 与订单不一致 / `items` 为空或超过 10 项 / `frequency` 越界 / `timePoint` 格式非法 |
 | 403 | 非 FAMILY 角色调用（COMPANION / ELDER / ADMIN） |
@@ -603,8 +651,9 @@ key   : nianglin:lock:medication:daily
   `order.familyId == 当前登录用户`——只有下单家属本人可转，其它相关方也一律 `3004`。
 - **状态**：订单必须为 `COMPLETED` 或 `REVIEWED`（V4 起放开已评价订单——家属评价后仍常需补建用药计划）；
   其余状态（`PENDING` / `ACCEPTED` / `IN_SERVICE` / `CANCELLED`）一律 `409`。本接口**不触发任何订单状态流转**。
-- **小结兜底**：`serviceSummary` 为空返回 `409`；即便完成时已查过，仍再用
-  `ComplianceCheckUtil#firstHit` 复查一次，命中返回 `3007`。
+- **小结兜底（收口 B · P0-9）**：`serviceSummary` 为空**不拒绝**，返回草稿并置 `summaryMissing=true`；
+  仅当小结非空时才用 `ComplianceCheckUtil#firstHit` 复查，命中返回 `3007`。
+  **只放宽「为空」，不放宽「含违规词」**；不新增「修改服务小结」端点（避免引入新的权限与审计面）。
 - **药名解析**：对 `medicine_dict` 依次做「去空白后精确匹配 → 忽略大小写精确匹配 → 包含匹配（取第一条）」，
   匹配到即回填 `medicineId` / `medicineName` 且 `matched=true`；匹配不到保留原文、`medicineId=null`、`matched=false`。
   该过程**只做字典比对，不解析服务小结、不推断适应症**。

@@ -88,6 +88,8 @@ public class CompanionStatisticsServiceImpl implements CompanionStatisticsServic
                 // 把它算进分母会让陪诊员凭空少一分完成率
                 .setCompletionRate(ChartDataVO.percent(completed, completed + cancelled))
                 .setAverageScore(averageScore(companionId))
+                // 收口 B · P2-3：periodIncome 是 companion.income.actual_income 的别名，
+                // 两者取同一条 selectOrderStats 的 income 列，禁止在此另算一套。
                 .setPeriodIncome(money(stats, "income"));
     }
 
@@ -275,6 +277,8 @@ public class CompanionStatisticsServiceImpl implements CompanionStatisticsServic
                 .setPeriodStart(range.start().toString())
                 .setPeriodEnd(range.end().toString())
                 .setOrderAmount(money(stats, "orderAmount"))
+                // 收口 B · P2-3：口径唯一，见指标字典 companion.income.actual_income；
+                // 工作台的 periodIncome 只是这个值的别名，不为别名单独定义公式。
                 .setActualIncome(money(stats, "income"))
                 .setUnsettledAmount(money(unsettled))
                 .setSettledAmount(money(settled))

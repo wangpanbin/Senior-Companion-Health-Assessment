@@ -262,8 +262,10 @@ watch(elderId, () => {
             <span class="metric__k">漏服</span>
           </li>
           <li class="metric">
-            <span class="metric__v is-num">{{ overview.medication?.taken ?? 0 }}</span>
-            <span class="metric__k">已服</span>
+            <span class="metric__v is-num">
+              {{ (overview.medication?.taken ?? 0) + (overview.medication?.lateTaken ?? 0) }}
+            </span>
+            <span class="metric__k">已服（含补记）</span>
           </li>
           <li class="metric">
             <span class="metric__v is-num">{{ overview.medication?.pending ?? 0 }}</span>

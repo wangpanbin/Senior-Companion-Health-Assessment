@@ -117,6 +117,15 @@ public enum ResultCode {
      * 必须先处置（放回大厅 / 强制取消）才能封禁。</p>
      */
     COMPANION_HAS_ACTIVE_ORDER(2012, "该陪诊员名下有在途订单，请先处置后再封禁"),
+    /**
+     * 陪诊员接单状态为 REST / OFFLINE 时不可进大厅、不可抢单（收口 B · P0-2）。
+     *
+     * <p>与 {@link #COMPANION_NOT_AUDITED} 同属「接单资格」校验链，但语义不同：
+     * 2003 是「资质没过」，本码是「资质过了但当前没开接单」。
+     * 原计划用 2004，但 2004 已被 {@link #USER_DISABLED} 占用、2012 预留给 A 批，
+     * 故顺延为 2013；详见收口规格 P0-2 与 docs/api/README.md §4.3。</p>
+     */
+    COMPANION_NOT_ACCEPTING(2013, "当前处于休息中或离线，暂不可接单，请切回可接单"),
 
     /* ==================== 3xxx 陪诊订单 ==================== */
     ORDER_NOT_FOUND(3001, "订单不存在"),

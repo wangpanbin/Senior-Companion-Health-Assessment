@@ -33,8 +33,11 @@ public enum MedicationBucket {
     /** 已服：确认过，且从未漏过 */
     TAKEN(MedicationBucketSql.CODE_TAKEN, "已服"),
 
-    /** 漏服：扫描判定漏服，或漏服之后补记过 */
+    /** 漏服：扫描判定漏服，且一直没补记 */
     MISSED(MedicationBucketSql.CODE_MISSED, "漏服"),
+
+    /** 补记：曾判漏服、之后又被确认（收口 B · P0-8） */
+    LATE_TAKEN(MedicationBucketSql.CODE_LATE_TAKEN, "补记"),
 
     /** 待服：还没到确认时点，尚未结算 */
     PENDING(MedicationBucketSql.CODE_PENDING, "待服");
@@ -63,18 +66,20 @@ public enum MedicationBucket {
     /**
      * 判定一条服药任务落在哪个桶。
      *
-     * <p><b>判定顺序不能调换</b>：</p>
+     * <p><b>判定顺序不能调换</b>（收口 B · P0-8）：</p>
      * <ol>
-     *   <li>{@code was_missed = 1} 或 {@code status = 'MISSED'} → <b>漏服</b>。
-     *       前者是「漏了之后被补记」（补记后 {@code status} 已变成 {@code TAKEN}，
-     *       只有 {@code was_missed} 还留着痕迹），后者是「一直没吃被扫描判成漏服」。
-     *       两者都是事实上的漏服，必须一起统计。</li>
-     *   <li>{@code status = 'PENDING'} → <b>待服</b>。</li>
+     *   <li>{@code status = 'MISSED'} → <b>漏服</b>（一直没补记）。</li>
+     *   <li>{@code was_missed = true} 且 {@code status = 'TAKEN'} → <b>补记</b>。
+     *       补记后 {@code status} 已变成 {@code TAKEN}，只有 {@code was_missed} 留着痕迹；
+     *       它既不是「按时已服」也不是「仍未服」，必须显式建成第三态。</li>
+     *   <li>{@code status = 'PENDING'} → <b>待服</b>；此时即便 {@code was_missed = true}
+     *       也是脏数据（任务还没到点不可能被判漏服），按当前状态归待服。</li>
      *   <li>其余 → <b>已服</b>。</li>
      * </ol>
      *
-     * <p><b>「曾经漏服」优先于「当前状态」</b>：否则补记过的任务会被算进「已服」，
-     * 漏服率立刻被稀释。兜底返回 {@link #TAKEN} 而不是抛异常 ——
+     * <p><b>为什么先判 MISSED 再判 was_missed</b>：旧实现把两者合并成「漏服」，
+     * 补记后的任务在列表显示「已服」、统计却算「漏服」、今日已服数不增 ——
+     * 同一任务三个页面三个答案。兜底返回 {@link #TAKEN} 而不是抛异常 ——
      * 库里有一条脏状态值不该让整页统计 500。</p>
      *
      * @param status    任务状态字面量，可为 {@code null}
@@ -82,8 +87,11 @@ public enum MedicationBucket {
      * @return 落点桶，永远非 {@code null}
      */
     public static MedicationBucket of(String status, Boolean wasMissed) {
-        if (Boolean.TRUE.equals(wasMissed) || MedicationBucketSql.CODE_MISSED.equals(status)) {
+        if (MedicationBucketSql.CODE_MISSED.equals(status)) {
             return MISSED;
+        }
+        if (Boolean.TRUE.equals(wasMissed) && MedicationBucketSql.CODE_TAKEN.equals(status)) {
+            return LATE_TAKEN;
         }
         if (MedicationBucketSql.CODE_PENDING.equals(status)) {
             return PENDING;

@@ -27,8 +27,8 @@ import java.util.Map;
  * <h3>汇总口径必须与逐条记录对得上</h3>
  *
  * <p>{@code totalCount} 一定等于所有 {@code days[].tasks} 的长度之和，
- * 且 {@code takenCount + missedCount + pendingCount == totalCount} ——
- * 三个桶必须构成一个<b>划分</b>，每条任务恰好落进一个桶。</p>
+ * 且 {@code takenCount + lateTakenCount + missedCount + pendingCount == totalCount} ——
+ * 四个桶必须构成一个<b>划分</b>，每条任务恰好落进一个桶（收口 B · P0-8）。</p>
  *
  * <p>划分规则由 {@link MedicationBucket#of(String, Boolean)} 定义，
  * 本类只负责计数，不自带判定分支。SQL 侧复用
@@ -37,10 +37,10 @@ import java.util.Map;
  *
  * <p>规则（顺序不能调）：</p>
  * <ol>
- *   <li>{@code status = MISSED} 或 {@code was_missed = 1} → <b>漏服</b>。
- *       前者是「一直没吃被扫描判成漏服」，后者是「漏了之后被补记」
- *       （补记后 {@code status} 已变成 {@code TAKEN}，只有 {@code was_missed} 还留着痕迹）。
- *       两者都是事实上的漏服，必须一起统计，否则「漏服数」会漏掉其中一整类。</li>
+ *   <li>{@code status = MISSED} → <b>漏服</b>（一直没补记）</li>
+ *   <li>{@code was_missed = 1} 且 {@code status = TAKEN} → <b>补记</b>（收口 B · P0-8）
+ *       —— 补记后 {@code status} 已变成 {@code TAKEN}，只有 {@code was_missed} 留着痕迹；
+ *       它计入漏服率，但不再被叫作「已服」。</li>
  *   <li>{@code status = PENDING} → <b>待服</b></li>
  *   <li>其余（{@code TAKEN} 且从未漏过）→ <b>已服</b></li>
  * </ol>
@@ -88,10 +88,13 @@ public class MedicationCalendarVO {
         @Schema(description = "区间内任务总数", example = "7")
         private Integer totalCount;
 
-        @Schema(description = "已服数量", example = "5")
+        @Schema(description = "按时已服数量（不含补记）", example = "5")
         private Integer takenCount;
 
-        @Schema(description = "漏服数量（含漏服后补记的记录）", example = "1")
+        @Schema(description = "补记数量（收口 B · P0-8；计入漏服率、不计入按时完成率）", example = "1")
+        private Integer lateTakenCount;
+
+        @Schema(description = "漏服数量（不含补记）", example = "1")
         private Integer missedCount;
 
         @Schema(description = "待服数量", example = "1")
@@ -127,6 +130,7 @@ public class MedicationCalendarVO {
         Map<LocalDate, Day> grouped = new LinkedHashMap<>();
         int total = 0;
         int taken = 0;
+        int lateTaken = 0;
         int missed = 0;
         int pending = 0;
         for (MedicationTaskVO task : list) {
@@ -135,6 +139,7 @@ public class MedicationCalendarVO {
             // 曾经两边各写一套，导致 M10 的统计与本页口径对不上（V3.2 修正）。
             switch (MedicationBucket.of(task.getStatus(), task.getWasMissed())) {
                 case MISSED -> missed++;
+                case LATE_TAKEN -> lateTaken++;
                 case PENDING -> pending++;
                 case TAKEN -> taken++;
             }
@@ -152,9 +157,11 @@ public class MedicationCalendarVO {
         Summary summary = new Summary()
                 .setTotalCount(total)
                 .setTakenCount(taken)
+                .setLateTakenCount(lateTaken)
                 .setMissedCount(missed)
                 .setPendingCount(pending)
-                .setMissedRate(rate(missed, total));
+                // 补记算「曾经漏过」：漏服率分母 = missed + lateTaken（收口 B · P0-8）
+                .setMissedRate(rate(missed + lateTaken, total));
 
         return new MedicationCalendarVO()
                 .setElderId(elderId)

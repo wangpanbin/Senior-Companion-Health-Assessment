@@ -42,6 +42,11 @@ public interface CompanionStatisticsMapper {
      * @return 一行形如
      *         {@code {completedCount: 28, cancelledCount: 2, serviceMinutes: 2520,
      *         income: 3680.00, orderAmount: 4000.00}}；无数据时各计数为 0
+     *
+     * <p>收口 B · P2-3：{@code income} 是区间收入的<b>唯一</b>取数口径
+     * （{@code COALESCE(actual_fee, fee)}，按 {@code visit_time}、只看 COMPLETED / REVIEWED）。
+     * 工作台 {@code periodIncome} 与收入页 {@code actualIncome} 都读这一列，
+     * 字典里 {@code companion.workbench.period_income} 仅为别名，不单独定义公式。</p>
      */
     @Select("""
             SELECT COALESCE(SUM(CASE WHEN status IN ('COMPLETED', 'REVIEWED') THEN 1 ELSE 0 END), 0) AS completedCount,

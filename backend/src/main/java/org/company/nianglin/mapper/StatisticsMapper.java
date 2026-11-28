@@ -180,7 +180,7 @@ public interface StatisticsMapper {
             <script>
             SELECT d, COUNT(*) AS total,
                    SUM(CASE WHEN bucket = 'TAKEN' THEN 1 ELSE 0 END) AS taken,
-                   SUM(CASE WHEN bucket = 'MISSED' THEN 1 ELSE 0 END) AS missed,
+                   SUM(CASE WHEN bucket IN ('MISSED', 'LATE_TAKEN') THEN 1 ELSE 0 END) AS missed,
                    SUM(CASE WHEN bucket = 'PENDING' THEN 1 ELSE 0 END) AS pending
             FROM (
               SELECT DATE_FORMAT(plan_time, '%Y-%m-%d') AS d,
