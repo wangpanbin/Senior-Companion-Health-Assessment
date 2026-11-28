@@ -414,6 +414,7 @@
 |---|---|
 | 3001 | 订单不存在 |
 | 3002 | 订单**已是终态**（`REVIEWED` / `CANCELLED`），不可再处理 |
+| 3002 | 订单**尚无陪诊员**（`companion_id` 为空）且 `targetStatus = COMPLETED` —— 无陪诊员的单只能强制取消（见下方实现要点 5） |
 | 400 | `targetStatus` 不是 `COMPLETED` / `CANCELLED` |
 
 ### 实现要点（M9 验收关键项）
@@ -428,6 +429,14 @@
    - **写入 `admin_oper_log`**，含 `beforeStatus` / `afterStatus`；
    - 向家属与陪诊员**各发一条站内信**（`ORDER_CANCELLED` / 结果通知）。
 4. 已被强制终态化的订单，后续不能再走正向流转。
+5. **无陪诊员的单不可强制完成**（`3002`，message = 「该订单尚无陪诊员，无法强制完成，请改用强制取消」）。
+   一张没人接的单被强制完成后进入 `COMPLETED`（终态），而评价要求订单有陪诊员 ——
+   于是这张单永远停在「已完成」且永远评价不了，评价率的分母也从此与它永久不匹配。
+   家属若确实线下解决了，走强制取消（`targetStatus = CANCELLED`）即可。
+   前端配套建议：仲裁弹窗里若订单 `companionId` 为空，应直接把「强制完成」置灰并说明原因。
+6. 强制完成与正常完成走同一套费用汇总：强制完成会调用 `orderFeeItemService.applyOnComplete(orderId, null)`，
+   把申报服务费落成费用明细并重算 `actual_fee`。传 `null` 表示「陪诊员可能没申报服务费」，
+   此时不凭空造 0 元明细，只重算已存在明细的合计。
 
 ---
 

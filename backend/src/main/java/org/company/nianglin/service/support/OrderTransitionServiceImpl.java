@@ -117,6 +117,18 @@ public class OrderTransitionServiceImpl implements OrderTransitionService {
             throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL);
         }
 
+        // P0-7：无陪诊员的订单不可强制完成。
+        // 一张没人接的待接单单被强制完成后会进入 COMPLETED（终态），
+        // 而评价要求订单有陪诊员 —— 于是这张单永远停在「已完成」且永远评价不了，
+        // 家属看到的是「订单数据异常，请联系管理员」，评价率的分母也从此与它永久不匹配。
+        // 家属若确实线下解决了，走强制取消即可（P0-5 的检查也只拦已结算单）。
+        // 复用 3002 而不是新增码：message 已直接指向「改用强制取消」这一下一步动作，
+        // 前端不需要为一条提示语单独映射错误码。
+        if (target == OrderStatus.COMPLETED && order.getCompanionId() == null) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ILLEGAL,
+                    "该订单尚无陪诊员，无法强制完成，请改用强制取消");
+        }
+
         order.setStatus(target.name());
         // 管理员强制终态同样要收敛风险（spec §5.3 第三行）：
         // 强制完成 / 强制取消也是「离开 PENDING」，风险不该继续挂着
