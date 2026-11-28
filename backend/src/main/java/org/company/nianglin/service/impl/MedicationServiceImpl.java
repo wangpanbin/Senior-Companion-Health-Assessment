@@ -162,6 +162,10 @@ public class MedicationServiceImpl implements MedicationService {
     @Value("${nianglin.medication.generate-grace-minutes:1}")
     private int generateGraceMinutes = 1;
 
+    /** 漏服升级扫描的时间下界（天）：只升级最近 N 天的漏服（收口 B · P2-1） */
+    @Value("${nianglin.medication.escalation-floor-days:30}")
+    private int escalationFloorDays = 30;
+
     /**
      * 「今天」的时间缝（收口 B · P1-4）。
      *
@@ -172,9 +176,14 @@ public class MedicationServiceImpl implements MedicationService {
         return LocalDate.now();
     }
 
+    /** 当前时刻的时间缝，供漏服扫描与「是否已过」共用 */
+    protected LocalDateTime now() {
+        return LocalDateTime.now();
+    }
+
     /** 该时点是否已经过去（含宽容窗口）；只对「今天」的生成生效 */
     protected boolean isPast(LocalDateTime planTime) {
-        return planTime.isBefore(LocalDateTime.now().plusMinutes(generateGraceMinutes));
+        return planTime.isBefore(now().plusMinutes(generateGraceMinutes));
     }
 
     /* ================================================================== */
@@ -686,7 +695,7 @@ public class MedicationServiceImpl implements MedicationService {
     @Transactional(rollbackFor = Exception.class)
     public int scanMissedTasks() {
         int thresholdMinutes = effectiveMissedThresholdMinutes();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = now();
         LocalDateTime deadline = now.minusMinutes(thresholdMinutes);
 
         // ① 认领：PENDING 超时 → MISSED（V4 原语义）。认领本身不再直接派发 ——
@@ -712,10 +721,15 @@ public class MedicationServiceImpl implements MedicationService {
 
         // ② 升级（V5 多级升级）：已 MISSED、未到顶的任务每轮重查 —— confirm 会把状态
         //    改成 TAKEN，自然离开本集合；notify_level 到 3 后不再进集合，扫描成本收敛
+        // 收口 B · P2-1：升级扫描加时间下界，历史漏服不再被回溯升级并打扰管理员。
+        // ①段（PENDING → MISSED）不加 —— 那条确实没吃，加下界会让它永远停在 PENDING。
+        // 现有 idx_status_plan_time(status, plan_time) 正好覆盖这两个条件。
+        LocalDateTime floor = now.minusDays(escalationFloorDays);
         List<MedicationTask> escalating = taskMapper.selectPage(new Page<>(1, missScanBatch),
                 Wrappers.<MedicationTask>lambdaQuery()
                         .eq(MedicationTask::getStatus, MedicationTaskStatus.MISSED.name())
                         .lt(MedicationTask::getNotifyLevel, ReminderLevelPolicy.LEVEL_ADMIN)
+                        .ge(MedicationTask::getPlanTime, floor)
                         .orderByAsc(MedicationTask::getPlanTime)).getRecords();
 
         int dispatched = 0;

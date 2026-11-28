@@ -107,6 +107,11 @@ key   : nianglin:lock:medication:daily
   陪诊员侧与管理员侧（动态参数）发送前过 `ComplianceCheckUtil` 词表，命中即拦截（宁可不发）；家属侧为 M6 既定模板，不含动态医疗表述。
 - **触达失败不回滚漏服判定**：提醒是通知动作，漏服是事实判定，两者解耦。
 - **扫描节奏与锁粒度不变**：30 分钟一轮、`nianglin:lock:medication:*` 的 Redis 锁口径与 M6 一致；升级派发并入同一轮扫描，既有压测结论不失效。
+- **升级时间下界（收口 B · P2-1）**：升级扫描只处理 `plan_time >= now - N 天`，默认 `N = 30`
+  （配置 `nianglin.medication.escalation-floor-days`）。历史漏服不再被回溯升级打扰管理员，
+  其 `notify_level` 保持原值（审计可见「本来该升没升」）。
+  **判漏服扫描不受下界影响**：确实没吃的历史 `PENDING` 任务仍会被判为 `MISSED`，只是不再升级。
+  现有 `idx_status_plan_time(status, plan_time)` 覆盖新条件。
 
 ---
 
