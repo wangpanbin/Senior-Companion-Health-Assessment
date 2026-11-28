@@ -62,7 +62,11 @@ html.elderly-mode {
     font-size: var(--nl-font-body);
   }
 
-  .el-button--large {
+  /* (0,5,1) —— 必须压过 index.scss <768px 兜底
+     `.el-button:not(--small):not(--text):not(--link)` 的 (0,4,0)：
+     旧写法裸 `.el-button--large` 编译后只有 (0,2,1)，56px 档在移动端全站失效
+     （issue #65，大按钮被钉在 48px）。text / link 豁免与兜底同口径：行内文案不撑高度。 */
+  .el-button.el-button--large:not(.el-button--text):not(.el-button--link) {
     min-height: 56px;
     font-size: 20px;
   }
