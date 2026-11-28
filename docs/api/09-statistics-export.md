@@ -441,7 +441,7 @@
 | `serviceDurationMinutes` | 区间内已完成订单的 `finish_time − start_time` 之和（分钟） |
 | `completionRate` | `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)`，**拒单不计入分母** |
 | `averageScore` | `companion_profile.score`（**累计口径，不重算**） |
-| `periodIncome` | 区间内已完成订单的 `SUM(COALESCE(actual_fee, fee))` |
+| `periodIncome` | 区间内已完成订单的 `SUM(COALESCE(actual_fee, fee))`。**它是 `actualIncome` 的别名**（收口 B · P2-3），两者取数同源、恒相等；保留此字段只为兼容既有看板配置 |
 
 ### 8.2 工作台趋势
 
@@ -554,7 +554,8 @@
 | `advanceTotal` | `order_fee_item` 中 `item_type = 'ADVANCE'`（代垫）的合计 |
 | `serviceTotal` | `order_fee_item` 中 `item_type = 'SERVICE'`（服务费）的合计 |
 
-**恒等式**：`unsettledAmount + settledAmount == actualIncome`。
+**恒等式**：`unsettledAmount + settledAmount == actualIncome`；且 `periodIncome == actualIncome`（别名，不是第二个口径）。
+这里展示的是**应收**（按 `visit_time`、不计 `payment_status`），与结算台账的「已实收」不是同一个数。
 
 > ⚠️ 本接口**没有「平台服务费」这个字段** —— 现有费用模型里只有 `fee`（合同服务费）、
 > `actualFee`（结算金额）与费用项 `ADVANCE` / `SERVICE` 两型（ADR-0009）。

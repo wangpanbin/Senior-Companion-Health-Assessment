@@ -134,7 +134,7 @@ bucket = TAKEN       其余（按时已服）
 | `companion.workbench.completed_order_count` | 区间完成单数 | 当前陪诊员在统计区间内「已完成」的陪诊订单数 | 统计区间 | `companion_order(companion_id, status, visit_time)` | `COUNT(status IN ('COMPLETED','REVIEWED'))` | 1 |
 | `companion.workbench.service_duration` | 区间服务时长（分钟） | 当前陪诊员在统计区间内「已完成」订单的服务时长合计 | 统计区间 | `companion_order(companion_id, status, start_time, finish_time)` | `SUM(TIMESTAMPDIFF(MINUTE, start_time, finish_time))`，仅两端均非空 | 1 |
 | `companion.workbench.completion_rate` | 区间完成率 | 当前陪诊员在统计区间内的完成率 | 统计区间 | `companion_order(companion_id, status, visit_time)` | `(COMPLETED + REVIEWED) / (COMPLETED + REVIEWED + CANCELLED)`，**拒单不计入分母** | 1 |
-| `companion.workbench.period_income` | 区间收入 | 当前陪诊员在统计区间内「已完成」订单的结算金额合计 | 统计区间 | `companion_order(companion_id, status, fee, actual_fee, visit_time)` | `SUM(COALESCE(actual_fee, fee))` | 1 |
+| `companion.workbench.period_income` | 区间收入（别名） | **同 `companion.income.actual_income`**；别名保留以兼容既有看板配置，不为它单独定义公式（收口 B · P2-3） | 统计区间 | `companion_order(companion_id, status, fee, actual_fee, visit_time)` | 同 `companion.income.actual_income`：`SUM(COALESCE(actual_fee, fee))`；工作台展示的是**应收**（不看 `payment_status`） | 1 |
 | `companion.trend.series_value` | 趋势序列值 | 当前陪诊员在统计区间内按天/周/月分桶的指标序列 | 统计区间 | `companion_order` + `order_review` | 按 `dimension` 取 ORDER=完成单数 / INCOME=区间收入 / RATING=有效评价平均分（**按条数加权**） | 1 |
 | `companion.income.order_amount` | 区间订单金额 | 区间内「已完成」订单的合同服务费合计 | 统计区间 | `companion_order(companion_id, fee, status, visit_time)` | `SUM(fee)` | 1 |
 | `companion.income.actual_income` | 区间实际收入 | 区间内「已完成」订单的结算金额合计 | 统计区间 | `companion_order(companion_id, fee, actual_fee, status, visit_time)` | `SUM(COALESCE(actual_fee, fee))` | 1 |

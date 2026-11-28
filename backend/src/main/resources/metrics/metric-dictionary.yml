@@ -261,11 +261,11 @@ metrics:
         field: completionRate
 
   - key: companion.workbench.period_income
-    name: 区间收入
-    scope: 当前陪诊员在统计区间内「已完成」订单的结算金额合计
+    name: 区间收入（别名）
+    scope: 同 companion.income.actual_income；别名保留以兼容既有看板配置（收口 B · P2-3）
     period: 统计区间（默认 30 天、最多 366 天、闭区间）
     source: companion_order(companion_id, status, fee, actual_fee, visit_time)
-    formula: "SUM(COALESCE(actual_fee, fee))，仅 COMPLETED + REVIEWED"
+    formula: "同 companion.income.actual_income：SUM(COALESCE(actual_fee, fee))，仅 COMPLETED + REVIEWED；展示应收，不看 payment_status"
     caliberVersion: 1
     endpoints:
       - "GET /api/statistics/companion/me"
