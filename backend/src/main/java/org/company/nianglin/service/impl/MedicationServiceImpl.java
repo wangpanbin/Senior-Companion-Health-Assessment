@@ -155,6 +155,25 @@ public class MedicationServiceImpl implements MedicationService {
     @Value("${nianglin.medication.max-calendar-days:31}")
     private int maxCalendarDays;
 
+    /** 当天生成时点允许的宽容窗口（分钟）：建计划本身要花时间，卡在整点不该被判已过 */
+    @Value("${nianglin.medication.generate-grace-minutes:1}")
+    private int generateGraceMinutes = 1;
+
+    /**
+     * 「今天」的时间缝（收口 B · P1-4）。
+     *
+     * <p>只抽这两个方法而不是全局注入 {@code Clock}：本类大量 {@code LocalDateTime.now()}，
+     * 全局改时钟影响面远超本单；{@code protected} 让单测用 {@code spy} 覆盖即可。</p>
+     */
+    protected LocalDate today() {
+        return LocalDate.now();
+    }
+
+    /** 该时点是否已经过去（含宽容窗口）；只对「今天」的生成生效 */
+    protected boolean isPast(LocalDateTime planTime) {
+        return planTime.isBefore(LocalDateTime.now().plusMinutes(generateGraceMinutes));
+    }
+
     /* ================================================================== */
     /* 1. 药品字典                                                         */
     /* ================================================================== */
@@ -261,7 +280,7 @@ public class MedicationServiceImpl implements MedicationService {
         // 这里把「今天」这一步即时做掉：否则家属刚建完计划，
         // 今日待服里空空如也，要等到明天 07:00 的定时任务看起来才生效，
         // 而实际上老人今天确实该吃药。
-        LocalDate today = LocalDate.now();
+        LocalDate today = today();
         if (covers(plan, today)) {
             generateTasksForPlan(plan, today);
         }
@@ -336,6 +355,10 @@ public class MedicationServiceImpl implements MedicationService {
         // updateById 会把实体里所有 null 字段一起写进去，
         // 于是「只想改备注」的请求会把剂量、时间点全清空
         applyPatch(planId, plan, patch);
+
+        // 收口 B · P1-4：同事务重算当天未到点的任务。
+        // 已过时点（含 TAKEN / MISSED）是历史事实，绝不删除。
+        rebuildTodayPendingTasks(effectivePlan(plan, patch));
 
         log.info("用药计划已修改 | planId={} | operator={}", planId, me.userId());
     }
@@ -693,7 +716,7 @@ public class MedicationServiceImpl implements MedicationService {
      * <ol>
      *   <li><b>先查后插</b>：先取出该日期已有的任务，跳过已存在的 (planId, planTime)。
      *       这挡住了「同一实例重复执行」。</li>
-     *   <li><b>唯一索引</b> {@code uk_plan_date_time}：挡住并发实例之间的竞争。</li>
+     *   <li><b>唯一索引</b> {@code uk_plan_time(plan_id, plan_time)}：挡住并发实例之间的竞争。</li>
      *   <li><b>Redis 分布式锁</b>（在调用方 {@code MedicationScheduler}）：让正常情况下
      *       只有一个实例真的执行，前两道只是兜底。</li>
      * </ol>
@@ -719,8 +742,15 @@ public class MedicationServiceImpl implements MedicationService {
         }
 
         int created = 0;
+        LocalDate today = today();
         for (String point : timePoints) {
             LocalDateTime planTime = date.atTime(LocalTime.parse(point, TIME_POINT_FORMAT));
+            // 收口 B · P1-4：只对「今天」跳过已过时点。补跑历史日期仍是补数据，
+            // 那时全部时点都要生成，否则历史用药记录会缺块。
+            if (date.equals(today) && isPast(planTime)) {
+                log.info("建计划当天已过时间点，跳过 | planId={} | planTime={}", plan.getId(), planTime);
+                continue;
+            }
             if (!existing.add(plan.getId() + "|" + planTime)) {
                 continue;
             }
@@ -752,6 +782,61 @@ public class MedicationServiceImpl implements MedicationService {
             }
         }
         return created;
+    }
+
+    /**
+     * 重算当天「未到点且未确认」的任务（收口 B · P1-4；P1-5 的重新启用复用本方法）。
+     *
+     * <p>删未来 + 重建，而不是原地改：时间点本身可能变化，原地改无法覆盖。
+     * 已过时点的任务是历史事实（哪怕还是 PENDING），一律不动；TAKEN / MISSED 也不动。
+     * 被删任务的未发送短信回执同步作废，否则它们会继续占用家属当日频控额度。</p>
+     */
+    private void rebuildTodayPendingTasks(MedicationPlan plan) {
+        LocalDate today = today();
+        if (!covers(plan, today)) {
+            return;
+        }
+        LocalDateTime cutoff = LocalDateTime.now();
+        var query = Wrappers.<MedicationTask>lambdaQuery()
+                .eq(MedicationTask::getPlanId, plan.getId())
+                .eq(MedicationTask::getPlanDate, today)
+                .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
+                .gt(MedicationTask::getPlanTime, cutoff);
+
+        List<Long> futureTaskIds = taskMapper.selectList(query).stream()
+                .map(MedicationTask::getId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        if (!futureTaskIds.isEmpty()) {
+            taskMapper.delete(Wrappers.<MedicationTask>lambdaQuery()
+                    .eq(MedicationTask::getPlanId, plan.getId())
+                    .eq(MedicationTask::getPlanDate, today)
+                    .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
+                    .gt(MedicationTask::getPlanTime, cutoff));
+            int voided = smsReminderService.voidUnsentForTasks(futureTaskIds, "plan-updated");
+            log.info("用药计划变更：重建当天任务 | planId={} | 删除={} | 作废回执={}",
+                    plan.getId(), futureTaskIds.size(), voided);
+        }
+        // 即便没有删掉任何任务，也要按新时间点补齐可能缺失的未来任务
+        generateTasksForPlan(plan, today);
+    }
+
+    /** 把 patch 叠加到内存中的计划上，供同事务的任务重建使用（不改数据库实体） */
+    private static MedicationPlan effectivePlan(MedicationPlan current, MedicationPlan patch) {
+        MedicationPlan effective = new MedicationPlan();
+        effective.setId(current.getId());
+        effective.setElderId(current.getElderId());
+        effective.setMedicineId(patch.getMedicineId() == null ? current.getMedicineId() : patch.getMedicineId());
+        effective.setMedicineName(patch.getMedicineName() == null ? current.getMedicineName() : patch.getMedicineName());
+        effective.setDosage(patch.getDosage() == null ? current.getDosage() : patch.getDosage());
+        effective.setFrequency(patch.getFrequency() == null ? current.getFrequency() : patch.getFrequency());
+        effective.setTimePoints(patch.getTimePoints() == null ? current.getTimePoints() : patch.getTimePoints());
+        effective.setMealRelation(patch.getMealRelation() == null ? current.getMealRelation() : patch.getMealRelation());
+        effective.setStartDate(patch.getStartDate() == null ? current.getStartDate() : patch.getStartDate());
+        // patch.endDate 为 null 在 applyPatch 里已表达「清空」，这里同口径
+        effective.setEndDate(patch.getEndDate());
+        return effective;
     }
 
     /** 计划在指定日期是否生效（长期用药的 endDate 为 null 视为永远生效） */
