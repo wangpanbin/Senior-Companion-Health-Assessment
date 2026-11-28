@@ -29,6 +29,7 @@ import org.company.nianglin.service.support.OrderTransitionServiceImpl;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.mapper.ElderProfileMapper;
+import org.company.nianglin.mapper.OrderCheckinMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
 import org.company.nianglin.mapper.OrderRejectLogMapper;
 import org.company.nianglin.mapper.OrderStatusLogMapper;
@@ -147,6 +148,10 @@ class OrderServiceTest {
     @Mock
     private MatchingService matchingService;
 
+    /** 打卡记录（closure-2026-11 · P0-3）——完成服务的留痕校验 */
+    @Mock
+    private OrderCheckinMapper orderCheckinMapper;
+
     private OrderServiceImpl orderService;
 
     @BeforeEach
@@ -164,7 +169,7 @@ class OrderServiceTest {
                 elderProfileMapper, companionProfileMapper, sysUserMapper, orderReadMapper,
                 elderService, messageService, redisTemplate, new ObjectMapper(),
                 transitionService, orderFeeItemService, fulfillmentService, new FulfillmentProperties(),
-                matchingService, new MatchingProperties());
+                matchingService, new MatchingProperties(), orderCheckinMapper);
     }
 
     @AfterEach
@@ -782,6 +787,8 @@ class OrderServiceTest {
         given(companionProfileMapper.selectList(any()))
                 .willReturn(List.of(companionProfile(AuditStatus.APPROVED)));
         given(orderMapper.selectById(ORDER_ID)).willReturn(inServiceOrder());
+        // P0-3：完成服务前须有「到院」/「完成」打卡，否则回 3012
+        given(orderCheckinMapper.selectCount(any())).willReturn(1L);
         given(orderMapper.updateById(any(CompanionOrder.class))).willReturn(1);
 
         OrderCompleteDTO dto = new OrderCompleteDTO();
@@ -807,6 +814,8 @@ class OrderServiceTest {
         given(companionProfileMapper.selectList(any()))
                 .willReturn(List.of(companionProfile(AuditStatus.APPROVED)));
         given(orderMapper.selectById(ORDER_ID)).willReturn(inServiceOrder());
+        // P0-3：完成服务前须有「到院」/「完成」打卡，否则回 3012
+        given(orderCheckinMapper.selectCount(any())).willReturn(1L);
         given(orderMapper.updateById(any(CompanionOrder.class))).willReturn(1);
 
         OrderCompleteDTO dto = new OrderCompleteDTO();

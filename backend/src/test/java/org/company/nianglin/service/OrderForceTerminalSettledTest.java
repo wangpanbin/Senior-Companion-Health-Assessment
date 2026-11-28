@@ -102,7 +102,7 @@ class OrderForceTerminalSettledTest {
                 null, companionProfileMapper, sysUserMapper, null,
                 null, messageService, null, new ObjectMapper(),
                 transitionService, orderFeeItemService, null, null,
-                null, new MatchingProperties());
+                null, new MatchingProperties(), null);
 
         adminService = new AdminServiceImpl(null, companionProfileMapper, sysUserMapper,
                 null, orderMapper, operLogMapper,

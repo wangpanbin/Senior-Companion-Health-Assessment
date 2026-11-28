@@ -95,6 +95,13 @@ class AdminArbitrateTest {
     @Mock
     private MessageService messageService;
 
+    /**
+     * 费用汇总（ADR-0009）。P0-6 起「强制完成」也会调它，
+     * 传 null 的话这里必须是 mock 而不是 null，否则强制完成的用例会 NPE。
+     */
+    @Mock
+    private OrderFeeItemService orderFeeItemService;
+
     @Mock
     private UserNameResolver userNameResolver;
 
@@ -118,9 +125,9 @@ class AdminArbitrateTest {
         orderService = new OrderServiceImpl(orderMapper, statusLogMapper, null,
                 null, companionProfileMapper, sysUserMapper, null,
                 null, messageService, null, new ObjectMapper(),
-                transitionService, null, null, null,
+                transitionService, orderFeeItemService, null, null,
                 // V3.4 智能调度：本类不碰大厅与候选推荐，两个入参用不到
-                null, new MatchingProperties());
+                null, new MatchingProperties(), null);
 
         adminService = new AdminServiceImpl(null, companionProfileMapper, sysUserMapper,
                 null, orderMapper, operLogMapper,

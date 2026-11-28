@@ -17,6 +17,7 @@ import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.config.FulfillmentProperties;
 import org.company.nianglin.config.MatchingProperties;
 import org.company.nianglin.constant.AuditStatus;
+import org.company.nianglin.constant.CheckinNode;
 import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OperationParam;
@@ -31,6 +32,7 @@ import org.company.nianglin.dto.OrderHallQuery;
 import org.company.nianglin.dto.OrderQuery;
 import org.company.nianglin.dto.OrderRejectDTO;
 import org.company.nianglin.entity.CompanionOrder;
+import org.company.nianglin.entity.OrderCheckin;
 import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.OrderRejectLog;
@@ -38,6 +40,7 @@ import org.company.nianglin.entity.OrderStatusLog;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.CompanionOrderMapper;
+import org.company.nianglin.mapper.OrderCheckinMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.mapper.ElderProfileMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
@@ -67,6 +70,7 @@ import org.company.nianglin.vo.OrderRecommendVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -183,6 +187,25 @@ public class OrderServiceImpl implements OrderService {
     private final MatchingService matchingService;
     /** 智能调度配置（V3.4 · T3）——大厅候选集上限等 */
     private final MatchingProperties matchingProperties;
+    /**
+     * 打卡记录（closure-2026-11 · P0-3）——完成服务的留痕校验。
+     *
+     * <p>放在构造参数<b>末尾</b>是为了不改动既有位置参数调用的顺序：
+     * 本类有 5 处测试用位置参数构造它，中间插一个会让所有调用点静默错位。</p>
+     */
+    private final OrderCheckinMapper orderCheckinMapper;
+
+    /**
+     * 「完成服务前必须有打卡留痕」开关（closure-2026-11 · P0-3）。
+     *
+     * <p>默认<b>开</b>。用 {@link Boolean} 而不是 {@code boolean}：纯 Mockito 单测不起容器，
+     * 字段保持 {@code null}，而 {@code null} 必须被当成「开」——
+     * 否则默认值会随「有没有 Spring 容器」而变，同一条规则在测试与生产里表现不同。</p>
+     *
+     * <p>关闭只用于历史数据回填与极端场景应急。</p>
+     */
+    @Value("${nianglin.execution.require-checkin-on-complete:true}")
+    private Boolean requireCheckinOnComplete;
 
     /* ================================================================== */
     /* 1. 创建订单                                                         */
@@ -663,6 +686,13 @@ public class OrderServiceImpl implements OrderService {
         }
         String photosJson = writePhotoList(dto.getPhotos());
 
+        // P0-3：完成服务前必须留下「到院」或「完成」打卡的凭证。
+        // 位置在状态预检、身份校验与合规校验之后、状态写入之前：
+        // · 放在状态校验之后 —— 否则一张 PENDING 单会先报 3012 而不是 3002，把用户引向错误方向；
+        // · 放在身份校验之后 —— 他人调用仍然回 4003，不会泄露这张单的留痕情况；
+        // · 放在合规校验之后 —— 小结含用药建议时仍然先回 3007，提示要能一次改对。
+        requireCheckinProof(order);
+
         LocalDateTime now = LocalDateTime.now();
         order.setFinishTime(now);
         if (summary != null) {
@@ -683,6 +713,37 @@ public class OrderServiceImpl implements OrderService {
         // 一期虽然恒为 UNPAID，但 M9 支持线下回填之后写死就是一句谎话
         log.info("订单已完成 | orderId={} | companionId={} | declaredFee={}", orderId, me.userId(), dto.getFee());
         return OrderFlowResultVO.ofCompleted(now, order.getPaymentStatus());
+    }
+
+    /**
+     * 完成服务的留痕校验（closure-2026-11 · P0-3）。
+     *
+     * <p><b>为什么必须有打卡才能结束订单</b>：陪诊员接单后可以直接「完成服务」把订单结束，
+     * 一个打卡都不做 —— 订单变成「已完成」，家属能去评价，而打卡表、轨迹表、服务照片全是空的。
+     * 更要紧的是订单一旦完成就<b>再也补不了打卡</b>（打卡要求订单处于已接单或服务中），
+     * 事后要证明「确实到院了、确实取药了」，系统里没有任何证据。</p>
+     *
+     * <p><b>只认 {@code ARRIVE} / {@code FINISH} 两个节点</b>：出发打卡证明不了到院，
+     * 凭证链不能断在关键节点。</p>
+     *
+     * <p><b>不选「自动补一条 FINISH 打卡」</b>：自动补录等于让「系统替陪诊员声称他完成了服务」，
+     * 与「留痕 = 陪诊员真实动作」的语义冲突。宁可拒绝，也不伪造证据。</p>
+     *
+     * <p>开关 {@code nianglin.execution.require-checkin-on-complete} 默认开，
+     * 仅用于历史数据回填与极端场景快速降级。</p>
+     */
+    private void requireCheckinProof(CompanionOrder order) {
+        if (Boolean.FALSE.equals(requireCheckinOnComplete)) {
+            return;
+        }
+        Long count = orderCheckinMapper.selectCount(Wrappers.<OrderCheckin>lambdaQuery()
+                .eq(OrderCheckin::getOrderId, order.getId())
+                .in(OrderCheckin::getNode,
+                        List.of(CheckinNode.ARRIVE.name(), CheckinNode.FINISH.name())));
+        if (count == null || count <= 0) {
+            throw new BusinessException(ResultCode.ORDER_CHECKIN_REQUIRED,
+                    "请先完成「到院」打卡再结束服务");
+        }
     }
 
     /* ================================================================== */
