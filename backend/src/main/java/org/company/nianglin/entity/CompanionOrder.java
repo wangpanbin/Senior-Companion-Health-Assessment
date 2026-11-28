@@ -165,10 +165,29 @@ public class CompanionOrder extends BaseEntity {
     private Long cancelBy;
 
     /**
-     * 是否被管理员强制处理：0-否 1-是
+     * 仲裁判定对服务方不利（对陪诊员计违规）：0-否 1-是。
+     *
+     * <p><b>语义在 closure-2026-11 · P1-3 定死</b>：这一列<b>不是</b>「是否经过仲裁」，
+     * 而是「这次仲裁判了陪诊员有责」。旧列注释写的是「是否被管理员强制处理」，
+     * 那会被后人读成「这单走没走过仲裁流程」——
+     * 两者完全不同，且仲裁「发生过」这件事另有地方记（{@code order_status_log} + 订单 remark）。</p>
+     *
+     * <p>违规次数不单独存列，从订单行聚合
+     * （{@code COUNT(*) WHERE companion_id = ? AND arbitrate_flag = 1}），
+     * 避免计数列与订单行双写不一致。</p>
      */
-    @Schema(description = "是否被管理员强制处理：0-否 1-是")
+    @Schema(description = "仲裁判定对服务方不利（对陪诊员计违规）：0-否 1-是（不是「是否经过仲裁」）")
     private Integer arbitrateFlag;
+
+    /**
+     * 仲裁判定需退费给家属：0-否 1-是。
+     *
+     * <p>退费只是<b>线下执行的记账线索</b> —— 一期不做在线支付（计划书合规与隐私说明），
+     * 平台不发起任何资金操作，只把「该退」这件事记成订单行上的事实，
+     * 结算台账据此对账，避免漏退。</p>
+     */
+    @Schema(description = "仲裁判定需退费给家属：0-否 1-是（线下执行）")
+    private Integer refundFlag;
 
     /**
      * 管理员纠纷处理结果说明

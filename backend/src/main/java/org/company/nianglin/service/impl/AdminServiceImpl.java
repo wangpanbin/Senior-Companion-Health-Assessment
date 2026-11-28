@@ -675,17 +675,44 @@ public class AdminServiceImpl implements AdminService {
         String beforeOrderNo = before.getOrderNo();
 
         String result = dto.getResult().trim();
+        boolean refundToFamily = Boolean.TRUE.equals(dto.getRefundToFamily());
+        boolean penaltyToCompanion = Boolean.TRUE.equals(dto.getPenaltyToCompanion());
         StringBuilder remark = new StringBuilder("管理员纠纷处理：").append(result);
-        if (Boolean.TRUE.equals(dto.getRefundToFamily())) {
+        if (refundToFamily) {
             // 一期不做在线支付，这里只是一条记账线索：真要退款走线下，
             // 平台只把「该退」这件事留在状态日志与操作日志里
             remark.append("；标记退费给家属（线下结算）");
         }
-        if (Boolean.TRUE.equals(dto.getPenaltyToCompanion())) {
+        if (penaltyToCompanion) {
             remark.append("；对陪诊员计违规");
         }
 
         CompanionOrder after = orderService.forceTerminal(id, target, remark.toString());
+
+        // P1-3：把两个执法开关落成**结构化字段**。
+        //
+        // 旧实现只往 remark 里追加一句话（「标记退费给家属」「对陪诊员计违规」），
+        // 那是自由文本：事后查不到、统计不了，「累计违规 N 次应限制接单」这类治理动作
+        // 因此没有数据基础 —— 管理员以为自己记下了，系统其实什么都没记。
+        //
+        // 现在两列都是订单行上的事实：
+        //   arbitrate_flag = 1 → 本次仲裁判定**对服务方不利**（对陪诊员计违规）
+        //   refund_flag    = 1 → 本次仲裁判定**需退费给家属**（线下执行，一期不做在线支付）
+        //
+        // 与 forceTerminal 同一事务：强制终态失败（已终态 / 已结算 / 无陪诊员）时，
+        // 这两个标记同样不会留下 —— 否则会出现「订单没仲裁成，却记了陪诊员一笔违规」。
+        int flagRows = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .eq(CompanionOrder::getId, id)
+                .set(CompanionOrder::getArbitrateFlag, penaltyToCompanion ? 1 : 0)
+                .set(CompanionOrder::getRefundFlag, refundToFamily ? 1 : 0));
+        if (flagRows == 0) {
+            // 写不进去就整体回滚：仲裁标记丢失比仲裁失败更难解释
+            log.warn("仲裁标记写入影响行数为 0 | orderId={} | adminId={}", id, SecurityUtils.currentUserId());
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "订单状态已变更，仲裁标记未写入，请刷新后重试");
+        }
+        // 内存对象同步：同一事务内后续再读这张单，看到的必须是刚写下的判定
+        before.setArbitrateFlag(penaltyToCompanion ? 1 : 0);
+        before.setRefundFlag(refundToFamily ? 1 : 0);
         LocalDateTime handleTime = LocalDateTime.now();
 
         // 双方各发一条：只通知家属会让陪诊员在事后才知道自己被判定有责任，
@@ -1329,7 +1356,8 @@ public class AdminServiceImpl implements AdminService {
                     elder == null ? null : elder.getName(),
                     ageOf(elder),
                     companionNames.get(order.getCompanionId()));
-            records.add(AdminOrderVO.of(base, complaintIds.get(order.getId())));
+            records.add(AdminOrderVO.of(base, complaintIds.get(order.getId()),
+                    order.getArbitrateFlag(), order.getRefundFlag()));
         }
         return records;
     }
@@ -1441,6 +1469,12 @@ public class AdminServiceImpl implements AdminService {
                     .or().like(CompanionOrder::getHospital, keyword));
         }
         applyRange(wrapper, CompanionOrder::getCreateTime, query.getStartDate(), query.getEndDate(), "下单时间");
+        // P1-3：按仲裁判定筛选。
+        // arbitrate_flag 的语义是「本次仲裁判了陪诊员有责」（不是「是否经过仲裁」），
+        // 所以这个条件筛出来的是「被判过违规的订单」，正是管理员要批量跟进的那批。
+        if (query.getArbitrateFlag() != null) {
+            wrapper.eq(CompanionOrder::getArbitrateFlag, query.getArbitrateFlag() ? 1 : 0);
+        }
         if (Boolean.TRUE.equals(query.getHasComplaint())) {
             // 用子查询而不是「先查投诉再 IN 订单 ID」：投诉量可能上千，
             // 拼进 IN 列表既慢又可能在极端情况下超出 SQL 长度限制

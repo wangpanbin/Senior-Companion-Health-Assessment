@@ -41,6 +41,13 @@ public class AdminOrderVO extends OrderVO {
     @Schema(description = "该订单最新一条投诉的 ID；无投诉时不返回", example = "3001")
     private Long complaintId;
 
+    @Schema(description = "本次仲裁判定对服务方不利（对陪诊员计违规）：0-否 1-是"
+            + "（注意：不是「是否经过仲裁」，closure-2026-11 · P1-3）", example = "1")
+    private Integer arbitrateFlag;
+
+    @Schema(description = "本次仲裁判定需退费给家属：0-否 1-是（线下执行）", example = "0")
+    private Integer refundFlag;
+
     /**
      * 由用户端列表项补齐纠纷信息。
      *
@@ -51,6 +58,18 @@ public class AdminOrderVO extends OrderVO {
      * @param complaintId  最新投诉 ID，无投诉传 {@code null}
      */
     public static AdminOrderVO of(OrderVO base, Long complaintId) {
+        return of(base, complaintId, null, null);
+    }
+
+    /**
+     * 补齐仲裁标记（closure-2026-11 · P1-3）。
+     *
+     * @param base         已经装配好的用户端列表项
+     * @param complaintId  最新投诉 ID，无投诉传 {@code null}
+     * @param arbitrateFlag 仲裁判定对服务方不利：1-是 0-否
+     * @param refundFlag    仲裁判定需退费给家属：1-是 0-否
+     */
+    public static AdminOrderVO of(OrderVO base, Long complaintId, Integer arbitrateFlag, Integer refundFlag) {
         if (base == null) {
             return null;
         }
@@ -86,6 +105,8 @@ public class AdminOrderVO extends OrderVO {
         // 全局 Jackson 的 non_null 策略会让 null 字段自动消失，
         // 因此这里赋 null 就是「不返回」，不需要额外处理
         vo.setComplaintId(complaintId);
+        vo.setArbitrateFlag(arbitrateFlag);
+        vo.setRefundFlag(refundFlag);
         return vo;
     }
 

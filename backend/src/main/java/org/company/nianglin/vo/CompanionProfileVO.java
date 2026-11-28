@@ -67,6 +67,17 @@ public class CompanionProfileVO {
     @Schema(description = "接单状态：AVAILABLE-可接单 / REST-休息中", example = "AVAILABLE")
     private String workStatus;
 
+    /**
+     * 被管理员仲裁判定违规的订单数（closure-2026-11 · P1-3）。
+     *
+     * <p>由订单行聚合得出（{@code arbitrate_flag = 1} 的订单数），不维护计数列 ——
+     * 双写不一致会让「累计违规 N 次」这类治理动作做错人。</p>
+     *
+     * <p>⚠️ 填充点在 {@code CompanionServiceImpl}（B 批独占文件），本批只把字段就位。</p>
+     */
+    @Schema(description = "被判违规的订单数（由订单行聚合，不维护计数列）", example = "2")
+    private Integer penaltyCount;
+
     @Schema(description = "接单状态中文", example = "可接单")
     private String workStatusLabel;
 

@@ -389,10 +389,12 @@
 | `keyword` | String | 否 | 订单号 / 医院 / 姓名 |
 | `startDate` / `endDate` | String | 否 | 下单时间区间 |
 | `hasComplaint` | Boolean | 否 | 只看有投诉的订单（纠纷优先） |
+| `arbitrateFlag` | Boolean | 否 | 按仲裁判定筛选：`true` = 只看**已判定陪诊员违规**的订单；`false` = 只看未判违规的；不传 = 全部（closure-2026-11 · P1-3） |
 
 ### 响应
 
-结构同分页约定，`records` 为 `OrderVO`，额外包含 `hasComplaint` 与 `complaintId`。
+结构同分页约定，`records` 为 `OrderVO`，额外包含 `hasComplaint`、`complaintId`、
+`arbitrateFlag` 与 `refundFlag`（后两个是仲裁判定结果，closure-2026-11 · P1-3）。
 
 ---
 
@@ -432,6 +434,21 @@
   }
 }
 ```
+
+### 业务规则
+
+1. 目标状态只能是 `COMPLETED` / `CANCELLED`（终态封闭，管理员也不得把订单拉回中间态）。
+2. `refundToFamily` / `penaltyToCompanion` 两个执法开关**落成订单行上的结构化字段**
+   （closure-2026-11 · P1-3），备注文本只作为人读线索保留，不再是唯一事实来源：
+   - `penaltyToCompanion = true` → `companion_order.arbitrate_flag = 1`
+     （语义：**本次仲裁判了陪诊员有责**；注意**不是**「是否经过仲裁」）；
+   - `refundToFamily = true` → `companion_order.refund_flag = 1`
+     （**线下执行**，一期不做在线支付，平台不发起任何资金操作）。
+3. 两个标记与强制终态**同一事务**：强制终态失败（已终态 / 已结算 / 无陪诊员）时，
+   标记同样不会留下 —— 否则会出现「订单没仲裁成，却记了陪诊员一笔违规」。
+4. 两个开关都不选时两列写 `0`（不留上一笔的残留值）。
+5. 陪诊员的违规次数**从订单行聚合**（`arbitrate_flag = 1` 的订单数），
+   不维护计数列 —— 双写不一致会让「累计违规 N 次」这类治理动作做错人。
 
 ### 错误场景
 

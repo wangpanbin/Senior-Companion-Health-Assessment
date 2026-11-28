@@ -1,5 +1,6 @@
 package org.company.nianglin.service;
 
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.config.MatchingProperties;
@@ -216,6 +217,58 @@ class AdminArbitrateTest {
     }
 
     /* ================================================================== */
+    /* P1-3 · 仲裁执法开关落成结构化字段                                    */
+    /* ================================================================== */
+
+    @Test
+    @DisplayName("仲裁 · 计违规要落成 arbitrate_flag=1（不能只写进备注文本）")
+    void arbitrateShouldPersistPenaltyFlag() {
+        givenCachedOrder();
+        ArbitrateDTO dto = arbitrateDto("CANCELLED");
+        dto.setPenaltyToCompanion(true);
+
+        adminService.arbitrate(ORDER_ID, dto);
+
+        assertEquals(1, cached.getArbitrateFlag(),
+                "计违规必须落到订单行的 arbitrate_flag，否则「累计违规 N 次」没有数据基础");
+        LambdaUpdateWrapper<CompanionOrder> wrapper = captureFlagUpdate();
+        assertTrue(wrapper.getSqlSet().contains("arbitrate_flag="), wrapper.getSqlSet());
+        assertEquals(1, valueWrittenFor(wrapper, "arbitrate_flag"), "arbitrate_flag 应写 1");
+        assertEquals(0, valueWrittenFor(wrapper, "refund_flag"), "refund_flag 应写 0");
+    }
+
+    @Test
+    @DisplayName("仲裁 · 退费要落成 refund_flag=1（财务据此对账，不漏退）")
+    void arbitrateShouldPersistRefundFlag() {
+        givenCachedOrder();
+        ArbitrateDTO dto = arbitrateDto("CANCELLED");
+        dto.setRefundToFamily(true);
+
+        adminService.arbitrate(ORDER_ID, dto);
+
+        assertEquals(1, cached.getRefundFlag(),
+                "退费标记必须落到订单行，备注文本不能是唯一事实来源");
+        LambdaUpdateWrapper<CompanionOrder> wrapper = captureFlagUpdate();
+        assertTrue(wrapper.getSqlSet().contains("refund_flag="), wrapper.getSqlSet());
+        assertEquals(0, valueWrittenFor(wrapper, "arbitrate_flag"), "arbitrate_flag 应写 0");
+        assertEquals(1, valueWrittenFor(wrapper, "refund_flag"), "refund_flag 应写 1");
+    }
+
+    @Test
+    @DisplayName("仲裁 · 两个开关都不选时两列都写 0（不留上一笔的残留值）")
+    void arbitrateShouldPersistZeroFlagsWhenNoSwitchSelected() {
+        givenCachedOrder();
+
+        adminService.arbitrate(ORDER_ID, arbitrateDto("CANCELLED"));
+
+        assertEquals(0, cached.getArbitrateFlag());
+        assertEquals(0, cached.getRefundFlag());
+        LambdaUpdateWrapper<CompanionOrder> wrapper = captureFlagUpdate();
+        assertEquals(0, valueWrittenFor(wrapper, "arbitrate_flag"), "arbitrate_flag 应写 0");
+        assertEquals(0, valueWrittenFor(wrapper, "refund_flag"), "refund_flag 应写 0");
+    }
+
+    /* ================================================================== */
     /* forceTerminal 自身的边界                                             */
     /* ================================================================== */
 
@@ -267,6 +320,43 @@ class AdminArbitrateTest {
     private void givenCachedOrder() {
         given(orderMapper.selectById(ORDER_ID)).willReturn(cached);
         given(orderMapper.updateById(any(CompanionOrder.class))).willReturn(1);
+        // P1-3：仲裁标记走一条独立的条件更新；影响行必须为 1，否则标记写不进去
+        given(orderMapper.update(any(), any())).willReturn(1);
+    }
+
+    /**
+     * 抓「写仲裁标记」那条 UPDATE 的更新包。
+     *
+     * <p>走公开方法可观察的写入意图：{@code updateById} 是状态流转那条，
+     * 仲裁标记是独立的一条条件更新（{@code update(null, wrapper)}）。</p>
+     */
+    private LambdaUpdateWrapper<CompanionOrder> captureFlagUpdate() {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaUpdateWrapper<CompanionOrder>> captor =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(orderMapper).update(any(), captor.capture());
+        return captor.getValue();
+    }
+
+    /**
+     * 取出「某列被写成了什么值」。
+     *
+     * <p>MyBatis-Plus 的 SET 子句里，值是占位符（{@code #{ew.paramNameValuePairs.MPGENVALn}}），
+     * 真实值在参数表里；而且<b>渲染顺序与调用顺序不一致</b>（多次 {@code set} 会被后写的排到前面），
+     * 所以不能按参数表的下标猜，只能按列名反查。</p>
+     */
+    private Object valueWrittenFor(LambdaUpdateWrapper<CompanionOrder> wrapper, String column) {
+        String sqlSet = wrapper.getSqlSet();
+        int columnAt = sqlSet.indexOf(column);
+        if (columnAt < 0) {
+            return null;
+        }
+        int keyStart = sqlSet.indexOf("MPGENVAL", columnAt);
+        if (keyStart < 0) {
+            return null;
+        }
+        int keyEnd = sqlSet.indexOf('}', keyStart);
+        return wrapper.getParamNameValuePairs().get(sqlSet.substring(keyStart, keyEnd));
     }
 
     private AdminOperLog captureOperLog() {
