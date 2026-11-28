@@ -147,6 +147,8 @@ class OrderForceCompleteFeeTest {
     private void givenOrder(CompanionOrder order) {
         given(orderMapper.selectById(ORDER_ID)).willReturn(order);
         lenient().when(orderMapper.updateById(any(CompanionOrder.class))).thenReturn(1);
+        // P1-3：仲裁标记走一条独立的条件更新，写不进去（影响行 0）会整体回滚并抛错
+        lenient().when(orderMapper.update(any(), any())).thenReturn(1);
     }
 
     private CompanionOrder order(OrderStatus status) {
