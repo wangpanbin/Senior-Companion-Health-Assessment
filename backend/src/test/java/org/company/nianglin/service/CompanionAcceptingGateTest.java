@@ -169,6 +169,22 @@ class CompanionAcceptingGateTest {
     }
 
     @Test
+    @DisplayName("大厅不返回已被指派的订单（收口 A · P0-1：查询须带 companion_id IS NULL）")
+    void hallShouldExcludeAssignedOrders() {
+        stubProfile(WorkStatus.AVAILABLE);
+        stubHallQuery();
+
+        orderService.hall(new OrderHallQuery());
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<LambdaQueryWrapper<CompanionOrder>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper).selectList(captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("IS NULL"),
+                "指派单不进大厅：改派后 companion_id 非空的单必须被过滤，实际 SQL：" + sql);
+    }
+
+    @Test
     @DisplayName("休息中陪诊员抢单应返回 2013，且不产生任何订单写入")
     void restCompanionShouldBeRejectedFromAccept() {
         stubProfile(WorkStatus.REST);

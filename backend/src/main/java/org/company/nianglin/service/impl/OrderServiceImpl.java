@@ -525,6 +525,12 @@ public class OrderServiceImpl implements OrderService {
 
         LambdaQueryWrapper<CompanionOrder> wrapper = Wrappers.<CompanionOrder>lambdaQuery()
                 .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name())
+                // 收口 A · P0-1：指派单不进公共大厅。
+                // 管理员改派后 companion_id 非空，这张单已经「有人负责」——
+                // 留在大厅里会被其他陪诊员抢走，改派等于白做。
+                // 被指派人经站内信（ORDER_REASSIGNED）进入订单详情接单，
+                // 这个已知空窗在 docs/api/03-order.md §3 有登记。
+                .isNull(CompanionOrder::getCompanionId)
                 // 就诊时间已过的单子不再挂在大厅上：家属没取消，但陪诊员也接不了了
                 .gt(CompanionOrder::getVisitTime, LocalDateTime.now())
                 // 截断前先按就诊时间排，保证「留下哪几条」是确定的
@@ -747,6 +753,14 @@ public class OrderServiceImpl implements OrderService {
         CompanionOrder order = orderMapper.selectById(orderId);
         if (order == null) {
             throw new BusinessException(ResultCode.ORDER_NOT_FOUND);
+        }
+        // 收口 A · P0-1：接单必须校验「无既有指派」。
+        // 管理员已把这单指派给别人时，其他陪诊员不能抢 —— 否则改派随时可能
+        // 被一个不知情的抢单推翻，管理员与家属都会以为「平台已安排好的人」仍然成立。
+        // 指派给本人（companion_id == 我）放行：被指派人正是从这里接单的。
+        if (order.getCompanionId() != null && !order.getCompanionId().equals(me.userId())) {
+            throw new BusinessException(ResultCode.ORDER_ALREADY_TAKEN,
+                    "该订单已被管理员指派给其他陪诊员");
         }
         LocalDateTime now = LocalDateTime.now();
         order.setCompanionId(me.userId());

@@ -3,6 +3,7 @@ package org.company.nianglin.service;
 import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.config.FulfillmentProperties;
 import org.company.nianglin.config.MatchingProperties;
 import org.company.nianglin.constant.AuditStatus;
@@ -13,6 +14,7 @@ import org.company.nianglin.entity.CompanionOrder;
 import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.OrderRejectLog;
 import org.company.nianglin.entity.OrderStatusLog;
+import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.CompanionOrderMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.mapper.OrderCheckinMapper;
@@ -38,6 +40,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
@@ -46,7 +49,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
- * P0-1 · 拒单后清空接单人。
+ * P0-1 · 拒单后清空接单人 + 接单指派校验。
  *
  * <p>旧语义下拒单不清 {@code companion_id}，于是：</p>
  * <ul>
@@ -55,13 +58,14 @@ import static org.mockito.Mockito.verify;
  *   <li>他拒单后仍会收到这张单的推送。</li>
  * </ul>
  *
- * <p>本类锁定「拒单 → 该单回到无指派状态」。</p>
+ * <p>本类锁定「拒单 → 该单回到无指派状态」，以及配套的
+ * 「已被指派给他人的单不可被其他陪诊员抢走」（改派语义与抢单语义的边界）。</p>
  *
  * @author 银龄伴诊团队
  * @since closure-2026-11
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("P0-1 · 拒单后清空接单人")
+@DisplayName("P0-1 · 拒单后清空接单人 + 接单指派校验")
 class OrderAcceptRejectTest {
 
     private static final Long COMPANION_ID = 301L;
@@ -163,6 +167,23 @@ class OrderAcceptRejectTest {
         orderService.reject(ORDER_ID, rejectDto());
 
         verify(statusLogMapper, never()).insert(any(OrderStatusLog.class));
+    }
+
+    @Test
+    @DisplayName("接单时该单已被指派给他人 → 3003（改派不被不知情的抢单推翻）")
+    void acceptShouldRejectWhenAssignedToOther() {
+        given(companionProfileMapper.selectList(any()))
+                .willReturn(List.of(companionProfile()));
+        CompanionOrder assigned = pendingOrder();
+        // 这张单管理员已指派给了另一位陪诊员（999 ≠ 我 301）
+        assigned.setCompanionId(999L);
+        given(orderMapper.selectById(ORDER_ID)).willReturn(assigned);
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> orderService.accept(ORDER_ID));
+
+        assertEquals(ResultCode.ORDER_ALREADY_TAKEN.getCode(), ex.getCode());
+        // 拒绝路径不得产生任何订单写入（乐观锁更新也不该发生）
+        verify(orderMapper, never()).updateById(any(CompanionOrder.class));
     }
 
     private void givenCompanionAndOrder() {
