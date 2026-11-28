@@ -395,7 +395,7 @@
 | 订单 `/api/order/**` | 读（自己） | 下单 / 取消 / 读 | 接单 / 流转 / 读 | 读 / 强制终态 |
 | 陪诊执行 `/api/execution/**` | 读 | 读 | 打卡 / 上传 | 读 |
 | 体征记录 `/api/family/elder/{id}/vitals`、`/api/elder/vitals`、`/api/execution/{orderId}/vitals` | 读（**仅自己档案，无写入口**） | 读写（**仅绑定老人；撤回仅本人代录**） | 读写（**须为本单陪诊员；写 / 撤回仅服务中，读可至已完成 / 已评价**） | — |
-| 用药管理 `/api/medication/**` | 读 / 确认 | 读写 / 确认 | 确认 | 读 |
+| 用药管理 `/api/medication/**` | 读 | 读写 / 确认 | 确认 | 读 |
 | 评价与投诉 `/api/review`、`/api/complaint` | 读 | 写 | 读 | 读 / 处理 |
 | 产品反馈 `/api/feedback` | **—（写接口被只读拦截器拒；路由 roles 不含 ELDER）** | 读写（**仅本人提交的**） | 读写（**仅本人提交的**） | 读详情（`GET /api/feedback/{id}`）+ 读全量列表与处理（`/api/admin/feedback/**`） |
 | 站内信 `/api/message/**` | ○ | ○ | ○ | ○ |
@@ -413,6 +413,11 @@
 | 运营参数 `/api/admin/operation-param/**` | — | — | — | 全部（**读写**，改完热生效并写 `admin_oper_log`，见 [08-admin.md §28](./08-admin.md#28-运营参数配置p2-3)） |
 
 图例：○ = 全部权限；读 = 仅 GET；读写 = 全部；— = 无权限。
+
+> **用药管理 ELDER 列（收口 B · DOC-2）**：ELDER 只读、**不可确认服药**。
+> 代码四处一致：`MedicationController#confirm` 的 `@PreAuthorize("hasAnyRole('FAMILY','COMPANION')")`、
+> 类注释与 `@Operation`、前端 `elder/medication.vue` 不渲染确认按钮、`05-medication.md` §9 权限说明。
+> 原矩阵的「读 / 确认」是孤立错误。见 §2.4 老人账号只读规则。
 
 > **本表只表达「角色」这一层。** 加粗的限定语（如「仅绑定到自己名下的」、「须为本单陪诊员」）
 > 是 `@PreAuthorize` **无法表达**的部分，由 Service 层的归属校验承担：

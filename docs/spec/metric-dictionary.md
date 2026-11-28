@@ -109,6 +109,11 @@ bucket = TAKEN       其余（按时已服）
 
 详见 [ADR-0014](../adr/0014-medication-bucket-single-source.md)。
 
+> **口径边界（收口 B · DOC-2）**：`medication_task.confirm_by` 会落库，但老人账号（ELDER）不可执行写操作，
+> 因此现有数据里 `confirm_by` **恒为 FAMILY / COMPANION**。这意味着本节的「用药依从性 / 漏服率」
+> 只能表达为「**家属 / 陪诊员代确认率**」，反映的是代确认行为，**不等于老人实际服药率**。
+> 解读该指标时必须带上这个前提；将来若开放老人自确认，需同步改只读规则、`@PreAuthorize`、前端入口与本口径。
+
 ### 2.3 待处理
 
 | 指标 key | 名称 | 统计范围 | 统计时间 | 数据来源 | 计算公式 | 口径版本 |
