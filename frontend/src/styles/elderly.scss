@@ -130,6 +130,15 @@ html.elderly-mode {
     border-radius: var(--nl-radius-card);
   }
 
+  /* 404 页的装饰动效（views/error/404.vue 的漂浮指路牌场景）对老人模式关闭：
+     持续运动的元素对老年用户是干扰，且不携带任何信息。
+     ⚠️ 必须写在全局而不是组件 scoped 里（同下方 Tab Bar 的 :global() 踩坑原因），
+     且要 !important + 多级选择器 —— 组件的 .nl-404__svg[data-v] 样式在运行期
+     后插入 <head>，同特异性会被它盖回去。 */
+  .nl-404 .nl-404__svg {
+    animation: none !important;
+  }
+
   /* 底部胶囊 Tab Bar 放大。
      注意：这三条以前写在 NlTabBar.vue 的 <style scoped> 里，用的是
      `:global(html.elderly-mode) .nl-tabbar { &__icon ... }` —— Vue 的 scoped
