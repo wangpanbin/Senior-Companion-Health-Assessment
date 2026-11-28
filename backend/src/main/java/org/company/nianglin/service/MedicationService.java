@@ -65,8 +65,11 @@ public interface MedicationService {
     /** 修改用药计划（局部更新；只影响未来未生成的任务） */
     void updatePlan(Long planId, MedicationPlanUpdateDTO dto);
 
-    /** 停用用药计划（不物理删除，服药历史保留） */
+    /** 停用用药计划（计划本身不物理删除；未来 PENDING 任务物理删除，见 P1-5） */
     void disablePlan(Long planId);
+
+    /** 重新启用已停用的计划（收口 B · P1-5；幂等，复用当天任务重建逻辑） */
+    void enablePlan(Long planId);
 
     /**
      * 从已完成订单的服务小结转入用药计划草稿（V4 · P1-2，{@code docs/api/05-medication.md} §10）。

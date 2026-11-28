@@ -100,6 +100,9 @@ public class MedicationServiceImpl implements MedicationService {
     /** 订单转草稿的判重窗口（分钟）：窗口内同一订单只允许生成一次草稿 */
     private static final int DRAFT_TTL_MINUTES = 30;
 
+    /** 单轮任务生成唯一键冲突告警阈值（收口 B · P1-5：静默吞改为可观测） */
+    private static final int DUPLICATE_CONFLICT_ALERT_THRESHOLD = 5;
+
     private final MedicineDictMapper medicineMapper;
     private final MedicationPlanMapper planMapper;
     private final MedicationTaskMapper taskMapper;
@@ -398,10 +401,15 @@ public class MedicationServiceImpl implements MedicationService {
                 .map(MedicationTask::getId)
                 .toList();
 
-        int removed = taskMapper.delete(Wrappers.<MedicationTask>lambdaQuery()
+        // 先保留既有的软删语义（下一行物理删除会把这些行彻底清掉），
+        // 再按收口 B · P1-5 方案 2 物理删除未来 PENDING 任务：
+        // @TableLogic 对先查后插护栏不可见，软删行仍占 uk_plan_time，
+        // 重新启用时必然撞唯一键并被静默吞掉（那种失败没有任何错误码）。
+        taskMapper.delete(Wrappers.<MedicationTask>lambdaQuery()
                 .eq(MedicationTask::getPlanId, planId)
                 .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
                 .gt(MedicationTask::getPlanTime, cutoff));
+        int removed = taskMapper.deleteFuturePendingPhysically(planId, cutoff);
 
         // 回执与任务同生共死：任务删了，未发送的短信也必须作废。
         // 否则这些孤儿回执会继续占用家属当日频控额度，导致后续真正需要提醒的任务被静默跳过。
@@ -409,6 +417,35 @@ public class MedicationServiceImpl implements MedicationService {
 
         log.info("用药计划已停用 | planId={} | 清理未到期任务={} 条 | 作废未发送回执={} 条 | operator={}",
                 planId, removed, voided, me.userId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void enablePlan(Long planId) {
+        LoginUser me = SecurityUtils.currentUser();
+        MedicationPlan plan = requirePlan(planId);
+        elderService.requireAccessible(plan.getElderId());
+
+        // 幂等：已启用（ACTIVE）的计划不重复重建，否则会删掉用户刚确认过的未来任务
+        if (!MedicationPlanStatus.DISABLED.name().equals(plan.getStatus())) {
+            log.info("用药计划已处于启用状态，忽略重复请求 | planId={}", planId);
+            return;
+        }
+
+        int rows = planMapper.update(null, Wrappers.<MedicationPlan>lambdaUpdate()
+                .eq(MedicationPlan::getId, planId)
+                .eq(MedicationPlan::getStatus, MedicationPlanStatus.DISABLED.name())
+                .set(MedicationPlan::getStatus, MedicationPlanStatus.ACTIVE.name()));
+        if (rows == 0) {
+            // 并发下另一个请求已经启用：同样幂等返回，不重建
+            log.info("用药计划已被其它请求启用，跳过重复重建 | planId={}", planId);
+            return;
+        }
+
+        // 复用 P1-4 建立的同一份重建逻辑（删未来 PENDING + 按新计划补生成）
+        plan.setStatus(MedicationPlanStatus.ACTIVE.name());
+        rebuildTodayPendingTasks(plan);
+        log.info("用药计划已重新启用 | planId={} | operator={}", planId, me.userId());
     }
 
     @Override
@@ -742,6 +779,7 @@ public class MedicationServiceImpl implements MedicationService {
         }
 
         int created = 0;
+        int conflicts = 0;
         LocalDate today = today();
         for (String point : timePoints) {
             LocalDateTime planTime = date.atTime(LocalTime.parse(point, TIME_POINT_FORMAT));
@@ -777,9 +815,16 @@ public class MedicationServiceImpl implements MedicationService {
                 created++;
             } catch (DuplicateKeyException e) {
                 // 唯一索引兜住了并发写入。这属于「正常但需要留痕」的情况：
-                // 如果频繁出现，说明分布式锁没生效，要去看 Redis 配置
+                // 如果频繁出现，说明删除策略或唯一键定义有问题（P1-5）
+                conflicts++;
                 log.warn("服药任务已存在（唯一索引拦截） | planId={} | planTime={}", plan.getId(), planTime);
             }
+        }
+        if (conflicts > DUPLICATE_CONFLICT_ALERT_THRESHOLD) {
+            // 收口 B · P1-5：旧实现只 log.warn，软删占位导致 100% 静默失败。
+            // 超阈值升为 error，让运维能看到「启用成功但今天没药」这类故障。
+            log.error("唯一键冲突超阈值，请检查任务删除策略与唯一键定义 | planId={} | conflicts={}",
+                    plan.getId(), conflicts);
         }
         return created;
     }
@@ -809,11 +854,13 @@ public class MedicationServiceImpl implements MedicationService {
                 .toList();
 
         if (!futureTaskIds.isEmpty()) {
+            // 与 disablePlan 同一删除策略：保留软删语义后立即物理清除，避免软删行占唯一键（P1-5）
             taskMapper.delete(Wrappers.<MedicationTask>lambdaQuery()
                     .eq(MedicationTask::getPlanId, plan.getId())
                     .eq(MedicationTask::getPlanDate, today)
                     .eq(MedicationTask::getStatus, MedicationTaskStatus.PENDING.name())
                     .gt(MedicationTask::getPlanTime, cutoff));
+            taskMapper.deleteFuturePendingPhysically(plan.getId(), cutoff);
             int voided = smsReminderService.voidUnsentForTasks(futureTaskIds, "plan-updated");
             log.info("用药计划变更：重建当天任务 | planId={} | 删除={} | 作废回执={}",
                     plan.getId(), futureTaskIds.size(), voided);

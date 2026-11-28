@@ -119,6 +119,7 @@ key   : nianglin:lock:medication:daily
 | 3 | GET | `/api/medication/plan` | 相关方 | 用药计划列表 |
 | 4 | POST | `/api/medication/plan` | FAMILY | 新增用药计划 |
 | 5 | PUT | `/api/medication/plan/{id}` | FAMILY | 修改用药计划 |
+| 5.1 | PUT | `/api/medication/plan/{id}/enable` | FAMILY | 重新启用已停用的计划（收口 B · P1-5，幂等） |
 | 6 | DELETE | `/api/medication/plan/{id}` | FAMILY | 停用用药计划 |
 | 7 | GET | `/api/medication/task/calendar` | 相关方 | 服药日历 |
 | 8 | GET | `/api/medication/task/today` | 相关方 | 今日待服任务 |
@@ -358,7 +359,7 @@ key   : nianglin:lock:medication:daily
 ### 实现要点
 
 - 修改任何字段后，计划记录与**当天已生成任务同源**（收口 B · P1-4）：
-  同事务内找出当天 `status = PENDING` 且 `planTime > now` 的任务，软删后按新计划重建，
+  同事务内找出当天 `status = PENDING` 且 `planTime > now` 的任务，删除后按新计划重建（删除策略见 §6.1），
   并作废这些被删任务的未发送短信回执（避免占用家属当日频控额度）。
   已过时点的任务（哪怕仍是 PENDING）与 `TAKEN` / `MISSED` 任务**一律不动** —— 那是历史事实。
   换药名后当天未吃的任务会跟着变成新药名，老人不会照着旧提示吃药。
@@ -377,8 +378,28 @@ key   : nianglin:lock:medication:daily
 
 ### 实现要点
 
-- **不物理删除**，状态改为 `DISABLED`，历史服药记录必须保留。
-- 停用后不再生成新的服药任务；已生成的未确认任务标记为失效。
+- **计划本身不物理删除**，状态改为 `DISABLED`，历史服药记录必须保留。
+- 停用后不再生成新的服药任务；**未来 `PENDING` 任务物理删除**（收口 B · P1-5 方案 2）。
+  理由：唯一键 `uk_plan_time(plan_id, plan_time)` 不含 `deleted`，软删行仍占键；
+  而先查后插护栏走 `selectList` 会被 `@TableLogic` 自动过滤掉软删行，重新启用时必然撞键并被静默吞掉。
+  这些任务从未发生，硬删是正确语义，**无需数据库迁移**。
+  已发生的 `TAKEN` / `MISSED` 与已过时点任务一律保留。
+
+### 6.1 重新启用用药计划（收口 B · P1-5）
+
+`PUT /api/medication/plan/{id}/enable`　权限：FAMILY（须为该老人绑定人）
+
+```json
+{ "code": 200, "message": "已恢复", "data": null }
+```
+
+- 条件更新 `status: DISABLED → ACTIVE`；影响 0 行时幂等返回成功（已启用 / 并发下他人先启用），
+  **不重复重建**，避免打断用户刚确认过的任务状态。
+- 仅首次启用时复用 P1-4 的 `rebuildTodayPendingTasks(plan)` 重建当天未到点任务；
+  当天已过时点与已发生的任务不补生成、不改动。
+- 计划不存在返回 `404`。复用既有错误码，不新增。
+
+> 验收锚点：**停用 → 启用**之后，老人端首页当天必须立刻出现未到点的服药任务。
 
 ---
 

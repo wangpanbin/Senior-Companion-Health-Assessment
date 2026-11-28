@@ -133,13 +133,23 @@ public class MedicationController {
     }
 
     @Operation(summary = "停用用药计划",
-            description = "不物理删除，历史服药记录完整保留；停用后不再生成新任务")
+            description = "计划本身不删除，历史服药记录保留；未来未服任务物理删除（避免软删占唯一键），停用后不再生成新任务")
     @PreAuthorize("hasRole('FAMILY')")
     @DeleteMapping("/plan/{id}")
     public Result<Void> disablePlan(@Parameter(description = "用药计划 ID", example = "7001")
                                     @PathVariable("id") Long id) {
         medicationService.disablePlan(id);
         return Result.success("已停用", null);
+    }
+
+    @Operation(summary = "重新启用用药计划",
+            description = "收口 B · P1-5：条件更新 DISABLED→ACTIVE，幂等；仅首次启用时重建当天未到点的服药任务")
+    @PreAuthorize("hasRole('FAMILY')")
+    @PutMapping("/plan/{id}/enable")
+    public Result<Void> enablePlan(@Parameter(description = "用药计划 ID", example = "7001")
+                                   @PathVariable("id") Long id) {
+        medicationService.enablePlan(id);
+        return Result.success("已恢复", null);
     }
 
     /* ==================== 服药任务 ==================== */
