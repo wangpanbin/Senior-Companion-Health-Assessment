@@ -160,7 +160,7 @@ class HallSortTest {
                 elderProfileMapper, companionProfileMapper, sysUserMapper, orderReadMapper,
                 elderService, messageService, redisTemplate, new ObjectMapper(),
                 null, orderFeeItemService, fulfillmentService, fulfillmentProperties,
-                matchingService, matchingProperties);
+                matchingService, matchingProperties, null);
 
         loginAsCompanion();
     }

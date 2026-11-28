@@ -1,6 +1,7 @@
 package org.company.nianglin.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import org.springframework.dao.DuplicateKeyException;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -99,7 +100,24 @@ public class ChatServiceImpl implements ChatService {
             message.setFileUrl(file.getUrl());
             message.setFileSize(file.getSize());
         }
-        chatMessageMapper.insert(message);
+        // P2-4：客户端消息 ID（幂等键）。空白视为「没带」—— 老客户端行为不变。
+        String clientMsgId = StringUtils.hasText(dto.getClientMsgId())
+                ? dto.getClientMsgId().trim() : null;
+        message.setClientMsgId(clientMsgId);
+        try {
+            chatMessageMapper.insert(message);
+        } catch (DuplicateKeyException e) { // TEMP-RED
+            // 同一 clientMsgId 重复提交 → 返回已存在的那条（幂等成功，不报错）。
+            // 弱网下用户重试「发送」，出现两条一样的消息是最典型的困扰。
+            ChatMessage existing = findByClientMsgId(orderId, me.userId(), clientMsgId);
+            if (existing == null) {
+                // 不是幂等键冲突（可能是别的唯一键），照常抛出去
+                throw e;
+            }
+            log.info("聊天消息幂等命中 | orderId={} | messageId={} | clientMsgId={}",
+                    orderId, existing.getId(), clientMsgId);
+            return ChatMessageVO.of(existing);
+        }
         ChatMessageVO vo = ChatMessageVO.of(message);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -109,6 +127,29 @@ public class ChatServiceImpl implements ChatService {
         });
         log.info("聊天消息已保存 | orderId={} | messageId={} | msgType={}", orderId, message.getId(), type);
         return vo;
+    }
+
+    /**
+     * 按客户端消息 ID 查已存在的那条（幂等命中时用）。
+     *
+     * <p>唯一键是 {@code (order_id, sender_id, client_msg_id)}，
+     * 这里按同一组条件查，命中即说明刚才那次插入撞的就是它。</p>
+     */
+    private ChatMessage findByClientMsgId(Long orderId, Long senderId, String clientMsgId) {
+        if (clientMsgId == null) {
+            return null;
+        }
+        try {
+            return chatMessageMapper.selectOne(Wrappers.<ChatMessage>lambdaQuery()
+                    .eq(ChatMessage::getOrderId, orderId)
+                    .eq(ChatMessage::getSenderId, senderId)
+                    .eq(ChatMessage::getClientMsgId, clientMsgId)
+                    .last("LIMIT 1"));
+        } catch (Exception e) {
+            log.warn("幂等消息回查失败 | orderId={} | clientMsgId={} | {}",
+                    orderId, clientMsgId, e.getMessage());
+            return null;
+        }
     }
 
     private static void requireChatWriter(LoginUser me, CompanionOrder order) {

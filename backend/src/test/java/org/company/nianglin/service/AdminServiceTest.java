@@ -148,7 +148,7 @@ class AdminServiceTest {
                 new OperLogRecorderImpl(operLogMapper, userNameResolver), adminReadMapper, orderReadMapper,
                 orderRejectLogMapper, null, fulfillmentEventMapper,
                 messageService, orderService, userNameResolver, passwordEncoder, securityProperties,
-                tokenStore, new ObjectMapper());
+                tokenStore, new ObjectMapper(), null);
         loginAsAdmin();
     }
 

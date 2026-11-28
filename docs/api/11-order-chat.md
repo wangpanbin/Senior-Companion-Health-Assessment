@@ -22,6 +22,8 @@
 - 会话双方 = `companion_order.family_id`（下单家属）与 `companion_order.companion_id`（接单陪诊员）；
 - `companion_id` 为空（`PENDING` 未接单）时会话不存在，所有读写返回 `7003`；
 - 可聊状态 = 订单存在且已接单（`ACCEPTED / IN_SERVICE / COMPLETED / REVIEWED / CANCELLED` 均可，含取消后的交涉，见 ADR-0011 决策 D1）。
+- **取消后聊天记录一律保留**（[ADR-0023](./adr/0023-cancel-keeps-downstream-data.md)）：
+  取消不删除任何下游数据 —— 聊天是纠纷交涉与取证的现场，删掉等于让管理员在没有证据的情况下仲裁。
 
 ### ChatMessageVO（消息）
 
@@ -94,6 +96,7 @@
 | `msgType` | String | 是 | `TEXT` / `IMAGE` / `VIDEO` |
 | `content` | String | TEXT 必填 | ≤ 1000 字；媒体消息可传说明文字（≤ 1000 字） |
 | `fileId` | String | 媒体必填 | 先调 `POST /api/file/upload`（`bizType=CHAT`）拿到 |
+| `clientMsgId` | String | 否 | 客户端消息 ID（**幂等键**，≤ 64 字符；closure-2026-11 · P2-4）。不传 = 不做幂等 |
 
 ### 响应
 
@@ -133,6 +136,13 @@
 - 媒体消息的 `file_id` 必须满足 `sys_file.biz_type = 'CHAT' && uploader_id = 当前用户`，防止引用他人附件；`file_url` / `file_size` 落库为快照，展示不二次查附件表。
 - 发送链路做敏感词校验（复用订单服务小结同源词表），聊天不是绕过 3007 合规红线的旁路。
 - 服务端日志**先脱敏再拼接**：`log.info` 只打 `orderId / messageId / msgType / 字节数`，不打正文与姓名。
+- **幂等键 `clientMsgId`**（closure-2026-11 · P2-4）：弱网下发送超时重试会产生两条一样的消息，
+  陪诊员要自己分辨哪条是真的。客户端为每条消息生成一个唯一 ID（≤ 64 字符），
+  服务端按 `(order_id, sender_id, client_msg_id)` 唯一键去重：
+  重复提交时捕获唯一键冲突，**回查已存在的那条并原样返回**（幂等成功，不报错、不重复落库）。
+  - **不传 = 不做幂等**（老客户端行为完全不变；MySQL 唯一键对 NULL 不约束）。
+  - 迁移脚本：`backend/sql/V17__chat_client_msg_id.sql`（加列 + 唯一键 `uk_order_sender_client_msg`）。
+  - 前端自动生成该键的工单尚未开工（规格 Out of Scope）。
 
 ---
 

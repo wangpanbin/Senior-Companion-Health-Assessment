@@ -64,6 +64,19 @@ public interface OrderTransitionService {
     void forceTerminal(CompanionOrder order, OrderStatus target, Long adminId, String remark);
 
     /**
+     * 系统身份强制改变终态（定时任务用；closure-2026-11 · P1-1）。
+     *
+     * <p>与 {@link #forceTerminal} 的判定完全一致，<b>唯一区别是操作人</b>：
+     * 管理员路径写 {@code ADMIN}，本路径写 {@code SYSTEM}（operator_id 为 null）。
+     * 定时任务不是「某个管理员点的」—— 把系统操作记成管理员操作，审计就失去意义了。</p>
+     *
+     * @param order  订单实体
+     * @param target 目标状态，只允许 COMPLETED / CANCELLED
+     * @param remark 强制原因，写入状态日志的 isForce=1
+     */
+    void forceTerminalAsSystem(CompanionOrder order, OrderStatus target, String remark);
+
+    /**
      * 操作人上下文。
      *
      * @param userId  操作人 id

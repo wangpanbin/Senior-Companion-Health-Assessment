@@ -4,7 +4,10 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.constant.RoleConstants;
 import org.company.nianglin.entity.CompanionOrder;
+import org.company.nianglin.constant.CheckinNode;
+import org.company.nianglin.entity.OrderCheckin;
 import org.company.nianglin.mapper.CompanionOrderMapper;
+import org.company.nianglin.mapper.OrderCheckinMapper;
 import org.company.nianglin.security.JwtTokenProvider;
 import org.company.nianglin.security.TokenStore;
 import org.company.nianglin.support.TestTokens;
@@ -64,6 +67,31 @@ class OrderFeeItemTest {
 
     @Autowired
     private CompanionOrderMapper orderMapper;
+
+    /** P0-3：完成服务前须有「到院」/「完成」打卡，否则回 3012 */
+    @Autowired
+    private OrderCheckinMapper orderCheckinMapper;
+
+    /**
+     * 构造「已到院」的留痕前置。
+     *
+     * <p>1007 的种子打卡只有 DEPART（出发），而出发打卡证明不了到院 ——
+     * P0-3 之后走完成接口必须先有一条 ARRIVE。</p>
+     */
+    private void givenArriveCheckin(long orderId, long companionId) {
+        OrderCheckin checkin = new OrderCheckin();
+        checkin.setOrderId(orderId);
+        checkin.setCompanionId(companionId);
+        checkin.setNode(CheckinNode.ARRIVE.name());
+        checkin.setNodeSort(CheckinNode.ARRIVE.getSort());
+        checkin.setCheckinTime(java.time.LocalDateTime.now());
+        // DDL 里 longitude / latitude / distance 没有默认值，必须显式给值
+        checkin.setLongitude(new java.math.BigDecimal("0.000000"));
+        checkin.setLatitude(new java.math.BigDecimal("0.000000"));
+        checkin.setDistance(0);
+        checkin.setIsAbnormal(0);
+        orderCheckinMapper.insert(checkin);
+    }
 
     private String token(long userId, String role) {
         return TestTokens.bearer(tokenProvider, tokenStore, userId, role, "fee-item");
@@ -251,6 +279,7 @@ class OrderFeeItemTest {
     void zeroAmountServiceItemShouldNotFallBackToDeclaredFee() throws Exception {
         // 0.00 的服务费明细只能从完成接口进来：录入接口的金额校验是 > 0，
         // 而 OrderCompleteDTO.fee 是 @DecimalMin("0.00")（真实场景：公益陪诊，不收服务费）
+        givenArriveCheckin(ACCEPTED_ORDER, COMPANION_OF_1007);
         mockMvc.perform(post("/api/order/{id}/start", ACCEPTED_ORDER)
                         .header(AUTH_HEADER, token(COMPANION_OF_1007, RoleConstants.COMPANION)))
                 .andExpect(jsonPath("$.code").value(200));
@@ -283,6 +312,7 @@ class OrderFeeItemTest {
     @DisplayName("写入路径 · 完成订单随状态变更生成服务费明细，明细求和 == actual_fee")
     void completeShouldWriteServiceItemAndSum() throws Exception {
         // 1007（ACCEPTED，陪诊员 307）→ start → complete(fee=199.00)
+        givenArriveCheckin(ACCEPTED_ORDER, COMPANION_OF_1007);
         mockMvc.perform(post("/api/order/{id}/start", ACCEPTED_ORDER)
                         .header(AUTH_HEADER, token(COMPANION_OF_1007, RoleConstants.COMPANION)))
                 .andExpect(jsonPath("$.code").value(200));

@@ -84,6 +84,12 @@ public class ReviewServiceImpl implements ReviewService {
     /** 单个标签的字符上限 */
     private static final int MAX_TAG_LENGTH = 10;
 
+    /**
+     * 重评序号上限（closure-2026-11 · P1-2）：{@code review_seq} 最大为 2，
+     * 即「首次评价 + 一次重评」。第三次提交一律 6002。
+     */
+    private static final int MAX_REVIEW_SEQ = 2;
+
     /** 评价文字的最小长度：只填了 1–2 个字的多半是误触 */
     private static final int MIN_CONTENT_LENGTH = 5;
 
@@ -124,12 +130,23 @@ public class ReviewServiceImpl implements ReviewService {
         // docs/api/06-review-complaint.md 的 6002 契约不符）。
         // 唯一索引仍然保留，它的职责是挡住并发穿透 —— 两个请求同时通过这里的查询。
         Long reviewed = reviewMapper.selectCount(Wrappers.<OrderReview>lambdaQuery()
-                .eq(OrderReview::getOrderId, order.getId()));
+                .eq(OrderReview::getOrderId, order.getId())
+                // P1-2：只有「有效」评价才占住重评名额。
+                // 被管理员裁定无效的那条不再占位 —— 否则这一单就彻底评不了了，
+                // 而裁定无效的初衷恰恰是给家属一个重评机会。
+                .eq(OrderReview::getIsValid, 1));
         if (reviewed != null && reviewed > 0) {
             throw new BusinessException(ResultCode.ORDER_ALREADY_REVIEWED);
         }
 
-        if (!OrderStatus.COMPLETED.name().equals(order.getStatus())) {
+        // P1-2：状态闸门放开 REVIEWED。
+        //
+        // 订单状态是终态封闭的（REVIEWED 不回退，全局状态机原则），但「重评」恰恰发生在
+        // 订单已经 REVIEWED 的时候 —— 首次评价提交时就把订单推进到了 REVIEWED。
+        // 若这里仍然只放行 COMPLETED，裁定无效之后这一单就再也提交不了评价，
+        // 「正向出口」根本不成立。
+        boolean reReview = OrderStatus.REVIEWED.name().equals(order.getStatus());
+        if (!reReview && !OrderStatus.COMPLETED.name().equals(order.getStatus())) {
             throw new BusinessException(ResultCode.ORDER_NOT_COMPLETED);
         }
         if (order.getCompanionId() == null) {
@@ -150,6 +167,16 @@ public class ReviewServiceImpl implements ReviewService {
             throw new BusinessException(ResultCode.CONTENT_SENSITIVE, "评价内容包含敏感词：" + hit);
         }
 
+        // 重评序号（P1-2）：首次 = 1；旧评价被裁定无效后重评 = 旧最大 seq + 1。
+        // 上限是 MAX_REVIEW_SEQ —— 重评只给一次，否则同一条差评可以被无限次
+        // 「裁定无效 → 重评」刷分。
+        int maxSeq = currentMaxReviewSeq(order.getId());
+        if (maxSeq >= MAX_REVIEW_SEQ) {
+            throw new BusinessException(ResultCode.ORDER_ALREADY_REVIEWED,
+                    "本订单已重新评价过一次，不能再次评价");
+        }
+        int reviewSeq = maxSeq + 1;
+
         List<String> tags = normalizeTags(dto.getTags());
 
         OrderReview review = new OrderReview();
@@ -163,11 +190,12 @@ public class ReviewServiceImpl implements ReviewService {
         review.setContent(content);
         review.setIsAnonymous(Boolean.TRUE.equals(dto.getIsAnonymous()) ? 1 : 0);
         review.setIsValid(1);
+        review.setReviewSeq(reviewSeq);
 
         try {
             reviewMapper.insert(review);
         } catch (DuplicateKeyException e) {
-            // uk_order_review(order_id) 拦住了重复评价。
+            // uk_order_id_seq(order_id, review_seq) 拦住了重复评价。
             // 这一层是必须的：前端禁用按钮挡不住双开页面与接口重放
             log.info("重复评价被唯一索引拦截 | orderId={} | familyId={}", order.getId(), me.userId());
             throw new BusinessException(ResultCode.ORDER_ALREADY_REVIEWED);
@@ -181,6 +209,26 @@ public class ReviewServiceImpl implements ReviewService {
         log.info("评价已提交 | reviewId={} | orderId={} | companionId={} | score={} | 匿名={}",
                 review.getId(), order.getId(), order.getCompanionId(), dto.getScore(), review.getIsAnonymous());
         return ReviewCreateResultVO.of(review.getId(), OrderStatus.REVIEWED);
+    }
+
+    /**
+     * 该订单当前最大的重评序号（closure-2026-11 · P1-2）。
+     *
+     * <p>口径：<b>所有</b>评价（无论有效无效）里最大的 {@code review_seq}。
+     * 之所以不只看有效评价，是因为「重评名额」是按提交次数消耗的 ——
+     * 被裁定无效的那条已经用过一次机会，重评是第 2 次，再来一次就该被拒。</p>
+     *
+     * <p>没有任何评价时返回 0（此时首次评价的序号就是 1）。</p>
+     */
+    private int currentMaxReviewSeq(Long orderId) {
+        OrderReview latest = reviewMapper.selectOne(Wrappers.<OrderReview>lambdaQuery()
+                .eq(OrderReview::getOrderId, orderId)
+                .orderByDesc(OrderReview::getReviewSeq)
+                .last("LIMIT 1"));
+        if (latest == null || latest.getReviewSeq() == null) {
+            return 0;
+        }
+        return latest.getReviewSeq();
     }
 
     /* ================================================================== */
@@ -424,17 +472,31 @@ public class ReviewServiceImpl implements ReviewService {
         operLogRecorder.record(OperType.REVIEW_RULING, OperTargetType.REVIEW, reviewId,
                 "评价 #" + reviewId, "IS_VALID:1", "IS_VALID:0", reason);
 
-        Map<String, Object> params = new HashMap<>();
-        params.put("orderNo", review.getOrderNo());
-        params.put("reasonDigest", truncateDigest(reason));
+        // P1-2：还能不能重评？重评名额按提交次数消耗（review_seq 上限 2），
+        // 不是按「当前有效评价数」—— 被裁定无效的那条已经用掉过一次机会。
+        boolean canReReview = currentMaxReviewSeq(review.getOrderId()) < MAX_REVIEW_SEQ;
+
+        // 两侧收到的不是同一条消息：家属要看到「可以重新评价本单」，
+        // 陪诊员只需要知道「评分已重算」。所以两张参数表必须分开建 ——
+        // 共用同一个 map 的话，给家属加的 audience 会串到陪诊员那条上。
+        Map<String, Object> familyParams = new HashMap<>();
+        familyParams.put("orderNo", review.getOrderNo());
+        familyParams.put("reasonDigest", truncateDigest(reason));
+        familyParams.put("audience", "FAMILY");
+        familyParams.put("canReReview", canReReview);
         messageService.send(review.getFamilyId(), MessageType.REVIEW_INVALIDATED,
-                review.getOrderId(), params);
+                review.getOrderId(), familyParams);
+
+        Map<String, Object> companionParams = new HashMap<>();
+        companionParams.put("orderNo", review.getOrderNo());
+        companionParams.put("reasonDigest", truncateDigest(reason));
+        companionParams.put("audience", "COMPANION");
         messageService.send(review.getCompanionId(), MessageType.REVIEW_INVALIDATED,
-                review.getOrderId(), params);
+                review.getOrderId(), companionParams);
 
         log.info("评价已被裁定无效 | reviewId={} | companionId={} | adminId={}",
                 reviewId, review.getCompanionId(), currentUser.userId());
-        return ReviewRulingResultVO.of(reviewId, false, review.getCompanionId());
+        return ReviewRulingResultVO.of(reviewId, false, review.getCompanionId(), canReReview);
     }
 
     /* ================================================================== */

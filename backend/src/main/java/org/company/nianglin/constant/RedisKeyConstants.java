@@ -30,6 +30,20 @@ public final class RedisKeyConstants {
     /** 订单号当日序列：{@code order:seq:{yyyyMMdd}} → 递增整数，TTL 2 天 */
     public static final String ORDER_SEQ_PREFIX = "order:seq:";
 
+    /**
+     * 下单幂等锁：{@code order:idem:{familyId}:{key}} → 1，SET NX EX 10 分钟。
+     *
+     * <p>弱网下用户重试「提交订单」不该产生两笔订单（closure-2026-11 · P2-4）。
+     * 键里带 familyId：同一个键值在不同家属之间不该互相冲突。</p>
+     */
+    public static final String ORDER_IDEMPOTENCY_PREFIX = "order:idem:";
+    /**
+     * 下单幂等结果：{@code order:idem:result:{familyId}:{key}} → orderId，TTL 与锁相同。
+     *
+     * <p>锁只回答「有没有人在处理」，这个键才回答「处理出来的是哪一笔」——
+     * 没有它，重试只能回 409，用户永远拿不到自己那一笔单。</p>
+     */
+    public static final String ORDER_IDEMPOTENCY_RESULT_PREFIX = "order:idem:result:";
     /** 站内信未读数：{@code message:unread:{userId}} → 未读条数，短 TTL，变更即失效 */
     public static final String MESSAGE_UNREAD_PREFIX = "message:unread:";
 
@@ -201,6 +215,16 @@ public final class RedisKeyConstants {
     /** 某订单的位置共享开关（{@code on} / {@code off}，无 TTL） */
     public static String trackShare(Long orderId) {
         return TRACK_SHARE_PREFIX + orderId;
+    }
+
+    /** 下单幂等锁键 */
+    public static String orderIdempotency(Long familyId, String key) {
+        return ORDER_IDEMPOTENCY_PREFIX + familyId + ":" + key;
+    }
+
+    /** 下单幂等结果键 */
+    public static String orderIdempotencyResult(Long familyId, String key) {
+        return ORDER_IDEMPOTENCY_RESULT_PREFIX + familyId + ":" + key;
     }
 
     /** 某订单的上报限流标记（SET NX EX，单位为秒） */

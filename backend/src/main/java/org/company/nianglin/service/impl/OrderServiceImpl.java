@@ -17,6 +17,7 @@ import org.company.nianglin.common.ResultCode;
 import org.company.nianglin.config.FulfillmentProperties;
 import org.company.nianglin.config.MatchingProperties;
 import org.company.nianglin.constant.AuditStatus;
+import org.company.nianglin.constant.CheckinNode;
 import org.company.nianglin.constant.FulfillmentRisk;
 import org.company.nianglin.constant.MessageType;
 import org.company.nianglin.constant.OperationParam;
@@ -31,6 +32,7 @@ import org.company.nianglin.dto.OrderHallQuery;
 import org.company.nianglin.dto.OrderQuery;
 import org.company.nianglin.dto.OrderRejectDTO;
 import org.company.nianglin.entity.CompanionOrder;
+import org.company.nianglin.entity.OrderCheckin;
 import org.company.nianglin.entity.CompanionProfile;
 import org.company.nianglin.entity.ElderProfile;
 import org.company.nianglin.entity.OrderRejectLog;
@@ -38,6 +40,7 @@ import org.company.nianglin.entity.OrderStatusLog;
 import org.company.nianglin.entity.SysUser;
 import org.company.nianglin.exception.BusinessException;
 import org.company.nianglin.mapper.CompanionOrderMapper;
+import org.company.nianglin.mapper.OrderCheckinMapper;
 import org.company.nianglin.mapper.CompanionProfileMapper;
 import org.company.nianglin.mapper.ElderProfileMapper;
 import org.company.nianglin.mapper.OrderReadMapper;
@@ -67,6 +70,7 @@ import org.company.nianglin.vo.OrderRecommendVO;
 import org.company.nianglin.vo.OrderTimelineVO;
 import org.company.nianglin.vo.OrderVO;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -183,14 +187,92 @@ public class OrderServiceImpl implements OrderService {
     private final MatchingService matchingService;
     /** 智能调度配置（V3.4 · T3）——大厅候选集上限等 */
     private final MatchingProperties matchingProperties;
+    /**
+     * 打卡记录（closure-2026-11 · P0-3）——完成服务的留痕校验。
+     *
+     * <p>放在构造参数<b>末尾</b>是为了不改动既有位置参数调用的顺序：
+     * 本类有 5 处测试用位置参数构造它，中间插一个会让所有调用点静默错位。</p>
+     */
+    private final OrderCheckinMapper orderCheckinMapper;
+
+    /**
+     * 「完成服务前必须有打卡留痕」开关（closure-2026-11 · P0-3）。
+     *
+     * <p>默认<b>开</b>。用 {@link Boolean} 而不是 {@code boolean}：纯 Mockito 单测不起容器，
+     * 字段保持 {@code null}，而 {@code null} 必须被当成「开」——
+     * 否则默认值会随「有没有 Spring 容器」而变，同一条规则在测试与生产里表现不同。</p>
+     *
+     * <p>关闭只用于历史数据回填与极端场景应急。</p>
+     */
+    @Value("${nianglin.execution.require-checkin-on-complete:true}")
+    private Boolean requireCheckinOnComplete;
 
     /* ================================================================== */
     /* 1. 创建订单                                                         */
     /* ================================================================== */
 
+    /**
+     * 下单幂等键的 TTL（10 分钟）。
+     *
+     * <p>权衡：太短挡不住长重试，太长占内存。「弱网下用户重试」通常在 1 分钟内，
+     * 10 分钟足够。</p>
+     */
+    private static final Duration IDEMPOTENCY_TTL = Duration.ofMinutes(10);
+
+    /** 幂等键长度上限（与聊天侧 clientMsgId 一致） */
+    private static final int MAX_IDEMPOTENCY_KEY_LENGTH = 64;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public OrderCreateResultVO create(OrderCreateDTO dto) {
+        return create(dto, null);
+    }
+
+    /**
+     * 创建订单（带幂等键；closure-2026-11 · P2-4）。
+     *
+     * <p>弱网下前端重试会产生两笔独立订单 —— 订单号每次都新生成，两笔单都是合法的，
+     * 唯一约束挡不住。幂等键让同一个键的重复提交<b>返回同一笔订单</b>。</p>
+     *
+     * <p>三个分支：</p>
+     * <ol>
+     *   <li>抢到锁 → 正常下单，把 orderId 写进结果缓存；</li>
+     *   <li>没抢到锁 + 有结果缓存 → 返回<b>同一笔</b>订单（幂等成功）；</li>
+     *   <li>没抢到锁 + 无结果缓存 → 第一次还在处理中 → {@code 409}。</li>
+     * </ol>
+     *
+     * <p><b>Redis 不可用时放行</b>（与用药草稿的 {@code SET NX} 降级口径一致）：
+     * 「因为缓存故障下单不了」比「可能重复下单」糟糕得多。</p>
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OrderCreateResultVO create(OrderCreateDTO dto, String idempotencyKey) {
+        String key = normalizeIdempotencyKey(idempotencyKey);
+        if (key == null) {
+            return doCreate(dto);
+        }
+        LoginUser me = SecurityUtils.currentUser();
+        String lockKey = RedisKeyConstants.orderIdempotency(me.userId(), key);
+        if (!acquireIdempotencyLock(lockKey)) {
+            OrderCreateResultVO cached = readIdempotentResult(me.userId(), key);
+            if (cached != null) {
+                return cached;
+            }
+            throw new BusinessException(ResultCode.CONFLICT, "请求正在处理中，请稍候再试");
+        }
+        try {
+            OrderCreateResultVO result = doCreate(dto);
+            cacheIdempotentResult(me.userId(), key, result.getOrderId());
+            return result;
+        } catch (RuntimeException e) {
+            // 第一次就失败：释放锁，否则这个键在 TTL 内都下单不了
+            releaseIdempotencyLock(lockKey);
+            throw e;
+        }
+    }
+
+    /** 真正的下单逻辑（幂等分支之外） */
+    private OrderCreateResultVO doCreate(OrderCreateDTO dto) {
         LoginUser me = SecurityUtils.currentUser();
 
         // 归属校验复用 M3：家属只能给自己绑定的老人下单（不是自己家的 → 2006 / 档案不存在 → 2001）
@@ -245,6 +327,104 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /* ================================================================== */
+    /* ================================================================== */
+    /* 内部：下单幂等（P2-4）                                              */
+    /* ================================================================== */
+
+    /**
+     * 归一化幂等键：空白视为「没传」，超长直接拒。
+     *
+     * <p>超长不截断 —— 截断会让两个不同的键撞成同一个，
+     * 于是两笔不相干的订单被合并成同一笔，那比重复下单严重得多。</p>
+     */
+    private String normalizeIdempotencyKey(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String key = raw.trim();
+        if (key.length() > MAX_IDEMPOTENCY_KEY_LENGTH) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "幂等键长度不能超过 " + MAX_IDEMPOTENCY_KEY_LENGTH + " 个字符");
+        }
+        return key;
+    }
+
+    /**
+     * 抢幂等锁。
+     *
+     * <p>Redis 不可用时返回 {@code true}（放行）：缓存故障不该阻断下单 ——
+     * 重复下单的后果是用户自己取消一笔，缓存故障的后果是用户下不了单。</p>
+     */
+    private boolean acquireIdempotencyLock(String lockKey) {
+        try {
+            return Boolean.TRUE.equals(redisTemplate.opsForValue()
+                    .setIfAbsent(lockKey, "1", IDEMPOTENCY_TTL));
+        } catch (Exception e) {
+            log.warn("下单幂等锁不可用，本次放行 | key={} | {}", lockKey, e.getMessage());
+            return true;
+        }
+    }
+
+    /** 读回第一次下单的结果；没有结果 / 订单已不存在都返回 {@code null} */
+    private OrderCreateResultVO readIdempotentResult(Long familyId, String key) {
+        String cached;
+        try {
+            cached = redisTemplate.opsForValue()
+                    .get(RedisKeyConstants.orderIdempotencyResult(familyId, key));
+        } catch (Exception e) {
+            log.warn("下单幂等结果读取失败，本次按未命中处理 | key={} | {}", key, e.getMessage());
+            return null;
+        }
+        if (!StringUtils.hasText(cached)) {
+            return null;
+        }
+        Long orderId;
+        try {
+            orderId = Long.valueOf(cached.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        CompanionOrder order = orderMapper.selectById(orderId);
+        if (order == null) {
+            // 缓存指向的订单不存在（极少见：下单事务回滚）→ 自愈，删掉缓存
+            deleteQuietly(RedisKeyConstants.orderIdempotencyResult(familyId, key));
+            return null;
+        }
+        return OrderCreateResultVO.of(order);
+    }
+
+    /** 缓存第一次下单的订单 ID */
+    private void cacheIdempotentResult(Long familyId, String key, Long orderId) {
+        if (orderId == null) {
+            return;
+        }
+        try {
+            redisTemplate.opsForValue().set(
+                    RedisKeyConstants.orderIdempotencyResult(familyId, key),
+                    String.valueOf(orderId), IDEMPOTENCY_TTL);
+        } catch (Exception e) {
+            // 缓存失败不影响下单本身：最坏是下一次重试回 409，而不是下单失败
+            log.warn("下单幂等结果缓存失败 | key={} | {}", key, e.getMessage());
+        }
+    }
+
+    /** 释放幂等锁（第一次下单失败时调用） */
+    private void releaseIdempotencyLock(String lockKey) {
+        try {
+            redisTemplate.delete(lockKey);
+        } catch (Exception e) {
+            log.warn("下单幂等锁释放失败（将由 TTL 兜底） | key={} | {}", lockKey, e.getMessage());
+        }
+    }
+
+    private void deleteQuietly(String redisKey) {
+        try {
+            redisTemplate.delete(redisKey);
+        } catch (Exception e) {
+            log.warn("下单幂等结果缓存删除失败 | key={} | {}", redisKey, e.getMessage());
+        }
+    }
+
     /* 2. 我的订单列表                                                     */
     /* ================================================================== */
 
@@ -516,6 +696,13 @@ public class OrderServiceImpl implements OrderService {
                 OrderTransitionService.Operator.of(me.userId(), me.role(), false),
                 dto.getReason().trim());
 
+        // 取消不清理下游：见 ADR-0023。
+        //
+        // 打卡、轨迹、聊天、附件、站内信一律保留 —— 取消常常是纠纷的结果或起点，
+        // 删掉过程数据等于让管理员在没有证据的情况下仲裁；
+        // 陪诊员已经到院打卡的记录是他的劳动凭证，家属取消也不该抹掉。
+        // 将来若真要删，必须走独立的数据生命周期策略（归档），不能混进取消逻辑。
+
         // 这里刻意不发 ORDER_CANCELLED：能走到这一行说明订单还是 PENDING，
         // 也就是还没有陪诊员，收件人为 null。给「还不存在的接单人」发取消通知
         // 是纯粹的死代码。已接单后的取消只能走 M9 纠纷处理，
@@ -590,6 +777,25 @@ public class OrderServiceImpl implements OrderService {
         rejectRow.setRejectTime(LocalDateTime.now());
         rejectLogMapper.insert(rejectRow);
 
+        // P0-1：拒单后清空接单人。
+        // 旧语义下拒单不清 companion_id，于是「被指派的人拒了单」之后这张单既不能改派
+        // （改派前置是「接单人为空」），又仍挂在他名下 —— 管理员只剩打电话协调，
+        // 陪诊员则被一张自己已拒的单无限期占用。
+        //
+        // 用**条件更新**而不是先查后写：条件是「这单现在仍指派给我且仍是待接单」。
+        // 条件不满足（已被别人接走 / 已被改派给别人）就不影响订单，但仍写拒单日志 ——
+        // 拒单这件事确实发生过，记录不能丢。
+        int released = orderMapper.update(null, Wrappers.<CompanionOrder>lambdaUpdate()
+                .setSql("companion_id = NULL")
+                .setSql("version = version + 1")
+                .eq(CompanionOrder::getId, orderId)
+                .eq(CompanionOrder::getCompanionId, me.userId())
+                .eq(CompanionOrder::getStatus, OrderStatus.PENDING.name()));
+        if (released == 0) {
+            log.info("拒单时订单已不再指派给当前陪诊员，接单人未清空 | orderId={} | companionId={}",
+                    orderId, me.userId());
+        }
+
         // 刻意不写 order_status_log：拒单没有改变订单状态，
         // 往状态日志里塞一条"状态没变"的记录会把时间线搞乱
         log.info("陪诊员拒单 | orderId={} | companionId={}", orderId, me.userId());
@@ -663,6 +869,13 @@ public class OrderServiceImpl implements OrderService {
         }
         String photosJson = writePhotoList(dto.getPhotos());
 
+        // P0-3：完成服务前必须留下「到院」或「完成」打卡的凭证。
+        // 位置在状态预检、身份校验与合规校验之后、状态写入之前：
+        // · 放在状态校验之后 —— 否则一张 PENDING 单会先报 3012 而不是 3002，把用户引向错误方向；
+        // · 放在身份校验之后 —— 他人调用仍然回 4003，不会泄露这张单的留痕情况；
+        // · 放在合规校验之后 —— 小结含用药建议时仍然先回 3007，提示要能一次改对。
+        requireCheckinProof(order);
+
         LocalDateTime now = LocalDateTime.now();
         order.setFinishTime(now);
         if (summary != null) {
@@ -683,6 +896,37 @@ public class OrderServiceImpl implements OrderService {
         // 一期虽然恒为 UNPAID，但 M9 支持线下回填之后写死就是一句谎话
         log.info("订单已完成 | orderId={} | companionId={} | declaredFee={}", orderId, me.userId(), dto.getFee());
         return OrderFlowResultVO.ofCompleted(now, order.getPaymentStatus());
+    }
+
+    /**
+     * 完成服务的留痕校验（closure-2026-11 · P0-3）。
+     *
+     * <p><b>为什么必须有打卡才能结束订单</b>：陪诊员接单后可以直接「完成服务」把订单结束，
+     * 一个打卡都不做 —— 订单变成「已完成」，家属能去评价，而打卡表、轨迹表、服务照片全是空的。
+     * 更要紧的是订单一旦完成就<b>再也补不了打卡</b>（打卡要求订单处于已接单或服务中），
+     * 事后要证明「确实到院了、确实取药了」，系统里没有任何证据。</p>
+     *
+     * <p><b>只认 {@code ARRIVE} / {@code FINISH} 两个节点</b>：出发打卡证明不了到院，
+     * 凭证链不能断在关键节点。</p>
+     *
+     * <p><b>不选「自动补一条 FINISH 打卡」</b>：自动补录等于让「系统替陪诊员声称他完成了服务」，
+     * 与「留痕 = 陪诊员真实动作」的语义冲突。宁可拒绝，也不伪造证据。</p>
+     *
+     * <p>开关 {@code nianglin.execution.require-checkin-on-complete} 默认开，
+     * 仅用于历史数据回填与极端场景快速降级。</p>
+     */
+    private void requireCheckinProof(CompanionOrder order) {
+        if (Boolean.FALSE.equals(requireCheckinOnComplete)) {
+            return;
+        }
+        Long count = orderCheckinMapper.selectCount(Wrappers.<OrderCheckin>lambdaQuery()
+                .eq(OrderCheckin::getOrderId, order.getId())
+                .in(OrderCheckin::getNode,
+                        List.of(CheckinNode.ARRIVE.name(), CheckinNode.FINISH.name())));
+        if (count == null || count <= 0) {
+            throw new BusinessException(ResultCode.ORDER_CHECKIN_REQUIRED,
+                    "请先完成「到院」打卡再结束服务");
+        }
     }
 
     /* ================================================================== */
@@ -765,6 +1009,18 @@ public class OrderServiceImpl implements OrderService {
         // 承担，不经 TRANSITIONS（ADR-0010 明确要求），但流转日志仍然双写。
         orderTransitionService.forceTerminal(order, target,
                 SecurityUtils.currentUser().userId(), "管理员强制变更：" + remark);
+
+        // P0-6：强制完成与正常完成走同一套费用汇总。
+        // 正常完成会调 applyOnComplete 把申报服务费落成费用明细并重算 actual_fee，
+        // 而强制完成原本什么都不算 —— 结算金额取 COALESCE(actual_fee, fee)，
+        // 于是陪诊员先垫的挂号费、药费不进结算，系统一声不响，陪诊员少收钱。
+        // 传 null 而不是 0：applyOnComplete 在 declaredFee == null 时不插入服务费明细，
+        // 只重算已存在明细的合计 —— 管理员强制完成时陪诊员可能压根没申报服务费，
+        // 系统不该凭空造一条 0 元明细。
+        // 调用位置在状态写入之后（与正常完成一致），同一事务内。
+        if (target == OrderStatus.COMPLETED) {
+            orderFeeItemService.applyOnComplete(orderId, null);
+        }
 
         log.info("管理员强制变更订单终态 | orderId={} | {} → {} | operator={}",
                 orderId, current == null ? null : current.name(), target.name(),

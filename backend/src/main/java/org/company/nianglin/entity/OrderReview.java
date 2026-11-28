@@ -99,4 +99,17 @@ public class OrderReview extends BaseEntity {
     @Schema(description = "是否有效评价：0-管理员判定无效（不计入评分聚合）1-有效")
     private Integer isValid;
 
+    /**
+     * 重评序号（closure-2026-11 · P1-2）。
+     *
+     * <p>1 = 首次评价；2 = 管理员裁定无效后家属重新评价。<b>上限就是 2</b> ——
+     * 重评只给一次机会，否则同一条差评可以被「裁定无效 → 重评 → 再申诉」无限刷分。</p>
+     *
+     * <p>唯一键随之从 {@code (order_id)} 调整为 {@code (order_id, review_seq)}，
+     * 迁移见 {@code backend/sql/V15__review_resequence.sql}。</p>
+     */
+    @TableField("review_seq")
+    @Schema(description = "重评序号：1-首次评价 2-裁定无效后重新评价")
+    private Integer reviewSeq;
+
 }
