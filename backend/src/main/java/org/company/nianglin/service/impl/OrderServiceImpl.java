@@ -24,6 +24,7 @@ import org.company.nianglin.constant.OrderStatus;
 import org.company.nianglin.constant.PaymentStatus;
 import org.company.nianglin.constant.RedisKeyConstants;
 import org.company.nianglin.constant.RoleConstants;
+import org.company.nianglin.constant.WorkStatus;
 import org.company.nianglin.dto.OrderCancelDTO;
 import org.company.nianglin.dto.OrderCompleteDTO;
 import org.company.nianglin.dto.OrderCreateDTO;
@@ -328,6 +329,18 @@ public class OrderServiceImpl implements OrderService {
         // 保证不了"资质已经审过了"。排序键的校验排它后面：
         // 没资质的人连大厅都进不去，先报 2003 比先报参数错更贴近他此刻遇到的问题
         CompanionProfile profile = requireApprovedCompanion(me.userId());
+        // 收口 B · P0-2：接单开关必须在「能不能拿到新单」这件事上真正生效。
+        // 不返回空列表而是拒绝 —— 空列表会让陪诊员以为「今天真没单」，
+        // 而真相是「他自己关了接单」（与 resolveHallSortKey 同一取舍）。
+        String rawStatus = profile.getWorkStatus();
+        WorkStatus workStatus = WorkStatus.of(rawStatus);
+        // 库里 work_status NOT NULL DEFAULT 'AVAILABLE'，null 只可能是尚未回填的
+        // 快照对象（如单测夹具），按缺省「可接单」处理；非 null 的未知字面量一律拒绝。
+        if (rawStatus != null && (workStatus == null || !workStatus.isAccepting())) {
+            throw new BusinessException(ResultCode.COMPANION_NOT_ACCEPTING,
+                    "当前处于" + WorkStatus.labelOf(rawStatus)
+                            + "，看不到新订单；切回「可接单」即可恢复");
+        }
         String sortKey = resolveHallSortKey(query.getSortBy());
 
         LambdaQueryWrapper<CompanionOrder> wrapper = Wrappers.<CompanionOrder>lambdaQuery()
@@ -532,6 +545,17 @@ public class OrderServiceImpl implements OrderService {
     public OrderAcceptResultVO accept(Long orderId) {
         LoginUser me = SecurityUtils.currentUser();
         CompanionProfile profile = requireApprovedCompanion(me.userId());
+        // 收口 B · P0-2：抢单与进大厅同一判定入口。
+        // 放在查单之前 —— 休息中的人看到 3001（订单不存在）会以为单没了，
+        // 真相是他自己关了接单；先报 2013 才指向可操作的动作。
+        String rawStatus = profile.getWorkStatus();
+        WorkStatus workStatus = WorkStatus.of(rawStatus);
+        // 与 hall 同一口径：库里 NOT NULL DEFAULT 'AVAILABLE'，null 按缺省可接单处理
+        if (rawStatus != null && (workStatus == null || !workStatus.isAccepting())) {
+            throw new BusinessException(ResultCode.COMPANION_NOT_ACCEPTING,
+                    "当前处于" + WorkStatus.labelOf(rawStatus)
+                            + "，不能抢单；切回「可接单」即可恢复");
+        }
 
         CompanionOrder order = orderMapper.selectById(orderId);
         if (order == null) {
@@ -906,6 +930,10 @@ public class OrderServiceImpl implements OrderService {
     private List<Long> approvedCompanionUserIds() {
         return companionProfileMapper.selectList(Wrappers.<CompanionProfile>lambdaQuery()
                         .eq(CompanionProfile::getAuditStatus, AuditStatus.APPROVED.name())
+                        // 收口 B · P0-2：只广播给真正在接单的人。
+                        // 推给休息中 / 离线的人，他接不了单又被打扰，只会更快关掉开关。
+                        // 与 FulfillmentServiceImpl#notifyAvailableCompanions 同一口径。
+                        .eq(CompanionProfile::getWorkStatus, WorkStatus.AVAILABLE.name())
                         // 只取需要的一列，避免把整行（含证件号快照）读进内存
                         .select(CompanionProfile::getUserId))
                 .stream()
